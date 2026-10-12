@@ -1,8 +1,8 @@
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
-import LoginPage from "./pages/LoginPage";
+import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import TenantsPage from "./pages/TenantsPage";
 import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
@@ -12,6 +12,7 @@ import "./styles.css";
 const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
 
 function Shell() {
+  const location = useLocation();
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const refresh = useCallback(() => {
     currentOperator().then(setUser);
@@ -21,6 +22,9 @@ function Shell() {
     return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
   }, [refresh]);
 
+  // The emailed reset link works signed in or out (LoginPage signs out
+  // once the new password is set).
+  if (location.pathname === RESET_PATH) return <LoginPage onSignedIn={refresh} />;
   if (user === undefined) return <div className="center muted">Loading…</div>;
   if (!user) return <LoginPage onSignedIn={refresh} />;
 

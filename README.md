@@ -41,6 +41,14 @@ the *operator* Cognito pool (MFA required) with the `platform/admin` scope;
 the Lambda additionally requires the `platform_admin` group. Operators are
 the `platform_operator_emails` in the infrastructure tfvars.
 
+**Forgot your password?** On the sign-in page. Cognito emails a link to
+`/reset-password#code=…&email=…` (the operator pool's custom message
+trigger in the infrastructure repo; the fragment never reaches a server and
+the page clears it): choose a new password, then sign in with it and your
+authenticator code. The link works once and for one hour. Until the pool
+sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
+6-digit code instead - "Got a code instead? Enter it" takes that.
+
 ## API
 
 | Route | What |
