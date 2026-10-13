@@ -9,7 +9,7 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import domains, locations, operators, stripe_connect, tenants, terminal, users
+from . import domains, locations, operators, outbox, stripe_connect, tenants, terminal, users
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -43,6 +43,8 @@ ROUTES = {
     "PATCH /platform/operators/{username}": operators.update_operator,
     "DELETE /platform/operators/{username}": operators.delete_operator,
     "POST /platform/operators/{username}/resend-invite": operators.resend_invite,
+    "GET /platform/outbox": outbox.list_messages,
+    "GET /platform/outbox/{messageId}": outbox.get_message,
 }
 
 OPERATOR_GROUP = "platform_admin"

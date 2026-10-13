@@ -65,6 +65,7 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `GET/POST .../locations`, `PATCH/DELETE .../locations/{locationId}` | location CRUD; create is blocked at the plan limit (`409 plan_limit_reached`) |
 | `POST .../domains`, `DELETE .../domains/{domain}` | customer's own domain (starts the attach/detach workflows) |
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
+| `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in prod) |
 
 Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 
@@ -75,7 +76,7 @@ Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 cd api
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager
+python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager, S3
 
 # Web - against the dev API
 cd web

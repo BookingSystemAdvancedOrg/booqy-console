@@ -183,3 +183,25 @@ export interface OperatorAccount {
   createdAt?: string;
   updatedAt?: string;
 }
+
+/** Dev mail outbox (GET /platform/outbox) - never on in prod. */
+export interface OutboxSummary {
+  id: string;
+  at: string;
+  channel: "email" | "sms";
+  to: string;
+  /** Email subject, or the first 120 characters of an SMS. */
+  subject: string | null;
+}
+
+export interface OutboxMessage {
+  id: string;
+  at: string;
+  channel: "email" | "sms";
+  to: string;
+  from?: string | null;
+  replyTo?: string[];
+  subject?: string;
+  text?: string;
+  html?: string | null;
+}

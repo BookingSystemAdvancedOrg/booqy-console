@@ -1,6 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  Location, LocationInput, NewTenantInput, OperatorAccount, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -91,4 +91,10 @@ export const api = {
   deleteOperator: (username: string) => request("DELETE", `/platform/operators/${encodeURIComponent(username)}`),
   resendInvite: (username: string) =>
     request("POST", `/platform/operators/${encodeURIComponent(username)}/resend-invite`, {}),
+
+  outbox: (after?: string) =>
+    request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
+      "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  outboxMessage: (messageId: string) =>
+    request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 };

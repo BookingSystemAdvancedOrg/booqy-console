@@ -7,6 +7,7 @@ import TenantsPage from "./pages/TenantsPage";
 import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
 import OperatorsPage from "./pages/OperatorsPage";
+import OutboxPage from "./pages/OutboxPage";
 import "./styles.css";
 
 const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
@@ -37,6 +38,7 @@ function Shell() {
           <NavLink to="/" end>Customers</NavLink>
           <NavLink to="/tenants/new">New customer</NavLink>
           <NavLink to="/operators">Operators</NavLink>
+          {ENV !== "prod" && <NavLink to="/outbox">Mail outbox</NavLink>}
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
@@ -49,6 +51,7 @@ function Shell() {
           <Route path="/tenants/new" element={<NewTenantPage />} />
           <Route path="/tenants/:tenantId" element={<TenantPage />} />
           <Route path="/operators" element={<OperatorsPage me={user.username} />} />
+          {ENV !== "prod" && <Route path="/outbox" element={<OutboxPage />} />}
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>
       </main>
