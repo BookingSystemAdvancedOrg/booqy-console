@@ -1,4 +1,4 @@
-"""Operator accounts: the people who can use sbs-admin (the OPERATOR user
+"""Operator accounts: the people who can use Booqy Console (the OPERATOR user
 pool, not a tenant's users).
 
 Every operator is in the same group and has the same rights - including

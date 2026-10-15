@@ -119,7 +119,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
         return;
       case "CONTINUE_SIGN_IN_WITH_TOTP_SETUP": {
         const details = out.nextStep.totpSetupDetails;
-        setStep({ kind: "totpSetup", uri: details.getSetupUri(`SBS Admin (${ENV})`, email).toString(),
+        setStep({ kind: "totpSetup", uri: details.getSetupUri(`Booqy Console (${ENV})`, email).toString(),
                   secret: details.sharedSecret });
         return;
       }
@@ -151,7 +151,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <div className="auth">
       <aside className="auth__brand">
-        <div className="brand auth__logo">SBS <span>Admin</span></div>
+        <div className="brand auth__logo">Booqy <span>Console</span></div>
         <div>
           <p className="auth__lead">The operator console for every restaurant on the platform.</p>
           <p className="auth__sub">Customers, plans, domains and payments - in one place.</p>
@@ -207,7 +207,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           )}
 
           {step.kind === "totpCode" && (
-            <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for SBS Admin."
+            <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for Booqy Console."
                   error={error} busy={busy} submit="Sign in"
                   onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}
                   footer={<button type="button" className="link" onClick={back}>Back</button>}>

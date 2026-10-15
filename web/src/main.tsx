@@ -32,7 +32,7 @@ function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        <Link to="/" className="brand">SBS <span>Admin</span></Link>
+        <Link to="/" className="brand">Booqy <span>Console</span></Link>
         <span className={`env env--${ENV}`}>{ENV}</span>
         <nav className="topbar__nav">
           <NavLink to="/" end>Customers</NavLink>

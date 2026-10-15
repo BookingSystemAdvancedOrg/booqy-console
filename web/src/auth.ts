@@ -58,12 +58,12 @@ export async function signOut(): Promise<void> {
 
 /** Shell listens to this to show the login page. */
 export function notifySignedOut() {
-  Hub.dispatch("sbs", { event: "signedOut" });
+  Hub.dispatch("booqy", { event: "signedOut" });
 }
 
 export function onAuthChange(cb: () => void): () => void {
   const a = Hub.listen("auth", cb);
-  const b = Hub.listen("sbs", cb);
+  const b = Hub.listen("booqy", cb);
   return () => {
     a();
     b();

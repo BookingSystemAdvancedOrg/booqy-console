@@ -1,8 +1,8 @@
 """platform-tenants Lambda: the single entry point for every /platform/* route
-of the operator console (sbs-admin).
+of the operator console (Booqy Console).
 
 API Gateway has already verified the caller: an access token from the
-OPERATOR user pool, issued to the sbs-admin app client. This handler is the
+OPERATOR user pool, issued to the Booqy Console app client. This handler is the
 authorization check (cognito:groups must contain platform_admin), records
 who did what (audit rows) and dispatches on routeKey."""
 

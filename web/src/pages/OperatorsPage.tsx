@@ -34,7 +34,7 @@ export default function OperatorsPage({ me }: { me: string }) {
       <div className="page-head">
         <div>
           <h1>Operators</h1>
-          <p className="muted">People who can sign in to SBS Admin. Everyone here has the same rights.</p>
+          <p className="muted">People who can sign in to Booqy Console. Everyone here has the same rights.</p>
         </div>
         <div className="row">
           <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>

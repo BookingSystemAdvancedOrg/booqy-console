@@ -1,4 +1,4 @@
-# sbs-admin
+# Booqy Console
 
 The operator console for the restaurant SaaS - only the platform's owners
 (you) can sign in. Create, edit and offboard customers (tenants), manage
@@ -102,7 +102,7 @@ Each environment gets these **variables** (none are secrets). The
 infrastructure repo prints all of them for its account:
 
 ```bash
-tofu output -json sbs_admin_deploy      # run once with the dev state, once with prod
+tofu output -json booqy_console_deploy      # run once with the dev state, once with prod
 ```
 
 | Variable | What it is |
