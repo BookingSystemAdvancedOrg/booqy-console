@@ -1,10 +1,11 @@
 """The restaurant's Stripe connected account under the platform account.
 
-The onboarding workflow creates the account (controller properties
-equivalent to Standard: the restaurant gets its own full Stripe Dashboard,
-pays its own fees). What's left for a human is Stripe's KYC form, which the
-restaurant fills in through an Account Link - these endpoints create that
-link and pull the account's current state on demand."""
+The onboarding workflow creates the account with Accounts v2 (equivalent
+to Standard: the restaurant gets its own full Stripe Dashboard, pays its own
+fees, Stripe carries losses and collects KYC). What's left for a human is
+Stripe's KYC form, which the restaurant fills in through an Account Link -
+these endpoints create that link (v2) and pull the account's current state
+on demand (v1 retrieve - Stripe answers for v2 accounts in the v1 shape)."""
 
 import json
 import urllib.error
@@ -14,7 +15,7 @@ import urllib.request
 from .core import ApiError, client, env, now_iso, tenant_table, to_ddb_value, write_audit
 from .tenants import get_profile, tkey
 
-_API = "https://api.stripe.com/v1"
+_API = "https://api.stripe.com"
 _key_cache: dict = {}
 
 
@@ -26,13 +27,35 @@ def _api_key() -> str:
     return _key_cache[arn]
 
 
-def stripe_request(method: str, path: str, params: dict | None = None) -> dict:
-    data = urllib.parse.urlencode(params or {}).encode() if method == "POST" else None
-    req = urllib.request.Request(f"{_API}{path}", data=data, method=method, headers={
+def stripe_request(method: str, path: str, params: dict | None = None, *, account: str | None = None,
+                   idempotency_key: str | None = None) -> dict:
+    """One Stripe API call with the platform key. `path` without a version
+    prefix is a v1 call (form-encoded); a path starting with /v2/ is an API
+    v2 call (JSON body). `account` = act on a connected account
+    (Stripe-Account header) - how every restaurant-side object (Terminal
+    locations, readers) is created, so it belongs to the restaurant, not to
+    the platform."""
+    v2 = path.startswith("/v2/")
+    if v2:
+        query = ""
+        data = json.dumps(params or {}).encode() if method == "POST" else None
+        url = f"{_API}{path}"
+        content_type = "application/json"
+    else:
+        query = urllib.parse.urlencode(params or {})
+        data = query.encode() if method == "POST" else None
+        url = f"{_API}/v1{path}" + (f"?{query}" if method == "GET" and query else "")
+        content_type = "application/x-www-form-urlencoded"
+    headers = {
         "Authorization": f"Bearer {_api_key()}",
         "Stripe-Version": env("STRIPE_API_VERSION"),
-        "Content-Type": "application/x-www-form-urlencoded",
-    })
+        "Content-Type": content_type,
+    }
+    if account:
+        headers["Stripe-Account"] = account
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
@@ -41,7 +64,7 @@ def stripe_request(method: str, path: str, params: dict | None = None) -> dict:
             message = json.loads(e.read()).get("error", {}).get("message", str(e))
         except Exception:  # noqa: BLE001 - best effort message extraction
             message = str(e)
-        raise ApiError(502, "stripe_error", f"Stripe: {message}") from e
+        raise ApiError(502, "stripe_error", f"Stripe: {message}", stripeStatus=e.code) from e
     except urllib.error.URLError as e:
         raise ApiError(502, "stripe_unreachable", f"Stripe: {e.reason}") from e
 
@@ -59,10 +82,16 @@ def account_link(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     account_id = _account_id(tenant_id)
     base = env("PLATFORM_ADMIN_APP_URL").rstrip("/")
-    link = stripe_request("POST", "/account_links", {
-        "account": account_id, "type": "account_onboarding",
-        "refresh_url": f"{base}/tenants/{tenant_id}?stripe=refresh",
-        "return_url": f"{base}/tenants/{tenant_id}?stripe=return",
+    link = stripe_request("POST", "/v2/core/account_links", {
+        "account": account_id,
+        "use_case": {
+            "type": "account_onboarding",
+            "account_onboarding": {
+                "configurations": ["merchant"],
+                "refresh_url": f"{base}/tenants/{tenant_id}?stripe=refresh",
+                "return_url": f"{base}/tenants/{tenant_id}?stripe=return",
+            },
+        },
     })
     write_audit(tenant_id, "stripe_link_created", req.actor, {"accountId": account_id})
     return 200, {"url": link["url"], "expiresAt": link.get("expires_at")}

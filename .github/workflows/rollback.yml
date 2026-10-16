@@ -1,0 +1,109 @@
+# Manual rollback of the platform-tenants API Lambda.
+#
+# Actions -> Rollback -> Run workflow. Leave "version" empty to go back to
+# the version that was live before the current one. Points the "live" alias
+# straight at it (all traffic at once), puts that version's image back on
+# :latest, and emails the result. prod waits for the same approval as a
+# deploy.
+#
+# The web app (S3) is not touched - to roll that back, revert the commit on
+# the branch and let the normal deploy run.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        options: [dev, prod]
+        required: true
+      version:
+        description: Lambda version to go back to (empty = the one live before the current release)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Load shared project config
+        run: |
+          grep -v '^#' .github/config/project.env \
+            | grep -v '^[[:space:]]*$' \
+            | sed -e $'s/\r$//' -e 's/="\(.*\)"$/=\1/' \
+            >> "$GITHUB_ENV"
+
+      - name: Select ${{ inputs.environment }} values
+        env:
+          SUFFIX: ${{ inputs.environment == 'prod' && 'PROD' || 'DEV' }}
+        run: |
+          set -euo pipefail
+          for k in OIDC_ROLE_ARN CODEDEPLOY_APP ALERT_TOPIC_ARN LAMBDA_FUNCTION_NAME; do
+            src="${k}_${SUFFIX}"
+            [ -n "${!src:-}" ] || { echo "::error::.github/config/project.env is missing $src"; exit 1; }
+            echo "$k=${!src}" >> "$GITHUB_ENV"
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-sbs-admin-rollback-${{ inputs.environment }}-${{ github.run_id }}
+
+      - name: Find the version to go back to
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED" ]; then
+            echo "TARGET=$REQUESTED" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          live=$(aws lambda get-alias --function-name "$LAMBDA_FUNCTION_NAME" --name live --query FunctionVersion --output text)
+          # Every release is described "<source>: v<from> -> v<to>". Take the
+          # NEWEST successful release that made the current version live and
+          # go back to its <from>.
+          ids=$(aws deploy list-deployments --application-name "$CODEDEPLOY_APP" \
+                  --deployment-group-name "$LAMBDA_FUNCTION_NAME" --include-only-statuses Succeeded \
+                  --query 'deployments' --output text)
+          best_time="" target=""
+          for id in $ids; do
+            read -r created desc < <(aws deploy get-deployment --deployment-id "$id" \
+              --query '[deploymentInfo.createTime, deploymentInfo.description]' --output text)
+            if [[ "$desc" =~ v([0-9]+)\ -\>\ v([0-9]+)$ ]] && [ "${BASH_REMATCH[2]}" = "$live" ] \
+               && [[ -z "$best_time" || "$created" > "$best_time" ]]; then
+              best_time="$created" target="${BASH_REMATCH[1]}"
+            fi
+          done
+          if [ -n "$target" ]; then
+            echo "live is v$live (released $best_time from v$target)"
+            echo "TARGET=$target" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "::error::could not find which version was live before v$live - run again with an explicit version"
+          exit 1
+
+      - name: Roll back
+        run: |
+          bash .github/scripts/lambda-release.sh \
+            --function "$LAMBDA_FUNCTION_NAME" \
+            --to-version "$TARGET" \
+            --app "$CODEDEPLOY_APP" \
+            --topic "$ALERT_TOPIC_ARN" \
+            --environment "${{ inputs.environment }}" \
+            --source "rollback by ${{ github.actor }}"

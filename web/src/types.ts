@@ -79,7 +79,40 @@ export interface Location {
   phone?: string;
   email?: string;
   stripeAccountId?: string;
+  terminal?: TerminalSetup;
   createdAt?: string;
+}
+
+export interface TerminalAddress {
+  line1: string;
+  postalCode: string;
+  city: string;
+  country?: string;
+}
+
+/** Stripe Terminal location of a restaurant location (on the restaurant's Stripe account). */
+export interface TerminalSetup {
+  locationId: string;
+  accountId: string;
+  displayName: string;
+  address: TerminalAddress;
+  enabledAt?: string;
+}
+
+export interface TerminalReader {
+  id: string;
+  label: string;
+  device_type: string;
+  status: "online" | "offline" | null;
+  serial_number?: string;
+  last_seen_at?: number;
+}
+
+export interface TerminalState {
+  enabled: boolean;
+  inPlan: boolean;
+  terminal: TerminalSetup | null;
+  readers: TerminalReader[];
 }
 
 export type LocationInput = { name: string; address: string; phone?: string; email?: string; stripeAccountId?: string };
@@ -138,4 +171,37 @@ export interface NewTenantInput {
   notes?: string;
   overrides?: { maxLocations?: number };
   locations: LocationInput[];
+}
+
+export interface OperatorAccount {
+  username: string;
+  email: string;
+  name: string;
+  /** FORCE_CHANGE_PASSWORD = invited, hasn't signed in yet */
+  status: string;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Dev mail outbox (GET /platform/outbox) - never on in prod. */
+export interface OutboxSummary {
+  id: string;
+  at: string;
+  channel: "email" | "sms";
+  to: string;
+  /** Email subject, or the first 120 characters of an SMS. */
+  subject: string | null;
+}
+
+export interface OutboxMessage {
+  id: string;
+  at: string;
+  channel: "email" | "sms";
+  to: string;
+  from?: string | null;
+  replyTo?: string[];
+  subject?: string;
+  text?: string;
+  html?: string | null;
 }

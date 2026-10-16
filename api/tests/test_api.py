@@ -262,16 +262,72 @@ def test_stripe_link_and_sync(aws, tenant, monkeypatch):
 
     def fake(method, path, params=None):
         seen.append((method, path, params))
-        if path == "/account_links":
-            return {"url": "https://connect.stripe.com/setup/x", "expires_at": 1}
+        if path == "/v2/core/account_links":
+            return {"url": "https://connect.stripe.com/setup/x", "expires_at": "2026-10-09T10:00:00.000Z"}
         return {"charges_enabled": True, "payouts_enabled": False, "details_submitted": True,
                 "requirements": {"currently_due": ["external_account"]}}
 
     monkeypatch.setattr(stripe_connect, "stripe_request", fake)
     status, body = call("POST /platform/tenants/{tenantId}/stripe/account-link", p)
     assert status == 200 and body["url"].startswith("https://connect.stripe.com")
-    assert seen[0][2]["return_url"] == f"https://ops.example.se/tenants/{tenant}?stripe=return"
+    onboarding = seen[0][2]["use_case"]["account_onboarding"]
+    assert seen[0][2]["account"] == "acct_123456" and onboarding["configurations"] == ["merchant"]
+    assert onboarding["return_url"] == f"https://ops.example.se/tenants/{tenant}?stripe=return"
     status, body = call("POST /platform/tenants/{tenantId}/stripe/sync", p)
     assert status == 200 and body["stripe"]["chargesEnabled"] is True
     t = call("GET /platform/tenants/{tenantId}", p)[1]["tenant"]
     assert t["stripe"]["requirementsDue"] == ["external_account"]
+
+
+def test_stripe_request_encodes_v1_and_v2(monkeypatch):
+    """v1 paths go form-encoded to /v1, /v2/ paths go as JSON - Stripe
+    rejects new connected accounts on v1, so account links use v2."""
+    import io
+    import json as _json
+
+    from app import stripe_connect
+    monkeypatch.setattr(stripe_connect, "_api_key", lambda: "sk_test_x")
+    sent = []
+
+    def fake_urlopen(req, timeout):
+        sent.append(req)
+        return io.BytesIO(b'{"id": "x"}')
+
+    monkeypatch.setattr(stripe_connect.urllib.request, "urlopen", fake_urlopen)
+    stripe_connect.stripe_request("POST", "/terminal/locations", {"display_name": "A+B"}, account="acct_1")
+    stripe_connect.stripe_request("POST", "/v2/core/account_links", {"use_case": {"type": "account_onboarding"}})
+    v1, v2 = sent
+    assert v1.full_url == "https://api.stripe.com/v1/terminal/locations"
+    assert v1.data == b"display_name=A%2BB" and v1.headers["Stripe-account"] == "acct_1"
+    assert v2.full_url == "https://api.stripe.com/v2/core/account_links"
+    assert v2.headers["Content-type"] == "application/json"
+    assert _json.loads(v2.data) == {"use_case": {"type": "account_onboarding"}}
+
+
+def test_locations_meet_the_admin_app_contract(aws, tenant):
+    """The application backend refuses location rows without timezone,
+    opening hours, booking duration and grace period - every location the
+    operator creates has them (closed until the owner sets hours), and the
+    phone is also stored in E.164 as phoneNumber."""
+    from app import validation as v
+    p = {"tenantId": tenant}
+    (loc,) = call("GET /platform/tenants/{tenantId}/locations", p)[1]["locations"]
+    assert loc["timezone"] == "Europe/Stockholm"
+    assert loc["businessHours"] == {d: [] for d in v.WEEKDAYS}
+    assert loc["bookingDurationHours"] == 2 and loc["gracePeriodHours"] == 0
+    assert loc["phoneNumber"] == "+46812345"
+
+    status, body = call("PATCH /platform/tenants/{tenantId}/locations/{locationId}",
+                        {**p, "locationId": loc["locationId"]}, {"phone": "070-123 45 67"})
+    assert status == 200 and body["location"]["phoneNumber"] == "+46701234567"
+    status, body = call("PATCH /platform/tenants/{tenantId}/locations/{locationId}",
+                        {**p, "locationId": loc["locationId"]}, {"phone": ""})
+    assert status == 200 and "phoneNumber" not in body["location"]
+
+
+def test_e164():
+    from app.validation import e164
+    assert e164("+46 8 123 45") == "+46812345"
+    assert e164("0046701234567") == "+46701234567"
+    assert e164("070-123 45 67") == "+46701234567"
+    assert e164("12") is None and e164(None) is None

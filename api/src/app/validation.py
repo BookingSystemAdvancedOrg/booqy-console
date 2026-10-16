@@ -152,3 +152,42 @@ def hostname(value) -> str:
         raise ApiError(400, "validation_failed", "Invalid domain",
                        fields={"domain": "A hostname like www.restaurang.se (no https://, no wildcards)"})
     return host
+
+
+# --- the admin app's location contract ----------------------------------------
+# The application backend (get-location, create-location, availability, ...)
+# requires these on every location row and refuses rows without them. A new
+# location starts CLOSED every day: nothing can be booked until the restaurant
+# owner sets real opening hours in the admin app.
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+APP_LOCATION_DEFAULTS = {
+    "timezone": "Europe/Stockholm",
+    "businessHours": {day: [] for day in WEEKDAYS},
+    "bookingDurationHours": 2,
+    "gracePeriodHours": 0,
+}
+E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
+
+
+def e164(phone: str | None, default_country: str = "46") -> str | None:
+    """'070-123 45 67' -> '+46701234567'; None when it can't be made E.164
+    (the app only accepts E.164 in `phoneNumber`)."""
+    if not phone:
+        return None
+    digits = re.sub(r"[\s()-]", "", phone)
+    if digits.startswith("00"):
+        digits = "+" + digits[2:]
+    elif digits.startswith("0"):
+        digits = f"+{default_country}{digits[1:]}"
+    elif not digits.startswith("+"):
+        digits = f"+{default_country}{digits}"
+    return digits if E164_RE.match(digits) else None
+
+
+def app_location_fields(fields: dict) -> dict:
+    """What a NEW location row needs on top of the operator's fields."""
+    out = dict(APP_LOCATION_DEFAULTS)
+    number = e164(fields.get("phone"))
+    if number:
+        out["phoneNumber"] = number
+    return out

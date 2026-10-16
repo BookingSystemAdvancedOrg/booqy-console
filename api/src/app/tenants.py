@@ -173,7 +173,8 @@ def create_tenant(req) -> tuple[int, dict]:
         items.append({"Put": {"TableName": location_table(), "ConditionExpression": "attribute_not_exists(PK)",
                               "Item": to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"LOCATION#{location_id}",
                                               "tenantId": tenant_id, "locationId": location_id,
-                                              "createdAt": now, "createdBy": req.actor, **loc})}})
+                                              "createdAt": now, "createdBy": req.actor,
+                                              **v.app_location_fields(loc), **loc})}})
     items.append(audit_put(tenant_id, "tenant_created", req.actor,
                            {"planId": plan_id, "ownerEmail": owner_email, "locations": len(locations)}))
     try:

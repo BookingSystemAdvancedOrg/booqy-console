@@ -44,7 +44,8 @@ def create_location(req) -> tuple[int, dict]:
         raise ApiError(409, "invalid_status", f"The tenant is {profile['status']}", currentStatus=profile["status"])
     location_id, now = new_id(), now_iso()
     item = {"PK": f"TENANT#{tenant_id}", "SK": f"LOCATION#{location_id}", "tenantId": tenant_id,
-            "locationId": location_id, "createdAt": now, "createdBy": req.actor, **fields}
+            "locationId": location_id, "createdAt": now, "createdBy": req.actor,
+            **v.app_location_fields(fields), **fields}
     try:
         client("dynamodb").transact_write_items(TransactItems=[
             {"Update": {
@@ -92,6 +93,14 @@ def update_location(req) -> tuple[int, dict]:
         else:
             sets.append(f"#f{i} = :v{i}")
             values[f":v{i}"] = to_ddb_value(fields[key])
+    if "phone" in req.body:  # the app reads the E.164 copy
+        names["#pn"] = "phoneNumber"
+        number = v.e164(fields.get("phone"))
+        if number:
+            sets.append("#pn = :pn")
+            values[":pn"] = {"S": number}
+        else:
+            removes.append("#pn")
     if not sets and not removes:
         raise ApiError(400, "validation_failed", "Nothing to update")
     sets += ["updatedAt = :n", "updatedBy = :b"]
@@ -112,9 +121,11 @@ def update_location(req) -> tuple[int, dict]:
 def delete_location(req) -> tuple[int, dict]:
     """Removes the location row and frees a slot in the plan. The location's
     menu, reservations and orders stay in their tables (keyed by its id, which
-    is never reused) - nothing reaches them any more."""
+    is never reused) - nothing reaches them any more. Card readers registered
+for the location are removed from Stripe too (terminal.cleanup_location)."""
     tenant_id, location_id = req.path["tenantId"], req.path["locationId"]
     profile = get_profile(tenant_id)
+    existing = client("dynamodb").get_item(TableName=location_table(), Key=lkey(tenant_id, location_id)).get("Item")
     now = now_iso()
     items = [{"Delete": {"TableName": location_table(), "Key": lkey(tenant_id, location_id),
                          "ConditionExpression": "attribute_exists(PK)"}}]
@@ -136,4 +147,6 @@ def delete_location(req) -> tuple[int, dict]:
         if "ConditionalCheckFailed" in codes[1:]:
             raise ApiError(409, "count_changed", "The location count changed meanwhile - try again") from e
         raise
+    from .terminal import cleanup_location   # local import: terminal imports this module
+    cleanup_location(from_ddb(existing))
     return 200, {"deleted": location_id}

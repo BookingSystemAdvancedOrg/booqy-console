@@ -1,66 +1,47 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
-import type { User } from "oidc-client-ts";
-import { currentUser, signIn, signOut, takeReturnTo, userManager } from "./auth";
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
+import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import TenantsPage from "./pages/TenantsPage";
 import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
+import OperatorsPage from "./pages/OperatorsPage";
+import OutboxPage from "./pages/OutboxPage";
 import "./styles.css";
 
 const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
 
-let callbackOnce: Promise<string> | null = null;
-
-function Callback() {
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    // StrictMode runs effects twice in dev; the code can only be redeemed once.
-    callbackOnce ??= userManager.signinRedirectCallback().then(() => takeReturnTo());
-    callbackOnce
-      // Full page load: the shell then starts with the stored user.
-      .then((to) => window.location.replace(to))
-      .catch((e) => setError(String(e?.message ?? e)));
-  }, []);
-  return error ? (
-    <div className="center">
-      <p>Sign-in failed: {error}</p>
-      <button className="btn" onClick={() => signIn()}>Try again</button>
-    </div>
-  ) : (
-    <div className="center">Signing in…</div>
-  );
-}
-
 function Shell() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  useEffect(() => {
-    if (window.location.pathname === "/auth/callback") {
-      setUser(null);
-      return;
-    }
-    currentUser().then((u) => {
-      if (!u) void signIn();
-      setUser(u);
-    });
+  const location = useLocation();
+  const [user, setUser] = useState<Operator | null | undefined>(undefined);
+  const refresh = useCallback(() => {
+    currentOperator().then(setUser);
   }, []);
+  useEffect(() => {
+    refresh();
+    return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
+  }, [refresh]);
 
-  if (window.location.pathname === "/auth/callback") {
-    return <Routes><Route path="/auth/callback" element={<Callback />} /></Routes>;
-  }
-  if (!user) return <div className="center">Redirecting to sign-in…</div>;
+  // The emailed reset link works signed in or out (LoginPage signs out
+  // once the new password is set).
+  if (location.pathname === RESET_PATH) return <LoginPage onSignedIn={refresh} />;
+  if (user === undefined) return <div className="center muted">Loading…</div>;
+  if (!user) return <LoginPage onSignedIn={refresh} />;
 
   return (
     <div className="app">
       <header className="topbar">
-        <Link to="/" className="brand">SBS <span>Admin</span></Link>
+        <Link to="/" className="brand">Booqy <span>Console</span></Link>
         <span className={`env env--${ENV}`}>{ENV}</span>
         <nav className="topbar__nav">
           <NavLink to="/" end>Customers</NavLink>
           <NavLink to="/tenants/new">New customer</NavLink>
+          <NavLink to="/operators">Operators</NavLink>
+          {ENV !== "prod" && <NavLink to="/outbox">Mail outbox</NavLink>}
         </nav>
         <div className="topbar__user">
-          <span>{(user.profile.email as string) ?? "operator"}</span>
+          <span>{user.email || "operator"}</span>
           <button className="btn btn--ghost" onClick={() => signOut()}>Sign out</button>
         </div>
       </header>
@@ -69,6 +50,8 @@ function Shell() {
           <Route path="/" element={<TenantsPage />} />
           <Route path="/tenants/new" element={<NewTenantPage />} />
           <Route path="/tenants/:tenantId" element={<TenantPage />} />
+          <Route path="/operators" element={<OperatorsPage me={user.username} />} />
+          {ENV !== "prod" && <Route path="/outbox" element={<OutboxPage />} />}
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>
       </main>

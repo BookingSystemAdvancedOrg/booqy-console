@@ -5,6 +5,7 @@ import {
   Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
+import TerminalModal from "../components/TerminalModal";
 
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
@@ -176,6 +177,7 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
   const t = detail.tenant;
   const [edit, setEdit] = useState<Location | "new" | null>(null);
   const [del, setDel] = useState<Location | null>(null);
+  const [term, setTerm] = useState<Location | null>(null);
   const atLimit = t.locationCount >= t.entitlements.maxLocations;
   return (
     <Card title={`Locations — ${t.locationCount} of ${t.entitlements.maxLocations}`}
@@ -186,7 +188,7 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
         </Notice>
       )}
       <table className="table">
-        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th>Card terminals</th><th /></tr></thead>
         <tbody>
           {detail.locations.map((l) => (
             <tr key={l.locationId}>
@@ -194,17 +196,22 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
               <td>{l.address}</td>
               <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">—</span>}</td>
               <td className="small mono">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
+              <td className="small">
+                {l.terminal ? <span className="status status--active">Enabled</span> : <span className="muted">Off</span>}
+                <button className="btn btn--ghost btn--small" style={{ marginLeft: 6 }} onClick={() => setTerm(l)}>Manage</button>
+              </td>
               <td className="right">
                 <button className="btn btn--ghost btn--small" onClick={() => setEdit(l)}>Edit</button>
                 <button className="btn btn--ghost btn--small danger" onClick={() => setDel(l)}>Delete</button>
               </td>
             </tr>
           ))}
-          {detail.locations.length === 0 && <tr><td colSpan={5} className="empty">No locations yet.</td></tr>}
+          {detail.locations.length === 0 && <tr><td colSpan={6} className="empty">No locations yet.</td></tr>}
         </tbody>
       </table>
       {edit && <LocationModal tenant={t} location={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); onChanged(); }} />}
       {del && <DeleteLocationModal tenant={t} location={del} onClose={() => setDel(null)} onDone={() => { setDel(null); onChanged(); }} />}
+      {term && <TerminalModal tenant={t} location={term} goPlan={goPlan} onClose={() => { setTerm(null); onChanged(); }} />}
     </Card>
   );
 }

@@ -58,6 +58,10 @@ def aws():
         idp.create_group(UserPoolId=pool, GroupName="owner_user")
         idp.create_group(UserPoolId=pool, GroupName="staff_user")
         os.environ["TENANT_USER_POOL_ID"] = pool
+        ops_pool = idp.create_user_pool(PoolName="operators", UsernameAttributes=["email"])["UserPool"]["Id"]
+        idp.create_group(UserPoolId=ops_pool, GroupName="platform_admin")
+        os.environ["OPERATOR_USER_POOL_ID"] = ops_pool
+        os.environ["OPERATOR_GROUP_NAME"] = "platform_admin"
 
         sfn = boto3.client("stepfunctions", region_name=REGION)
         role = "arn:aws:iam::123456789012:role/sfn"
@@ -69,7 +73,7 @@ def aws():
         sm = boto3.client("secretsmanager", region_name=REGION)
         os.environ["STRIPE_SECRET_ARN"] = sm.create_secret(
             Name="dev-stripe/api-key", SecretString=json.dumps({"apiKey": "rk_test_x"}))["ARN"]
-        yield {"ddb": ddb, "idp": idp, "sfn": sfn, "pool": pool}
+        yield {"ddb": ddb, "idp": idp, "sfn": sfn, "pool": pool, "ops_pool": ops_pool}
         os.environ["PLATFORM_DOMAIN"] = ""
 
 
@@ -77,9 +81,9 @@ class Ctx:
     aws_request_id = "req-1"
 
 
-def call(route, path=None, body=None, groups="[platform_admin]", query=None):
+def call(route, path=None, body=None, groups="[platform_admin]", query=None, actor="op-1"):
     from app.handler import handler
-    claims = {"username": "op-1", "scope": "platform/admin"}
+    claims = {"username": actor}
     if groups is not None:
         claims["cognito:groups"] = groups
     event = {"routeKey": route, "pathParameters": path or {}, "queryStringParameters": query,

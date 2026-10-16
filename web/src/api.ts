@@ -1,6 +1,6 @@
-import { accessToken, signIn } from "./auth";
+import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  Location, LocationInput, NewTenantInput, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -25,7 +25,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401) {
-    await signIn();
+    // token rejected (revoked, account disabled/deleted) - back to the login page
+    await signOut().catch(() => undefined);
+    notifySignedOut();
     throw new ApiError(401, "unauthorized", "Signed out");
   }
   const text = await res.text();
@@ -66,6 +68,33 @@ export const api = {
       "POST", `${t(id)}/domains`, { domain, makePrimary }),
   removeDomain: (id: string, domain: string) =>
     request("DELETE", `${t(id)}/domains/${encodeURIComponent(domain)}`),
-  stripeLink: (id: string) => request<{ url: string; expiresAt?: number }>("POST", `${t(id)}/stripe/account-link`, {}),
+  stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
+
+  terminal: (id: string, locationId: string) =>
+    request<TerminalState>("GET", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`),
+  enableTerminal: (id: string, locationId: string, body: TerminalAddress & { displayName?: string }) =>
+    request<{ terminal: TerminalSetup }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
+  updateTerminal: (id: string, locationId: string, body: Partial<TerminalAddress> & { displayName?: string }) =>
+    request<{ terminal: TerminalSetup }>("PATCH", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
+  registerReader: (id: string, locationId: string, registrationCode: string, label: string) =>
+    request<{ reader: TerminalReader }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers`,
+                                        { registrationCode, label }),
+  removeReader: (id: string, locationId: string, readerId: string) =>
+    request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers/${encodeURIComponent(readerId)}`),
+
+  operators: () => request<{ operators: OperatorAccount[] }>("GET", "/platform/operators").then((r) => r.operators),
+  createOperator: (email: string, name: string) =>
+    request<{ operator: OperatorAccount }>("POST", "/platform/operators", { email, name }),
+  updateOperator: (username: string, patch: { name?: string; enabled?: boolean }) =>
+    request<{ operator: OperatorAccount }>("PATCH", `/platform/operators/${encodeURIComponent(username)}`, patch),
+  deleteOperator: (username: string) => request("DELETE", `/platform/operators/${encodeURIComponent(username)}`),
+  resendInvite: (username: string) =>
+    request("POST", `/platform/operators/${encodeURIComponent(username)}/resend-invite`, {}),
+
+  outbox: (after?: string) =>
+    request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
+      "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  outboxMessage: (messageId: string) =>
+    request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 };

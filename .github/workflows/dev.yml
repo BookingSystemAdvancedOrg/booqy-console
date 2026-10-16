@@ -1,0 +1,19 @@
+name: Dev CI/CD
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable_deploy.yml
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      environment: dev

@@ -1,4 +1,4 @@
-# sbs-admin
+# Booqy Console
 
 The operator console for the restaurant SaaS - only the platform's owners
 (you) can sign in. Create, edit and offboard customers (tenants), manage
@@ -41,6 +41,14 @@ the *operator* Cognito pool (MFA required) with the `platform/admin` scope;
 the Lambda additionally requires the `platform_admin` group. Operators are
 the `platform_operator_emails` in the infrastructure tfvars.
 
+**Forgot your password?** On the sign-in page. Cognito emails a link to
+`/reset-password#code=…&email=…` (the operator pool's custom message
+trigger in the infrastructure repo; the fragment never reaches a server and
+the page clears it): choose a new password, then sign in with it and your
+authenticator code. The link works once and for one hour. Until the pool
+sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
+6-digit code instead - "Got a code instead? Enter it" takes that.
+
 ## API
 
 | Route | What |
@@ -57,6 +65,7 @@ the `platform_operator_emails` in the infrastructure tfvars.
 | `GET/POST .../locations`, `PATCH/DELETE .../locations/{locationId}` | location CRUD; create is blocked at the plan limit (`409 plan_limit_reached`) |
 | `POST .../domains`, `DELETE .../domains/{domain}` | customer's own domain (starts the attach/detach workflows) |
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
+| `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in prod) |
 
 Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 
@@ -67,7 +76,7 @@ Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 cd api
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager
+python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager, S3
 
 # Web - against the dev API
 cd web
@@ -93,7 +102,7 @@ Each environment gets these **variables** (none are secrets). The
 infrastructure repo prints all of them for its account:
 
 ```bash
-tofu output -json sbs_admin_deploy      # run once with the dev state, once with prod
+tofu output -json booqy_console_deploy      # run once with the dev state, once with prod
 ```
 
 | Variable | What it is |

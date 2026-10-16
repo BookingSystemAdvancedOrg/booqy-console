@@ -1,62 +1,71 @@
-// Operator sign-in: Cognito hosted login (authorization code + PKCE, MFA
-// enforced by the pool). The API needs the ACCESS token - it carries the
-// platform/admin scope the API Gateway authorizer checks.
-import { User, UserManager, WebStorageStateStore } from "oidc-client-ts";
+// Operator sign-in, inside the app (pages/LoginPage.tsx). Amplify talks to the
+// OPERATOR user pool directly with SRP - the password never leaves the
+// browser in plain form - and handles the pool's challenges: first-login
+// password change, TOTP MFA setup and TOTP codes. Tokens live in
+// sessionStorage (gone when the tab closes); the refresh token lasts 8 h.
+//
+// The API takes the ACCESS token. Authorization = token from this pool for
+// this app client (API Gateway) + member of platform_admin (the Lambda).
+import { Amplify } from "aws-amplify";
+import { fetchAuthSession, signOut as amplifySignOut } from "aws-amplify/auth";
+import { cognitoUserPoolsTokenProvider } from "aws-amplify/auth/cognito";
+import { Hub, sessionStorage } from "aws-amplify/utils";
 
-const origin = window.location.origin;
+// VITE_COGNITO_AUTHORITY is https://cognito-idp.<region>.amazonaws.com/<poolId>
+const userPoolId = import.meta.env.VITE_COGNITO_AUTHORITY.replace(/\/$/, "").split("/").pop()!;
 
-export const userManager = new UserManager({
-  authority: import.meta.env.VITE_COGNITO_AUTHORITY,
-  client_id: import.meta.env.VITE_COGNITO_CLIENT_ID,
-  redirect_uri: `${origin}/auth/callback`,
-  post_logout_redirect_uri: `${origin}/`,
-  response_type: "code",
-  scope: "openid email profile platform/admin",
-  // sessionStorage: gone when the tab closes; refresh token lives 8 h.
-  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-  automaticSilentRenew: false,
+Amplify.configure({
+  Auth: { Cognito: { userPoolId, userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID } },
 });
+cognitoUserPoolsTokenProvider.setKeyValueStorage(sessionStorage);
 
-export async function currentUser(): Promise<User | null> {
-  const user = await userManager.getUser();
-  if (!user) return null;
-  if (!user.expired) return user;
-  if (user.refresh_token) {
-    try {
-      return await userManager.signinSilent();
-    } catch {
-      /* refresh token expired - sign in again */
-    }
+export interface Operator {
+  username: string;
+  email: string;
+}
+
+/** The signed-in operator, or null. Refreshes expired tokens on the way. */
+export async function currentOperator(): Promise<Operator | null> {
+  try {
+    const { tokens } = await fetchAuthSession();
+    if (!tokens?.accessToken || !tokens.idToken) return null;
+    return {
+      username: String(tokens.accessToken.payload.username ?? ""),
+      email: String(tokens.idToken.payload.email ?? ""),
+    };
+  } catch {
+    return null;
   }
-  await userManager.removeUser();
-  return null;
 }
 
 export async function accessToken(): Promise<string> {
-  const user = await currentUser();
-  if (!user) {
-    await signIn();
-    throw new Error("redirecting to sign-in");
+  const { tokens } = await fetchAuthSession();
+  if (!tokens?.accessToken) {
+    notifySignedOut();
+    throw new Error("Signed out");
   }
-  return user.access_token;
-}
-
-export function signIn(): Promise<void> {
-  sessionStorage.setItem("sbs.returnTo", window.location.pathname + window.location.search);
-  return userManager.signinRedirect();
+  return tokens.accessToken.toString();
 }
 
 export async function signOut(): Promise<void> {
-  await userManager.removeUser();
-  // Cognito has no OIDC end_session endpoint - use its own /logout.
-  const url = new URL("/logout", import.meta.env.VITE_COGNITO_DOMAIN);
-  url.searchParams.set("client_id", import.meta.env.VITE_COGNITO_CLIENT_ID);
-  url.searchParams.set("logout_uri", `${origin}/`);
-  window.location.assign(url.toString());
+  try {
+    // global: also revokes the refresh token server-side
+    await amplifySignOut({ global: true });
+  } catch {
+    await amplifySignOut();
+  }
 }
 
-export function takeReturnTo(): string {
-  const to = sessionStorage.getItem("sbs.returnTo") || "/";
-  sessionStorage.removeItem("sbs.returnTo");
-  return to.startsWith("/auth") ? "/" : to;
+/** Shell listens to this to show the login page. */
+export function notifySignedOut() {
+  Hub.dispatch("booqy", { event: "signedOut" });
+}
+
+export function onAuthChange(cb: () => void): () => void {
+  const a = Hub.listen("auth", cb);
+  const b = Hub.listen("booqy", cb);
+  return () => {
+    a();
+    b();
+  };
 }

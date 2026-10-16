@@ -34,3 +34,7 @@ coverage/
 # editors
 .idea/
 .vscode/
+
+# build leftovers
+*.tsbuildinfo
+vite.config.*.timestamp-*
