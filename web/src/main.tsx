@@ -8,6 +8,7 @@ import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
 import OperatorsPage from "./pages/OperatorsPage";
 import OutboxPage from "./pages/OutboxPage";
+import { Logo } from "./components/Logo";
 import "./styles.css";
 
 const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
@@ -32,7 +33,7 @@ function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        <Link to="/" className="brand">Booqy <span>Console</span></Link>
+        <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         <span className={`env env--${ENV}`}>{ENV}</span>
         <nav className="topbar__nav">
           <NavLink to="/" end>Customers</NavLink>

@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { Logo } from "../components/Logo";
 import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import {
@@ -151,7 +152,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <div className="auth">
       <aside className="auth__brand">
-        <div className="brand auth__logo">Booqy <span>Console</span></div>
+        <div className="brand auth__logo"><Logo className="brand__logo" /><span className="brand__app">Console</span></div>
         <div>
           <p className="auth__lead">The operator console for every restaurant on the platform.</p>
           <p className="auth__sub">Customers, plans, domains and payments - in one place.</p>
