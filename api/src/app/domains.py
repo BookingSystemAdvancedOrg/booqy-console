@@ -24,6 +24,43 @@ def _execution_name(prefix: str, host: str) -> str:
     return f"{prefix}-{hashlib.sha256(host.encode()).hexdigest()[:16]}-{new_id()[:10]}"
 
 
+def claim_host(tenant_id: str, host: str, actor: str) -> str:
+    """Claim the host for this tenant and create its row in ONE transaction
+    before starting domain-attach - two tenants (or a double submit) can't
+    both get past this. Same items the workflow's ReserveDomain writes; it
+    finds them already there (owned by this tenant) and carries on.
+    Re-adding after validation_timeout / failed resumes the same domain.
+
+    "created" = claimed now, "exists" = this tenant already has the row in a
+    non-retryable state. Another tenant's host raises domain_in_use."""
+    try:
+        client("dynamodb").transact_write_items(TransactItems=[
+            {"Put": {"TableName": tenant_table(),
+                     "Item": to_ddb({"PK": f"DOMAIN#{host}", "SK": "TENANT", "tenantId": tenant_id}),
+                     "ConditionExpression": "attribute_not_exists(PK) OR tenantId = :t",
+                     "ExpressionAttributeValues": {":t": {"S": tenant_id}}}},
+            {"Put": {"TableName": tenant_table(),
+                     "Item": to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"DOMAIN#{host}", "tenantId": tenant_id,
+                                     "domain": host, "kind": "custom", "status": "pending_dns",
+                                     "cnameTarget": env("TENANT_DOMAIN_CNAME_TARGET", ""),
+                                     "requestedBy": actor, "requestedAt": now_iso()}),
+                     "ConditionExpression": "attribute_not_exists(PK) OR #s IN (:r1, :r2)",
+                     "ExpressionAttributeNames": {"#s": "status"},
+                     "ExpressionAttributeValues": {":r1": {"S": RETRYABLE[0]}, ":r2": {"S": RETRYABLE[1]}}}},
+        ])
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "TransactionCanceledException":
+            raise
+        codes = cancellation_codes(e)
+        if codes[0] == "ConditionalCheckFailed":
+            raise ApiError(409, "domain_in_use", f"{host} belongs to another customer",
+                           fields={"domain": "Used by another customer"}) from e
+        if len(codes) > 1 and codes[1] == "ConditionalCheckFailed":
+            return "exists"
+        raise
+    return "created"
+
+
 def add_domain(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     platform_domain = env("PLATFORM_DOMAIN", "")
@@ -39,38 +76,10 @@ def add_domain(req) -> tuple[int, dict]:
     if profile.get("status") not in ("active", "provisioning", "suspended"):
         raise ApiError(409, "invalid_status", f"The tenant is {profile.get('status')}", currentStatus=profile.get("status"))
 
-    # Claim the host for this tenant and create its row in ONE transaction
-    # before starting the workflow - two tenants (or a double submit) can't
-    # both get past this. Same items the workflow's ReserveDomain writes; it
-    # finds them already there (owned by this tenant) and carries on.
-    # Re-adding after validation_timeout / failed resumes the same domain.
-    cname = env("TENANT_DOMAIN_CNAME_TARGET", "")
-    try:
-        client("dynamodb").transact_write_items(TransactItems=[
-            {"Put": {"TableName": tenant_table(),
-                     "Item": to_ddb({"PK": f"DOMAIN#{host}", "SK": "TENANT", "tenantId": tenant_id}),
-                     "ConditionExpression": "attribute_not_exists(PK) OR tenantId = :t",
-                     "ExpressionAttributeValues": {":t": {"S": tenant_id}}}},
-            {"Put": {"TableName": tenant_table(),
-                     "Item": to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"DOMAIN#{host}", "tenantId": tenant_id,
-                                     "domain": host, "kind": "custom", "status": "pending_dns",
-                                     "cnameTarget": cname, "requestedBy": req.actor, "requestedAt": now_iso()}),
-                     "ConditionExpression": "attribute_not_exists(PK) OR #s IN (:r1, :r2)",
-                     "ExpressionAttributeNames": {"#s": "status"},
-                     "ExpressionAttributeValues": {":r1": {"S": RETRYABLE[0]}, ":r2": {"S": RETRYABLE[1]}}}},
-        ])
-    except ClientError as e:
-        if e.response["Error"]["Code"] != "TransactionCanceledException":
-            raise
-        codes = cancellation_codes(e)
-        if codes[0] == "ConditionalCheckFailed":
-            raise ApiError(409, "domain_in_use", "This domain belongs to another customer",
-                           fields={"domain": "Used by another customer"}) from e
-        if len(codes) > 1 and codes[1] == "ConditionalCheckFailed":
-            row = _domain_row(tenant_id, host) or {}
-            raise ApiError(409, "domain_exists", f"Already added ({row.get('status', 'in progress')})",
-                           fields={"domain": "Already added"}) from e
-        raise
+    if claim_host(tenant_id, host, req.actor) == "exists":
+        row = _domain_row(tenant_id, host) or {}
+        raise ApiError(409, "domain_exists", f"Already added ({row.get('status', 'in progress')})",
+                       fields={"domain": "Already added"})
 
     client("stepfunctions").start_execution(
         stateMachineArn=env("DOMAIN_ATTACH_STATE_MACHINE_ARN"), name=_execution_name("attach", host),

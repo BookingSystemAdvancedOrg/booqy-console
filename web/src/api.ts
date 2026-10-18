@@ -1,5 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
+  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Zone,
   Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -68,6 +69,21 @@ export const api = {
       "POST", `${t(id)}/domains`, { domain, makePrimary }),
   removeDomain: (id: string, domain: string) =>
     request("DELETE", `${t(id)}/domains/${encodeURIComponent(domain)}`),
+  searchDomains: (q: string) =>
+    request<{ results: DomainOffer[]; suggestions: DomainOffer[] }>("GET", `/platform/domains/search?q=${encodeURIComponent(q)}`),
+  scanDns: (domain: string) =>
+    request<DnsScan>("GET", `/platform/domains/dns-scan?domain=${encodeURIComponent(domain)}`),
+  documentUpload: (id: string) =>
+    request<{ documentKey: string; upload: { url: string; fields: Record<string, string> }; maxBytes: number }>(
+      "POST", `${t(id)}/domains/documents`, {}),
+  registerDomain: (id: string, body: { domain: string; makePrimary: boolean; documentKey?: string;
+                                       contact: RegistrantContact; acceptedPrice: Money }) =>
+    request<{ zone: Zone; supportCase: SupportCase | null }>("POST", `${t(id)}/domains/registrations`, body),
+  connectDomain: (id: string, body: { domain: string; makePrimary: boolean; records: DnsRecord[] }) =>
+    request<{ zone: Zone; nameServers: string[]; imported: DnsRecord[]; skipped: { name: string; type: string; reason: string }[] }>(
+      "POST", `${t(id)}/domains/connections`, body),
+  domainDocument: (id: string, domain: string) =>
+    request<{ url: string }>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/document`),
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
 
@@ -98,3 +114,12 @@ export const api = {
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 };
+
+/** Browser -> S3 straight, with the presigned POST from documentUpload(). */
+export async function uploadToS3(upload: { url: string; fields: Record<string, string> }, file: File): Promise<void> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
+  form.append("file", file);                 // must be the last field
+  const res = await fetch(upload.url, { method: "POST", body: form });
+  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The upload was refused - is it a PDF under 10 MB?");
+}

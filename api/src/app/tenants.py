@@ -244,10 +244,12 @@ def get_tenant(req) -> tuple[int, dict]:
         except ClientError:
             onboarding = None
     primary = profile.get("primaryDomain")
+    from .zones import list_zones          # zones imports this module
     return 200, {
         "tenant": public(profile),
         "domains": [{**{k: val for k, val in d.items() if k not in HIDDEN}, "primary": d.get("domain") == primary}
                     for d in domains],
+        "zones": list_zones(tenant_id),
         "locations": [{k: val for k, val in loc.items() if k not in HIDDEN} for loc in locations],
         "userCount": users,
         "onboarding": onboarding,

@@ -6,6 +6,7 @@ import {
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
+import DomainWizard, { NameServerBox, SupportCaseBox, money } from "../components/DomainWizard";
 
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
@@ -20,7 +21,8 @@ export default function TenantPage() {
   const busy =
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
-      data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)));
+      data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
+      data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   useEffect(() => {
     if (!busy) return;
     const id = window.setInterval(() => void reload(), 5000);
@@ -465,24 +467,51 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
 }
 
 // ------------------------------------------------------------------- domains
+const ZONE_BUSY = ["creating_zone", "registered", "attaching"];
+
 function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () => void }) {
   const t = detail.tenant;
-  const [domain, setDomain] = useState("");
-  const [makePrimary, setPrimary] = useState(true);
-  const [dns, setDns] = useState<{ name: string; value: string } | null>(null);
-  const add = useAction();
+  const [wizard, setWizard] = useState(false);
   const remove = useAction();
   return (
-    <div className="cols">
-      <Card title="Website domains">
+    <div className="stack">
+      <Card title="Domains we run DNS for" actions={<button className="btn btn--primary" onClick={() => setWizard(true)}>Add domain</button>}>
         <table className="table">
-          <thead><tr><th>Domain</th><th>Type</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Domain</th><th>How</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {detail.zones.map((z) => (
+              <tr key={z.domain}>
+                <td className="strong mono">{z.domain}
+                  {z.statusDetail && <div className="small muted">{z.statusDetail}</div>}
+                  {z.lastError && <div className="small error-text">{z.lastError}</div>}</td>
+                <td className="small">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
+                  : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}</td>
+                <td><Status value={z.status} /></td>
+                <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}</td>
+              </tr>
+            ))}
+            {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet — <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
+          </tbody>
+        </table>
+        {detail.zones.filter((z) => z.supportCase).map((z) => (
+          <SupportCaseBox key={z.domain} domain={z.domain} tenantId={t.tenantId} supportCase={z.supportCase!} />
+        ))}
+        {detail.zones.filter((z) => z.status === "awaiting_nameservers" && z.nameServers).map((z) => (
+          <NameServerBox key={z.domain} domain={z.domain} nameServers={z.nameServers!} />
+        ))}
+        {detail.zones.some((z) => z.status === "live") && (
+          <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
+        )}
+      </Card>
+      <Card title="Website hostnames">
+        <table className="table">
+          <thead><tr><th>Hostname</th><th>Type</th><th>Status</th><th /></tr></thead>
           <tbody>
             {detail.domains.map((d) => (
               <tr key={d.domain}>
                 <td className="strong">{d.domain} {d.primary && <span className="tag">primary</span>}
                   {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
-                <td>{d.kind === "platform" ? "Platform" : "Customer's own"}</td>
+                <td>{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
                 <td><Status value={d.status} /></td>
                 <td className="right">{d.kind === "custom" && d.status !== "removing" && (
                   <button className="btn btn--ghost btn--small danger" disabled={remove.busy}
@@ -493,32 +522,12 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                 )}</td>
               </tr>
             ))}
-            {detail.domains.length === 0 && <tr><td colSpan={4} className="empty">No domains yet (the platform subdomain appears once a platform domain is configured).</td></tr>}
+            {detail.domains.length === 0 && <tr><td colSpan={4} className="empty">No hostnames yet — they appear here once a domain is attached.</td></tr>}
           </tbody>
         </table>
         <ErrorNotice error={remove.error} />
       </Card>
-      <Card title="Add the customer's own domain">
-        <form noValidate onSubmit={async (e) => {
-          e.preventDefault();
-          const r = await add.run(() => api.addDomain(t.tenantId, domain, makePrimary));
-          if (r) { setDns(r.dns[0]); setDomain(""); onChanged(); }
-        }}>
-          <ErrorNotice error={add.error} />
-          <Field label="Domain" error={add.fields.domain} hint="e.g. www.restaurang.se — the apex (restaurang.se) usually can't be a CNAME">
-            <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="www.restaurang.se" />
-          </Field>
-          <label className="check"><input type="checkbox" checked={makePrimary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>
-          <button className="btn btn--primary" disabled={!domain || add.busy}>Add domain</button>
-        </form>
-        {dns && (
-          <Notice kind="ok">
-            Send the restaurant this DNS record to add at their DNS host:
-            <pre className="code">{`${dns.name}  CNAME  ${dns.value}`}</pre>
-            The certificate is issued automatically once it's in place (status updates here).
-          </Notice>
-        )}
-      </Card>
+      {wizard && <DomainWizard tenant={t} onClose={() => setWizard(false)} onChanged={onChanged} />}
     </div>
   );
 }
