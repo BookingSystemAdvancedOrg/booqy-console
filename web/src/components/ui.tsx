@@ -41,6 +41,8 @@ const STATUS_TEXT: Record<string, string> = {
   attaching: "Issuing certificates",
   live: "Live",
   timed_out: "Timed out",
+  transferring: "Transferring",
+  transferred: "Transferred",
 };
 
 export function Status({ value }: { value: string }) {

@@ -37,6 +37,8 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/domains/registrations": zones.register,
     "POST /platform/tenants/{tenantId}/domains/connections": zones.connect,
     "GET /platform/tenants/{tenantId}/zones/{domain}/document": zones.document_download,
+    "GET /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer_check,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer,
     "POST /platform/tenants/{tenantId}/stripe/account-link": stripe_connect.account_link,
     "POST /platform/tenants/{tenantId}/stripe/sync": stripe_connect.sync_account,
     "GET /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.get_terminal,

@@ -6,7 +6,7 @@ import {
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
-import DomainWizard, { NameServerBox, SupportCaseBox, money } from "../components/DomainWizard";
+import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
@@ -472,6 +472,7 @@ const ZONE_BUSY = ["creating_zone", "registered", "attaching"];
 function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () => void }) {
   const t = detail.tenant;
   const [wizard, setWizard] = useState(false);
+  const [transfer, setTransfer] = useState<string | null>(null);
   const remove = useAction();
   return (
     <div className="stack">
@@ -485,16 +486,23 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                   {z.statusDetail && <div className="small muted">{z.statusDetail}</div>}
                   {z.lastError && <div className="small error-text">{z.lastError}</div>}</td>
                 <td className="small">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
-                  : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}</td>
+                  : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}
+                  <div className="muted">Registrar: {z.registrar === "route53" ? "Route 53 (ours)" : "their own"}</div>
+                  {z.transfer && z.transfer.status !== "transferred" && (
+                    <div>Transfer: <Status value={z.transfer.status} />
+                      {z.transfer.statusDetail && <div className="muted">{z.transfer.statusDetail}</div>}
+                      {z.transfer.error && <div className="error-text">{z.transfer.error}</div>}</div>
+                  )}</td>
                 <td><Status value={z.status} /></td>
-                <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}</td>
+                <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}
+                  {z.transferable && <div><button className="btn btn--small" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
             {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet — <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
           </tbody>
         </table>
-        {detail.zones.filter((z) => z.supportCase).map((z) => (
-          <SupportCaseBox key={z.domain} domain={z.domain} tenantId={t.tenantId} supportCase={z.supportCase!} />
+        {detail.zones.filter((z) => z.supportCase ?? z.transfer?.supportCase).map((z) => (
+          <SupportCaseBox key={z.domain} domain={z.domain} tenantId={t.tenantId} supportCase={(z.supportCase ?? z.transfer?.supportCase)!} />
         ))}
         {detail.zones.filter((z) => z.status === "awaiting_nameservers" && z.nameServers).map((z) => (
           <NameServerBox key={z.domain} domain={z.domain} nameServers={z.nameServers!} />
@@ -528,6 +536,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
         <ErrorNotice error={remove.error} />
       </Card>
       {wizard && <DomainWizard tenant={t} onClose={() => setWizard(false)} onChanged={onChanged} />}
+      {transfer && <TransferModal tenant={t} domain={transfer} onClose={() => setTransfer(null)} onDone={onChanged} />}
     </div>
   );
 }

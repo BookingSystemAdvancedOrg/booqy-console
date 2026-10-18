@@ -1,6 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Zone,
+  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
   Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -82,6 +82,11 @@ export const api = {
   connectDomain: (id: string, body: { domain: string; makePrimary: boolean; records: DnsRecord[] }) =>
     request<{ zone: Zone; nameServers: string[]; imported: DnsRecord[]; skipped: { name: string; type: string; reason: string }[] }>(
       "POST", `${t(id)}/domains/connections`, body),
+  transferCheck: (id: string, domain: string) =>
+    request<TransferCheck>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/transfer`),
+  transferDomain: (id: string, domain: string, body: { authCode: string; contact: RegistrantContact;
+                                                       acceptedPrice: Money; documentKey?: string }) =>
+    request<{ zone: Zone; supportCase: SupportCase | null }>("POST", `${t(id)}/zones/${encodeURIComponent(domain)}/transfer`, body),
   domainDocument: (id: string, domain: string) =>
     request<{ url: string }>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/document`),
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),

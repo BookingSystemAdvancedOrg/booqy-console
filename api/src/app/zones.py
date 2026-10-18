@@ -218,6 +218,18 @@ def public_zone(row: dict) -> dict:
     out["hasDocument"] = bool(row.get("documentKey"))
     if row.get("status") == "awaiting_verification" and row.get("verificationRequired"):
         out["supportCase"] = support_case_text(row["domain"], row.get("registrant", ""), row.get("orgNumber", ""))
+    transfer = {k: row.get(f"transfer{k[0].upper()}{k[1:]}") for k in (
+        "status", "statusDetail", "price", "error", "requestedAt", "requestedBy", "completedAt")}
+    transfer = {k: val for k, val in transfer.items() if val is not None}
+    if transfer:
+        if transfer.get("status") == "awaiting_verification":
+            transfer["supportCase"] = support_case_text(row["domain"], row.get("registrant", ""),
+                                                        row.get("orgNumber", ""), "transfer")
+        out["transfer"] = transfer
+    out["registrar"] = "route53" if row.get("mode") == "register" or row.get("transferStatus") == "transferred" else "external"
+    out["transferable"] = (row.get("mode") == "connect" and row.get("status") == "live"
+                           and _tld(row["domain"]) in TLDS
+                           and row.get("transferStatus") not in ("transferring", "awaiting_verification", "transferred"))
     return out
 
 
@@ -383,6 +395,50 @@ def _contact(f: v.Fields, profile: dict) -> dict:
     }
 
 
+def _document_key(f: v.Fields, tenant_id: str, tld: str) -> str | None:
+    """.se: the registreringsbevis is required (the registry verifies the
+    owner). The key must be one this tenant was issued."""
+    if tld not in VERIFY_TLDS:
+        return None
+    key = f.text("documentKey", required=True, max_len=200)
+    if key and not key.startswith(DOC_PREFIX.format(tenant=tenant_id)):
+        f.fail("documentKey", "Upload the registreringsbevis again")
+        return None
+    return key
+
+
+def _check_document(key: str | None) -> None:
+    if not key:
+        return
+    try:
+        head = _s3().head_object(Bucket=_doc_bucket(), Key=key)
+    except ClientError as e:
+        raise ApiError(400, "validation_failed", "The registreringsbevis wasn't uploaded",
+                       fields={"documentKey": "Upload the registreringsbevis (PDF) first"}) from e
+    if head.get("ContentLength", 0) > DOC_MAX_BYTES:
+        raise ApiError(400, "validation_failed", "File too large", fields={"documentKey": "At most 10 MB"})
+
+
+def _accepted_price(f: v.Fields) -> dict:
+    accepted = f.data.get("acceptedPrice") or {}
+    if not isinstance(accepted, dict) or "amount" not in accepted:
+        f.fail("acceptedPrice", "Confirm the price")
+        return {}
+    return accepted
+
+
+def _check_price(accepted: dict, current: dict, renewal: dict | None) -> None:
+    """The operator confirmed a price in the Console; never charge another."""
+    try:
+        same = (Decimal(str(accepted["amount"])) == current["amount"]
+                and str(accepted.get("currency", current["currency"])) == current["currency"])
+    except Exception:  # noqa: BLE001 - a malformed amount is just "not the same price"
+        same = False
+    if not same:
+        raise ApiError(409, "price_changed", "The price has changed - check it and confirm again",
+                       price=current, renewalPrice=renewal)
+
+
 def register(req) -> tuple[int, dict]:
     """POST /platform/tenants/{tenantId}/domains/registrations
     {domain, makePrimary, documentKey (.se), contact{...}, acceptedPrice{amount, currency}}"""
@@ -397,25 +453,10 @@ def register(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     make_primary = f.boolean("makePrimary")
     contact = _contact(f, profile)
-    document_key = None
-    if tld in VERIFY_TLDS:
-        document_key = f.text("documentKey", required=True, max_len=200)
-        if document_key and not document_key.startswith(DOC_PREFIX.format(tenant=tenant_id)):
-            f.fail("documentKey", "Upload the registreringsbevis again")
-            document_key = None
-    accepted = req.body.get("acceptedPrice") or {}
-    if not isinstance(accepted, dict) or "amount" not in accepted:
-        f.fail("acceptedPrice", "Confirm the price")
+    document_key = _document_key(f, tenant_id, tld)
+    accepted = _accepted_price(f)
     f.done()
-
-    if document_key:
-        try:
-            head = _s3().head_object(Bucket=_doc_bucket(), Key=document_key)
-        except ClientError as e:
-            raise ApiError(400, "validation_failed", "The registreringsbevis wasn't uploaded",
-                           fields={"documentKey": "Upload the registreringsbevis (PDF) first"}) from e
-        if head.get("ContentLength", 0) > DOC_MAX_BYTES:
-            raise ApiError(400, "validation_failed", "File too large", fields={"documentKey": "At most 10 MB"})
+    _check_document(document_key)
 
     availability = _availability(domain)
     if availability != "AVAILABLE":
@@ -425,14 +466,7 @@ def register(req) -> tuple[int, dict]:
     if not price or not price.get("registration"):
         raise ApiError(502, "price_unavailable", "Couldn't get the current price - try again")
     current = price["registration"]
-    try:
-        same = (Decimal(str(accepted["amount"])) == current["amount"]
-                and str(accepted.get("currency", current["currency"])) == current["currency"])
-    except Exception:  # noqa: BLE001 - a malformed amount is just "not the same price"
-        same = False
-    if not same:
-        raise ApiError(409, "price_changed", "The price has changed - check it and confirm again",
-                       price=current, renewalPrice=price.get("renewal"))
+    _check_price(accepted, current, price.get("renewal"))
 
     org_number = contact.pop("_orgNumber")
     _claim_zone(tenant_id, domain, {
@@ -467,15 +501,164 @@ def register(req) -> tuple[int, dict]:
                  if tld in VERIFY_TLDS else None}
 
 
-def support_case_text(domain: str, company: str, org_number: str) -> dict:
+def support_case_text(domain: str, company: str, org_number: str, action: str = "registration") -> dict:
     return {
-        "service": "Route 53 Domains", "category": "Domain registration",
-        "subject": f".se registration - identity verification for {domain}",
+        "service": "Route 53 Domains", "category": "Domain registration" if action == "registration" else "Domain transfer",
+        "subject": f".se {action} - identity verification for {domain}",
         "body": (f"Hello,\n\nPlease find attached the registration certificate (registreringsbevis) for the "
                  f"registrant of {domain}, as required by the .se registry (NIS2 verification).\n\n"
                  f"Domain: {domain}\nRegistrant: {company}\nOrganisation number: {org_number}\n\n"
                  f"The address on the certificate is the registrant's current address.\n\nThank you."),
     }
+
+
+# ---------------------------------------------------------------- transfer
+TRANSFER_BUSY = ("transferring", "awaiting_verification")
+TRANSFERABILITY_TEXT = {
+    "TRANSFERABLE": None,
+    "UNTRANSFERABLE": "The current registrar says it can't be transferred yet - usually it's locked, or was "
+                      "registered or transferred less than 60 days ago",
+    "DONT_KNOW": "The registry didn't answer - try again in a while",
+    "DOMAIN_IN_OWN_ACCOUNT": "It's already registered in our Route 53 account",
+    "DOMAIN_IN_ANOTHER_ACCOUNT": "It's registered in another AWS account - transfer it between accounts instead",
+    "PREMIUM_DOMAIN": "Premium domains can't be transferred here",
+}
+
+
+def _connected_zone(tenant_id: str, domain: str) -> dict:
+    row = _zone_row(tenant_id, domain)
+    if not row:
+        raise not_found("Connect the domain first - its DNS has to be in Route 53 before the registration moves")
+    if row.get("mode") != "connect":
+        raise ApiError(409, "already_route53", "This domain was bought here - it's already registered in Route 53")
+    if row.get("status") != "live":
+        raise ApiError(409, "not_live", f"Finish connecting it first (status {row.get('status')}) - "
+                                        "the site must be live on our DNS before the registration moves")
+    if row.get("transferStatus") in TRANSFER_BUSY + ("transferred",):
+        raise ApiError(409, "transfer_exists", f"Transfer already {row['transferStatus'].replace('_', ' ')}")
+    return row
+
+
+def _transferability(domain: str, auth_code: str | None = None) -> tuple[str, str | None]:
+    kwargs = {"DomainName": domain}
+    if auth_code:
+        kwargs["AuthCode"] = auth_code
+    try:
+        out = _domains().check_domain_transferability(**kwargs)
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        if code in ("UnsupportedTLD", "InvalidInput"):
+            return "UNSUPPORTED", e.response["Error"].get("Message")
+        raise
+    return (out.get("Transferability") or {}).get("Transferable", "DONT_KNOW"), out.get("Message")
+
+
+def transfer_check(req) -> tuple[int, dict]:
+    """GET /platform/tenants/{tenantId}/zones/{domain}/transfer - can the
+    registration of a connected domain move to Route 53, and what it costs
+    (the transfer includes one more year)."""
+    tenant_id = req.path["tenantId"]
+    domain = _apex(req.path.get("domain"))
+    _connected_zone(tenant_id, domain)
+    tld = _tld(domain)
+    if tld not in TLDS:
+        return 200, {"domain": domain, "transferable": False,
+                     "reason": f".{tld} can't be registered through Route 53 - it stays at its registrar (DNS is ours already)"}
+    status, message = _transferability(domain)
+    price = _price(tld) or {}
+    return 200, {"domain": domain, "transferable": status == "TRANSFERABLE", "transferability": status,
+                 "reason": TRANSFERABILITY_TEXT.get(status, message), "price": price.get("transfer"),
+                 "renewalPrice": price.get("renewal"), "verificationRequired": tld in VERIFY_TLDS}
+
+
+def transfer(req) -> tuple[int, dict]:
+    """POST /platform/tenants/{tenantId}/zones/{domain}/transfer
+    {authCode, contact{...}, documentKey (.se), acceptedPrice}
+
+    Moves the registration from the current registrar (one.com, ...) into
+    Route 53, keeping our name servers - the site and email never notice."""
+    tenant_id = req.path["tenantId"]
+    domain = _apex(req.path.get("domain"))
+    profile = _active_tenant(tenant_id)
+    row = _connected_zone(tenant_id, domain)
+    tld = _tld(domain)
+    if tld not in TLDS:
+        raise ApiError(400, "validation_failed", f".{tld} can't be registered through Route 53")
+    f = v.Fields(req.body)
+    auth_code = f.text("authCode", required=True, max_len=1024)
+    contact = _contact(f, profile)
+    document_key = _document_key(f, tenant_id, tld)
+    accepted = _accepted_price(f)
+    f.done()
+    _check_document(document_key)
+
+    status, message = _transferability(domain, auth_code)
+    if status != "TRANSFERABLE":
+        raise ApiError(409, "not_transferable", TRANSFERABILITY_TEXT.get(status) or message or status,
+                       transferability=status)
+    price = _price(tld) or {}
+    if not price.get("transfer"):
+        raise ApiError(502, "price_unavailable", "Couldn't get the current price - try again")
+    _check_price(accepted, price["transfer"], price.get("renewal"))
+
+    org_number = contact.pop("_orgNumber")
+    privacy = tld in PRIVACY_TLDS
+    name_servers = row.get("nameServers") or []
+    try:
+        op = _domains().transfer_domain(
+            DomainName=domain, DurationInYears=1, AutoRenew=True, AuthCode=auth_code,
+            Nameservers=[{"Name": n} for n in name_servers],
+            AdminContact=contact, RegistrantContact=contact, TechContact=contact,
+            PrivacyProtectAdminContact=privacy, PrivacyProtectRegistrantContact=privacy,
+            PrivacyProtectTechContact=privacy)
+    except ClientError as e:
+        message = e.response["Error"].get("Message") or str(e)
+        _update_zone(tenant_id, domain, transferStatus="failed",
+                     transferError=f"Route 53 refused the transfer: {message}"[:1000])
+        write_audit(tenant_id, "domain_transfer_refused", req.actor, {"domain": domain, "error": message[:300]})
+        raise ApiError(502, "transfer_refused", f"Route 53 refused the transfer: {message}") from e
+
+    _update_zone(tenant_id, domain, transferOperationId=op["OperationId"],
+                 transferStatus="awaiting_verification" if tld in VERIFY_TLDS else "transferring",
+                 transferPrice=price["transfer"], transferRequestedAt=now_iso(), transferRequestedBy=req.actor,
+                 transferError=None, transferStatusDetail=None, documentKey=document_key,
+                 verificationRequired=tld in VERIFY_TLDS, registrant=contact["OrganizationName"], orgNumber=org_number)
+    _start_provision(tenant_id, domain, "transfer", False, req.actor)
+    write_audit(tenant_id, "domain_transfer_started", req.actor,
+                {"domain": domain, "price": f"{price['transfer']['amount']} {price['transfer']['currency']}"})
+    return 202, {"zone": public_zone(_zone_row(tenant_id, domain) or {}),
+                 "supportCase": support_case_text(domain, contact["OrganizationName"], org_number, "transfer")
+                 if tld in VERIFY_TLDS else None}
+
+
+def _task_transfer_status(tenant_id: str, domain: str) -> dict:
+    row = _zone_row(tenant_id, domain) or {}
+    if not row.get("transferOperationId"):
+        _update_zone(tenant_id, domain, transferStatus="failed", transferError="No transfer operation recorded")
+        return {"status": "failed"}
+    op = _domains().get_operation_detail(OperationId=row["transferOperationId"])
+    status, flag, message = op.get("Status"), op.get("StatusFlag"), op.get("Message")
+    if status == "SUCCESSFUL":
+        _update_zone(tenant_id, domain, transferStatus="transferred", transferStatusDetail=None,
+                     transferCompletedAt=now_iso(), transferError=None)
+        _delete_document(tenant_id, domain, row)
+        return {"status": "done"}
+    if status in ("ERROR", "FAILED"):
+        _update_zone(tenant_id, domain, transferStatus="failed",
+                     transferError=f"Transfer {status.lower()}: {message or 'no details from Route 53'}"[:1000])
+        return {"status": "failed"}
+    detail = {"PENDING_SUPPORT_CASE": "Waiting for the registry's identity check (AWS Support case)",
+              "PENDING_AUTHORIZATION": "Waiting for the current registrar to release it (approve the "
+                                       "transfer email at one.com to speed it up)",
+              "PENDING_ACCEPTANCE": "Waiting for the registrant to accept (email)",
+              "PENDING_CUSTOMER_ACTION": "Route 53 is waiting for an action - check the registrant's email",
+              "PENDING_PAYMENT_VERIFICATION": "Waiting for AWS payment verification"}.get(flag)
+    waiting = "awaiting_verification" if flag == "PENDING_SUPPORT_CASE" or (
+        row.get("verificationRequired") and row.get("transferStatus") == "awaiting_verification"
+        and flag is None) else "transferring"
+    _update_zone(tenant_id, domain, transferStatus=waiting, transferStatusDetail=detail or message,
+                 lastCheckedAt=now_iso())
+    return {"status": "pending"}
 
 
 # ------------------------------------------------------------- DNS records
@@ -800,6 +983,17 @@ def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> d
     return {"status": status}
 
 
+def _task_mark_transfer(tenant_id: str, domain: str, status: str, error: str | None) -> dict:
+    """A transfer that fails or times out leaves the domain where it was (at
+    its registrar, still on our DNS) - only the transfer fields change; the
+    site stays live."""
+    if status not in ("failed", "timed_out"):
+        raise ValueError(f"bad transfer status {status}")
+    _update_zone(tenant_id, domain, transferStatus=status, transferStatusDetail=None,
+                 transferError=(error or "")[:1000] or None)
+    return {"status": status}
+
+
 def _release_claim_if_unused(tenant_id: str, domain: str) -> None:
     """A registration that never happened shouldn't keep the domain reserved.
     A connected zone (or attached domain) keeps its claim - a retry resumes."""
@@ -823,6 +1017,10 @@ def workflow_task(event: dict) -> dict:
         return _task_nameserver_status(tenant_id, domain)
     if task == "prepare_dns":
         return _task_prepare_dns(tenant_id, domain, event.get("requestedBy") or "workflow")
+    if task == "transfer_status":
+        return _task_transfer_status(tenant_id, domain)
     if task == "mark":
+        if event.get("mode") == "transfer":
+            return _task_mark_transfer(tenant_id, domain, event.get("status", ""), event.get("error"))
         return _task_mark(tenant_id, domain, event.get("status", ""), event.get("error"))
     raise ValueError(f"unknown workflow task {task!r}")

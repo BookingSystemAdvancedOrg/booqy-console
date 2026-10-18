@@ -70,6 +70,7 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `GET /platform/domains/dns-scan?domain=` | the records a domain uses today (public DNS), for review before connecting |
 | `POST .../domains/connections` | connect a domain the restaurant has: Route 53 zone with the reviewed records, then they switch name servers - starts domain-provision |
 | `GET .../zones/{domain}/document` | 5-minute download link to the registreringsbevis (for the AWS Support case) |
+| `GET/POST .../zones/{domain}/transfer` | move a connected, live domain's registration into Route 53: check (transferability + price) / start `{authCode, contact, documentKey (.se), acceptedPrice}` - name servers kept |
 
 The domain-provision workflow also invokes this Lambda directly
 (`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -

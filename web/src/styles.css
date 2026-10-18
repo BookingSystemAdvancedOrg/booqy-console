@@ -223,3 +223,5 @@ textarea.input { resize: vertical; }
 .status--live, .status--registered { background: #e2f0e6; color: var(--ok); }
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching { background: #fbf0d9; color: var(--warn); }
 .status--timed_out { background: #f8e1dd; color: var(--danger); }
+.status--transferred { background: #e2f0e6; color: var(--ok); }
+.status--transferring { background: #fbf0d9; color: var(--warn); }

@@ -149,6 +149,27 @@ export interface Zone {
   verificationRequired?: boolean;
   hasDocument: boolean;
   supportCase?: SupportCase;
+  registrar?: "route53" | "external";
+  transferable?: boolean;
+  transfer?: {
+    status: string;
+    statusDetail?: string;
+    price?: Money;
+    error?: string;
+    requestedAt?: string;
+    completedAt?: string;
+    supportCase?: SupportCase;
+  };
+}
+
+export interface TransferCheck {
+  domain: string;
+  transferable: boolean;
+  transferability?: string;
+  reason?: string | null;
+  price?: Money | null;
+  renewalPrice?: Money | null;
+  verificationRequired?: boolean;
 }
 
 export interface DomainOffer {

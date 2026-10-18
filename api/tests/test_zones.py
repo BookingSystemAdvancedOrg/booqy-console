@@ -24,6 +24,8 @@ class FakeDomains:
         self.registered = []
         self.op = {"Status": "IN_PROGRESS", "StatusFlag": "PENDING_SUPPORT_CASE"}
         self.refuse = None
+        self.transferable = "TRANSFERABLE"
+        self.transfers = []
 
     def check_domain_availability(self, DomainName):
         return {"Availability": self.available.get(DomainName, "AVAILABLE")}
@@ -42,6 +44,13 @@ class FakeDomains:
             raise ClientError({"Error": {"Code": "InvalidInput", "Message": self.refuse}}, "RegisterDomain")
         self.registered.append(kw)
         return {"OperationId": "op-1"}
+
+    def check_domain_transferability(self, DomainName, AuthCode=None):
+        return {"Transferability": {"Transferable": self.transferable}}
+
+    def transfer_domain(self, **kw):
+        self.transfers.append(kw)
+        return {"OperationId": "op-transfer"}
 
     def get_operation_detail(self, OperationId):
         return {"OperationId": OperationId, **self.op}
@@ -319,3 +328,88 @@ def test_registration_failure_releases_claim(domains, aws, tenant):
     assert handler({**task, "workflowTask": "mark", "status": "failed", "error": "x"}, None) == {"status": "failed"}
     assert "Item" not in aws["ddb"].get_item(TableName="dev-tenant",
                                              Key={"PK": {"S": "DOMAIN#roma.com"}, "SK": {"S": "TENANT"}})
+
+
+def _live_connected(aws, tenant, domain="roma.se"):
+    status, body = call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant},
+                        {"domain": domain, "records": []})
+    assert status == 202, body
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": f"ZONE#{domain}"}},
+                           UpdateExpression="SET #s = :l", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":l": {"S": "live"}})
+    return _zone(aws, tenant, domain)
+
+
+def test_transfer_check_and_start(domains, aws, tenant):
+    from app.handler import handler
+    p = {"tenantId": tenant, "domain": "roma.se"}
+    # not connected yet
+    assert call("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", p)[0] == 404
+    zone = _live_connected(aws, tenant)
+    _, detail = call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})
+    assert detail["zones"][0]["transferable"] and detail["zones"][0]["registrar"] == "external"
+
+    status, body = call("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", p)
+    assert status == 200 and body["transferable"] and body["price"] == PRICE and body["verificationRequired"]
+    domains.transferable = "UNTRANSFERABLE"
+    body = call("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", p)[1]
+    assert not body["transferable"] and "60 days" in body["reason"]
+    domains.transferable = "TRANSFERABLE"
+
+    base = {"authCode": "Xy12-ab", "contact": CONTACT, "acceptedPrice": PRICE}
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p, base)
+    assert status == 400 and "documentKey" in body["fields"]                  # .se: registreringsbevis required
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p,
+                {**base, "authCode": ""})[1]["fields"].get("authCode")
+    key = _upload(domains, tenant)
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p, {**base, "documentKey": key})
+    assert status == 202, body
+    assert body["zone"]["transfer"]["status"] == "awaiting_verification" and "transfer" in body["supportCase"]["subject"]
+    assert body["zone"]["status"] == "live"                                   # the site isn't touched
+    tr = domains.transfers[0]
+    assert tr["AuthCode"] == "Xy12-ab" and tr["Nameservers"] == [{"Name": n} for n in zone["nameServers"]]
+    assert tr["RegistrantContact"]["ExtraParams"] == [{"Name": "SE_ID_NUMBER", "Value": "556677-8899"}]
+    assert "transfer" in [e["mode"] for e in _executions(aws)]
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p,
+                {**base, "documentKey": key})[1]["error"] == "transfer_exists"
+
+    task = {"workflowTask": "transfer_status", "tenantId": tenant, "domain": "roma.se"}
+    domains.op = {"Status": "IN_PROGRESS", "StatusFlag": "PENDING_AUTHORIZATION"}
+    assert handler(task, None) == {"status": "pending"}
+    z = _zone(aws, tenant, "roma.se")
+    assert z["transferStatus"] == "transferring" and "one.com" in z["transferStatusDetail"]
+    domains.op = {"Status": "SUCCESSFUL"}
+    assert handler(task, None) == {"status": "done"}
+    z = _zone(aws, tenant, "roma.se")
+    assert z["transferStatus"] == "transferred" and z["status"] == "live" and "documentKey" not in z
+    _, detail = call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})
+    zd = detail["zones"][0]
+    assert zd["registrar"] == "route53" and not zd["transferable"] and zd["transfer"]["status"] == "transferred"
+
+
+def test_transfer_refused_and_failed_keep_site_live(domains, aws, tenant):
+    from app.handler import handler
+    domains.available["roma.com"] = "AVAILABLE"
+    _live_connected(aws, tenant, "roma.com")
+    p = {"tenantId": tenant, "domain": "roma.com"}
+    base = {"authCode": "code", "contact": CONTACT, "acceptedPrice": PRICE}
+    domains.transferable = "DOMAIN_IN_ANOTHER_ACCOUNT"
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p, base)[1]["error"] == "not_transferable"
+    domains.transferable = "TRANSFERABLE"
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p,
+                {**base, "acceptedPrice": {"amount": 1, "currency": "USD"}})[1]["error"] == "price_changed"
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p, base)[0] == 202   # .com: no document
+    domains.op = {"Status": "FAILED", "Message": "Auth code invalid"}
+    task = {"workflowTask": "transfer_status", "tenantId": tenant, "domain": "roma.com"}
+    assert handler(task, None) == {"status": "failed"}
+    assert handler({**task, "workflowTask": "mark", "mode": "transfer", "status": "failed", "error": "x"}, None) == {"status": "failed"}
+    z = _zone(aws, tenant, "roma.com")
+    assert z["status"] == "live" and z["transferStatus"] == "failed"
+    # can be started again
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", p, base)[0] == 202
+
+
+def test_transfer_needs_live_connected_zone(domains, aws, tenant):
+    p = {"tenantId": tenant, "domain": "roma.se"}
+    call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant}, {"domain": "roma.se", "records": []})
+    assert call("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", p)[1]["error"] == "not_live"

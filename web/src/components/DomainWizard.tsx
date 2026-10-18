@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError, uploadToS3 } from "../api";
-import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant } from "../types";
+import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant, TransferCheck } from "../types";
 import { ErrorNotice, Field, Modal, Notice, useAction } from "./ui";
 
 type Path = "choose" | "buy" | "connect" | "cname";
@@ -107,32 +107,13 @@ function Order({ tenant, offer, onBack, onDone }: {
   tenant: Tenant; offer: DomainOffer; onBack: () => void; onDone: () => void;
 }) {
   const [c, setC] = useState<RegistrantContact>(() => contactFrom(tenant));
-  const [file, setFile] = useState<File | null>(null);
   const [documentKey, setDocumentKey] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
   const [primary, setPrimary] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<SupportCase | null | undefined>(undefined);
-  const upload = useAction();
   const buy = useAction();
   const se = offer.verificationRequired;
-  const err = (k: string) => buy.fields[`contact.${k}`];
-  const set = (k: keyof RegistrantContact) => (e: React.ChangeEvent<HTMLInputElement>) => setC({ ...c, [k]: e.target.value });
-  const setAddr = (k: keyof RegistrantContact["address"]) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setC({ ...c, address: { ...c.address, [k]: e.target.value } });
-
-  async function onFile(f: File | null) {
-    setFile(f);
-    setDocumentKey("");
-    if (!f) return;
-    const key = await upload.run(async () => {
-      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF");
-      const up = await api.documentUpload(tenant.tenantId);
-      if (f.size > up.maxBytes) throw new Error("At most 10 MB");
-      await uploadToS3(up.upload, f);
-      return up.documentKey;
-    });
-    if (key) setDocumentKey(key);
-  }
 
   async function onBuy(e: FormEvent) {
     e.preventDefault();
@@ -163,37 +144,15 @@ function Order({ tenant, offer, onBack, onDone }: {
         <Notice kind="warn">Search again to see the new price.</Notice>
       )}
 
-      <h5>Registrant — the restaurant's AB (owns the domain)</h5>
-      <div className="grid">
-        <Field label="Company (legal name)" required error={err("legalName")}><input className="input" value={c.legalName} onChange={set("legalName")} /></Field>
-        <Field label="Org. number" required error={err("orgNumber")} hint="NNNNNN-NNNN"><input className="input mono" value={c.orgNumber} onChange={set("orgNumber")} /></Field>
-        <Field label="Contact first name" required error={err("firstName")}><input className="input" value={c.firstName} onChange={set("firstName")} /></Field>
-        <Field label="Contact last name" required error={err("lastName")}><input className="input" value={c.lastName} onChange={set("lastName")} /></Field>
-        <Field label="Email" required error={err("email")} hint="Registry notices go here"><input className="input" value={c.email} onChange={set("email")} /></Field>
-        <Field label="Phone" required error={err("phone")}><input className="input" value={c.phone} onChange={set("phone")} /></Field>
-        <Field label="Street" required error={err("address.street")}><input className="input" value={c.address.street} onChange={setAddr("street")} /></Field>
-        <Field label="Postal code" required error={err("address.postalCode")}><input className="input" value={c.address.postalCode} onChange={setAddr("postalCode")} /></Field>
-        <Field label="City" required error={err("address.city")}><input className="input" value={c.address.city} onChange={setAddr("city")} /></Field>
-      </div>
-
-      {se && (
-        <>
-          <h5>Registreringsbevis (required for .se)</h5>
-          <p className="small muted">The company's registration certificate from Bolagsverket, as a PDF (max 10 MB). The .se registry verifies the owner before the domain goes live. Stored encrypted and deleted once verified (after 30 days at the latest).</p>
-          <Field label="PDF" error={buy.fields.documentKey}>
-            <input className="input" type="file" accept="application/pdf" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} />
-          </Field>
-          {upload.busy && <p className="small muted">Uploading…</p>}
-          <ErrorNotice error={upload.error} />
-          {documentKey && file && <Notice kind="ok">Uploaded: {file.name}</Notice>}
-        </>
-      )}
+      <RegistrantFields value={c} onChange={setC} fields={buy.fields} />
+      {se && <RegistreringsbevisUpload tenantId={tenant.tenantId} error={buy.fields.documentKey}
+                                       onKey={setDocumentKey} onBusy={setUploading} />}
 
       <label className="check"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>
       <label className="check confirm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
         I'm buying {offer.domain} for {money(offer.price)} (renews at {money(offer.renewalPrice)}/year). It can't be refunded.</label>
       <div className="row">
-        <button className="btn btn--primary" disabled={!confirmed || buy.busy || upload.busy || (se && !documentKey)}>
+        <button className="btn btn--primary" disabled={!confirmed || buy.busy || uploading || (se && !documentKey)}>
           {buy.busy ? "Buying…" : `Buy ${offer.domain}`}
         </button>
       </div>
@@ -226,6 +185,144 @@ export function SupportCaseBox({ domain, tenantId, supportCase }: { domain: stri
       <ErrorNotice error={dl.error} />
     </Notice>
   );
+}
+
+// --------------------------------------------------- shared form pieces
+export function RegistrantFields({ value: c, onChange, fields }: {
+  value: RegistrantContact; onChange: (c: RegistrantContact) => void; fields: Record<string, string>;
+}) {
+  const err = (k: string) => fields[`contact.${k}`];
+  const set = (k: keyof RegistrantContact) => (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...c, [k]: e.target.value });
+  const setAddr = (k: keyof RegistrantContact["address"]) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange({ ...c, address: { ...c.address, [k]: e.target.value } });
+  return (
+    <>
+      <h5>Registrant — the restaurant's AB (owns the domain)</h5>
+      <div className="grid">
+        <Field label="Company (legal name)" required error={err("legalName")}><input className="input" value={c.legalName} onChange={set("legalName")} /></Field>
+        <Field label="Org. number" required error={err("orgNumber")} hint="NNNNNN-NNNN"><input className="input mono" value={c.orgNumber} onChange={set("orgNumber")} /></Field>
+        <Field label="Contact first name" required error={err("firstName")}><input className="input" value={c.firstName} onChange={set("firstName")} /></Field>
+        <Field label="Contact last name" required error={err("lastName")}><input className="input" value={c.lastName} onChange={set("lastName")} /></Field>
+        <Field label="Email" required error={err("email")} hint="Registry notices go here"><input className="input" value={c.email} onChange={set("email")} /></Field>
+        <Field label="Phone" required error={err("phone")}><input className="input" value={c.phone} onChange={set("phone")} /></Field>
+        <Field label="Street" required error={err("address.street")}><input className="input" value={c.address.street} onChange={setAddr("street")} /></Field>
+        <Field label="Postal code" required error={err("address.postalCode")}><input className="input" value={c.address.postalCode} onChange={setAddr("postalCode")} /></Field>
+        <Field label="City" required error={err("address.city")}><input className="input" value={c.address.city} onChange={setAddr("city")} /></Field>
+      </div>
+    </>
+  );
+}
+
+/** Required step for .se: uploads the PDF straight to the private bucket. */
+export function RegistreringsbevisUpload({ tenantId, error, onKey, onBusy }: {
+  tenantId: string; error?: string; onKey: (key: string) => void; onBusy: (busy: boolean) => void;
+}) {
+  const [name, setName] = useState("");
+  const upload = useAction();
+  async function onFile(f: File | null) {
+    setName("");
+    onKey("");
+    if (!f) return;
+    onBusy(true);
+    const key = await upload.run(async () => {
+      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF");
+      const up = await api.documentUpload(tenantId);
+      if (f.size > up.maxBytes) throw new Error("At most 10 MB");
+      await uploadToS3(up.upload, f);
+      return up.documentKey;
+    });
+    onBusy(false);
+    if (key) { onKey(key); setName(f.name); }
+  }
+  return (
+    <>
+      <h5>Registreringsbevis (required for .se)</h5>
+      <p className="small muted">The company's registration certificate from Bolagsverket, as a PDF (max 10 MB). The .se registry verifies the owner before it takes effect. Stored encrypted and deleted once verified (after 30 days at the latest).</p>
+      <Field label="PDF" error={error}>
+        <input className="input" type="file" accept="application/pdf" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} />
+      </Field>
+      {upload.busy && <p className="small muted">Uploading…</p>}
+      <ErrorNotice error={upload.error} />
+      {name && <Notice kind="ok">Uploaded: {name}</Notice>}
+    </>
+  );
+}
+
+// -------------------------------------------------------------- transfer
+/** Move a connected (live) domain's registration from one.com etc. into Route 53. */
+export function TransferModal({ tenant, domain, onClose, onDone }: {
+  tenant: Tenant; domain: string; onClose: () => void; onDone: () => void;
+}) {
+  const check = useLoadCheck(tenant.tenantId, domain);
+  const [c, setC] = useState<RegistrantContact>(() => contactFrom(tenant));
+  const [authCode, setAuthCode] = useState("");
+  const [documentKey, setDocumentKey] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<SupportCase | null | undefined>(undefined);
+  const go = useAction();
+  const info = check.data;
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!info?.price) return;
+    const r = await go.run(() => api.transferDomain(tenant.tenantId, domain, {
+      authCode, contact: c, acceptedPrice: info.price!, ...(info.verificationRequired ? { documentKey } : {}),
+    }));
+    if (r) { setResult(r.supportCase); onDone(); }
+  }
+
+  return (
+    <Modal title={`Transfer ${domain} to Route 53`} onClose={onClose}>
+      {result !== undefined ? (
+        <>
+          <Notice kind="ok">Transfer started. The site and email keep working — the name servers don't change.
+            The old registrar usually releases the domain within 5–7 days (approving their email speeds it up).</Notice>
+          {result && <SupportCaseBox domain={domain} tenantId={tenant.tenantId} supportCase={result} />}
+        </>
+      ) : (
+        <>
+          <p className="small">Moves the <em>registration</em> from the current registrar into our Route 53 account: one bill,
+            renewals handled by us. DNS is already ours, so nothing goes offline. A failed transfer just leaves it where it is.</p>
+          {check.busy && <p className="muted small">Checking with the registry…</p>}
+          <ErrorNotice error={check.error} />
+          {info && !info.transferable && <Notice kind="warn">Can't transfer right now: {info.reason}</Notice>}
+          {info?.transferable && (
+            <form onSubmit={onSubmit} noValidate>
+              <p className="small"><strong>{money(info.price)}</strong> — includes one more year; then {money(info.renewalPrice)}/year (auto-renews).</p>
+              <ErrorNotice error={go.error} />
+              {go.error instanceof ApiError && go.error.code === "price_changed" && <Notice kind="warn">Close and reopen to see the new price.</Notice>}
+              <Field label="Authorization code" required error={go.fields.authCode}
+                     hint="From the current registrar (one.com: Domain → Transfer / EPP code). Ask them to unlock the domain too.">
+                <input className="input mono" value={authCode} onChange={(e) => setAuthCode(e.target.value)} autoComplete="off" />
+              </Field>
+              <RegistrantFields value={c} onChange={setC} fields={go.fields} />
+              {info.verificationRequired && <RegistreringsbevisUpload tenantId={tenant.tenantId} error={go.fields.documentKey}
+                                                                     onKey={setDocumentKey} onBusy={setUploading} />}
+              <label className="check confirm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+                Transfer {domain} for {money(info.price)}. It can't be refunded.</label>
+              <div className="row">
+                <button className="btn btn--primary"
+                        disabled={!confirmed || !authCode.trim() || go.busy || uploading || (info.verificationRequired && !documentKey)}>
+                  {go.busy ? "Starting…" : "Start transfer"}
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function useLoadCheck(tenantId: string, domain: string) {
+  const a = useAction();
+  const [data, setData] = useState<TransferCheck | null>(null);
+  useEffect(() => {
+    void a.run(() => api.transferCheck(tenantId, domain)).then((r) => r && setData(r));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, domain]);
+  return { data, busy: a.busy, error: a.error };
 }
 
 // --------------------------------------------------------------- connect
