@@ -7,7 +7,8 @@ import {
   confirmResetPassword, confirmSignIn, resetPassword, signIn, signOut, type SignInOutput,
 } from "aws-amplify/auth";
 
-const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
+// Production is the default and is never labelled; only dev says so.
+const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
 const PASSWORD_RULES = "At least 14 characters, with upper- and lowercase letters, a number and a symbol.";
 
 // "Forgot your password?" emails a link here (infrastructure:
@@ -121,7 +122,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
         return;
       case "CONTINUE_SIGN_IN_WITH_TOTP_SETUP": {
         const details = out.nextStep.totpSetupDetails;
-        setStep({ kind: "totpSetup", uri: details.getSetupUri(`Booqy Console (${ENV})`, email).toString(),
+        setStep({ kind: "totpSetup", uri: details.getSetupUri(IS_DEV ? "Booqy Console (dev)" : "Booqy Console", email).toString(),
                   secret: details.sharedSecret });
         return;
       }
@@ -158,7 +159,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           <p className="auth__lead">The operator console for every restaurant on the platform.</p>
           <p className="auth__sub">Customers, plans, domains and payments - in one place.</p>
         </div>
-        <span className={`env env--${ENV}`}>{ENV}</span>
+        {IS_DEV && <span className="env">dev</span>}
       </aside>
 
       <main className="auth__main">

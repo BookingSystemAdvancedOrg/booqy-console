@@ -76,7 +76,7 @@ The domain-provision workflow also invokes this Lambda directly
 (`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -
 see `api/src/app/zones.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
-| `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in prod) |
+| `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in production) |
 
 Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 
@@ -93,13 +93,13 @@ python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Se
 cd web
 cp .env.example .env.local  # fill in from `tofu output` (dev)
 npm install
-npm run dev                 # http://localhost:5173 (an allowed sign-in callback outside prod)
+npm run dev                 # http://localhost:5173 (an allowed sign-in callback outside production)
 ```
 
 ## Deploy
 
 `.github/workflows/deploy.yml`: PRs run the tests; a push to `dev` deploys
-to dev, a push to `main` to prod. The pipeline assumes
+to dev, a push to `main` to production. The pipeline assumes
 `[dev-]platform-admin-front-end-deploy-role` via GitHub OIDC (no AWS keys),
 which can only update this repo's bucket, distribution, ECR repo and Lambda.
 
@@ -107,13 +107,13 @@ One-time: the repo must be named **`booqy-console`** in the org the
 infrastructure trusts, and it needs two GitHub **environments** named exactly
 `dev` and `prod` - the deploy role only trusts the deploy job of the
 environment with its own name, so PR runs and other branches can never
-deploy, and dev can never touch prod.
+deploy, and dev can never touch production.
 
 Each environment gets these **variables** (none are secrets). The
 infrastructure repo prints all of them for its account:
 
 ```bash
-tofu output -json booqy_console_deploy      # run once with the dev state, once with prod
+tofu output -json booqy_console_deploy      # run once with the dev state, once with production
 ```
 
 | Variable | What it is |
@@ -137,7 +137,7 @@ What the deploy role may do - and nothing else:
 | API image | ECR login + push (`BatchCheckLayerAvailability`, `BatchGetImage`, layer upload, `PutImage`) | the `platform-tenants` repo only (keeps the last 30 images) |
 | API release | `lambda:UpdateFunctionCode`, `GetFunction`, `GetFunctionConfiguration` | the `platform-tenants` function only - its config, env vars, IAM and routes stay in Terraform |
 
-Give the `prod` environment a required reviewer if prod deploys should need
+Give the `prod` environment a required reviewer if production deploys should need
 an approval.
 
 ## Notes
