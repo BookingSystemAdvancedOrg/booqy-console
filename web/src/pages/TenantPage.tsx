@@ -6,6 +6,7 @@ import {
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
+import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 
@@ -139,7 +140,11 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
             <div className="grid">
               {PROFILE_FIELDS.map(([k, label, hint]) => (
                 <Field key={k} label={label} hint={hint} error={a.fields[k]} required={k === "name"}>
-                  <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                  {k === "contactPhone" ? (
+                    <PhoneInput className="input" value={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
+                  ) : (
+                    <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                  )}
                 </Field>
               ))}
               <Field label="Street" error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
@@ -272,7 +277,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
         <div className="grid">
           <Field label="Name" required error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
           <Field label="Address" required error={a.fields.address}><input className="input" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
-          <Field label="Phone" error={a.fields.phone}><input className="input" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
+          <Field label="Phone" error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
           <Field label="Email" error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           <Field label="Separate Stripe account" wide error={a.fields.stripeAccountId}
                  hint="Only if this location is a different company (own org. number). Empty = the customer's account.">

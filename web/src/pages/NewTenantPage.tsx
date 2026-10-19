@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Card, ErrorNotice, Field, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
+import { PhoneInput } from "../components/PhoneInput";
 import type { LocationInput } from "../types";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -170,7 +171,7 @@ export default function NewTenantPage() {
             <input id="f-ownerEmail" className="input" type="email" value={f.ownerEmail} onChange={set("ownerEmail")} />
           </Field>
           <Field label="Owner phone" error={fields.ownerPhone}>
-            <input id="f-ownerPhone" className="input" type="tel" value={f.ownerPhone} onChange={set("ownerPhone")} placeholder="+46 70 123 45 67" />
+            <PhoneInput id="f-ownerPhone" className="input" value={f.ownerPhone} onChange={(v) => set("ownerPhone")({ target: { value: v } })} />
           </Field>
         </div>
       </Card>
@@ -181,7 +182,7 @@ export default function NewTenantPage() {
             <input id="f-contactEmail" className="input" type="email" value={f.contactEmail} onChange={set("contactEmail")} />
           </Field>
           <Field label="Contact phone" error={fields.contactPhone}>
-            <input id="f-contactPhone" className="input" type="tel" value={f.contactPhone} onChange={set("contactPhone")} />
+            <PhoneInput id="f-contactPhone" className="input" value={f.contactPhone} onChange={(v) => set("contactPhone")({ target: { value: v } })} />
           </Field>
           <Field label="Billing email" error={fields.billingEmail} hint="Where your invoices to them go">
             <input id="f-billingEmail" className="input" type="email" value={f.billingEmail} onChange={set("billingEmail")} />
@@ -229,7 +230,7 @@ export default function NewTenantPage() {
               <div className="grid">
                 <Field label="Location name" error={errs.name}><input id={`f-locations.${i}.name`} className="input" value={loc.name} onChange={upd("name")} placeholder="Roma Södermalm" /></Field>
                 <Field label="Address" error={errs.address}><input id={`f-locations.${i}.address`} className="input" value={loc.address} onChange={upd("address")} placeholder="Götgatan 10, 118 46 Stockholm" /></Field>
-                <Field label="Phone" error={errs.phone}><input id={`f-locations.${i}.phone`} className="input" value={loc.phone} onChange={upd("phone")} /></Field>
+                <Field label="Phone" error={errs.phone}><PhoneInput id={`f-locations.${i}.phone`} className="input" value={loc.phone ?? ""} onChange={(v) => upd("phone")({ target: { value: v } })} /></Field>
                 <Field label="Email" error={errs.email}><input id={`f-locations.${i}.email`} className="input" value={loc.email} onChange={upd("email")} /></Field>
               </div>
               <button type="button" className="btn btn--ghost btn--small" onClick={() => setLocations(locations.filter((_, j) => j !== i))}>Remove</button>

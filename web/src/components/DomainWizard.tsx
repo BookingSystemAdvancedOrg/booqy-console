@@ -3,6 +3,7 @@ import { api, ApiError, uploadToS3 } from "../api";
 import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant, TransferCheck } from "../types";
 import { ErrorNotice, Field, Modal, Notice, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
+import { PhoneInput } from "./PhoneInput";
 
 type Path = "choose" | "buy" | "connect" | "cname";
 
@@ -210,7 +211,7 @@ export function RegistrantFields({ value: c, onChange, fields }: {
         <Field label="Contact first name" required error={err("firstName")}><input className="input" value={c.firstName} onChange={set("firstName")} /></Field>
         <Field label="Contact last name" required error={err("lastName")}><input className="input" value={c.lastName} onChange={set("lastName")} /></Field>
         <Field label="Email" required error={err("email")} hint="Registry notices go here"><input className="input" value={c.email} onChange={set("email")} /></Field>
-        <Field label="Phone" required error={err("phone")}><input className="input" value={c.phone} onChange={set("phone")} /></Field>
+        <Field label="Phone" required error={err("phone")}><PhoneInput className="input" value={c.phone} onChange={(v) => onChange({ ...c, phone: v })} /></Field>
         <Field label="Street" required error={err("address.street")}><input className="input" value={c.address.street} onChange={setAddr("street")} /></Field>
         <Field label="Postal code" required error={err("address.postalCode")}><input className="input mono" {...POSTAL_CODE_INPUT} value={c.address.postalCode} onChange={setAddr("postalCode")} /></Field>
         <Field label="City" required error={err("address.city")}><input className="input" value={c.address.city} onChange={setAddr("city")} /></Field>
