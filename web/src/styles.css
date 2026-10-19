@@ -79,7 +79,7 @@ a:hover { text-decoration-thickness: 2px; }
 /* --- shell: the oxblood bar ------------------------------------------------ */
 .topbar { display: flex; align-items: center; gap: 18px; min-height: 56px; padding: 0 24px; background: var(--ox); color: var(--on-ox); position: sticky; top: 0; z-index: 5; box-shadow: 0 6px 14px -10px rgb(0 0 0 / 60%); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--on-ox); text-decoration: none; }
-.brand__logo { width: 76px; height: auto; display: block; }
+.brand__logo { width: 62px; height: auto; display: block; }
 .brand__app { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--on-ox-2); padding-top: 3px; }
 .env { font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; padding: 5px 8px 4px; border-radius: 3px; border: 1.5px solid currentColor; color: var(--on-ox-2); }
 .env--prod { background: var(--on-ox); border-color: var(--on-ox); color: var(--red); }
@@ -214,7 +214,7 @@ textarea.input { resize: vertical; }
 /* --- login: the oxblood wall, the sign-in ticket ------------------------------- */
 .auth { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr); background: var(--bg); }
 .auth__brand { background: var(--ox); color: var(--on-ox); padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; position: relative; overflow: hidden; }
-.auth__logo .brand__logo { width: 112px; }
+.auth__logo .brand__logo { width: 92px; }
 .auth__lead { font: 860 34px/1 var(--sans); font-stretch: 125%; letter-spacing: -0.025em; margin: 0 0 14px; max-width: 13em; }
 .auth__sub { margin: 0; color: var(--on-ox-2); max-width: 28em; }
 .auth__brand .env { align-self: flex-start; }
