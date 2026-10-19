@@ -74,7 +74,34 @@ def test_create_more_locations_than_plan(aws):
 
 def test_unknown_plan(aws):
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "planId": "gold"})
-    assert status == 400 and body["fields"] == {"planId": "Unknown plan"}
+    assert status == 400 and list(body["fields"]) == ["planId"]
+    assert body["fields"]["planId"].startswith("Unknown plan")
+
+
+def test_create_reports_every_problem_at_once(aws):
+    body = {**NEW_TENANT, "ownerEmail": "nope", "planId": "gold",
+            "locations": [{"name": "Only name"}, {"address": "Only address"}]}
+    status, res = call("POST /platform/tenants", body=body)
+    assert status == 400
+    assert {"ownerEmail", "planId", "locations.0.address", "locations.1.name"} <= set(res["fields"])
+    assert res["message"] == f"{len(res['fields'])} fields need fixing"
+
+
+@pytest.mark.parametrize("org,vat,field,expected", [
+    ("5566778899", None, None, "556677-8899"),                 # dash added
+    ("556677-8898", None, "orgNumber", None),                  # wrong check digit
+    ("556677-8899", "SE556677889901", None, "556677-8899"),
+    ("556677-8899", "SE111111111101", "vatNumber", None),      # VAT for another company
+])
+def test_org_and_vat_number(aws, org, vat, field, expected):
+    body = {**NEW_TENANT, "orgNumber": org, **({"vatNumber": vat} if vat else {})}
+    status, res = call("POST /platform/tenants", body=body)
+    if field:
+        assert status == 400 and list(res["fields"]) == [field], res
+    else:
+        assert status == 202, res
+        _, detail = call("GET /platform/tenants/{tenantId}", path={"tenantId": res["tenantId"]})
+        assert detail["tenant"]["orgNumber"] == expected
 
 
 def test_list_tenants(aws, tenant):

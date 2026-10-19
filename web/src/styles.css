@@ -192,6 +192,11 @@ textarea.input { resize: vertical; }
 .loc-row { display: flex; gap: 12px; align-items: flex-end; padding: 6px 0 12px; border-bottom: 1.5px dashed var(--line); }
 .loc-row .grid { flex: 1; margin: 0; }
 .submit-bar { position: sticky; bottom: 0; display: flex; gap: 16px; justify-content: space-between; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 18px; box-shadow: 0 -6px 18px -10px rgb(28 25 24 / 30%); }
+.submit-bar__info { flex: 1; min-width: 0; }
+.submit-bar__info .notice { margin: 0; max-height: 34vh; overflow: auto; }
+.field-errors { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer; }
+.input[readonly] { background: var(--bg); color: var(--muted); cursor: default; }
 
 /* --- modal ---------------------------------------------------------------------- */
 .modal { position: fixed; inset: 0; background: rgb(31 0 2 / 45%); display: grid; place-items: center; padding: 16px; z-index: 20; }

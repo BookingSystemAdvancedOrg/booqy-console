@@ -9,6 +9,7 @@ import TenantPage from "./pages/TenantPage";
 import OperatorsPage from "./pages/OperatorsPage";
 import OutboxPage from "./pages/OutboxPage";
 import { Logo } from "./components/Logo";
+import { Modal } from "./components/ui";
 import "./styles.css";
 
 const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
@@ -16,6 +17,7 @@ const ENV = import.meta.env.VITE_ENVIRONMENT ?? "dev";
 function Shell() {
   const location = useLocation();
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const refresh = useCallback(() => {
     currentOperator().then(setUser);
   }, []);
@@ -43,9 +45,20 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
-          <button className="btn btn--ghost" onClick={() => signOut()}>Sign out</button>
+          <button className="btn btn--ghost" onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
       </header>
+      {confirmSignOut && (
+        <Modal title="Sign out?" onClose={() => setConfirmSignOut(false)}>
+          <div className="stack">
+            <p>Are you sure you want to sign out of Booqy Console? You'll need your password and authenticator code to sign in again.</p>
+            <div className="row">
+              <button className="btn btn--primary" autoFocus onClick={() => signOut()}>Sign out</button>
+              <button className="btn btn--ghost" onClick={() => setConfirmSignOut(false)}>Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <main className="main">
         <Routes>
           <Route path="/" element={<TenantsPage />} />

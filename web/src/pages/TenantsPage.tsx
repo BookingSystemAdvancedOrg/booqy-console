@@ -8,7 +8,8 @@ const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspen
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  // Active first: offboarded and other inactive customers are one click away.
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("active");
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();

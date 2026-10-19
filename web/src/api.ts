@@ -18,13 +18,29 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
+/** What to say when the response has no message of its own (a gateway
+ * error page, a crash, a throttle). */
+function fallbackMessage(status: number, requestId?: unknown): string {
+  const ref = requestId ? ` (reference ${requestId})` : "";
+  if (status === 403) return "You don't have access to this. Sign out and in again; if it persists, check that your account is an operator.";
+  if (status === 404) return "Not found - it may have been removed. Reload the page.";
+  if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
+  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, reload first to see whether it went through.";
+  return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = await accessToken();
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+  }
   if (res.status === 401) {
     // token rejected (revoked, account disabled/deleted) - back to the login page
     await signOut().catch(() => undefined);
@@ -32,10 +48,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(401, "unauthorized", "Signed out");
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: Record<string, unknown> = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Reload the page and try again.");
+  }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
-    throw new ApiError(res.status, error ?? "error", message ?? res.statusText, fields ?? {}, extra);
+    // The generic 500 text says nothing useful - give what to do instead.
+    const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
+    throw new ApiError(res.status, (error as string) ?? "error",
+                       useful ? (message as string) : fallbackMessage(res.status, extra.requestId),
+                       (fields as Record<string, string>) ?? {}, extra);
   }
   return data as T;
 }

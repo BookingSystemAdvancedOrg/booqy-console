@@ -32,7 +32,9 @@ class Fields:
 
     def done(self) -> None:
         if self.errors:
-            raise ApiError(400, "validation_failed", "Some fields are invalid", fields=self.errors)
+            n = len(self.errors)
+            raise ApiError(400, "validation_failed",
+                           f"{n} field{'s' if n > 1 else ''} need{'' if n > 1 else 's'} fixing", fields=self.errors)
 
     def text(self, field, *, required=False, max_len=200, pattern=None, msg=None, lower=False):
         value = self.data.get(field)
@@ -56,10 +58,11 @@ class Fields:
 
     def email(self, field, required=False):
         return self.text(field, required=required, max_len=254, pattern=EMAIL_RE,
-                         msg="Not a valid email address", lower=True)
+                         msg="Not a valid email address, e.g. anna@restaurang.se", lower=True)
 
     def phone(self, field, required=False):
-        return self.text(field, required=required, max_len=20, pattern=PHONE_RE, msg="Not a valid phone number")
+        return self.text(field, required=required, max_len=20, pattern=PHONE_RE,
+                         msg="Not a valid phone number, e.g. 070-123 45 67 or +46 70 123 45 67")
 
     def integer(self, field, *, required=False, minimum=None, maximum=None):
         value = self.data.get(field)
@@ -95,6 +98,40 @@ def slug(f: Fields, field="slug"):
     if value in RESERVED_SLUGS:
         f.fail(field, "Reserved name - pick another")
         return None
+    return value
+
+
+def luhn_ok(digits: str) -> bool:
+    """Swedish org. numbers (and personnummer) end in a Luhn check digit."""
+    total = 0
+    for i, ch in enumerate(digits[:-1]):
+        n = int(ch) * (2 if i % 2 == 0 else 1)
+        total += n - 9 if n > 9 else n
+    return (10 - total % 10) % 10 == int(digits[-1])
+
+
+def org_number(f: Fields, field="orgNumber"):
+    """'5566778899' or '556677-8899' -> '556677-8899', check digit verified."""
+    value = f.text(field, max_len=11, pattern=ORG_NUMBER_RE,
+                   msg="10 digits as NNNNNN-NNNN, e.g. 556677-8899")
+    if value is None:
+        return None
+    digits = value.replace("-", "")
+    if not luhn_ok(digits):
+        f.fail(field, "The last digit (check digit) doesn't match - look for a typo")
+        return None
+    return f"{digits[:6]}-{digits[6:]}"
+
+
+def vat_number(f: Fields, org: str | None, field="vatNumber"):
+    """A Swedish VAT number is SE + the 10-digit org. number + 01."""
+    value = f.text(field, max_len=14, pattern=VAT_RE,
+                   msg="SE + the 10-digit org. number + 01, e.g. SE556677889901")
+    if value and org:
+        expected = f"SE{org.replace('-', '')}01"
+        if value != expected:
+            f.fail(field, f"Doesn't match the org. number - it should be {expected}")
+            return None
     return value
 
 
