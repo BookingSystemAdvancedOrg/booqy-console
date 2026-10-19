@@ -10,6 +10,8 @@ import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 
+const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
+
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -23,6 +25,7 @@ export default function TenantPage() {
   const busy =
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
+      data.onboarding?.status === "RUNNING" ||
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   useEffect(() => {
@@ -518,7 +521,13 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
         )}
       </Card>
-      <Card title="Website hostnames">
+      <Card title="Website hostnames" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
+        {t.status === "active" && !detail.domains.some((d) => d.kind === "platform") && (
+          <Notice kind="info">
+            No {PLATFORM_DOMAIN ? <span className="mono">{t.slug}.{PLATFORM_DOMAIN}</span> : "platform"} address yet - this
+            customer was set up before platform addresses were switched on. <strong>Re-run setup</strong> adds it.
+          </Notice>
+        )}
         <table className="table">
           <thead><tr><th>Hostname</th><th>Type</th><th>Status</th><th /></tr></thead>
           <tbody>
@@ -545,6 +554,35 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
       {wizard && <DomainWizard tenant={t} onClose={() => setWizard(false)} onChanged={onChanged} />}
       {transfer && <TransferModal tenant={t} domain={transfer} onClose={() => setTransfer(null)} onDone={onChanged} />}
     </div>
+  );
+}
+
+/**
+ * Runs the onboarding workflow again for an active customer. Every step is
+ * idempotent: it adds what is missing (the <slug> platform address, a new VAT
+ * rate) and skips the rest - no second invite, no second Stripe account, and a
+ * failed run never takes the customer offline.
+ */
+function RerunSetup({ tenant, running, onDone }: { tenant: Tenant; running: boolean; onDone: () => void }) {
+  const a = useAction();
+  return (
+    <span className="row-actions">
+      <button
+        className="btn btn--ghost btn--small"
+        disabled={a.busy || running}
+        title="Adds anything missing from setup (like the platform address). No new invite, no new Stripe account."
+        onClick={async () => {
+          const ok = window.confirm(
+            `Re-run setup for ${tenant.name}?\n\nAdds anything that's missing, like the platform address. ` +
+              "It doesn't send a new invite, doesn't create another Stripe account and won't take the site offline.",
+          );
+          if (ok && (await a.run(() => api.retryOnboarding(tenant.tenantId)))) onDone();
+        }}
+      >
+        {running ? "Setup running…" : a.busy ? "Starting…" : "Re-run setup"}
+      </button>
+      {a.error != null && <ErrorNotice error={a.error} />}
+    </span>
   );
 }
 
