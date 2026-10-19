@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
 import { ErrorNotice, Field, Modal, Notice, useAction, useLoad } from "./ui";
 import type { Location, Tenant, TerminalAddress, TerminalReader } from "../types";
+import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 
 /** Card terminals (Stripe Terminal) for one restaurant location: enable, pair
  *  readers, remove readers. Everything lives on the restaurant's own Stripe
@@ -15,7 +16,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
   const [editing, setEditing] = useState(false);
 
   return (
-    <Modal title={`Card terminals — ${location.name}`} onClose={onClose}>
+    <Modal title={`Card terminals - ${location.name}`} onClose={onClose}>
       <div className="stack">
         <ErrorNotice error={error} />
         {loading && !data && <p className="muted">Loading…</p>}
@@ -44,7 +45,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
               {!editing ? (
                 <p className="small" style={{ margin: 0 }}>
                   <strong>{data.terminal.displayName}</strong> · {data.terminal.address.line1},{" "}
-                  {data.terminal.address.postalCode} {data.terminal.address.city}
+                  {formatPostalCode(data.terminal.address.postalCode)} {data.terminal.address.city}
                   <button className="link" onClick={() => setEditing(true)}>Change address</button>
                   <br />
                   <span className="muted mono">{data.terminal.locationId} on {data.terminal.accountId}</span>
@@ -79,7 +80,7 @@ function AddressFields({ v, set, fields }: {
         <input className="input" value={v.line1} onChange={(e) => set({ ...v, line1: e.target.value })} />
       </Field>
       <Field label="Postal code" required error={fields.postalCode}>
-        <input className="input" value={v.postalCode} placeholder="118 21" onChange={(e) => set({ ...v, postalCode: e.target.value })} />
+        <input className="input mono" {...POSTAL_CODE_INPUT} value={v.postalCode} onChange={(e) => set({ ...v, postalCode: formatPostalCode(e.target.value) })} />
       </Field>
       <Field label="City" required error={fields.city}>
         <input className="input" value={v.city} onChange={(e) => set({ ...v, city: e.target.value })} />
@@ -93,13 +94,14 @@ function EnableForm({ tenant, location, onDone }: { tenant: Tenant; location: Lo
   const [v, set] = useState<AddrForm>({
     displayName: location.name,
     line1: tenant.address?.street ?? "",
-    postalCode: tenant.address?.postalCode ?? "",
+    postalCode: formatPostalCode(tenant.address?.postalCode ?? ""),
     city: tenant.address?.city ?? "",
   });
   const a = useAction();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await a.run(() => api.enableTerminal(tenant.tenantId, location.locationId, v))) onDone();
+    const body = { ...v, postalCode: postalCodeDigits(v.postalCode) };
+    if (await a.run(() => api.enableTerminal(tenant.tenantId, location.locationId, body))) onDone();
   };
   return (
     <form onSubmit={submit} className="stack">
@@ -120,11 +122,11 @@ function EnableForm({ tenant, location, onDone }: { tenant: Tenant; location: Lo
 function EditAddress({ tenant, location, current, displayName, onDone, onCancel }: {
   tenant: Tenant; location: Location; current: TerminalAddress; displayName: string; onDone: () => void; onCancel: () => void;
 }) {
-  const [v, set] = useState<AddrForm>({ ...current, displayName });
+  const [v, set] = useState<AddrForm>({ ...current, postalCode: formatPostalCode(current.postalCode), displayName });
   const a = useAction();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const body = { line1: v.line1, postalCode: v.postalCode, city: v.city, displayName: v.displayName };
+    const body = { line1: v.line1, postalCode: postalCodeDigits(v.postalCode), city: v.city, displayName: v.displayName };
     if (await a.run(() => api.updateTerminal(tenant.tenantId, location.locationId, body))) onDone();
   };
   return (

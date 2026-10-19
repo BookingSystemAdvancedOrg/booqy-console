@@ -49,6 +49,15 @@ def client(service: str):
     return _clients[service]
 
 
+def regional_client(service: str, region: str, **kwargs):
+    """Like client(), pinned to a region - Route 53 Domains only exists in
+    us-east-1, and presigned S3 URLs must name the bucket's own region."""
+    key = (service, region)
+    if key not in _clients:
+        _clients[key] = boto3.client(service, region_name=region, **kwargs)
+    return _clients[key]
+
+
 def reset_clients() -> None:
     _clients.clear()
 

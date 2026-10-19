@@ -1,5 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
+  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
   Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -17,13 +18,29 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
+/** What to say when the response has no message of its own (a gateway
+ * error page, a crash, a throttle). */
+function fallbackMessage(status: number, requestId?: unknown): string {
+  const ref = requestId ? ` (reference ${requestId})` : "";
+  if (status === 403) return "You don't have access to this. Sign out and in again; if it persists, check that your account is an operator.";
+  if (status === 404) return "Not found - it may have been removed. Reload the page.";
+  if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
+  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, reload first to see whether it went through.";
+  return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = await accessToken();
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+  }
   if (res.status === 401) {
     // token rejected (revoked, account disabled/deleted) - back to the login page
     await signOut().catch(() => undefined);
@@ -31,10 +48,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(401, "unauthorized", "Signed out");
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: Record<string, unknown> = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Reload the page and try again.");
+  }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
-    throw new ApiError(res.status, error ?? "error", message ?? res.statusText, fields ?? {}, extra);
+    // The generic 500 text says nothing useful - give what to do instead.
+    const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
+    throw new ApiError(res.status, (error as string) ?? "error",
+                       useful ? (message as string) : fallbackMessage(res.status, extra.requestId),
+                       (fields as Record<string, string>) ?? {}, extra);
   }
   return data as T;
 }
@@ -68,6 +94,26 @@ export const api = {
       "POST", `${t(id)}/domains`, { domain, makePrimary }),
   removeDomain: (id: string, domain: string) =>
     request("DELETE", `${t(id)}/domains/${encodeURIComponent(domain)}`),
+  searchDomains: (q: string) =>
+    request<{ results: DomainOffer[]; suggestions: DomainOffer[] }>("GET", `/platform/domains/search?q=${encodeURIComponent(q)}`),
+  scanDns: (domain: string) =>
+    request<DnsScan>("GET", `/platform/domains/dns-scan?domain=${encodeURIComponent(domain)}`),
+  documentUpload: (id: string) =>
+    request<{ documentKey: string; upload: { url: string; fields: Record<string, string> }; maxBytes: number }>(
+      "POST", `${t(id)}/domains/documents`, {}),
+  registerDomain: (id: string, body: { domain: string; makePrimary: boolean; documentKey?: string;
+                                       contact: RegistrantContact; acceptedPrice: Money }) =>
+    request<{ zone: Zone; supportCase: SupportCase | null }>("POST", `${t(id)}/domains/registrations`, body),
+  connectDomain: (id: string, body: { domain: string; makePrimary: boolean; records: DnsRecord[] }) =>
+    request<{ zone: Zone; nameServers: string[]; imported: DnsRecord[]; skipped: { name: string; type: string; reason: string }[] }>(
+      "POST", `${t(id)}/domains/connections`, body),
+  transferCheck: (id: string, domain: string) =>
+    request<TransferCheck>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/transfer`),
+  transferDomain: (id: string, domain: string, body: { authCode: string; contact: RegistrantContact;
+                                                       acceptedPrice: Money; documentKey?: string }) =>
+    request<{ zone: Zone; supportCase: SupportCase | null }>("POST", `${t(id)}/zones/${encodeURIComponent(domain)}/transfer`, body),
+  domainDocument: (id: string, domain: string) =>
+    request<{ url: string }>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/document`),
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
 
@@ -98,3 +144,12 @@ export const api = {
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 };
+
+/** Browser -> S3 straight, with the presigned POST from documentUpload(). */
+export async function uploadToS3(upload: { url: string; fields: Record<string, string> }, file: File): Promise<void> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
+  form.append("file", file);                 // must be the last field
+  const res = await fetch(upload.url, { method: "POST", body: form });
+  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The upload was refused - is it a PDF under 10 MB?");
+}

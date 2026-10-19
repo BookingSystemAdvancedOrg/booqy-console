@@ -41,10 +41,11 @@ def get_plan(plan_id: str) -> dict | None:
 
 
 def _profile_fields(f: v.Fields) -> dict:
+    org = v.org_number(f)
     out = {
         "legalName": f.text("legalName", max_len=150),
-        "orgNumber": f.text("orgNumber", max_len=11, pattern=v.ORG_NUMBER_RE, msg="Format NNNNNN-NNNN"),
-        "vatNumber": f.text("vatNumber", max_len=14, pattern=v.VAT_RE, msg="Format SE + 12 digits"),
+        "orgNumber": org,
+        "vatNumber": v.vat_number(f, org),
         "contactEmail": f.email("contactEmail"),
         "contactPhone": f.phone("contactPhone"),
         "billingEmail": f.email("billingEmail"),
@@ -139,18 +140,25 @@ def create_tenant(req) -> tuple[int, dict]:
     if not isinstance(raw_locations, list):
         f.fail("locations", "Must be a list")
         raw_locations = []
+
+    # Every problem in one response - the form shows them all at once instead
+    # of one round trip per mistake.
+    locations = []
+    for i, loc in enumerate(raw_locations):
+        try:
+            locations.append(v.location_fields(loc if isinstance(loc, dict) else {}, partial=False,
+                                               prefix=f"locations.{i}."))
+        except ApiError as e:
+            for k, msg in e.extra.get("fields", {}).items():
+                f.fail(k, msg)
+    plan = get_plan(plan_id) if plan_id else None
+    if plan_id and plan is None:
+        f.fail("planId", "Unknown plan - pick one of the plans listed")
+    entitlements = _entitlements(plan, overrides) if plan else None
+    if entitlements and len(raw_locations) > entitlements["maxLocations"]:
+        f.fail("locations", f"The plan allows {entitlements['maxLocations']} - remove a location "
+                            "or raise 'Locations allowed'")
     f.done()
-
-    plan = get_plan(plan_id)
-    if plan is None:
-        raise ApiError(400, "validation_failed", "Unknown plan", fields={"planId": "Unknown plan"})
-    entitlements = _entitlements(plan, overrides)
-
-    locations = [v.location_fields(loc if isinstance(loc, dict) else {}, partial=False, prefix=f"locations.{i}.")
-                 for i, loc in enumerate(raw_locations)]
-    if len(locations) > entitlements["maxLocations"]:
-        raise ApiError(400, "validation_failed", "More locations than the plan allows",
-                       fields={"locations": f"The plan allows {entitlements['maxLocations']}"})
 
     tenant_id, now = new_id(), now_iso()
     profile = {
@@ -183,7 +191,7 @@ def create_tenant(req) -> tuple[int, dict]:
         if e.response["Error"]["Code"] == "TransactionCanceledException" and \
                 cancellation_codes(e)[0] == "ConditionalCheckFailed":
             raise ApiError(409, "slug_taken", "That slug is already used by another customer",
-                           fields={"slug": "Already taken"}) from e
+                           fields={"slug": "Already used by another customer - pick another, e.g. with the area: roma-sodermalm"}) from e
         raise
 
     status = _start_onboarding(tenant_id, profile, run=1)
@@ -244,10 +252,12 @@ def get_tenant(req) -> tuple[int, dict]:
         except ClientError:
             onboarding = None
     primary = profile.get("primaryDomain")
+    from .zones import list_zones          # zones imports this module
     return 200, {
         "tenant": public(profile),
         "domains": [{**{k: val for k, val in d.items() if k not in HIDDEN}, "primary": d.get("domain") == primary}
                     for d in domains],
+        "zones": list_zones(tenant_id),
         "locations": [{k: val for k, val in loc.items() if k not in HIDDEN} for loc in locations],
         "userCount": users,
         "onboarding": onboarding,

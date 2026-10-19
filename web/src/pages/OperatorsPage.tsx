@@ -60,7 +60,7 @@ export default function OperatorsPage({ me }: { me: string }) {
                 const lastActive = o.enabled && activeCount <= 1;
                 return (
                   <tr key={o.username}>
-                    <td className="strong">{o.name || "—"}{self && <span className="tag">you</span>}</td>
+                    <td className="strong">{o.name || "-"}{self && <span className="tag">you</span>}</td>
                     <td>{o.email}</td>
                     <td><span className={`status status--${s.cls}`}>{s.label}</span></td>
                     <td className="muted small">{fmtDate(o.createdAt)}</td>

@@ -5,7 +5,7 @@ The operator console for the restaurant SaaS - only the platform's owners
 their locations, owners, plan, Stripe connected account and domains.
 
 ```
-sbs-admin/
+booqy-console/
 ├── web/   React + Vite + TypeScript SPA (S3 + CloudFront, ops.<platform domain>)
 └── api/   platform-tenants Lambda (Python 3.13, container image) - every /platform/* route
 ```
@@ -64,6 +64,17 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `GET .../users`, `POST .../owners` | list sign-in accounts / invite another owner |
 | `GET/POST .../locations`, `PATCH/DELETE .../locations/{locationId}` | location CRUD; create is blocked at the plan limit (`409 plan_limit_reached`) |
 | `POST .../domains`, `DELETE .../domains/{domain}` | customer's own domain (starts the attach/detach workflows) |
+| `GET /platform/domains/search?q=` | availability + first-year/renewal price (Route 53 Domains, .se/.com/.eu/.net) |
+| `POST .../domains/documents` | presigned POST for the registreringsbevis (PDF, required to buy a .se) |
+| `POST .../domains/registrations` | buy a domain in the restaurant's AB's name: `{domain, contact, documentKey (.se), acceptedPrice}` - starts domain-provision |
+| `GET /platform/domains/dns-scan?domain=` | the records a domain uses today (public DNS), for review before connecting |
+| `POST .../domains/connections` | connect a domain the restaurant has: Route 53 zone with the reviewed records, then they switch name servers - starts domain-provision |
+| `GET .../zones/{domain}/document` | 5-minute download link to the registreringsbevis (for the AWS Support case) |
+| `GET/POST .../zones/{domain}/transfer` | move a connected, live domain's registration into Route 53: check (transferability + price) / start `{authCode, contact, documentKey (.se), acceptedPrice}` - name servers kept |
+
+The domain-provision workflow also invokes this Lambda directly
+(`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -
+see `api/src/app/zones.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
 | `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in prod) |
 
@@ -92,7 +103,7 @@ to dev, a push to `main` to prod. The pipeline assumes
 `[dev-]platform-admin-front-end-deploy-role` via GitHub OIDC (no AWS keys),
 which can only update this repo's bucket, distribution, ECR repo and Lambda.
 
-One-time: the repo must be named **`sbs-admin`** in the org the
+One-time: the repo must be named **`booqy-console`** in the org the
 infrastructure trusts, and it needs two GitHub **environments** named exactly
 `dev` and `prod` - the deploy role only trusts the deploy job of the
 environment with its own name, so PR runs and other branches can never

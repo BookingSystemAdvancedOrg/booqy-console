@@ -9,7 +9,7 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import domains, locations, operators, outbox, stripe_connect, tenants, terminal, users
+from . import domains, locations, operators, outbox, stripe_connect, tenants, terminal, users, zones
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -31,6 +31,14 @@ ROUTES = {
     "DELETE /platform/tenants/{tenantId}/locations/{locationId}": locations.delete_location,
     "POST /platform/tenants/{tenantId}/domains": domains.add_domain,
     "DELETE /platform/tenants/{tenantId}/domains/{domain}": domains.remove_domain,
+    "GET /platform/domains/search": zones.search,
+    "GET /platform/domains/dns-scan": zones.dns_scan,
+    "POST /platform/tenants/{tenantId}/domains/documents": zones.document_upload,
+    "POST /platform/tenants/{tenantId}/domains/registrations": zones.register,
+    "POST /platform/tenants/{tenantId}/domains/connections": zones.connect,
+    "GET /platform/tenants/{tenantId}/zones/{domain}/document": zones.document_download,
+    "GET /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer_check,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer,
     "POST /platform/tenants/{tenantId}/stripe/account-link": stripe_connect.account_link,
     "POST /platform/tenants/{tenantId}/stripe/sync": stripe_connect.sync_account,
     "GET /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.get_terminal,
@@ -68,6 +76,14 @@ def _groups(claims: dict) -> set[str]:
 
 
 def handler(event, context):
+    # The domain-provision workflow invokes the function directly (no
+    # routeKey, no JWT). API Gateway events always carry a routeKey, and only
+    # API Gateway and that workflow's role may invoke this function.
+    if "workflowTask" in event and "routeKey" not in event:
+        result = zones.workflow_task(event)
+        log.info(json.dumps({"workflowTask": event.get("workflowTask"), "domain": event.get("domain"),
+                             "tenantId": event.get("tenantId"), "result": result.get("status")}))
+        return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)

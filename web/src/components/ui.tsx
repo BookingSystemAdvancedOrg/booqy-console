@@ -33,6 +33,16 @@ const STATUS_TEXT: Record<string, string> = {
   validation_timeout: "DNS never appeared",
   failed: "Failed",
   removing: "Removing",
+  registering: "Registering",
+  awaiting_verification: "Waiting for .se verification",
+  registered: "Registered",
+  creating_zone: "Creating DNS zone",
+  awaiting_nameservers: "Waiting for name servers",
+  attaching: "Issuing certificates",
+  live: "Live",
+  timed_out: "Timed out",
+  transferring: "Transferring",
+  transferred: "Transferred",
 };
 
 export function Status({ value }: { value: string }) {
@@ -132,7 +142,7 @@ export function useAction() {
 }
 
 export function fmtDate(iso?: string) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleString("sv-SE", { dateStyle: "medium", timeStyle: "short" });
 }
 

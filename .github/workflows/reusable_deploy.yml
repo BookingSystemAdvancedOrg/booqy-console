@@ -102,7 +102,7 @@ jobs:
         with:
           role-to-assume: ${{ env.OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: gha-sbs-admin-${{ inputs.environment }}-${{ github.run_id }}
+          role-session-name: gha-booqy-console-${{ inputs.environment }}-${{ github.run_id }}
 
       # ---------- web ----------
       - uses: actions/setup-node@v4
@@ -170,4 +170,4 @@ jobs:
             --app "$CODEDEPLOY_APP" \
             --topic "$ALERT_TOPIC_ARN" \
             --environment "${{ inputs.environment }}" \
-            --source "sbs-admin@${GITHUB_SHA::7}"
+            --source "booqy-console@${GITHUB_SHA::7}"

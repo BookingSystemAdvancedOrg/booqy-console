@@ -126,6 +126,95 @@ export interface Domain {
   distributionTenantId?: string;
 }
 
+export interface Money {
+  amount: number;
+  currency: string;
+}
+
+/** A domain we run DNS for (bought through Route 53, or connected). */
+export interface Zone {
+  domain: string;
+  mode: "register" | "connect";
+  status: string;
+  statusDetail?: string;
+  nameServers?: string[];
+  price?: Money;
+  renewalPrice?: Money;
+  makePrimary?: boolean;
+  lastError?: string;
+  requestedAt?: string;
+  requestedBy?: string;
+  updatedAt?: string;
+  importedRecords?: number;
+  verificationRequired?: boolean;
+  hasDocument: boolean;
+  supportCase?: SupportCase;
+  registrar?: "route53" | "external";
+  transferable?: boolean;
+  transfer?: {
+    status: string;
+    statusDetail?: string;
+    price?: Money;
+    error?: string;
+    requestedAt?: string;
+    completedAt?: string;
+    supportCase?: SupportCase;
+  };
+}
+
+export interface TransferCheck {
+  domain: string;
+  transferable: boolean;
+  transferability?: string;
+  reason?: string | null;
+  price?: Money | null;
+  renewalPrice?: Money | null;
+  verificationRequired?: boolean;
+}
+
+export interface DomainOffer {
+  domain: string;
+  availability: string;
+  available: boolean;
+  sellable: boolean;
+  verificationRequired: boolean;
+  price?: Money | null;
+  renewalPrice?: Money | null;
+}
+
+export interface DnsRecord {
+  name: string;
+  type: string;
+  ttl: number;
+  values: string[];
+  skip?: string | null;
+}
+
+export interface DnsScan {
+  domain: string;
+  nameServers: string[];
+  dnssec: boolean;
+  registered: boolean;
+  records: DnsRecord[];
+}
+
+export interface SupportCase {
+  service: string;
+  category: string;
+  subject: string;
+  body: string;
+}
+
+export interface RegistrantContact {
+  legalName: string;
+  orgNumber: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: { street: string; postalCode: string; city: string };
+}
+
 export interface AuditEntry {
   action: string;
   by: string;
@@ -136,6 +225,7 @@ export interface AuditEntry {
 export interface TenantDetail {
   tenant: Tenant;
   domains: Domain[];
+  zones: Zone[];
   locations: Location[];
   userCount: number;
   onboarding: { status: string; startDate: string; stopDate?: string } | null;

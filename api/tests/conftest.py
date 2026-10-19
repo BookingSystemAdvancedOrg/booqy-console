@@ -65,7 +65,7 @@ def aws():
 
         sfn = boto3.client("stepfunctions", region_name=REGION)
         role = "arn:aws:iam::123456789012:role/sfn"
-        for key in ("ONBOARDING", "DOMAIN_ATTACH", "DOMAIN_DETACH", "OFFBOARDING"):
+        for key in ("ONBOARDING", "DOMAIN_ATTACH", "DOMAIN_DETACH", "OFFBOARDING", "DOMAIN_PROVISION"):
             arn = sfn.create_state_machine(name=key.lower(), roleArn=role, definition=json.dumps(
                 {"StartAt": "Done", "States": {"Done": {"Type": "Succeed"}}}))["stateMachineArn"]
             os.environ[f"{key}_STATE_MACHINE_ARN"] = arn
