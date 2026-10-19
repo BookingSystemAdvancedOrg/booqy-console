@@ -56,7 +56,7 @@ def test_duplicate_slug(aws, tenant):
 
 
 @pytest.mark.parametrize("patch,field", [
-    ({"slug": "app"}, "slug"), ({"slug": "restaurang"}, "slug"), ({"slug": "-bad"}, "slug"), ({"ownerEmail": "nope"}, "ownerEmail"),
+    ({"slug": "app"}, "slug"), ({"slug": "restaurang"}, "slug"), ({"slug": "dev"}, "slug"), ({"slug": "-bad"}, "slug"), ({"ownerEmail": "nope"}, "ownerEmail"),
     ({"orgNumber": "12"}, "orgNumber"), ({"senderName": "Way too long name"}, "senderName"),
     ({"address": {"street": "x", "postalCode": "abc", "city": "y"}}, "address.postalCode"),
     ({"locations": [{"name": "Only name"}]}, "locations.0.address"),
