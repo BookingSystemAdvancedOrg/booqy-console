@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError, uploadToS3 } from "../api";
 import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant, TransferCheck } from "../types";
 import { ErrorNotice, Field, Modal, Notice, useAction } from "./ui";
+import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 
 type Path = "choose" | "buy" | "connect" | "cname";
 
@@ -51,8 +52,13 @@ function contactFrom(t: Tenant): RegistrantContact {
     legalName: t.legalName ?? "", orgNumber: t.orgNumber ?? "",
     firstName: first ?? "", lastName: rest.join(" "),
     email: t.contactEmail ?? t.ownerEmail ?? "", phone: t.contactPhone ?? t.ownerPhone ?? "",
-    address: { street: t.address?.street ?? "", postalCode: t.address?.postalCode ?? "", city: t.address?.city ?? "" },
+    address: { street: t.address?.street ?? "", postalCode: formatPostalCode(t.address?.postalCode ?? ""), city: t.address?.city ?? "" },
   };
+}
+
+/** The contact as the API gets it: postal code as 5 digits, no space. */
+function contactForApi(c: RegistrantContact): RegistrantContact {
+  return { ...c, address: { ...c.address, postalCode: postalCodeDigits(c.address.postalCode) } };
 }
 
 function Buy({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; onDone: () => void }) {
@@ -119,7 +125,7 @@ function Order({ tenant, offer, onBack, onDone }: {
     e.preventDefault();
     if (!offer.price) return;
     const r = await buy.run(() => api.registerDomain(tenant.tenantId, {
-      domain: offer.domain, makePrimary: primary, contact: c, acceptedPrice: offer.price!,
+      domain: offer.domain, makePrimary: primary, contact: contactForApi(c), acceptedPrice: offer.price!,
       ...(se ? { documentKey } : {}),
     }));
     if (r) { setResult(r.supportCase); onDone(); }
@@ -194,7 +200,7 @@ export function RegistrantFields({ value: c, onChange, fields }: {
   const err = (k: string) => fields[`contact.${k}`];
   const set = (k: keyof RegistrantContact) => (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...c, [k]: e.target.value });
   const setAddr = (k: keyof RegistrantContact["address"]) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    onChange({ ...c, address: { ...c.address, [k]: e.target.value } });
+    onChange({ ...c, address: { ...c.address, [k]: k === "postalCode" ? formatPostalCode(e.target.value) : e.target.value } });
   return (
     <>
       <h5>Registrant - the restaurant's AB (owns the domain)</h5>
@@ -206,7 +212,7 @@ export function RegistrantFields({ value: c, onChange, fields }: {
         <Field label="Email" required error={err("email")} hint="Registry notices go here"><input className="input" value={c.email} onChange={set("email")} /></Field>
         <Field label="Phone" required error={err("phone")}><input className="input" value={c.phone} onChange={set("phone")} /></Field>
         <Field label="Street" required error={err("address.street")}><input className="input" value={c.address.street} onChange={setAddr("street")} /></Field>
-        <Field label="Postal code" required error={err("address.postalCode")}><input className="input" value={c.address.postalCode} onChange={setAddr("postalCode")} /></Field>
+        <Field label="Postal code" required error={err("address.postalCode")}><input className="input mono" {...POSTAL_CODE_INPUT} value={c.address.postalCode} onChange={setAddr("postalCode")} /></Field>
         <Field label="City" required error={err("address.city")}><input className="input" value={c.address.city} onChange={setAddr("city")} /></Field>
       </div>
     </>
@@ -267,7 +273,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
     e.preventDefault();
     if (!info?.price) return;
     const r = await go.run(() => api.transferDomain(tenant.tenantId, domain, {
-      authCode, contact: c, acceptedPrice: info.price!, ...(info.verificationRequired ? { documentKey } : {}),
+      authCode, contact: contactForApi(c), acceptedPrice: info.price!, ...(info.verificationRequired ? { documentKey } : {}),
     }));
     if (r) { setResult(r.supportCase); onDone(); }
   }

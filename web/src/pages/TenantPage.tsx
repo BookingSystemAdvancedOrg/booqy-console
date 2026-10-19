@@ -6,6 +6,7 @@ import {
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
+import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
@@ -104,7 +105,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
   const [editing, setEditing] = useState(false);
   const initial = () => ({
     ...Object.fromEntries(PROFILE_FIELDS.map(([k]) => [k, (t[k] as string) ?? ""])),
-    street: t.address?.street ?? "", postalCode: t.address?.postalCode ?? "", city: t.address?.city ?? "",
+    street: t.address?.street ?? "", postalCode: formatPostalCode(t.address?.postalCode ?? ""), city: t.address?.city ?? "",
     notes: t.notes ?? "",
   }) as Record<string, string>;
   const [f, setF] = useState(initial);
@@ -115,8 +116,9 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
     const patch: Record<string, unknown> = {};
     for (const [k] of PROFILE_FIELDS) if ((f[k] ?? "") !== ((t[k] as string) ?? "")) patch[k] = f[k] || null;
     if (f.notes !== (t.notes ?? "")) patch.notes = f.notes || null;
-    const addr = { street: f.street, postalCode: f.postalCode, city: f.city };
-    if (JSON.stringify(addr) !== JSON.stringify({ street: t.address?.street ?? "", postalCode: t.address?.postalCode ?? "", city: t.address?.city ?? "" }))
+    const addr = { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city };
+    // Compared as digits: a stored "123 45" and the form's "12345" are the same code.
+    if (JSON.stringify(addr) !== JSON.stringify({ street: t.address?.street ?? "", postalCode: postalCodeDigits(t.address?.postalCode ?? ""), city: t.address?.city ?? "" }))
       patch.address = f.street || f.postalCode || f.city ? addr : null;
     if (Object.keys(patch).length === 0) return setEditing(false);
     if (await a.run(() => api.updateTenant(t.tenantId, patch))) { setEditing(false); onSaved(); }
@@ -128,7 +130,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
         {!editing ? (
           <dl className="dl">
             {PROFILE_FIELDS.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
-            <Row label="Address" value={t.address && `${t.address.street}, ${t.address.postalCode} ${t.address.city}`} />
+            <Row label="Address" value={t.address && `${t.address.street}, ${formatPostalCode(t.address.postalCode)} ${t.address.city}`} />
             <Row label="Notes" value={t.notes} />
           </dl>
         ) : (
@@ -141,7 +143,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
                 </Field>
               ))}
               <Field label="Street" error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
-              <Field label="Postal code" error={a.fields["address.postalCode"]}><input className="input" value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: e.target.value })} /></Field>
+              <Field label="Postal code" error={a.fields["address.postalCode"]}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
               <Field label="City" error={a.fields["address.city"]}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
               <Field label="Internal notes" wide error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { Card, ErrorNotice, Field, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber } from "../orgNumber";
+import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import type { LocationInput } from "../types";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -69,7 +70,8 @@ export default function NewTenantPage() {
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
-    const value = k === "orgNumber" ? formatOrgNumber(e.target.value) : e.target.value;
+    const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
+      : k === "postalCode" ? formatPostalCode(e.target.value) : e.target.value;
     setF((prev) => {
       const next = { ...prev, [k]: value };
       if (k === "name" && !slugTouched) next.slug = slugify(value);
@@ -109,7 +111,7 @@ export default function NewTenantPage() {
         contactEmail: f.contactEmail, contactPhone: f.contactPhone, billingEmail: f.billingEmail,
         senderName: f.senderName, replyToEmail: f.replyToEmail, notes: f.notes,
       }),
-      ...(addressGiven ? { address: { street: f.street, postalCode: f.postalCode, city: f.city } } : {}),
+      ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
       ...(f.maxLocations ? { overrides: { maxLocations: Number(f.maxLocations) } } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
     };
@@ -150,7 +152,7 @@ export default function NewTenantPage() {
             <input id="f-address.street" className="input" value={f.street} onChange={set("street")} />
           </Field>
           <Field label="Postal code" error={fields["address.postalCode"]}>
-            <input id="f-address.postalCode" className="input" value={f.postalCode} onChange={set("postalCode")} placeholder="111 22" />
+            <input id="f-address.postalCode" className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={set("postalCode")} />
           </Field>
           <Field label="City" error={fields["address.city"]}>
             <input id="f-address.city" className="input" value={f.city} onChange={set("city")} />

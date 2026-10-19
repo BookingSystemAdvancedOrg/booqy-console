@@ -78,6 +78,15 @@ def test_unknown_plan(aws):
     assert body["fields"]["planId"].startswith("Unknown plan")
 
 
+def test_postal_code_as_five_digits(aws):
+    # The console sends "12345" (it only shows the space while typing).
+    body = {**NEW_TENANT, "address": {"street": "Gatan 1", "postalCode": "11822", "city": "Stockholm"}}
+    status, res = call("POST /platform/tenants", body=body)
+    assert status == 202, res
+    _, detail = call("GET /platform/tenants/{tenantId}", path={"tenantId": res["tenantId"]})
+    assert detail["tenant"]["address"]["postalCode"] == "11822"
+
+
 def test_create_reports_every_problem_at_once(aws):
     body = {**NEW_TENANT, "ownerEmail": "nope", "planId": "gold",
             "locations": [{"name": "Only name"}, {"address": "Only address"}]}
