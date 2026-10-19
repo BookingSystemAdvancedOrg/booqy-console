@@ -1,3 +1,4 @@
+import { STORAGE_REGISTRY } from "../storageRegistry";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Logo } from "../components/Logo";
 import { useNavigate } from "react-router-dom";
@@ -284,6 +285,17 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           )}
         </div>
         <p className="auth__foot">Restricted to platform operators. Every action is logged.</p>
+        <details className="auth__storage">
+          <summary>Cookies and storage</summary>
+          <p>No cookies, no analytics. The Console keeps only your sign-in, for this tab:</p>
+          <ul>
+            {STORAGE_REGISTRY.map((e) => (
+              <li key={e.name}>
+                <code>{e.name}</code> ({e.kind}): {e.purpose} {e.lifetime}.
+              </li>
+            ))}
+          </ul>
+        </details>
       </main>
     </div>
   );

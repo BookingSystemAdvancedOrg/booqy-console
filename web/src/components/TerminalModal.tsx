@@ -15,7 +15,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
   const [editing, setEditing] = useState(false);
 
   return (
-    <Modal title={`Card terminals — ${location.name}`} onClose={onClose}>
+    <Modal title={`Card terminals - ${location.name}`} onClose={onClose}>
       <div className="stack">
         <ErrorNotice error={error} />
         {loading && !data && <p className="muted">Loading…</p>}

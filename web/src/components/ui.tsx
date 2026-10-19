@@ -142,7 +142,7 @@ export function useAction() {
 }
 
 export function fmtDate(iso?: string) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleString("sv-SE", { dateStyle: "medium", timeStyle: "short" });
 }
 

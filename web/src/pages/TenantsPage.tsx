@@ -69,9 +69,9 @@ export default function TenantsPage() {
                   </td>
                   <td><Status value={t.status} /></td>
                   <td>{t.planId}</td>
-                  <td>{t.locationCount} / {t.maxLocations ?? "—"}</td>
+                  <td>{t.locationCount} / {t.maxLocations ?? "-"}</td>
                   <td>{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
-                  <td className="small">{t.primaryDomain ?? <span className="muted">—</span>}</td>
+                  <td className="small">{t.primaryDomain ?? <span className="muted">-</span>}</td>
                   <td className="small">{fmtDate(t.createdAt)}</td>
                 </tr>
               ))}

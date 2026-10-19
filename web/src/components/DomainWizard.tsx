@@ -6,7 +6,7 @@ import { ErrorNotice, Field, Modal, Notice, useAction } from "./ui";
 type Path = "choose" | "buy" | "connect" | "cname";
 
 export function money(m?: Money | null) {
-  if (!m) return "—";
+  if (!m) return "-";
   return new Intl.NumberFormat("sv-SE", { style: "currency", currency: m.currency }).format(Number(m.amount));
 }
 
@@ -87,8 +87,8 @@ function Buy({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; o
               <tr key={o.domain}>
                 <td className="strong mono">{o.domain}
                   {o.verificationRequired && o.available && <div className="small muted">Needs registreringsbevis</div>}</td>
-                <td>{o.available ? money(o.price) : "—"}</td>
-                <td>{o.available ? money(o.renewalPrice) : "—"}</td>
+                <td>{o.available ? money(o.price) : "-"}</td>
+                <td>{o.available ? money(o.renewalPrice) : "-"}</td>
                 <td className="right">
                   {o.available && o.sellable
                     ? <button className="btn btn--small" onClick={() => setPick(o)} disabled={!o.price}>Choose</button>
@@ -197,7 +197,7 @@ export function RegistrantFields({ value: c, onChange, fields }: {
     onChange({ ...c, address: { ...c.address, [k]: e.target.value } });
   return (
     <>
-      <h5>Registrant — the restaurant's AB (owns the domain)</h5>
+      <h5>Registrant - the restaurant's AB (owns the domain)</h5>
       <div className="grid">
         <Field label="Company (legal name)" required error={err("legalName")}><input className="input" value={c.legalName} onChange={set("legalName")} /></Field>
         <Field label="Org. number" required error={err("orgNumber")} hint="NNNNNN-NNNN"><input className="input mono" value={c.orgNumber} onChange={set("orgNumber")} /></Field>
@@ -276,7 +276,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
     <Modal title={`Transfer ${domain} to Route 53`} onClose={onClose}>
       {result !== undefined ? (
         <>
-          <Notice kind="ok">Transfer started. The site and email keep working — the name servers don't change.
+          <Notice kind="ok">Transfer started. The site and email keep working - the name servers don't change.
             The old registrar usually releases the domain within 5–7 days (approving their email speeds it up).</Notice>
           {result && <SupportCaseBox domain={domain} tenantId={tenant.tenantId} supportCase={result} />}
         </>
@@ -289,7 +289,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
           {info && !info.transferable && <Notice kind="warn">Can't transfer right now: {info.reason}</Notice>}
           {info?.transferable && (
             <form onSubmit={onSubmit} noValidate>
-              <p className="small"><strong>{money(info.price)}</strong> — includes one more year; then {money(info.renewalPrice)}/year (auto-renews).</p>
+              <p className="small"><strong>{money(info.price)}</strong> - includes one more year; then {money(info.renewalPrice)}/year (auto-renews).</p>
               <ErrorNotice error={go.error} />
               {go.error instanceof ApiError && go.error.code === "price_changed" && <Notice kind="warn">Close and reopen to see the new price.</Notice>}
               <Field label="Authorization code" required error={go.fields.authCode}
@@ -384,7 +384,7 @@ function Connect({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => voi
           {!scan.registered && <Notice kind="warn">{scan.domain} has no name servers - is it registered? Check the spelling.</Notice>}
           {scan.nameServers.length > 0 && <p className="small">DNS is at: <span className="mono">{scan.nameServers.join(", ")}</span></p>}
           {scan.dnssec && <Notice kind="warn">DNSSEC is on. The restaurant must turn it off at their registrar <strong>before</strong> switching name servers, or the domain stops resolving.</Notice>}
-          <p className="small">These are the records we found. Everything ticked is copied to Route 53. Go through it with the restaurant —
+          <p className="small">These are the records we found. Everything ticked is copied to Route 53. Go through it with the restaurant -
             a record left out stops working when the name servers change (email is the usual casualty: MX, SPF, DKIM).
             Add anything we couldn't find (other DKIM selectors, own subdomains).</p>
           <div className="table-wrap">
@@ -457,7 +457,7 @@ function Cname({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void;
         if (r) { setDns(r.dns[0]); setDomain(""); onDone(); }
       }}>
         <ErrorNotice error={add.error} />
-        <Field label="Hostname" error={add.fields.domain} hint="e.g. www.restaurang.se — the bare domain can't be a CNAME">
+        <Field label="Hostname" error={add.fields.domain} hint="e.g. www.restaurang.se - the bare domain can't be a CNAME">
           <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="www.restaurang.se" />
         </Field>
         <label className="check"><input type="checkbox" checked={makePrimary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>

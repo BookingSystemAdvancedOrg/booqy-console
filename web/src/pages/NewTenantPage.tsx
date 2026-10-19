@@ -75,7 +75,7 @@ export default function NewTenantPage() {
       <div className="page-head">
         <div>
           <h1>New customer</h1>
-          <p className="muted">Creates the tenant, invites the owner, opens their Stripe account and sets up their site — no deploy needed.</p>
+          <p className="muted">Creates the tenant, invites the owner, opens their Stripe account and sets up their site - no deploy needed.</p>
         </div>
       </div>
 
@@ -187,7 +187,7 @@ export default function NewTenantPage() {
             </div>
           );
         })}
-        {locations.length === 0 && <p className="muted small">No locations yet — the owner (or you) can add them later.</p>}
+        {locations.length === 0 && <p className="muted small">No locations yet - the owner (or you) can add them later.</p>}
       </Card>
 
       <Card title="6 · Internal notes">

@@ -156,7 +156,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
         <Card title="At a glance">
           <dl className="dl">
             <Row label="Owner" value={t.ownerName && `${t.ownerName} · ${t.ownerEmail}`} />
-            <Row label="Plan" value={`${t.planId} — ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
+            <Row label="Plan" value={`${t.planId} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
             <Row label="Features" value={Object.entries(t.entitlements.features).filter(([, on]) => on).map(([k]) => k).join(", ")} />
             <Row label="Payments" value={t.stripe?.chargesEnabled ? "Ready" : t.stripe?.accountId ? "Stripe setup not finished" : "No Stripe account yet"} />
             <Row label="Website" value={t.primaryDomain} />
@@ -171,7 +171,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
 }
 
 function Row({ label, value }: { label: string; value?: string | null }) {
-  return (<><dt>{label}</dt><dd>{value || <span className="muted">—</span>}</dd></>);
+  return (<><dt>{label}</dt><dd>{value || <span className="muted">-</span>}</dd></>);
 }
 
 // ----------------------------------------------------------------- locations
@@ -182,11 +182,11 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
   const [term, setTerm] = useState<Location | null>(null);
   const atLimit = t.locationCount >= t.entitlements.maxLocations;
   return (
-    <Card title={`Locations — ${t.locationCount} of ${t.entitlements.maxLocations}`}
+    <Card title={`Locations - ${t.locationCount} of ${t.entitlements.maxLocations}`}
           actions={<button className="btn btn--primary" onClick={() => setEdit("new")}>+ Add location</button>}>
       {atLimit && (
         <Notice kind="warn">
-          The plan's limit is reached. Adding a location will offer to raise the limit by one — or change the plan in <button className="link" onClick={goPlan}>Plan</button>.
+          The plan's limit is reached. Adding a location will offer to raise the limit by one - or change the plan in <button className="link" onClick={goPlan}>Plan</button>.
         </Notice>
       )}
       <table className="table">
@@ -196,7 +196,7 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
             <tr key={l.locationId}>
               <td className="strong">{l.name}<div className="muted small mono">{l.locationId}</div></td>
               <td>{l.address}</td>
-              <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">—</span>}</td>
+              <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
               <td className="small mono">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
               <td className="small">
                 {l.terminal ? <span className="status status--active">Enabled</span> : <span className="muted">Off</span>}
@@ -325,7 +325,7 @@ function Users({ tenant }: { tenant: Tenant }) {
                 <td className="small">{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
-            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet — the owner invite is sent during setup.</td></tr>}
+            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet - the owner invite is sent during setup.</td></tr>}
           </tbody>
         </table>
         <p className="muted small">Owners invite their own staff from the restaurant admin app.</p>
@@ -379,7 +379,7 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
 
   return (
     <Card title="Plan & limits">
-      <p className="muted small">Takes effect immediately — e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location.</p>
+      <p className="muted small">Takes effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location.</p>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
           <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}`}>
@@ -428,11 +428,11 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
   return (
     <Card title="Stripe (Connect)">
       <p className="muted small">
-        The restaurant gets its own Stripe account connected to your platform account — they're the merchant, money goes to them, and
+        The restaurant gets its own Stripe account connected to your platform account - they're the merchant, money goes to them, and
         they see everything in their own Stripe dashboard. No keys are exchanged. What's left after setup is Stripe's identity
         and bank details form, which the owner fills in from their admin app (Settings → Payments) or via a link from here.
       </p>
-      {stripeParam === "refresh" && <Notice kind="warn">That onboarding link expired — create a new one.</Notice>}
+      {stripeParam === "refresh" && <Notice kind="warn">That onboarding link expired - create a new one.</Notice>}
       <dl className="dl">
         <Row label="Connected account" value={s.accountId} />
         <Row label="Details submitted" value={s.accountId ? (s.detailsSubmitted ? "Yes" : "No") : undefined} />
@@ -442,11 +442,11 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
         <Row label="Last updated" value={s.updatedAt ? fmtDate(s.updatedAt) : undefined} />
       </dl>
       {s.disconnected && <Notice kind="error">The restaurant disconnected your platform in Stripe. Payments are off until they reconnect.</Notice>}
-      {!s.accountId && <Notice kind="info">The connected account is created by the setup run{tenant.status === "provisioning" ? " — in progress" : ""}.</Notice>}
+      {!s.accountId && <Notice kind="info">The connected account is created by the setup run{tenant.status === "provisioning" ? " - in progress" : ""}.</Notice>}
       <ErrorNotice error={link.error ?? sync.error} />
       {url && (
         <Notice kind="ok">
-          Onboarding link (expires within minutes — open it now, or share on a call):
+          Onboarding link (expires within minutes - open it now, or share on a call):
           <div className="copy"><input className="input mono" readOnly value={url} onFocus={(e) => e.target.select()} />
             <button className="btn btn--small" onClick={() => navigator.clipboard.writeText(url)}>Copy</button>
             <a className="btn btn--small" href={url} target="_blank" rel="noreferrer">Open</a></div>
@@ -498,7 +498,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                   {z.transferable && <div><button className="btn btn--small" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
-            {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet — <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
+            {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet - <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
           </tbody>
         </table>
         {detail.zones.filter((z) => z.supportCase ?? z.transfer?.supportCase).map((z) => (
@@ -530,7 +530,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                 )}</td>
               </tr>
             ))}
-            {detail.domains.length === 0 && <tr><td colSpan={4} className="empty">No hostnames yet — they appear here once a domain is attached.</td></tr>}
+            {detail.domains.length === 0 && <tr><td colSpan={4} className="empty">No hostnames yet - they appear here once a domain is attached.</td></tr>}
           </tbody>
         </table>
         <ErrorNotice error={remove.error} />
@@ -600,7 +600,7 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
       <Card title="Delete (offboard) customer" tone="danger">
         <p>
           Disables and signs out all users, takes the website and its domains offline, and marks the customer offboarded.
-          Their data is kept (bookkeeping records must be kept 7 years; exports on request) — permanent deletion is a separate,
+          Their data is kept (bookkeeping records must be kept 7 years; exports on request) - permanent deletion is a separate,
           manual step. Their Stripe account stays theirs.
         </p>
         <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
