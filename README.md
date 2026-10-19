@@ -5,7 +5,7 @@ The operator console for the restaurant SaaS - only the platform's owners
 their locations, owners, plan, Stripe connected account and domains.
 
 ```
-sbs-admin/
+booqy-console/
 ├── web/   React + Vite + TypeScript SPA (S3 + CloudFront, ops.<platform domain>)
 └── api/   platform-tenants Lambda (Python 3.13, container image) - every /platform/* route
 ```
@@ -103,7 +103,7 @@ to dev, a push to `main` to prod. The pipeline assumes
 `[dev-]platform-admin-front-end-deploy-role` via GitHub OIDC (no AWS keys),
 which can only update this repo's bucket, distribution, ECR repo and Lambda.
 
-One-time: the repo must be named **`sbs-admin`** in the org the
+One-time: the repo must be named **`booqy-console`** in the org the
 infrastructure trusts, and it needs two GitHub **environments** named exactly
 `dev` and `prod` - the deploy role only trusts the deploy job of the
 environment with its own name, so PR runs and other branches can never
