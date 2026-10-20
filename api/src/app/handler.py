@@ -9,7 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import domains, locations, operators, outbox, stripe_connect, tenants, terminal, users, zones
+from . import (billing, domains, finance, locations, mail, operators, outbox, stripe_connect, tenants, terminal,
+               users, zones)
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -22,6 +23,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/suspend": tenants.suspend,
     "POST /platform/tenants/{tenantId}/resume": tenants.resume,
     "POST /platform/tenants/{tenantId}/offboard": tenants.offboard,
+    "POST /platform/tenants/{tenantId}/purge": tenants.purge_now,
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
     "GET /platform/tenants/{tenantId}/users": users.list_users,
     "POST /platform/tenants/{tenantId}/owners": users.invite_owner,
@@ -53,6 +55,25 @@ ROUTES = {
     "POST /platform/operators/{username}/resend-invite": operators.resend_invite,
     "GET /platform/outbox": outbox.list_messages,
     "GET /platform/outbox/{messageId}": outbox.get_message,
+    # News to the restaurant owners (Mail page): brand template, preview, send
+    "GET /platform/mail/template": mail.get_template,
+    "PUT /platform/mail/template": mail.put_template,
+    "POST /platform/mail/preview": mail.preview,
+    "GET /platform/mail/recipients": mail.list_recipients,
+    "GET /platform/mail/newsletters": mail.list_newsletters,
+    "POST /platform/mail/newsletters": mail.send,
+    "GET /platform/mail/newsletters/{newsletterId}": mail.get_newsletter,
+    # Finance: subscriptions (Stripe Billing) and the Finance page
+    "GET /platform/finance/overview": finance.overview,
+    "GET /platform/finance/tenants/{tenantId}": finance.tenant_detail,
+    "POST /platform/finance/rebuild": finance.rebuild,
+    "POST /platform/finance/stripe-sync": finance.stripe_sync,
+    "GET /platform/tenants/{tenantId}/billing": billing.get_billing,
+    "POST /platform/tenants/{tenantId}/billing/subscription": billing.start_subscription,
+    "PATCH /platform/tenants/{tenantId}/billing/subscription": billing.update_subscription,
+    "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
+    "POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind": billing.remind_invoice,
+    "GET /platform/finance/invoices": finance.invoices,
 }
 
 OPERATOR_GROUP = "platform_admin"
@@ -65,6 +86,8 @@ class Request:
     body: dict
     actor: str
     claims: dict = field(default_factory=dict)
+    # The alias this invocation came through - what a send hands its work to.
+    function_arn: str | None = None
 
 
 def _groups(claims: dict) -> set[str]:
@@ -84,6 +107,19 @@ def handler(event, context):
         log.info(json.dumps({"workflowTask": event.get("workflowTask"), "domain": event.get("domain"),
                              "tenantId": event.get("tenantId"), "result": result.get("status")}))
         return result
+    # A newsletter send the function handed to itself (mail.send); only this
+    # function's own role may invoke it.
+    if "mailTask" in event and "routeKey" not in event:
+        result = mail.mail_task(event, context)
+        log.info(json.dumps({"mailTask": event.get("mailTask"), "newsletterId": event.get("newsletterId"),
+                             "result": result.get("status")}))
+        return result
+    # The daily dunning schedule (EventBridge Scheduler, {"financeTask":
+    # "dunning"}); only the scheduler role may invoke the function this way.
+    if "financeTask" in event and "routeKey" not in event:
+        result = billing.finance_task(event, context)
+        log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))
+        return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
@@ -95,7 +131,8 @@ def handler(event, context):
     actor = claims.get("username") or claims.get("sub") or "unknown"
     try:
         req = Request(path=event.get("pathParameters") or {}, query=event.get("queryStringParameters") or {},
-                      body=parse_body(event), actor=actor, claims=claims)
+                      body=parse_body(event), actor=actor, claims=claims,
+                      function_arn=getattr(context, "invoked_function_arn", None))
         status, body = fn(req)
         log.info(json.dumps({"route": route, "status": status, "actor": actor,
                              "tenantId": req.path.get("tenantId"), "requestId": request_id}))

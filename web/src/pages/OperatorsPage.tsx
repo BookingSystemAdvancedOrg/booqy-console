@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
-import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
+import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { OperatorAccount } from "../types";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
@@ -46,7 +46,7 @@ export default function OperatorsPage({ me }: { me: string }) {
       <ErrorNotice error={row.error} />
       {done && <Notice kind="ok">{done}</Notice>}
 
-      {loading && !data ? <p className="muted">Loading…</p> : (
+      {loading && !data ? <Printing /> : (
         <div className="table-wrap">
           <table className="table">
             <thead>

@@ -229,6 +229,23 @@ def test_offboard(aws, tenant):
     assert call("PATCH /platform/tenants/{tenantId}/locations/{locationId}", {**p, "locationId": loc}, {"name": "x"})[0] == 409
 
 
+def test_purge_now_only_for_offboarded(aws, tenant):
+    p = {"tenantId": tenant}
+    _activate(aws, tenant)
+    assert call("POST /platform/tenants/{tenantId}/purge", p, {"confirmSlug": "wrong"})[0] == 400
+    status, body = call("POST /platform/tenants/{tenantId}/purge", p, {"confirmSlug": "pizzeria-roma"})
+    assert status == 409 and body["currentStatus"] == "active"
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET #s = :o, purgeAt = :p", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":o": {"S": "offboarded"}, ":p": {"S": "2027-01-18T10:00:00Z"}})
+    status, body = call("POST /platform/tenants/{tenantId}/purge", p, {"confirmSlug": "pizzeria-roma"})
+    assert status == 202 and body["purgeAt"] < "2027-01-18"
+    _, detail = call("GET /platform/tenants/{tenantId}", p)
+    assert detail["tenant"]["purgeAt"] == body["purgeAt"]
+    assert detail["audit"][0]["action"] == "purge_requested"
+    assert detail["audit"][0]["details"] == {"previousPurgeAt": "2027-01-18T10:00:00Z"}
+
+
 def test_invite_while_suspended_is_disabled(aws, tenant):
     p = {"tenantId": tenant}
     _activate(aws, tenant)

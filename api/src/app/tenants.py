@@ -69,7 +69,8 @@ def list_plans(req) -> tuple[int, dict]:
                       KeyConditionExpression="GSI1PK = :p", ExpressionAttributeValues={":p": {"S": "PLAN"}})
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
-         "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {})}
+         "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
+         "priceSek": p.get("priceSek")}
         for p in plans]}
 
 
@@ -103,6 +104,33 @@ def _overrides(f: v.Fields) -> dict | None:
     return {k: val for k, val in out.items() if val is not None}
 
 
+def price_field(f: v.Fields, field: str = "priceSek") -> int | None:
+    """A monthly price in whole SEK excluding VAT, or None for the plan's."""
+    return f.integer(field, minimum=0, maximum=1_000_000)
+
+
+def _billing_input(f: v.Fields) -> dict:
+    """The optional `billing` object of the create form: terms (try-out or
+    subscription), the customer's own price, whether invoicing starts now."""
+    raw = f.data.get("billing")
+    if raw is None:
+        return {"terms": "subscription", "startInvoicing": False}
+    if not isinstance(raw, dict):
+        f.fail("billing", "Must be an object")
+        return {"terms": "subscription", "startInvoicing": False}
+    sub = v.Fields(raw)
+    terms = sub.text("terms", max_len=20) or "subscription"
+    if terms not in ("trial", "subscription"):
+        sub.fail("terms", "trial (try-out period) or subscription")
+    out = {"terms": terms, "priceSek": price_field(sub), "startInvoicing": sub.boolean("startInvoicing") or False,
+           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10)}
+    if out["collectionMethod"] not in (None, "send_invoice", "charge_automatically"):
+        sub.fail("collectionMethod", "send_invoice or charge_automatically")
+    for k, msg in sub.errors.items():
+        f.fail(f"billing.{k}", msg)
+    return out
+
+
 # -------------------------------------------------------------------- tenants
 def list_tenants(req) -> tuple[int, dict]:
     items = query_all(TableName=tenant_table(), IndexName="GSI1",
@@ -115,6 +143,7 @@ def list_tenants(req) -> tuple[int, dict]:
         stripe = t.get("stripe") or {}
         rows.append({
             "tenantId": t["tenantId"], "name": t.get("name"), "slug": t.get("slug"),
+            "legalName": t.get("legalName"), "orgNumber": t.get("orgNumber"),
             "status": t.get("status"), "planId": t.get("planId"),
             "locationCount": t.get("locationCount", 0),
             "maxLocations": (t.get("entitlements") or {}).get("maxLocations"),
@@ -136,6 +165,7 @@ def create_tenant(req) -> tuple[int, dict]:
     plan_id = f.text("planId", required=True, max_len=40)
     fields = _profile_fields(f)
     overrides = _overrides(f)
+    billing_input = _billing_input(f)
     raw_locations = req.body.get("locations") or []
     if not isinstance(raw_locations, list):
         f.fail("locations", "Must be a list")
@@ -161,12 +191,15 @@ def create_tenant(req) -> tuple[int, dict]:
     f.done()
 
     tenant_id, now = new_id(), now_iso()
+    billing = {"terms": billing_input["terms"]}
+    if billing_input.get("priceSek") is not None and plan and billing_input["priceSek"] != plan.get("priceSek"):
+        billing["priceSek"] = billing_input["priceSek"]
     profile = {
         "PK": f"TENANT#{tenant_id}", "SK": "PROFILE", "GSI1PK": "TENANT", "GSI1SK": slug,
         "tenantId": tenant_id, "name": name, "slug": slug, "status": "provisioning",
         "planId": plan_id, "entitlements": entitlements, "locationCount": len(locations),
         "ownerEmail": owner_email, "ownerName": owner_name, "ownerPhone": owner_phone,
-        "onboardingRuns": 1,
+        "onboardingRuns": 1, "billing": billing,
         "createdAt": now, "createdBy": req.actor, "updatedAt": now, "updatedBy": req.actor,
         **{k: val for k, val in fields.items() if val is not None},
     }
@@ -195,7 +228,21 @@ def create_tenant(req) -> tuple[int, dict]:
         raise
 
     status = _start_onboarding(tenant_id, profile, run=1)
-    return 202, {"tenantId": tenant_id, "status": status}
+    out = {"tenantId": tenant_id, "status": status}
+    if billing_input.get("startInvoicing"):
+        # Invoicing starts right away (the restaurant's first invoice runs
+        # from startDate when given). A Stripe hiccup is reported and the
+        # Billing tab can start it later; the customer is created either way.
+        from .billing import start_for                 # billing imports this module
+        try:
+            out["billing"] = start_for(tenant_id, get_profile(tenant_id), actor=req.actor,
+                                       method=billing_input.get("collectionMethod") or "send_invoice",
+                                       start_day=billing_input.get("startDate"), price_sek=billing_input.get("priceSek"),
+                                       terms=billing_input["terms"])
+        except ApiError as e:
+            write_audit(tenant_id, "subscription_start_failed", req.actor, {"error": e.message})
+            out["billingError"] = e.message
+    return 202, out
 
 
 def _start_onboarding(tenant_id: str, profile: dict, run: int) -> str:
@@ -306,29 +353,46 @@ def set_plan(req) -> tuple[int, dict]:
     plan_id = f.text("planId", required=True, max_len=40)
     overrides = _overrides(f)
     force = f.boolean("force") or False
+    price_sek = price_field(f)
     f.done()
     profile = get_profile(tenant_id)
     plan = get_plan(plan_id)
     if plan is None:
         raise ApiError(400, "validation_failed", "Unknown plan", fields={"planId": "Unknown plan"})
     ent = _entitlements(plan, overrides)
+    custom_price = price_sek if price_sek is not None and price_sek != plan.get("priceSek") else None
     count = int(profile.get("locationCount", 0))
     if ent["maxLocations"] < count and not force:
         raise ApiError(409, "below_location_count",
                        f"The tenant already has {count} locations; the new limit is {ent['maxLocations']}. "
                        "Send force=true to apply anyway (existing locations keep working, no new ones).",
                        locationCount=count)
+    ensure_billing_map(tenant_id)
+    values = {":p": {"S": plan_id}, ":e": to_ddb_value(ent), ":n": {"S": now_iso()}, ":b": {"S": req.actor}}
+    if custom_price is not None:
+        values[":price"] = {"N": str(custom_price)}
+        expression = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b, billing.priceSek = :price"
+    else:
+        expression = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b REMOVE billing.priceSek"
     out = client("dynamodb").update_item(
-        TableName=tenant_table(), Key=tkey(tenant_id),
-        UpdateExpression="SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b",
-        ConditionExpression="attribute_exists(PK)",
-        ExpressionAttributeValues={":p": {"S": plan_id}, ":e": to_ddb_value(ent),
-                                   ":n": {"S": now_iso()}, ":b": {"S": req.actor}},
-        ReturnValues="ALL_NEW")
+        TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
+        ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues=values, ReturnValues="ALL_NEW")
     write_audit(tenant_id, "plan_changed", req.actor, {
-        "from": {"planId": profile.get("planId"), "entitlements": profile.get("entitlements")},
-        "to": {"planId": plan_id, "entitlements": ent}})
-    return 200, {"tenant": public(from_ddb(out["Attributes"]))}
+        "from": {"planId": profile.get("planId"), "entitlements": profile.get("entitlements"),
+                 "priceSek": (profile.get("billing") or {}).get("priceSek") if isinstance(profile.get("billing"), dict) else None},
+        "to": {"planId": plan_id, "entitlements": ent, "priceSek": custom_price}})
+    from .billing import after_plan_change          # billing imports this module
+    subscription = after_plan_change(tenant_id, from_ddb(out["Attributes"]), plan, req.actor)
+    tenant = public(from_ddb(out["Attributes"])) if subscription is None else public(get_profile(tenant_id))
+    return 200, {"tenant": tenant, "subscription": subscription}
+
+
+def ensure_billing_map(tenant_id: str) -> None:
+    """PROFILE.billing exists (empty map) so nested fields can be set."""
+    client("dynamodb").update_item(
+        TableName=tenant_table(), Key=tkey(tenant_id),
+        UpdateExpression="SET billing = if_not_exists(billing, :empty)",
+        ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues={":empty": {"M": {}}})
 
 
 # ------------------------------------------------------------------ lifecycle
@@ -381,34 +445,66 @@ def _reason(req) -> str | None:
     return reason
 
 
-def suspend(req) -> tuple[int, dict]:
+def suspend_tenant(tenant_id: str, actor: str, reason: str | None) -> dict:
     """Block every user of the tenant. Allowed again on a suspended tenant, so
-    a run that failed for some users can simply be repeated."""
-    tenant_id = req.path["tenantId"]
-    reason = _reason(req)
+    a run that failed for some users can simply be repeated. Also what the
+    dunning task does to a customer whose subscription is long past due."""
     get_profile(tenant_id)
-    _set_status(tenant_id, "suspended", ("active", "suspended"), req.actor)
+    _set_status(tenant_id, "suspended", ("active", "suspended"), actor)
     # Profile status is left alone on purpose: resume re-enables only users
     # whose profile says active, so people an owner disabled stay disabled.
     n, failed = _cognito_each(tenant_users(tenant_id), "admin_disable_user", "admin_user_global_sign_out")
-    write_audit(tenant_id, "suspended", req.actor, {"usersDisabled": n, "failed": failed, "reason": reason})
-    return 200, {"status": "suspended", "usersDisabled": n, "failed": failed}
+    write_audit(tenant_id, "suspended", actor, {"usersDisabled": n, "failed": failed, "reason": reason})
+    return {"status": "suspended", "usersDisabled": n, "failed": failed}
+
+
+def resume_tenant(tenant_id: str, actor: str) -> dict:
+    get_profile(tenant_id)
+    _set_status(tenant_id, "active", ("suspended", "active"), actor)
+    users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
+    n, failed = _cognito_each(users, "admin_enable_user")
+    write_audit(tenant_id, "resumed", actor, {"usersEnabled": n, "failed": failed})
+    return {"status": "active", "usersEnabled": n, "failed": failed}
+
+
+def suspend(req) -> tuple[int, dict]:
+    return 200, suspend_tenant(req.path["tenantId"], req.actor, _reason(req))
 
 
 def resume(req) -> tuple[int, dict]:
+    return 200, resume_tenant(req.path["tenantId"], req.actor)
+
+
+def purge_now(req) -> tuple[int, dict]:
+    """'Delete data now' on an offboarded tenant (e.g. the customer asked for
+    erasure): moves purgeAt to now. The tenant-purge Lambda (infrastructure
+    schedule, nightly in production) deletes the data on its next run; this
+    API only ever moves the date."""
     tenant_id = req.path["tenantId"]
-    get_profile(tenant_id)
-    _set_status(tenant_id, "active", ("suspended", "active"), req.actor)
-    users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
-    n, failed = _cognito_each(users, "admin_enable_user")
-    write_audit(tenant_id, "resumed", req.actor, {"usersEnabled": n, "failed": failed})
-    return 200, {"status": "active", "usersEnabled": n, "failed": failed}
+    profile = get_profile(tenant_id)
+    if req.body.get("confirmSlug") != profile.get("slug"):
+        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
+                       fields={"confirmSlug": "Does not match"})
+    now = now_iso()
+    try:
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key=tkey(tenant_id),
+            UpdateExpression="SET purgeAt = :n, updatedAt = :n, updatedBy = :b",
+            ConditionExpression="#s = :off",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":n": {"S": now}, ":b": {"S": req.actor}, ":off": {"S": "offboarded"}})
+    except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
+        current = (get_profile(tenant_id) or {}).get("status")
+        raise ApiError(409, "invalid_status", f"Only an offboarded customer's data can be deleted (it is {current})",
+                       currentStatus=current) from e
+    write_audit(tenant_id, "purge_requested", req.actor, {"previousPurgeAt": profile.get("purgeAt")})
+    return 202, {"status": "offboarded", "purgeAt": now}
 
 
 def offboard(req) -> tuple[int, dict]:
-    """'Delete customer': disable users, detach domains, mark offboarded. Data
-    is kept (exports, 7-year bookkeeping retention); purging is a separate,
-    manual decision.
+    """'Delete customer': disable users, detach domains, mark offboarded with
+    purgeAt = now + the retention days. The data itself is deleted by the
+    tenant-purge Lambda once purgeAt has passed (purge_now moves it).
 
     The status flips to offboarding first (conditional), and the execution
     name is fixed per tenant - a double click or two operators can't start
@@ -421,16 +517,27 @@ def offboard(req) -> tuple[int, dict]:
     if profile.get("status") == "provisioning":
         raise ApiError(409, "invalid_status", "Wait until setup has finished (or failed)",
                        currentStatus="provisioning")
-    _set_status(tenant_id, "offboarding", ("active", "suspended", "provisioning_failed", "offboarding"), req.actor)
+    return 202, offboard_tenant(tenant_id, profile, req.actor)
+
+
+def offboard_tenant(tenant_id: str, profile: dict, actor: str, reason: str | None = None) -> dict:
+    """Offboarding proper: used by the route above and by the daily billing
+    task when a cancelled subscription has ended."""
+    _set_status(tenant_id, "offboarding", ("active", "suspended", "provisioning_failed", "offboarding"), actor)
+    # A running subscription ends now with a final prorated invoice; a Stripe
+    # failure is reported and does not stop the offboarding (the Billing tab
+    # keeps its Cancel button until the webhook or a retry says canceled).
+    from .billing import cancel_for_offboarding       # billing imports this module
+    subscription = cancel_for_offboarding(tenant_id, profile, actor)
     sfn = client("stepfunctions")
     try:
         sfn.start_execution(
             stateMachineArn=env("OFFBOARDING_STATE_MACHINE_ARN"), name=f"offboard-{tenant_id}",
-            input=json.dumps({"tenantId": tenant_id, "requestedBy": req.actor}))
+            input=json.dumps({"tenantId": tenant_id, "requestedBy": actor}))
     except sfn.exceptions.ExecutionAlreadyExists:
         pass                                    # already running / ran - nothing to do
-    write_audit(tenant_id, "offboarding_started", req.actor)
-    return 202, {"status": "offboarding"}
+    write_audit(tenant_id, "offboarding_started", actor, {"reason": reason} if reason else None)
+    return {"status": "offboarding", "subscription": subscription}
 
 
 def retry_onboarding(req) -> tuple[int, dict]:

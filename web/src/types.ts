@@ -1,5 +1,5 @@
 export type TenantStatus =
-  | "provisioning" | "provisioning_failed" | "active" | "suspended" | "offboarding" | "offboarded";
+  | "provisioning" | "provisioning_failed" | "active" | "suspended" | "offboarding" | "offboarded" | "purged";
 
 export type Features = Record<string, boolean>;
 
@@ -8,7 +8,11 @@ export interface Plan {
   name: string;
   maxLocations: number;
   features: Features;
+  /** Monthly price excluding VAT (the plan's default; a customer can have their own). */
+  priceSek?: number | null;
 }
+
+export type BillingTerms = "trial" | "subscription";
 
 export interface Address {
   street: string;
@@ -55,12 +59,19 @@ export interface Tenant {
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
+  offboardedAt?: string;
+  /** When tenant-purge deletes the data (set at offboarding). */
+  purgeAt?: string;
+  purgedAt?: string;
+  billing?: Partial<Billing> & { customerId?: string };
 }
 
 export interface TenantSummary {
   tenantId: string;
   name: string;
   slug: string;
+  legalName?: string;
+  orgNumber?: string;
   status: TenantStatus;
   planId: string;
   locationCount: number;
@@ -257,6 +268,8 @@ export interface NewTenantInput {
   billingEmail?: string;
   senderName?: string;
   replyToEmail?: string;
+  billing?: { terms: BillingTerms; priceSek?: number; startInvoicing?: boolean; startDate?: string;
+              collectionMethod?: "send_invoice" | "charge_automatically" };
   address?: Address;
   notes?: string;
   overrides?: { maxLocations?: number };
@@ -294,4 +307,272 @@ export interface OutboxMessage {
   subject?: string;
   text?: string;
   html?: string | null;
+}
+
+/** News to the restaurant owners (Mail page). */
+export interface MailLogo {
+  kind: "booqy" | "custom";
+  name?: string | null;
+  /** The logo as shown in the email (data URI), for the picker's preview. */
+  dataUrl: string;
+}
+
+export interface MailTemplate {
+  senderName: string;
+  replyTo: string;
+  accentColor: string;
+  signature: string;
+  footer: string;
+  logo: MailLogo;
+  /** The no-reply address the platform sends from (read-only). */
+  from: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface MailTemplateInput {
+  senderName: string;
+  replyTo: string;
+  accentColor: string;
+  signature: string;
+  footer: string;
+  /** dataUrl only when a new file was picked; without it the uploaded logo is kept. */
+  logo: { kind: "booqy" } | { kind: "custom"; dataUrl?: string; name?: string };
+}
+
+export interface MailRecipient {
+  email: string;
+  name: string;
+  tenantName: string;
+  tenantId: string;
+}
+
+export type NewsletterStatus = "sending" | "sent" | "partly_sent" | "failed";
+
+export interface Newsletter {
+  newsletterId: string;
+  subject: string;
+  body: string;
+  status: NewsletterStatus;
+  createdAt: string;
+  createdBy: string;
+  recipientCount: number;
+  sentCount: number;
+  failedCount: number;
+  finishedAt?: string;
+  lastError?: string;
+}
+
+export interface NewsletterRecipient {
+  email: string;
+  tenantName: string;
+  status: "pending" | "sent" | "failed";
+  error?: string;
+}
+
+// ------------------------------------------------------------------ finance
+/** Status of a customer's SaaS subscription (Stripe Billing on the platform account). */
+export type BillingStatus =
+  | "none" | "active" | "trialing" | "past_due" | "unpaid" | "paused" | "canceled" | "incomplete" | "incomplete_expired" | "unknown";
+
+export interface BillingPlan {
+  planId?: string;
+  name?: string;
+  priceSek?: number;
+  stripePriceId?: string;
+}
+
+export interface Billing {
+  customerId?: string;
+  subscriptionId?: string;
+  status?: BillingStatus;
+  planId?: string;
+  priceId?: string;
+  mrrSek?: number;
+  collectionMethod?: "send_invoice" | "charge_automatically";
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  cancelAt?: string;
+  canceledAt?: string;
+  trialEnd?: string;
+  pauseCollection: boolean;
+  pastDueSince?: string;
+  autoSuspended: boolean;
+  lastPaidAt?: string;
+  lastPaymentFailedAt?: string;
+  startedAt?: string;
+  startedBy?: string;
+  hasCard: boolean;
+  /** trial = try-out period: leaves at the end of any paid month; subscription = notice period. */
+  terms: BillingTerms;
+  termsSince?: string;
+  /** When a try-out becomes a subscription by itself. */
+  trialEndsAt?: string | null;
+  /** The customer's own monthly price ex VAT, or null for the plan's. */
+  priceSek?: number | null;
+  /** What they pay per month ex VAT (own price or the plan's). */
+  monthlySek?: number | null;
+  noticeMonths: number;
+  trialMonths: number;
+  offboardAtEnd: boolean;
+  /** When a requested cancellation takes effect. */
+  endsAt?: string | null;
+  subscribed: boolean;
+  plan: BillingPlan;
+  priceDiffers: boolean;
+  daysUntilDue: number;
+  suspendAfterDays: number;
+}
+
+export interface Invoice {
+  invoiceId: string;
+  number?: string;
+  status: "draft" | "open" | "paid" | "void" | "uncollectible";
+  subtotalSek: number;
+  taxSek: number;
+  totalSek: number;
+  amountPaidSek: number;
+  amountRemainingSek: number;
+  outstandingSek: number;
+  createdAt?: string;
+  dueDate?: string;
+  paidAt?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  hostedInvoiceUrl?: string;
+  invoicePdf?: string;
+  paidOutOfBand: boolean;
+  /** yyyy-mm of the period the invoice is for */
+  month?: string | null;
+  daysLate: number;
+  remindersSent: number;
+  lastReminderAt?: string;
+  lateFeeSek?: number | null;
+  interestSek?: number | null;
+  collectionMethod?: "send_invoice" | "charge_automatically" | null;
+}
+
+/** One row of the Payments view: an invoice with its customer. */
+export interface PaymentRow extends Invoice {
+  tenantId: string;
+  name: string;
+  slug: string;
+  orgNumber?: string;
+  tenantStatus: TenantStatus;
+}
+
+export interface PaymentsView {
+  period: { from: string; to: string; status: string };
+  summary: {
+    invoices: number; paid: number; open: number; overdue: number;
+    invoicedSek: number; collectedSek: number; outstandingSek: number; overdueSek: number;
+    lateFeesSek: number; interestSek: number;
+  };
+  invoices: PaymentRow[];
+}
+
+export interface BillingView {
+  billing: Billing;
+  invoices: Invoice[];
+}
+
+export interface FinanceKpis {
+  mrrSek: number;
+  revenueSek: number;
+  collectedSek: number;
+  outstandingSek: number;
+  costSek: number;
+  marginSek: number;
+  marginPct: number | null;
+  customers: number;
+  activeCustomers: number;
+  payingCustomers: number;
+  newCustomers: number;
+  churnedCustomers: number;
+  churnPct: number | null;
+  arpuSek: number | null;
+  bookings: number;
+  orders: number;
+  costPerBookingSek: number | null;
+  costPerOrderSek: number | null;
+  requests: number;
+  emails: number;
+  sms: number;
+}
+
+export interface FinancePoint {
+  day: string;
+  invoicedSek: number;
+  paidSek: number;
+  costSek: number;
+  mrrSek: number;
+  bookings: number;
+  orders: number;
+  requests: number;
+  activeTenants: number;
+}
+
+export interface FinanceTenantRow {
+  tenantId: string;
+  name: string;
+  slug: string;
+  orgNumber?: string;
+  legalName?: string;
+  status: TenantStatus;
+  planId?: string;
+  billingStatus: BillingStatus;
+  pastDueSince?: string;
+  mrrSek: number;
+  revenueSek: number;
+  collectedSek: number;
+  creditedSek: number;
+  outstandingSek: number;
+  costSek: number;
+  costSplitSek: { baseline: number; requests: number; email: number; sms: number };
+  marginSek: number;
+  marginPct: number | null;
+  bookings: number;
+  orders: number;
+  requests: number;
+  emails: number;
+  sms: number;
+  marketingEmails: number;
+  costPerBookingSek: number | null;
+  costPerOrderSek: number | null;
+  activeDays: number;
+  invoiceCount: number;
+  createdAt?: string;
+  offboardedAt?: string;
+}
+
+export interface FinanceJob {
+  startedAt?: string;
+  finishedAt?: string;
+  days?: string[];
+  done?: string[];
+  warnings: string[];
+}
+
+export interface FinanceOverview {
+  period: { from: string; to: string; days: number; includeInactive: boolean; tenantId: string | null;
+            locationId?: string | null; revenueScope?: "tenant" | null };
+  /** The picked customer's locations (for the location filter). */
+  locations?: { locationId: string; name?: string }[];
+  kpis: FinanceKpis;
+  series: FinancePoint[];
+  tenants: FinanceTenantRow[];
+  attention: {
+    pastDue: { tenantId: string; name: string; since: string; status: TenantStatus }[];
+    noSubscription: { tenantId: string; name: string; createdAt?: string }[];
+  };
+  job: FinanceJob | null;
+  asOf: string | null;
+}
+
+export interface FinanceTenantDetail {
+  period: { from: string; to: string };
+  tenant: FinanceTenantRow;
+  series: FinancePoint[];
+  days: Record<string, unknown>[];
+  invoices: Invoice[];
 }

@@ -55,9 +55,9 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 |---|---|
 | `GET /platform/plans` | plan catalog |
 | `GET /platform/tenants` | all customers |
-| `POST /platform/tenants` | create (the form) |
+| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the subscription right away |
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
-| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features); `force` to go below the current location count |
+| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running subscription moves to the new price from the next invoice |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
 | `POST .../offboard` | "delete": `{confirmSlug}`; users disabled, domains detached, data kept |
 | `POST .../onboarding/retry` | re-run setup (failed → retry; active → fill in what was added since, e.g. VAT rates) |
@@ -74,11 +74,46 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 
 The domain-provision workflow also invokes this Lambda directly
 (`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -
-see `api/src/app/zones.py`.
+see `api/src/app/zones.py`. EventBridge Scheduler invokes it daily with
+`{"financeTask": "dunning"}`: unpaid invoices get weekly reminders (Stripe
+re-sends the email), the statutory late fee after the grace period and
+interest for the days late when paid, all as Stripe invoice items;
+customers past due longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended
+(as with Suspend) and resumed when they pay - `api/src/app/billing.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
+| `GET .../billing` | the customer's subscription (Stripe Billing on the platform account: status, plan price, MRR, period, past due) and invoices |
+| `POST .../billing/subscription` | start it: `{collectionMethod: send_invoice \| charge_automatically, startDate?, terms: trial \| subscription, priceSek?}` (a future date = first invoice then; priceSek = the customer's own monthly price ex VAT) |
+| `PATCH .../billing/subscription` | `{action: pause \| resume \| cancel \| cancel_now \| keep \| convert \| sync_price \| use_card, offboardAtEnd?}`: cancel ends a try-out with the paid month and a subscription after the notice period (offboarded automatically when it ends unless `offboardAtEnd: false`); keep undoes it; convert makes a try-out a subscription; sync_price applies the plan's or the customer's own price from the next invoice |
+| `POST .../billing/card-link` | Stripe Checkout (setup mode) link where the restaurant adds a card |
+| `POST .../billing/invoices/{invoiceId}/remind` | Stripe re-sends the invoice email now (open invoices) |
+| `GET /platform/finance/invoices?from&to&status` | the Payments view: every invoice of the period with days late, reminders, fees; status all, paid, open, overdue |
+| `GET /platform/finance/overview?from&to&includeInactive&tenantId&locationId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
+| `GET /platform/finance/tenants/{id}?from&to` | one customer's figures, day rows and invoices |
+| `POST /platform/finance/rebuild` | `{from, to}`: recompute a range (invokes finance-rollup, max 92 days) |
+| `POST /platform/finance/stripe-sync` | re-read every subscription and invoice from Stripe into the ledger |
 | `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in production) |
 
 Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
+
+## Finance
+
+**Finance** in the top bar: MRR, revenue (invoiced ex VAT), collected and
+outstanding, AWS cost, gross margin, customers (new, churned), ARPU, cost
+per booking and per order, charts (revenue vs cost, MRR trend, best and
+weakest margin) and a sortable table per customer. Presets week, month,
+quarter, year, last 30 days or a custom range; a customer filter (name,
+org. number or slug); "Include inactive customers" adds suspended,
+offboarded and purged ones. **Rebuild** recomputes a date range,
+**Import from Stripe** re-reads subscriptions and invoices. The figures
+come from the `finance` table, written nightly by `finance-rollup`
+(Cost Explorer + usage per customer, application repo) and by the
+Stripe webhook; see the infrastructure repo's `docs/FINANCE.md`.
+
+**Payments** (a tab on the Finance page) shows who has paid for a month:
+one row per invoice with days late, reminders sent, fees and a Send
+reminder button. The customer page's **Billing** tab starts, pauses,
+cancels and updates the subscription, creates card links and lists the
+invoices.
 
 ## Local development
 
@@ -87,13 +122,14 @@ Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 cd api
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager, S3
+python -m pytest            # moto-backed: DynamoDB, Cognito, Step Functions, Secrets Manager, S3; Stripe is faked
 
 # Web - against the dev API
 cd web
 cp .env.example .env.local  # fill in from `tofu output` (dev)
 npm install
 npm run dev                 # http://localhost:5173 (an allowed sign-in callback outside production)
+npm test                    # vitest: the Finance page, the Billing tab and the date/number helpers
 ```
 
 ## Deploy

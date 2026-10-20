@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ErrorNotice, Status, fmtDate, useLoad } from "../components/ui";
+import { ErrorNotice, Status, fmtDate, useLoad, Printing } from "../components/ui";
 
-const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded"] as const;
+const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());
@@ -53,7 +53,7 @@ export default function TenantsPage() {
       </div>
 
       <ErrorNotice error={error} />
-      {loading && !data ? <p className="muted">Loading…</p> : (
+      {loading && !data ? <Printing /> : (
         <div className="table-wrap">
           <table className="table">
             <thead>

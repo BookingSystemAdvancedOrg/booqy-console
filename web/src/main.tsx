@@ -7,9 +7,10 @@ import TenantsPage from "./pages/TenantsPage";
 import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
 import OperatorsPage from "./pages/OperatorsPage";
-import OutboxPage from "./pages/OutboxPage";
+import MailPage from "./pages/MailPage";
+import FinancePage from "./pages/FinancePage";
 import { Logo } from "./components/Logo";
-import { Modal } from "./components/ui";
+import { Modal, Printing } from "./components/ui";
 import "./styles.css";
 
 // Production is the default and is never labelled; only dev says so.
@@ -30,7 +31,7 @@ function Shell() {
   // The emailed reset link works signed in or out (LoginPage signs out
   // once the new password is set).
   if (location.pathname === RESET_PATH) return <LoginPage onSignedIn={refresh} />;
-  if (user === undefined) return <div className="center muted">Loading…</div>;
+  if (user === undefined) return <div className="boot"><Printing label="Signing in" /></div>;
   if (!user) return <LoginPage onSignedIn={refresh} />;
 
   return (
@@ -42,7 +43,8 @@ function Shell() {
           <NavLink to="/" end>Customers</NavLink>
           <NavLink to="/tenants/new">New customer</NavLink>
           <NavLink to="/operators">Operators</NavLink>
-          {IS_DEV && <NavLink to="/outbox">Mail outbox</NavLink>}
+          <NavLink to="/mail">Mail</NavLink>
+          <NavLink to="/finance">Finance</NavLink>
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
@@ -61,14 +63,18 @@ function Shell() {
         </Modal>
       )}
       <main className="main">
+        <div className="page" key={location.pathname}>
         <Routes>
           <Route path="/" element={<TenantsPage />} />
           <Route path="/tenants/new" element={<NewTenantPage />} />
           <Route path="/tenants/:tenantId" element={<TenantPage />} />
           <Route path="/operators" element={<OperatorsPage me={user.username} />} />
-          {IS_DEV && <Route path="/outbox" element={<OutboxPage />} />}
+          <Route path="/mail" element={<MailPage />} />
+          <Route path="/finance" element={<FinancePage />} />
+          <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>
+        </div>
       </main>
     </div>
   );

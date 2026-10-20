@@ -156,7 +156,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
       <aside className="auth__brand">
         <div className="brand auth__logo"><Logo className="brand__logo" /><span className="brand__app">Console</span></div>
         <div>
-          <p className="auth__lead">The operator console for every restaurant on the platform.</p>
+          <p className="auth__lead">The operator console for <em>every restaurant</em> on the platform.</p>
           <p className="auth__sub">Customers, plans, domains and payments - in one place.</p>
         </div>
         {IS_DEV && <span className="env">dev</span>}

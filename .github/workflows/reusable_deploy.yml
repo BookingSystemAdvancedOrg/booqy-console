@@ -13,6 +13,11 @@ on:
       environment:
         required: true
         type: string
+      ref:
+        description: Commit to build and deploy instead of the branch head (used by "Redeploy a commit")
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -23,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -53,7 +60,7 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name == 'push'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     environment: ${{ inputs.environment }}
     concurrency:
@@ -65,6 +72,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Load shared project config
         run: |
@@ -81,7 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           required="OIDC_ROLE_ARN CODEDEPLOY_APP ALERT_TOPIC_ARN WEB_BUCKET CLOUDFRONT_DISTRIBUTION_ID ECR_REPOSITORY LAMBDA_FUNCTION_NAME VITE_API_URL VITE_COGNITO_AUTHORITY VITE_COGNITO_CLIENT_ID VITE_COGNITO_DOMAIN"
-          optional="VITE_PLATFORM_DOMAIN"
+          optional="VITE_PLATFORM_DOMAIN SMOKE_HOST SMOKE_SITES"
           missing=""
           for k in $required $optional; do
             src="${k}_${SUFFIX}"
@@ -162,7 +171,7 @@ jobs:
         # Publishes the new image as a version and shifts the "live" alias to
         # it through CodeDeploy - prod: 10% for 5 minutes, rolled back
         # automatically if the function's alarms fire; dev: all at once. The
-        # result (success / rolled back) is emailed via SNS either way.
+        # result is emailed via SNS only if it failed or rolled back.
         run: |
           bash .github/scripts/lambda-release.sh \
             --function "$LAMBDA_FUNCTION_NAME" \
@@ -171,3 +180,14 @@ jobs:
             --topic "$ALERT_TOPIC_ARN" \
             --environment "${{ inputs.environment }}" \
             --source "booqy-console@${GITHUB_SHA::7}"
+
+      - name: Smoke test (API, admin app, customer site, console)
+        # After the web deploy and the Lambda release: the API answers
+        # GET /site-config and every app serves its script bundle. A failure
+        # fails this job and emails the alerts topic (scripts/smoke-test.sh);
+        # success sends nothing. SMOKE_* come from project.env via the
+        # "Select values" step.
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE: booqy-console@${{ github.sha }}
+        run: API_BASE_URL="$VITE_API_URL" bash scripts/smoke-test.sh

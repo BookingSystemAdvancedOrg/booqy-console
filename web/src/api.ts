@@ -1,7 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -75,11 +75,12 @@ export const api = {
     request<{ tenantId: string; status: string }>("POST", "/platform/tenants", input),
   updateTenant: (id: string, patch: Record<string, unknown>) =>
     request<{ tenant: Tenant }>("PATCH", t(id), patch),
-  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean }) =>
+  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number }) =>
     request<{ tenant: Tenant }>("PUT", `${t(id)}/plan`, body),
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
   offboard: (id: string, confirmSlug: string) => request("POST", `${t(id)}/offboard`, { confirmSlug }),
+  purgeNow: (id: string, confirmSlug: string) => request("POST", `${t(id)}/purge`, { confirmSlug }),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
   users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
@@ -117,6 +118,37 @@ export const api = {
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
 
+  // Subscriptions (Stripe Billing on the platform account) and the Finance page
+  billing: (id: string) => request<BillingView>("GET", `${t(id)}/billing`),
+  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
+                                          terms?: "trial" | "subscription"; priceSek?: number }) =>
+    request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
+  updateSubscription: (id: string, action: "pause" | "resume" | "cancel" | "cancel_now" | "keep" | "convert" | "sync_price" | "use_card",
+                       options: { offboardAtEnd?: boolean } = {}) =>
+    request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
+  cardLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/billing/card-link`, {}),
+  financeOverview: (params: { from: string; to: string; includeInactive?: boolean; tenantId?: string | null; locationId?: string | null }) => {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.includeInactive) q.set("includeInactive", "1");
+    if (params.tenantId) q.set("tenantId", params.tenantId);
+    if (params.tenantId && params.locationId) q.set("locationId", params.locationId);
+    return request<FinanceOverview>("GET", `/platform/finance/overview?${q}`);
+  },
+  financeTenant: (id: string, params: { from: string; to: string }) =>
+    request<FinanceTenantDetail>("GET", `/platform/finance/tenants/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
+  financeRebuild: (from: string, to: string) =>
+    request<{ from: string; to: string; status: string }>("POST", "/platform/finance/rebuild", { from, to }),
+  financeInvoices: (params: { from: string; to: string; status?: string }) => {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.status && params.status !== "all") q.set("status", params.status);
+    return request<PaymentsView>("GET", `/platform/finance/invoices?${q}`);
+  },
+  remindInvoice: (id: string, invoiceId: string) =>
+    request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
+  financeStripeSync: () =>
+    request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
+      "POST", "/platform/finance/stripe-sync", {}),
+
   terminal: (id: string, locationId: string) =>
     request<TerminalState>("GET", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`),
   enableTerminal: (id: string, locationId: string, body: TerminalAddress & { displayName?: string }) =>
@@ -143,6 +175,19 @@ export const api = {
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
+
+  // News to the restaurant owners (Mail page)
+  mailTemplate: () => request<{ template: MailTemplate }>("GET", "/platform/mail/template").then((r) => r.template),
+  saveMailTemplate: (body: MailTemplateInput) =>
+    request<{ template: MailTemplate }>("PUT", "/platform/mail/template", body).then((r) => r.template),
+  mailPreview: (body: { subject: string; body: string; template?: Partial<MailTemplateInput> }) =>
+    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body),
+  mailRecipients: () => request<{ count: number; recipients: MailRecipient[] }>("GET", "/platform/mail/recipients"),
+  newsletters: () => request<{ newsletters: Newsletter[] }>("GET", "/platform/mail/newsletters").then((r) => r.newsletters),
+  newsletter: (id: string) =>
+    request<{ newsletter: Newsletter; recipients: NewsletterRecipient[] }>("GET", `/platform/mail/newsletters/${encodeURIComponent(id)}`),
+  sendNewsletter: (body: { subject: string; body: string; test?: boolean }) =>
+    request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */

@@ -1,0 +1,407 @@
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api";
+import { BarLineChart, HBarChart, LineChart } from "../components/charts";
+import { CountUp, Delta, deltaPct } from "../components/motion";
+import PaymentsView from "../components/PaymentsView";
+import { Ring } from "../components/Ring";
+import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
+import {
+  PRESETS, Preset, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor,
+  insightTitle, isoDay, matchesCustomer, presetRange, previousRange, sortRows, topAndBottom,
+} from "../finance";
+import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
+
+const BILLING_TEXT: Record<string, string> = {
+  none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
+  paused: "Paused", canceled: "Cancelled", incomplete: "Incomplete", incomplete_expired: "Expired", unknown: "Unknown",
+};
+
+const VIEWS = ["Overview", "Payments"] as const;
+
+export default function FinancePage({ view: initialView = "Overview" }: { view?: (typeof VIEWS)[number] }) {
+  const [view, setView] = useState<(typeof VIEWS)[number]>(initialView);
+  const [preset, setPreset] = useState<Preset>("month");
+  const [range, setRange] = useState(() => presetRange("month"));
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [customer, setCustomer] = useState<TenantSummary | null>(null);
+  const [locationId, setLocationId] = useState<string | null>(null);
+  const [needle, setNeedle] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "marginSek", dir: "desc" });
+  const [rebuild, setRebuild] = useState(false);
+  const tenants = useLoad(() => api.tenants());
+  // The period and the one before it (same length), for the comparisons.
+  const { data: loaded, error, loading, reload } = useLoad(
+    () => {
+      const scope = { includeInactive, tenantId: customer?.tenantId ?? null, locationId: customer ? locationId : null };
+      return Promise.all([
+        api.financeOverview({ ...range, ...scope }),
+        api.financeOverview({ ...previousRange(range.from, range.to), ...scope }).catch(() => null),
+      ]).then(([now, before]) => ({ now, before }));
+    },
+    [range.from, range.to, includeInactive, customer?.tenantId, locationId],
+  );
+  const data: FinanceOverview | null = loaded?.now ?? null;
+  const before = loaded?.before?.kpis ?? null;
+  const sync = useAction();
+
+  function pick(p: Preset) {
+    setPreset(p);
+    if (p !== "custom") setRange(presetRange(p));
+  }
+
+  const days = daysBetween(range.from, range.to);
+  const grain = grainFor(days);
+  const buckets = useMemo(() => bucketSeries(data?.series ?? [], grain), [data, grain]);
+  const rows = useMemo(() => sortRows(data?.tenants ?? [], sort.key, sort.dir), [data, sort]);
+  const { top, bottom } = useMemo(() => topAndBottom(data?.tenants ?? [], 5), [data]);
+  const suggestions = useMemo(
+    () => (tenants.data ?? []).filter((t) => matchesCustomer(t, needle)).slice(0, 8),
+    [tenants.data, needle],
+  );
+  const k = data?.kpis;
+  const split = useMemo(() => costSplitTotals(data?.tenants ?? []), [data]);
+  const mrrStart = data?.series.length ? Number(data.series[0].mrrSek) : null;
+  const mrrEnd = data?.series.length ? Number(data.series[data.series.length - 1].mrrSek) : null;
+  const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
+  const noFigures = !!data && !empty && data.series.length === 0;
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Finance</h1>
+          <p className="muted">
+            {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : "No nightly figures yet. "}
+            Revenue and cost in SEK excluding VAT.
+          </p>
+        </div>
+        <div className="row">
+          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+          <button className="btn btn--ghost" disabled={sync.busy}
+                  onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }}>
+            {sync.busy ? "Reading Stripe…" : "Import from Stripe"}
+          </button>
+          <button className="btn btn--primary" onClick={() => setRebuild(true)}>Rebuild</button>
+        </div>
+      </div>
+
+      <nav className="tabs">
+        {VIEWS.map((name) => (
+          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} onClick={() => setView(name)}>{name}</button>
+        ))}
+      </nav>
+
+      {view === "Payments" && <PaymentsView />}
+      {view === "Overview" && <>
+      <div className="toolbar finance-toolbar">
+        <div className="chips" role="group" aria-label="Period">
+          {PRESETS.map((p) => (
+            <button key={p.id} className={`chip${preset === p.id ? " chip--on" : ""}`} onClick={() => pick(p.id)}>{p.label}</button>
+          ))}
+        </div>
+        <div className="range">
+          <label className="range__field">
+            <span>From</span>
+            <input className="input" type="date" value={range.from} max={range.to}
+                   onChange={(e) => { setPreset("custom"); if (e.target.value) setRange({ ...range, from: e.target.value }); }} />
+          </label>
+          <label className="range__field">
+            <span>To</span>
+            <input className="input" type="date" value={range.to} min={range.from} max={isoDay(new Date())}
+                   onChange={(e) => { setPreset("custom"); if (e.target.value) setRange({ ...range, to: e.target.value }); }} />
+          </label>
+        </div>
+        <label className="switch">
+          <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+          <span>Include inactive customers</span>
+        </label>
+        {customer && (data?.locations?.length ?? 0) > 0 && (
+          <label className="range__field">
+            <span>Location</span>
+            <select className="input" value={locationId ?? ""} aria-label="Location" onChange={(e) => setLocationId(e.target.value || null)}>
+              <option value="">All locations</option>
+              {data!.locations!.map((l) => <option key={l.locationId} value={l.locationId}>{l.name ?? l.locationId}</option>)}
+            </select>
+          </label>
+        )}
+        <div className="customer-filter">
+          {customer ? (
+            <span className="chip chip--on chip--customer">
+              {customer.name}
+              <button className="chip__x" aria-label="Show all customers" onClick={() => { setCustomer(null); setLocationId(null); }}>✕</button>
+            </span>
+          ) : (
+            <>
+              <input className="input search" placeholder="Customer: name, org. number or slug…" value={needle}
+                     aria-label="Filter by customer" onChange={(e) => setNeedle(e.target.value)} />
+              {needle.trim() && (
+                <ul className="suggestions" role="listbox">
+                  {suggestions.map((t) => (
+                    <li key={t.tenantId}>
+                      <button role="option" aria-selected={false} onClick={() => { setCustomer(t); setLocationId(null); setNeedle(""); }}>
+                        <strong>{t.name}</strong> <span className="muted mono small">{t.slug}</span> <Status value={t.status} />
+                      </button>
+                    </li>
+                  ))}
+                  {suggestions.length === 0 && <li className="muted small suggestions__none">No customer matches.</li>}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <ErrorNotice error={error ?? sync.error} />
+      {data?.period.locationId && (
+        <Notice kind="info">
+          Showing one location: usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
+          restaurant's, since there is one subscription per restaurant.
+        </Notice>
+      )}
+      {data?.job?.warnings?.length ? (
+        <Notice kind="warn">
+          <strong>The nightly job reported problems:</strong>
+          <ul className="plain-list">{data.job.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </Notice>
+      ) : null}
+      {data && (data.attention.pastDue.length > 0 || data.attention.noSubscription.length > 0) && (
+        <Notice kind="info">
+          <strong>Needs attention.</strong>
+          <ul className="plain-list">
+            {data.attention.pastDue.map((p) => (
+              <li key={p.tenantId}>
+                <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is past due since {fmtDay(p.since)}
+                {p.status === "suspended" ? " (suspended)" : ""}.
+              </li>
+            ))}
+            {data.attention.noSubscription.map((p) => (
+              <li key={p.tenantId}>
+                <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is active without a subscription
+                {p.createdAt ? ` (customer since ${fmtDay(p.createdAt)})` : ""}.
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+
+      {loading && !data ? <Printing label="Adding up" /> : data && k && (
+        <>
+          {empty && (
+            <Card title="Nothing to add up yet">
+              <p>
+                {customer || includeInactive ? "No figures for this selection." : "No active customers yet."} The figures
+                come from the nightly job (Cost Explorer plus each customer's usage) and from Stripe when invoices are
+                created and paid. Rebuild recomputes a date range once Cost Explorer is enabled in the AWS account.
+              </p>
+            </Card>
+          )}
+          {noFigures && (
+            <Notice kind="info">
+              No day rows in this period yet. The nightly job writes yesterday's figures every morning; use Rebuild for
+              older days (requests can be counted for the last 30 days, the logs' retention).
+            </Notice>
+          )}
+
+          <section className="hero" aria-label="The period at a glance">
+            <div className={`kpi kpi--hero${k.marginSek < 0 ? " kpi--bad" : " kpi--good"}`}>
+              <span className="kpi__label">Gross margin</span>
+              <strong className="kpi__value"><CountUp value={k.marginSek} format={fmtSek} /></strong>
+              <span className="kpi__insight">
+                {k.marginPct === null ? "No revenue in the period yet." : k.marginSek < 0
+                  ? `AWS cost exceeds revenue by ${fmtSek(-k.marginSek)}.`
+                  : `${fmtPct(k.marginPct)} of every krona invoiced stays as profit.`}
+              </span>
+              <Delta current={k.marginSek} previous={before?.marginSek} />
+              <dl className="kpi__facts">
+                <dt>Revenue</dt><dd><CountUp value={k.revenueSek} format={fmtSek} /></dd>
+                <dt>AWS cost</dt><dd><CountUp value={k.costSek} format={fmtSek} /></dd>
+                <dt>Period</dt><dd>{fmtDay(data.period.from)} to {fmtDay(data.period.to)}, {data.period.days} days</dd>
+              </dl>
+            </div>
+            <div className="kpi kpi--rings">
+              <Ring title="Where the revenue goes" total={Math.max(k.revenueSek, k.costSek, 0)} centerLabel="profit" empty="No revenue yet"
+                    segments={[
+                      { key: "margin", label: "Profit", value: Math.max(0, k.marginSek), tone: "ink" },
+                      { key: "cost", label: "AWS cost", value: k.costSek, tone: "red" },
+                    ]} />
+              <Ring title="What the AWS cost is for" total={k.costSek} centerLabel="requests" empty="No cost yet"
+                    segments={[
+                      { key: "requests", label: "Requests", value: split.requests, tone: "ink" },
+                      { key: "baseline", label: "Baseline", value: split.baseline, tone: "steel" },
+                      { key: "email", label: "Emails", value: split.email, tone: "warn" },
+                      { key: "sms", label: "SMS", value: split.sms, tone: "red" },
+                    ]} />
+              <Ring title="How much is collected" total={k.collectedSek + k.outstandingSek} centerLabel="collected" empty="Nothing invoiced"
+                    segments={[
+                      { key: "collected", label: "Collected", value: k.collectedSek, tone: "ok" },
+                      { key: "outstanding", label: "Outstanding", value: k.outstandingSek, tone: "warn" },
+                    ]} />
+            </div>
+          </section>
+
+          <section className="kpis" aria-label="Key figures">
+            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtInt(k.payingCustomers)} paying customers`}
+                 delta={<Delta current={mrrEnd} previous={mrrStart} label="since the period started" />} />
+            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub={`${fmtSek(k.collectedSek)} collected`}
+                 delta={<Delta current={k.revenueSek} previous={before?.revenueSek} />} />
+            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
+            <Kpi label="AWS cost" value={<CountUp value={k.costSek} format={fmtSek} />} sub={`${fmtInt(k.requests)} requests`}
+                 delta={<Delta current={k.costSek} previous={before?.costSek} invert />} />
+            <Kpi label="Customers" value={<CountUp value={k.customers} format={fmtInt} precision={0.5} />}
+                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`} />
+            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" />
+            <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
+                 delta={<Delta current={k.costPerBookingSek} previous={before?.costPerBookingSek} invert />} />
+            <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
+                 delta={<Delta current={k.costPerOrderSek} previous={before?.costPerOrderSek} invert />} />
+          </section>
+
+          <div className="charts">
+            <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
+              <p className="insight">
+                {k.revenueSek > 0
+                  ? `AWS cost was ${fmtPct((k.costSek / k.revenueSek) * 100)} of revenue this period; bars are revenue per ${grain}, the line is cost.`
+                  : `Nothing invoiced yet; the line is AWS cost per ${grain}.`}
+              </p>
+              <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
+                            barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
+            </Card>
+            <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
+              <p className="insight">
+                {mrrEnd !== null && mrrStart !== null
+                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
+                  : "Monthly recurring revenue, as it stood each day."}
+              </p>
+              <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
+            </Card>
+          </div>
+
+          {data.tenants.length > 1 && (
+            <div className="charts">
+              <Card title="Best margin">
+                <HBarChart rows={top.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the best margin" />
+              </Card>
+              {bottom.length > 0 && (
+                <Card title="Weakest margin">
+                  <HBarChart rows={bottom.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the weakest margin" />
+                </Card>
+              )}
+            </div>
+          )}
+
+          <div className="table-wrap">
+            <table className="table finance-table">
+              <thead>
+                <tr>
+                  <Th k="name" sort={sort} setSort={setSort}>Customer</Th>
+                  <th>Subscription</th>
+                  <Th k="mrrSek" sort={sort} setSort={setSort}>MRR</Th>
+                  <Th k="revenueSek" sort={sort} setSort={setSort}>Revenue</Th>
+                  <Th k="collectedSek" sort={sort} setSort={setSort}>Collected</Th>
+                  <Th k="outstandingSek" sort={sort} setSort={setSort}>Outstanding</Th>
+                  <Th k="costSek" sort={sort} setSort={setSort}>AWS cost</Th>
+                  <Th k="marginSek" sort={sort} setSort={setSort}>Margin</Th>
+                  <Th k="bookings" sort={sort} setSort={setSort}>Bookings</Th>
+                  <Th k="orders" sort={sort} setSort={setSort}>Orders</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((t) => <TenantRow key={t.tenantId} t={t} />)}
+                {rows.length === 0 && <tr><td colSpan={10} className="empty">No customers in this selection.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      </>}
+
+      {rebuild && <RebuildModal range={range} onClose={() => setRebuild(false)} onStarted={() => { setRebuild(false); }} />}
+    </>
+  );
+}
+
+function Kpi({ label, value, sub, tone, delta }: {
+  label: string; value: ReactNode; sub?: string; tone?: "good" | "bad" | "warn"; delta?: ReactNode;
+}) {
+  return (
+    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
+      <span className="kpi__label">{label}</span>
+      <strong className="kpi__value">{value}</strong>
+      {sub && <span className="kpi__sub">{sub}</span>}
+      {delta && <span className="kpi__delta">{delta}</span>}
+    </div>
+  );
+}
+
+function Th({ k, sort, setSort, children }: {
+  k: SortKey; sort: { key: SortKey; dir: "asc" | "desc" }; setSort: (s: { key: SortKey; dir: "asc" | "desc" }) => void; children: string;
+}) {
+  const on = sort.key === k;
+  return (
+    <th aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button className={`th-sort${on ? " th-sort--on" : ""}`}
+              onClick={() => setSort({ key: k, dir: on && sort.dir === "desc" ? "asc" : "desc" })}>
+        {children}{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
+      </button>
+    </th>
+  );
+}
+
+function TenantRow({ t }: { t: FinanceTenantRow }) {
+  return (
+    <tr>
+      <td>
+        <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong">{t.name}</Link>
+        <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
+      </td>
+      <td><span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span></td>
+      <td className="num">{fmtSek(t.mrrSek)}</td>
+      <td className="num">{fmtSek(t.revenueSek)}</td>
+      <td className="num">{fmtSek(t.collectedSek)}</td>
+      <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`}>{fmtSek(t.outstandingSek)}</td>
+      <td className="num">{fmtSek(t.costSek)}</td>
+      <td className={`num${t.marginSek < 0 ? " bad" : ""}`}>
+        {fmtSek(t.marginSek)}<div className="muted small">{t.marginPct === null ? "-" : fmtPct(t.marginPct)}</div>
+      </td>
+      <td className="num">{fmtInt(t.bookings)}</td>
+      <td className="num">{fmtInt(t.orders)}</td>
+    </tr>
+  );
+}
+
+function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to: string }; onClose: () => void; onStarted: () => void }) {
+  const yesterday = addDays(isoDay(new Date()), -1);
+  const [from, setFrom] = useState(range.from < yesterday ? range.from : addDays(yesterday, -6));
+  const [to, setTo] = useState(range.to < yesterday ? range.to : yesterday);
+  const a = useAction();
+  const [done, setDone] = useState<string | null>(null);
+  useEffect(() => { if (done) { const id = window.setTimeout(onStarted, 2500); return () => window.clearTimeout(id); } }, [done, onStarted]);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const r = await a.run(() => api.financeRebuild(from, to));
+    if (r) setDone(`${r.from} to ${r.to}`);
+  }
+  return (
+    <Modal title="Rebuild figures" onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <p className="small">
+          Recomputes the AWS cost, usage and allocation for a date range (up to 92 days, yesterday at the latest).
+          Use it after changing the exchange rate or the cost allocation, or when a night was missed. The run takes a
+          few minutes; refresh the page afterwards. Request counts exist for the last 30 days only (log retention).
+        </p>
+        <div className="range">
+          <label className="range__field"><span>From</span><input className="input" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label className="range__field"><span>To</span><input className="input" type="date" value={to} min={from} max={yesterday} onChange={(e) => setTo(e.target.value)} /></label>
+        </div>
+        <ErrorNotice error={a.error} />
+        {done && <Notice kind="ok">Rebuild started for {done}.</Notice>}
+        <div className="row">
+          <button className="btn btn--primary" type="submit" disabled={a.busy || !!done}>{a.busy ? "Starting…" : "Start rebuild"}</button>
+          <button className="btn btn--ghost" type="button" onClick={onClose}>Close</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

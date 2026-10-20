@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorNotice, Notice, fmtDate, useAction, useLoad } from "../components/ui";
+import { ErrorNotice, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { OutboxMessage, OutboxSummary } from "../types";
 
 /** Every http(s) link in the message - the magic links are what you test. */
@@ -12,13 +12,13 @@ function linksOf(m: OutboxMessage): string[] {
   return [...found];
 }
 
-function MessageView({ id }: { id: string }) {
+function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: m, error, loading } = useLoad(() => api.outboxMessage(id), [id]);
   const [tab, setTab] = useState<"html" | "text">("html");
   useEffect(() => setTab("html"), [id]);
 
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !m) return <p className="muted">Loading…</p>;
+  if (loading || !m) return <div className="card"><div className="card__body"><Printing inline /></div></div>;
   const links = linksOf(m);
   const showHtml = m.channel === "email" && !!m.html && tab === "html";
 
@@ -26,12 +26,15 @@ function MessageView({ id }: { id: string }) {
     <div className="card">
       <div className="card__head">
         <h2>{m.channel === "sms" ? "SMS" : m.subject || "(no subject)"}</h2>
-        {m.channel === "email" && m.html && (
-          <div className="row">
-            <button className={`btn ${tab === "html" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("html")}>HTML</button>
-            <button className={`btn ${tab === "text" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("text")}>Text</button>
-          </div>
-        )}
+        <div className="row outbox-tools">
+          {m.channel === "email" && m.html && (
+            <>
+              <button className={`btn btn--small ${tab === "html" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("html")}>HTML</button>
+              <button className={`btn btn--small ${tab === "text" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("text")}>Text</button>
+            </>
+          )}
+          <button className="btn btn--ghost btn--small" onClick={onClose} aria-label="Close message" title="Back to the list">✕</button>
+        </div>
       </div>
       <div className="card__body">
         <dl className="outbox-meta">
@@ -67,7 +70,7 @@ function MessageView({ id }: { id: string }) {
  * SMS) while the sending domain isn't verified in SES. Saved by the
  * notification Lambda, kept 30 days. Dev only.
  */
-export default function OutboxPage() {
+export default function OutboxPage({ embedded = false }: { embedded?: boolean }) {
   const { data, error, loading, reload } = useLoad(() => api.outbox());
   const [more, setMore] = useState<OutboxSummary[]>([]);
   const [next, setNext] = useState<string | null>(null);
@@ -92,12 +95,12 @@ export default function OutboxPage() {
 
   return (
     <>
-      <div className="page-head">
+      <div className={embedded ? "panel-head" : "page-head"}>
         <div>
-          <h1>Mail outbox</h1>
+          {embedded ? <h2>Mail outbox</h2> : <h1>Mail outbox</h1>}
           <p className="muted">
-            Emails the platform would have sent, plus a copy of every SMS - saved instead of sent until the
-            sending domain is verified. Kept 30 days.
+            Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS -
+            saved instead of sent until the sending domain is verified. Kept 30 days.
           </p>
         </div>
         <div className="row">
@@ -111,8 +114,8 @@ export default function OutboxPage() {
         <Notice kind="info">The outbox is off here - emails are sent normally (infrastructure <code>mail_outbox</code>).</Notice>
       )}
 
-      {loading && !data ? <p className="muted">Loading…</p> : data?.enabled && (
-        <div className="outbox">
+      {loading && !data ? <Printing /> : data?.enabled && (
+        <div className={`outbox${selected ? " outbox--reading" : ""}`}>
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -138,7 +141,7 @@ export default function OutboxPage() {
               </div>
             )}
           </div>
-          {selected ? <MessageView id={selected} /> : <p className="muted">Pick a message to read it.</p>}
+          {selected && <MessageView id={selected} onClose={() => setSelected(null)} />}
         </div>
       )}
     </>
