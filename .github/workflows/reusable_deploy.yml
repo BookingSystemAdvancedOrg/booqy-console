@@ -162,7 +162,7 @@ jobs:
         # Publishes the new image as a version and shifts the "live" alias to
         # it through CodeDeploy - prod: 10% for 5 minutes, rolled back
         # automatically if the function's alarms fire; dev: all at once. The
-        # result (success / rolled back) is emailed via SNS either way.
+        # result is emailed via SNS only if it failed or rolled back.
         run: |
           bash .github/scripts/lambda-release.sh \
             --function "$LAMBDA_FUNCTION_NAME" \
