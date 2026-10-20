@@ -6,8 +6,11 @@ import {
 } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
+import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+
+const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
 const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
@@ -22,6 +25,7 @@ export default function TenantPage() {
   const busy =
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
+      data.onboarding?.status === "RUNNING" ||
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   useEffect(() => {
@@ -139,7 +143,11 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
             <div className="grid">
               {PROFILE_FIELDS.map(([k, label, hint]) => (
                 <Field key={k} label={label} hint={hint} error={a.fields[k]} required={k === "name"}>
-                  <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                  {k === "contactPhone" ? (
+                    <PhoneInput className="input" value={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
+                  ) : (
+                    <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                  )}
                 </Field>
               ))}
               <Field label="Street" error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
@@ -272,7 +280,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
         <div className="grid">
           <Field label="Name" required error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
           <Field label="Address" required error={a.fields.address}><input className="input" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
-          <Field label="Phone" error={a.fields.phone}><input className="input" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
+          <Field label="Phone" error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
           <Field label="Email" error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           <Field label="Separate Stripe account" wide error={a.fields.stripeAccountId}
                  hint="Only if this location is a different company (own org. number). Empty = the customer's account.">
@@ -513,7 +521,13 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
         )}
       </Card>
-      <Card title="Website hostnames">
+      <Card title="Website hostnames" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
+        {t.status === "active" && !detail.domains.some((d) => d.kind === "platform") && (
+          <Notice kind="info">
+            No {PLATFORM_DOMAIN ? <span className="mono">{t.slug}.{PLATFORM_DOMAIN}</span> : "platform"} address yet - this
+            customer was set up before platform addresses were switched on. <strong>Re-run setup</strong> adds it.
+          </Notice>
+        )}
         <table className="table">
           <thead><tr><th>Hostname</th><th>Type</th><th>Status</th><th /></tr></thead>
           <tbody>
@@ -540,6 +554,35 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
       {wizard && <DomainWizard tenant={t} onClose={() => setWizard(false)} onChanged={onChanged} />}
       {transfer && <TransferModal tenant={t} domain={transfer} onClose={() => setTransfer(null)} onDone={onChanged} />}
     </div>
+  );
+}
+
+/**
+ * Runs the onboarding workflow again for an active customer. Every step is
+ * idempotent: it adds what is missing (the <slug> platform address, a new VAT
+ * rate) and skips the rest - no second invite, no second Stripe account, and a
+ * failed run never takes the customer offline.
+ */
+function RerunSetup({ tenant, running, onDone }: { tenant: Tenant; running: boolean; onDone: () => void }) {
+  const a = useAction();
+  return (
+    <span className="row-actions">
+      <button
+        className="btn btn--ghost btn--small"
+        disabled={a.busy || running}
+        title="Adds anything missing from setup (like the platform address). No new invite, no new Stripe account."
+        onClick={async () => {
+          const ok = window.confirm(
+            `Re-run setup for ${tenant.name}?\n\nAdds anything that's missing, like the platform address. ` +
+              "It doesn't send a new invite, doesn't create another Stripe account and won't take the site offline.",
+          );
+          if (ok && (await a.run(() => api.retryOnboarding(tenant.tenantId)))) onDone();
+        }}
+      >
+        {running ? "Setup running…" : a.busy ? "Starting…" : "Re-run setup"}
+      </button>
+      {a.error != null && <ErrorNotice error={a.error} />}
+    </span>
   );
 }
 

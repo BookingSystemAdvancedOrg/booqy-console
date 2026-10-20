@@ -9,7 +9,9 @@ from .core import ApiError
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$")
 # Hostnames the platform uses (or will) under the platform domain.
 RESERVED_SLUGS = {"app", "ops", "www", "mail", "api", "admin", "bounce", "status", "support",
-                  "help", "docs", "static", "assets", "cdn", "auth", "login"}
+                  "help", "docs", "static", "assets", "cdn", "auth", "login",
+                  "restaurang", "restaurant",   # the admin app (and its old name)
+                  "dev", "staging"}             # delegated environment zones (dev.booqy.se)
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}$")
 PHONE_RE = re.compile(r"^\+?[0-9][0-9 ()-]{5,19}$")
 ORG_NUMBER_RE = re.compile(r"^\d{6}-?\d{4}$")           # Swedish organisationsnummer

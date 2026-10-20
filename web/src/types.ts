@@ -274,7 +274,7 @@ export interface OperatorAccount {
   updatedAt?: string;
 }
 
-/** Dev mail outbox (GET /platform/outbox) - never on in prod. */
+/** Dev mail outbox (GET /platform/outbox) - dev only. */
 export interface OutboxSummary {
   id: string;
   at: string;

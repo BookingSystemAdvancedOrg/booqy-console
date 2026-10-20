@@ -65,7 +65,7 @@ function MessageView({ id }: { id: string }) {
 /**
  * Dev mail outbox: what the platform would have emailed (and a copy of each
  * SMS) while the sending domain isn't verified in SES. Saved by the
- * notification Lambda, kept 30 days. Never on in prod.
+ * notification Lambda, kept 30 days. Dev only.
  */
 export default function OutboxPage() {
   const { data, error, loading, reload } = useLoad(() => api.outbox());
