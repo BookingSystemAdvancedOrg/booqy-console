@@ -112,7 +112,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
       )}
 
       {loading && !data ? <Printing /> : data?.enabled && (
-        <div className="outbox">
+        <div className={`outbox${selected ? " outbox--reading" : ""}`}>
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -138,7 +138,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
               </div>
             )}
           </div>
-          {selected ? <MessageView id={selected} /> : <p className="muted">Pick a message to read it.</p>}
+          {selected && <MessageView id={selected} />}
         </div>
       )}
     </>
