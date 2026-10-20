@@ -1,7 +1,7 @@
 /** Small SVG charts in the console's print style: no dependency, print-black
  * ink on paper, the wine red for cost. Every chart scales with its ticket
  * (viewBox + width 100%) and names its values for screen readers. */
-import { useEffect, useId, useRef, useState } from "react";
+import { CSSProperties, useEffect, useId, useRef, useState } from "react";
 import { fmtSek, shortDay } from "../finance";
 
 const H = 220;
@@ -69,7 +69,8 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel }: {
         ))}
         {points.map((p, i) => (
           <g key={p.key}>
-            <rect x={x(i) - barW / 2} y={y(p.bar)} width={barW} height={Math.max(0, PAD.top + innerH - y(p.bar))} className="chart__bar">
+            <rect x={x(i) - barW / 2} y={y(p.bar)} width={barW} height={Math.max(0, PAD.top + innerH - y(p.bar))}
+                  className="chart__bar chart__bar--grow" style={{ "--i": i } as CSSProperties}>
               <title>{`${shortDay(p.key)}: ${barLabel} ${fmtSek(p.bar)}, ${lineLabel} ${fmtSek(p.line)}`}</title>
             </rect>
             {i % labelEvery === 0 && (
@@ -77,8 +78,8 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel }: {
             )}
           </g>
         ))}
-        <path d={line} className="chart__line" />
-        {points.map((p, i) => <circle key={p.key} cx={x(i)} cy={y(p.line)} r={2.6} className="chart__dot" />)}
+        <path d={line} pathLength={1} className="chart__line chart__line--draw" />
+        {points.map((p, i) => <circle key={p.key} cx={x(i)} cy={y(p.line)} r={2.6} className="chart__dot chart__dot--in" style={{ "--i": i } as CSSProperties} />)}
       </svg>
       <figcaption className="legend">
         <span><i className="legend__bar" />{barLabel}</span>
@@ -112,11 +113,11 @@ export function LineChart({ points, label, ariaLabel }: { points: { key: string;
             <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" className="chart__tick">{tickLabel(t)}</text>
           </g>
         ))}
-        <path d={area} className="chart__area" />
-        <path d={path} className="chart__line chart__line--ink" />
+        <path d={area} className="chart__area chart__area--in" />
+        <path d={path} pathLength={1} className="chart__line chart__line--ink chart__line--draw" />
         {points.map((p, i) => (
           <g key={p.key}>
-            <circle cx={x(i)} cy={y(p.value)} r={2.6} className="chart__dot chart__dot--ink"><title>{`${shortDay(p.key)}: ${label} ${fmtSek(p.value)}`}</title></circle>
+            <circle cx={x(i)} cy={y(p.value)} r={2.6} className="chart__dot chart__dot--ink chart__dot--in" style={{ "--i": i } as CSSProperties}><title>{`${shortDay(p.key)}: ${label} ${fmtSek(p.value)}`}</title></circle>
             {i % labelEvery === 0 && <text x={x(i)} y={H - 10} textAnchor="middle" className="chart__tick">{shortDay(p.key)}</text>}
           </g>
         ))}
@@ -150,7 +151,9 @@ export function HBarChart({ rows, ariaLabel }: { rows: { key: string; label: str
           return (
             <g key={r.key}>
               <text x={labelW - 10} y={y + 17} textAnchor="end" className="chart__label">{r.label.length > labelW / 7 ? `${r.label.slice(0, Math.floor(labelW / 7) - 1)}…` : r.label}</text>
-              <rect x={x} y={y + 4} width={Math.max(1, w)} height={rowH - 10} className={r.value < 0 ? "chart__bar chart__bar--neg" : "chart__bar"}>
+              <rect x={x} y={y + 4} width={Math.max(1, w)} height={rowH - 10}
+                    className={`chart__bar chart__bar--row${r.value < 0 ? " chart__bar--neg" : ""}`}
+                    style={{ "--i": i, transformOrigin: r.value < 0 ? "right" : "left" } as CSSProperties}>
                 <title>{`${r.label}: ${fmtSek(r.value)}`}</title>
               </rect>
               <text x={r.value < 0 ? x - 6 : x + w + 6} y={y + 17} textAnchor={r.value < 0 ? "end" : "start"} className="chart__value">{fmtSek(r.value)}</text>

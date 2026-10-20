@@ -1,14 +1,16 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { BarLineChart, HBarChart, LineChart } from "../components/charts";
+import { CountUp, Delta, deltaPct } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
+import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import {
-  PRESETS, Preset, SortKey, addDays, bucketSeries, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, isoDay,
-  matchesCustomer, presetRange, sortRows, topAndBottom,
+  PRESETS, Preset, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor,
+  insightTitle, isoDay, matchesCustomer, presetRange, previousRange, sortRows, topAndBottom,
 } from "../finance";
-import type { FinanceTenantRow, TenantSummary } from "../types";
+import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -27,10 +29,19 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "marginSek", dir: "desc" });
   const [rebuild, setRebuild] = useState(false);
   const tenants = useLoad(() => api.tenants());
-  const { data, error, loading, reload } = useLoad(
-    () => api.financeOverview({ ...range, includeInactive, tenantId: customer?.tenantId ?? null }),
+  // The period and the one before it (same length), for the comparisons.
+  const { data: loaded, error, loading, reload } = useLoad(
+    () => {
+      const scope = { includeInactive, tenantId: customer?.tenantId ?? null };
+      return Promise.all([
+        api.financeOverview({ ...range, ...scope }),
+        api.financeOverview({ ...previousRange(range.from, range.to), ...scope }).catch(() => null),
+      ]).then(([now, before]) => ({ now, before }));
+    },
     [range.from, range.to, includeInactive, customer?.tenantId],
   );
+  const data: FinanceOverview | null = loaded?.now ?? null;
+  const before = loaded?.before?.kpis ?? null;
   const sync = useAction();
 
   function pick(p: Preset) {
@@ -48,6 +59,9 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     [tenants.data, needle],
   );
   const k = data?.kpis;
+  const split = useMemo(() => costSplitTotals(data?.tenants ?? []), [data]);
+  const mrrStart = data?.series.length ? Number(data.series[0].mrrSek) : null;
+  const mrrEnd = data?.series.length ? Number(data.series[data.series.length - 1].mrrSek) : null;
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const noFigures = !!data && !empty && data.series.length === 0;
 
@@ -174,25 +188,76 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             </Notice>
           )}
 
+          <section className="hero" aria-label="The period at a glance">
+            <div className={`kpi kpi--hero${k.marginSek < 0 ? " kpi--bad" : " kpi--good"}`}>
+              <span className="kpi__label">Gross margin</span>
+              <strong className="kpi__value"><CountUp value={k.marginSek} format={fmtSek} /></strong>
+              <span className="kpi__insight">
+                {k.marginPct === null ? "No revenue in the period yet." : k.marginSek < 0
+                  ? `AWS cost exceeds revenue by ${fmtSek(-k.marginSek)}.`
+                  : `${fmtPct(k.marginPct)} of every krona invoiced stays as profit.`}
+              </span>
+              <Delta current={k.marginSek} previous={before?.marginSek} />
+              <dl className="kpi__facts">
+                <dt>Revenue</dt><dd><CountUp value={k.revenueSek} format={fmtSek} /></dd>
+                <dt>AWS cost</dt><dd><CountUp value={k.costSek} format={fmtSek} /></dd>
+                <dt>Period</dt><dd>{fmtDay(data.period.from)} to {fmtDay(data.period.to)}, {data.period.days} days</dd>
+              </dl>
+            </div>
+            <div className="kpi kpi--rings">
+              <Ring title="Where the revenue goes" total={Math.max(k.revenueSek, k.costSek, 0)} centerLabel="profit" empty="No revenue yet"
+                    segments={[
+                      { key: "margin", label: "Profit", value: Math.max(0, k.marginSek), tone: "ink" },
+                      { key: "cost", label: "AWS cost", value: k.costSek, tone: "red" },
+                    ]} />
+              <Ring title="What the AWS cost is for" total={k.costSek} centerLabel="requests" empty="No cost yet"
+                    segments={[
+                      { key: "requests", label: "Requests", value: split.requests, tone: "ink" },
+                      { key: "baseline", label: "Baseline", value: split.baseline, tone: "steel" },
+                      { key: "email", label: "Emails", value: split.email, tone: "warn" },
+                      { key: "sms", label: "SMS", value: split.sms, tone: "red" },
+                    ]} />
+              <Ring title="How much is collected" total={k.collectedSek + k.outstandingSek} centerLabel="collected" empty="Nothing invoiced"
+                    segments={[
+                      { key: "collected", label: "Collected", value: k.collectedSek, tone: "ok" },
+                      { key: "outstanding", label: "Outstanding", value: k.outstandingSek, tone: "warn" },
+                    ]} />
+            </div>
+          </section>
+
           <section className="kpis" aria-label="Key figures">
-            <Kpi label="MRR" value={fmtSek(k.mrrSek)} sub={`${fmtInt(k.payingCustomers)} paying customers`} />
-            <Kpi label="Revenue" value={fmtSek(k.revenueSek)} sub={`${fmtSek(k.collectedSek)} collected`} />
-            <Kpi label="Outstanding" value={fmtSek(k.outstandingSek)} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
-            <Kpi label="AWS cost" value={fmtSek(k.costSek)} sub={`${fmtInt(k.requests)} requests`} />
-            <Kpi label="Gross margin" value={fmtSek(k.marginSek)} sub={k.marginPct === null ? "no revenue in the period" : `${fmtPct(k.marginPct)} of revenue`}
-                 tone={k.marginSek < 0 ? "bad" : "good"} />
-            <Kpi label="Customers" value={fmtInt(k.customers)} sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`} />
-            <Kpi label="ARPU" value={fmtSek(k.arpuSek)} sub="MRR per paying customer" />
-            <Kpi label="Cost per booking" value={fmtSek(k.costPerBookingSek, { decimals: true })} sub={`${fmtInt(k.bookings)} bookings`} />
-            <Kpi label="Cost per order" value={fmtSek(k.costPerOrderSek, { decimals: true })} sub={`${fmtInt(k.orders)} orders`} />
+            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtInt(k.payingCustomers)} paying customers`}
+                 delta={<Delta current={mrrEnd} previous={mrrStart} label="since the period started" />} />
+            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub={`${fmtSek(k.collectedSek)} collected`}
+                 delta={<Delta current={k.revenueSek} previous={before?.revenueSek} />} />
+            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
+            <Kpi label="AWS cost" value={<CountUp value={k.costSek} format={fmtSek} />} sub={`${fmtInt(k.requests)} requests`}
+                 delta={<Delta current={k.costSek} previous={before?.costSek} invert />} />
+            <Kpi label="Customers" value={<CountUp value={k.customers} format={fmtInt} precision={0.5} />}
+                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`} />
+            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" />
+            <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
+                 delta={<Delta current={k.costPerBookingSek} previous={before?.costPerBookingSek} invert />} />
+            <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
+                 delta={<Delta current={k.costPerOrderSek} previous={before?.costPerOrderSek} invert />} />
           </section>
 
           <div className="charts">
-            <Card title={`Revenue and AWS cost per ${grain}`}>
+            <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
+              <p className="insight">
+                {k.revenueSek > 0
+                  ? `AWS cost was ${fmtPct((k.costSek / k.revenueSek) * 100)} of revenue this period; bars are revenue per ${grain}, the line is cost.`
+                  : `Nothing invoiced yet; the line is AWS cost per ${grain}.`}
+              </p>
               <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
                             barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
             </Card>
-            <Card title="MRR">
+            <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
+              <p className="insight">
+                {mrrEnd !== null && mrrStart !== null
+                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
+                  : "Monthly recurring revenue, as it stood each day."}
+              </p>
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
           </div>
@@ -242,12 +307,15 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   );
 }
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" }) {
+function Kpi({ label, value, sub, tone, delta }: {
+  label: string; value: ReactNode; sub?: string; tone?: "good" | "bad" | "warn"; delta?: ReactNode;
+}) {
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
       <span className="kpi__label">{label}</span>
       <strong className="kpi__value">{value}</strong>
       {sub && <span className="kpi__sub">{sub}</span>}
+      {delta && <span className="kpi__delta">{delta}</span>}
     </div>
   );
 }

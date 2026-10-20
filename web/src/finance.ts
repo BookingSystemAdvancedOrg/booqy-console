@@ -179,3 +179,25 @@ export function monthLabel(month: string): string {
   const text = new Date(y, m - 1, 1).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/** The period of the same length right before from..to. */
+export function previousRange(from: string, to: string): { from: string; to: string } {
+  const n = daysBetween(from, to);
+  return { from: addDays(from, -n), to: addDays(from, -1) };
+}
+
+/** AWS cost summed per allocation bucket over the customer rows. */
+export function costSplitTotals(rows: { costSplitSek: { baseline: number; requests: number; email: number; sms: number } }[]) {
+  const out = { requests: 0, baseline: 0, email: 0, sms: 0 };
+  for (const r of rows) {
+    for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] += Number(r.costSplitSek?.[k]) || 0;
+  }
+  return out;
+}
+
+/** "Revenue 12 % up" style insight for a card title. */
+export function insightTitle(base: string, pct: number | null, up = "up", down = "down"): string {
+  if (pct === null || !Number.isFinite(pct)) return base;
+  if (Math.abs(pct) < 0.05) return `${base}: unchanged`;
+  return `${base}: ${fmtPct(Math.abs(pct))} ${pct > 0 ? up : down}`;
+}

@@ -63,9 +63,13 @@ beforeEach(() => {
 describe("FinancePage", () => {
   it("shows the key figures, the charts and the customers", async () => {
     renderPage();
-    expect(await screen.findByText("2 980 kr")).toBeInTheDocument();     // MRR
-    expect(screen.getByText("2 880 kr")).toBeInTheDocument();            // revenue
-    expect(screen.getByText("96,5 % of revenue")).toBeInTheDocument();
+    expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR
+    expect(screen.getAllByText("2 880 kr").length).toBeGreaterThan(0);             // revenue (tile and hero facts)
+    expect(screen.getByText(/96,5 % of every krona invoiced stays as profit/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
+    expect(screen.getAllByText(/vs previous period/).length).toBeGreaterThan(0);
+    expect(mocks.financeOverview).toHaveBeenCalledTimes(2);                        // this period and the one before
     expect(screen.getByRole("img", { name: /Revenue and AWS cost per day/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Monthly recurring revenue/ })).toBeInTheDocument();
     const table = screen.getByRole("table");
@@ -80,9 +84,9 @@ describe("FinancePage", () => {
   it("asks for the period preset and the inactive toggle", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText("2 980 kr");
+    await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: "This year" }));
-    await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(
+    await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(
       expect.objectContaining({ from: `${new Date().getFullYear()}-01-01` })));
     await user.click(screen.getByLabelText("Include inactive customers"));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ includeInactive: true })));
@@ -91,7 +95,7 @@ describe("FinancePage", () => {
   it("filters to one customer by org number and clears again", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText("2 980 kr");
+    await screen.findAllByText("2 980 kr");
     await user.type(screen.getByLabelText("Filter by customer"), "556677");
     await user.click(await screen.findByRole("option", { name: /Pizzeria Roma/ }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ tenantId: "t1" })));
@@ -102,7 +106,7 @@ describe("FinancePage", () => {
   it("sorts the table by a column", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText("2 980 kr");
+    await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: /^Bookings/ }));
     let rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
     expect(within(rows[0]).getByText("Bistro Linnea")).toBeInTheDocument();
@@ -127,7 +131,7 @@ describe("FinancePage", () => {
     const user = userEvent.setup();
     mocks.financeRebuild.mockResolvedValue({ from: "2026-10-01", to: "2026-10-20", status: "started" });
     renderPage();
-    await screen.findByText("2 980 kr");
+    await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: "Rebuild" }));
     await user.click(screen.getByRole("button", { name: "Start rebuild" }));
     expect(await screen.findByText(/Rebuild started for 2026-10-01 to 2026-10-20/)).toBeInTheDocument();
@@ -155,7 +159,7 @@ describe("FinancePage", () => {
     });
     mocks.remindInvoice.mockResolvedValue({ remindersSent: 3 });
     renderPage();
-    await screen.findByText("2 980 kr");
+    await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: "Payments" }));
     expect(await screen.findByText("1 of 2 paid")).toBeInTheDocument();
     expect(mocks.financeInvoices).toHaveBeenLastCalledWith(expect.objectContaining({ status: "all" }));

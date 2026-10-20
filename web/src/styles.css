@@ -553,3 +553,76 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .kpis--row { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .finance-table tr.overdue td:first-child { box-shadow: inset 3px 0 0 var(--ink-red); }
 .finance-table .btn--small { white-space: nowrap; }
+
+/* --- finance: the dashboard hero, rings, deltas and motion ------------------------- */
+.hero { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2.2fr); gap: 16px; margin: 0 0 22px; align-items: stretch; }
+.kpi--hero { padding: 22px 24px 28px; gap: 8px; }
+.kpi--hero::before { margin: -22px -24px 10px; }
+.kpi--hero .kpi__value { font-size: 46px; line-height: 1; letter-spacing: -0.03em; }
+.kpi__insight { font: 500 14px/1.45 var(--sans); color: var(--print); max-width: 26em; text-wrap: balance; }
+.kpi__facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 10px 0 0; padding-top: 12px; border-top: 1.5px dashed var(--paper-line); font: 420 12.5px/1.5 var(--mono); font-stretch: 87.5%; }
+.kpi__facts dt { text-transform: uppercase; letter-spacing: 0.06em; color: var(--print-2); }
+.kpi__facts dd { margin: 0; color: var(--print); font-variant-numeric: tabular-nums; }
+.kpi__delta { margin-top: 2px; }
+.delta { display: inline-flex; flex-wrap: wrap; gap: 2px 5px; align-items: baseline; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: 3px; border: 1.5px solid currentColor; max-width: 100%; }
+.delta--good { color: var(--ok); }
+.delta--bad { color: var(--ink-red); }
+.delta--flat { color: var(--print-2); }
+.delta--none { color: var(--print-2); border-style: dashed; font-weight: 500; text-transform: none; }
+.delta__label { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--print-2); flex-basis: 100%; }
+.kpi--hero .delta__label { flex-basis: auto; }
+
+.kpi--rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; padding: 18px 22px 24px; align-content: start; }
+.kpi--rings::before { grid-column: 1 / -1; margin: -18px -22px 2px; }
+.ring { margin: 0; display: grid; justify-items: center; gap: 8px; min-width: 0; }
+.ring__title { font: 760 11px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--print-2); text-align: center; }
+.ring__svg { width: 150px; height: 150px; display: block; }
+.ring__track { fill: none; stroke: var(--paper-2); stroke-width: 14; }
+.ring__seg { fill: none; stroke-width: 14; transition: stroke-dasharray 120ms linear; }
+.ring__seg--ink { stroke: var(--print); }
+.ring__seg--red { stroke: var(--ink-red); }
+.ring__seg--warn { stroke: #d9961f; }
+.ring__seg--ok { stroke: var(--ok); }
+.ring__seg--steel { stroke: var(--steel-lo); }
+.ring__value { font: 820 24px var(--sans); font-stretch: 112%; letter-spacing: -0.02em; fill: var(--print); }
+.ring__center-label { font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; fill: var(--print-2); }
+.ring__legend { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: 3px; font: 420 12px/1.5 var(--mono); font-stretch: 87.5%; }
+.ring__legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.ring__swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ring__swatch--ink { background: var(--print); } .ring__swatch--red { background: var(--ink-red); } .ring__swatch--warn { background: #d9961f; }
+.ring__swatch--ok { background: var(--ok); } .ring__swatch--steel { background: var(--steel-lo); }
+.ring__legend-label { color: var(--print); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ring__legend-pct { font-weight: 760; color: var(--print); font-variant-numeric: tabular-nums; }
+.ring__legend-amount { color: var(--print-2); font-variant-numeric: tabular-nums; }
+.insight { margin: 0 0 12px; font-size: 13.5px; color: var(--print-2); max-width: 60ch; }
+
+/* charts grow in: bars from the baseline, lines drawn, dots after */
+.chart__bar--grow { transform-box: fill-box; transform-origin: bottom; animation: bar-grow 720ms var(--ease) both; animation-delay: calc(var(--i, 0) * 14ms); }
+.chart__bar--row { transform-box: fill-box; animation: bar-row 640ms var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.chart__line--draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: line-draw 1100ms var(--ease) 120ms forwards; }
+.chart__dot--in { opacity: 0; animation: dot-in 300ms var(--ease) forwards; animation-delay: calc(240ms + var(--i, 0) * 18ms); }
+.chart__area--in { animation: area-in 900ms var(--ease) both; }
+@keyframes bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes bar-row { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes line-draw { to { stroke-dashoffset: 0; } }
+@keyframes dot-in { to { opacity: 1; } }
+@keyframes area-in { from { opacity: 0; } to { opacity: 0.08; } }
+.kpi { transition: transform 160ms var(--ease), box-shadow 160ms var(--ease); }
+.kpi:hover { transform: translateY(-2px); }
+
+@media (max-width: 1000px) {
+  .hero { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .kpi--hero .kpi__value { font-size: 36px; }
+  .kpi--rings { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); padding: 16px 16px 22px; }
+  .kpi--rings::before { margin: -16px -16px 2px; }
+  .ring__svg { width: 130px; height: 130px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart__bar--grow, .chart__bar--row, .chart__line--draw, .chart__dot--in, .chart__area--in, .kpi { animation: none !important; transition: none; }
+  .chart__line--draw { stroke-dashoffset: 0; }
+  .chart__dot--in { opacity: 1; }
+  .chart__area--in { opacity: 0.08; }
+  .ring__seg { transition: none; }
+}
