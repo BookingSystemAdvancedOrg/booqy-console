@@ -299,3 +299,64 @@ export interface OutboxMessage {
   text?: string;
   html?: string | null;
 }
+
+/** News to the restaurant owners (Mail page). */
+export interface MailLogo {
+  kind: "booqy" | "custom";
+  name?: string | null;
+  /** The logo as shown in the email (data URI), for the picker's preview. */
+  dataUrl: string;
+}
+
+export interface MailTemplate {
+  senderName: string;
+  replyTo: string;
+  accentColor: string;
+  signature: string;
+  footer: string;
+  logo: MailLogo;
+  /** The no-reply address the platform sends from (read-only). */
+  from: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface MailTemplateInput {
+  senderName: string;
+  replyTo: string;
+  accentColor: string;
+  signature: string;
+  footer: string;
+  /** dataUrl only when a new file was picked; without it the uploaded logo is kept. */
+  logo: { kind: "booqy" } | { kind: "custom"; dataUrl?: string; name?: string };
+}
+
+export interface MailRecipient {
+  email: string;
+  name: string;
+  tenantName: string;
+  tenantId: string;
+}
+
+export type NewsletterStatus = "sending" | "sent" | "partly_sent" | "failed";
+
+export interface Newsletter {
+  newsletterId: string;
+  subject: string;
+  body: string;
+  status: NewsletterStatus;
+  createdAt: string;
+  createdBy: string;
+  recipientCount: number;
+  sentCount: number;
+  failedCount: number;
+  finishedAt?: string;
+  lastError?: string;
+}
+
+export interface NewsletterRecipient {
+  email: string;
+  tenantName: string;
+  status: "pending" | "sent" | "failed";
+  error?: string;
+}

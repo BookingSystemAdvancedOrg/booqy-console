@@ -1,7 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
   DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, NewTenantInput, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -144,6 +144,19 @@ export const api = {
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
+
+  // News to the restaurant owners (Mail page)
+  mailTemplate: () => request<{ template: MailTemplate }>("GET", "/platform/mail/template").then((r) => r.template),
+  saveMailTemplate: (body: MailTemplateInput) =>
+    request<{ template: MailTemplate }>("PUT", "/platform/mail/template", body).then((r) => r.template),
+  mailPreview: (body: { subject: string; body: string; template?: Partial<MailTemplateInput> }) =>
+    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body),
+  mailRecipients: () => request<{ count: number; recipients: MailRecipient[] }>("GET", "/platform/mail/recipients"),
+  newsletters: () => request<{ newsletters: Newsletter[] }>("GET", "/platform/mail/newsletters").then((r) => r.newsletters),
+  newsletter: (id: string) =>
+    request<{ newsletter: Newsletter; recipients: NewsletterRecipient[] }>("GET", `/platform/mail/newsletters/${encodeURIComponent(id)}`),
+  sendNewsletter: (body: { subject: string; body: string; test?: boolean }) =>
+    request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */

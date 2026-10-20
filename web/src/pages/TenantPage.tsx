@@ -2,8 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad,
-} from "../components/ui";
+  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
@@ -34,7 +33,7 @@ export default function TenantPage() {
     return () => window.clearInterval(id);
   }, [busy, reload]);
 
-  if (loading && !data) return <p className="muted">Loading…</p>;
+  if (loading && !data) return <Printing />;
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   const t = data.tenant;
 

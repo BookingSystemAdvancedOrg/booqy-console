@@ -9,7 +9,7 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import domains, locations, operators, outbox, stripe_connect, tenants, terminal, users, zones
+from . import domains, locations, mail, operators, outbox, stripe_connect, tenants, terminal, users, zones
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -54,6 +54,14 @@ ROUTES = {
     "POST /platform/operators/{username}/resend-invite": operators.resend_invite,
     "GET /platform/outbox": outbox.list_messages,
     "GET /platform/outbox/{messageId}": outbox.get_message,
+    # News to the restaurant owners (Mail page): brand template, preview, send
+    "GET /platform/mail/template": mail.get_template,
+    "PUT /platform/mail/template": mail.put_template,
+    "POST /platform/mail/preview": mail.preview,
+    "GET /platform/mail/recipients": mail.list_recipients,
+    "GET /platform/mail/newsletters": mail.list_newsletters,
+    "POST /platform/mail/newsletters": mail.send,
+    "GET /platform/mail/newsletters/{newsletterId}": mail.get_newsletter,
 }
 
 OPERATOR_GROUP = "platform_admin"
@@ -66,6 +74,8 @@ class Request:
     body: dict
     actor: str
     claims: dict = field(default_factory=dict)
+    # The alias this invocation came through - what a send hands its work to.
+    function_arn: str | None = None
 
 
 def _groups(claims: dict) -> set[str]:
@@ -85,6 +95,13 @@ def handler(event, context):
         log.info(json.dumps({"workflowTask": event.get("workflowTask"), "domain": event.get("domain"),
                              "tenantId": event.get("tenantId"), "result": result.get("status")}))
         return result
+    # A newsletter send the function handed to itself (mail.send); only this
+    # function's own role may invoke it.
+    if "mailTask" in event and "routeKey" not in event:
+        result = mail.mail_task(event, context)
+        log.info(json.dumps({"mailTask": event.get("mailTask"), "newsletterId": event.get("newsletterId"),
+                             "result": result.get("status")}))
+        return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
@@ -96,7 +113,8 @@ def handler(event, context):
     actor = claims.get("username") or claims.get("sub") or "unknown"
     try:
         req = Request(path=event.get("pathParameters") or {}, query=event.get("queryStringParameters") or {},
-                      body=parse_body(event), actor=actor, claims=claims)
+                      body=parse_body(event), actor=actor, claims=claims,
+                      function_arn=getattr(context, "invoked_function_arn", None))
         status, body = fn(req)
         log.info(json.dumps({"route": route, "status": status, "actor": actor,
                              "tenantId": req.path.get("tenantId"), "requestId": request_id}))

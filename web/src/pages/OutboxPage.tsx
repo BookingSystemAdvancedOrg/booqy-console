@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorNotice, Notice, fmtDate, useAction, useLoad } from "../components/ui";
+import { ErrorNotice, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { OutboxMessage, OutboxSummary } from "../types";
 
 /** Every http(s) link in the message - the magic links are what you test. */
@@ -18,7 +18,7 @@ function MessageView({ id }: { id: string }) {
   useEffect(() => setTab("html"), [id]);
 
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !m) return <p className="muted">Loading…</p>;
+  if (loading || !m) return <Printing />;
   const links = linksOf(m);
   const showHtml = m.channel === "email" && !!m.html && tab === "html";
 
@@ -67,7 +67,7 @@ function MessageView({ id }: { id: string }) {
  * SMS) while the sending domain isn't verified in SES. Saved by the
  * notification Lambda, kept 30 days. Dev only.
  */
-export default function OutboxPage() {
+export default function OutboxPage({ embedded = false }: { embedded?: boolean }) {
   const { data, error, loading, reload } = useLoad(() => api.outbox());
   const [more, setMore] = useState<OutboxSummary[]>([]);
   const [next, setNext] = useState<string | null>(null);
@@ -92,12 +92,12 @@ export default function OutboxPage() {
 
   return (
     <>
-      <div className="page-head">
+      <div className={embedded ? "panel-head" : "page-head"}>
         <div>
-          <h1>Mail outbox</h1>
+          {embedded ? <h2>Mail outbox</h2> : <h1>Mail outbox</h1>}
           <p className="muted">
-            Emails the platform would have sent, plus a copy of every SMS - saved instead of sent until the
-            sending domain is verified. Kept 30 days.
+            Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS -
+            saved instead of sent until the sending domain is verified. Kept 30 days.
           </p>
         </div>
         <div className="row">
@@ -111,7 +111,7 @@ export default function OutboxPage() {
         <Notice kind="info">The outbox is off here - emails are sent normally (infrastructure <code>mail_outbox</code>).</Notice>
       )}
 
-      {loading && !data ? <p className="muted">Loading…</p> : data?.enabled && (
+      {loading && !data ? <Printing /> : data?.enabled && (
         <div className="outbox">
           <div className="table-wrap">
             <table className="table">

@@ -44,6 +44,9 @@ const STATUS_TEXT: Record<string, string> = {
   timed_out: "Timed out",
   transferring: "Transferring",
   transferred: "Transferred",
+  sending: "Sending",
+  sent: "Sent",
+  partly_sent: "Partly sent",
 };
 
 export function Status({ value }: { value: string }) {
@@ -52,6 +55,16 @@ export function Status({ value }: { value: string }) {
 
 export function Notice({ kind = "info", children }: { kind?: "info" | "error" | "ok" | "warn"; children: ReactNode }) {
   return <div className={`notice notice--${kind}`} role={kind === "error" ? "alert" : "status"}>{children}</div>;
+}
+
+/** The loading state: a strip of receipt printing out. */
+export function Printing({ label = "Loading", inline = false }: { label?: string; inline?: boolean }) {
+  return (
+    <div className={`printing${inline ? " printing--inline" : ""}`} role="status" aria-live="polite" aria-label={label}>
+      <span className="printing__label">{label}</span>
+      <i /><i /><i /><i />
+    </div>
+  );
 }
 
 export function ErrorNotice({ error }: { error: unknown }) {
