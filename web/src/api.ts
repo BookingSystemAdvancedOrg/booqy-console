@@ -1,6 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
+  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -117,6 +117,27 @@ export const api = {
     request<{ url: string }>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/document`),
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
+
+  // Subscriptions (Stripe Billing on the platform account) and the Finance page
+  billing: (id: string) => request<BillingView>("GET", `${t(id)}/billing`),
+  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string }) =>
+    request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
+  updateSubscription: (id: string, action: "pause" | "resume" | "cancel" | "sync_price" | "use_card") =>
+    request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action }),
+  cardLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/billing/card-link`, {}),
+  financeOverview: (params: { from: string; to: string; includeInactive?: boolean; tenantId?: string | null }) => {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.includeInactive) q.set("includeInactive", "1");
+    if (params.tenantId) q.set("tenantId", params.tenantId);
+    return request<FinanceOverview>("GET", `/platform/finance/overview?${q}`);
+  },
+  financeTenant: (id: string, params: { from: string; to: string }) =>
+    request<FinanceTenantDetail>("GET", `/platform/finance/tenants/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
+  financeRebuild: (from: string, to: string) =>
+    request<{ from: string; to: string; status: string }>("POST", "/platform/finance/rebuild", { from, to }),
+  financeStripeSync: () =>
+    request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
+      "POST", "/platform/finance/stripe-sync", {}),
 
   terminal: (id: string, locationId: string) =>
     request<TerminalState>("GET", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`),

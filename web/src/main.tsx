@@ -8,6 +8,7 @@ import NewTenantPage from "./pages/NewTenantPage";
 import TenantPage from "./pages/TenantPage";
 import OperatorsPage from "./pages/OperatorsPage";
 import MailPage from "./pages/MailPage";
+import FinancePage from "./pages/FinancePage";
 import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
 import "./styles.css";
@@ -43,6 +44,7 @@ function Shell() {
           <NavLink to="/tenants/new">New customer</NavLink>
           <NavLink to="/operators">Operators</NavLink>
           <NavLink to="/mail">Mail</NavLink>
+          <NavLink to="/finance">Finance</NavLink>
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
@@ -68,6 +70,7 @@ function Shell() {
           <Route path="/tenants/:tenantId" element={<TenantPage />} />
           <Route path="/operators" element={<OperatorsPage me={user.username} />} />
           <Route path="/mail" element={<MailPage />} />
+          <Route path="/finance" element={<FinancePage />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>

@@ -65,6 +65,8 @@ export interface TenantSummary {
   tenantId: string;
   name: string;
   slug: string;
+  legalName?: string;
+  orgNumber?: string;
   status: TenantStatus;
   planId: string;
   locationCount: number;
@@ -359,4 +361,167 @@ export interface NewsletterRecipient {
   tenantName: string;
   status: "pending" | "sent" | "failed";
   error?: string;
+}
+
+// ------------------------------------------------------------------ finance
+/** Status of a customer's SaaS subscription (Stripe Billing on the platform account). */
+export type BillingStatus =
+  | "none" | "active" | "trialing" | "past_due" | "unpaid" | "paused" | "canceled" | "incomplete" | "incomplete_expired" | "unknown";
+
+export interface BillingPlan {
+  planId?: string;
+  name?: string;
+  priceSek?: number;
+  stripePriceId?: string;
+}
+
+export interface Billing {
+  customerId?: string;
+  subscriptionId?: string;
+  status?: BillingStatus;
+  planId?: string;
+  priceId?: string;
+  mrrSek?: number;
+  collectionMethod?: "send_invoice" | "charge_automatically";
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  cancelAt?: string;
+  canceledAt?: string;
+  trialEnd?: string;
+  pauseCollection: boolean;
+  pastDueSince?: string;
+  autoSuspended: boolean;
+  lastPaidAt?: string;
+  lastPaymentFailedAt?: string;
+  startedAt?: string;
+  startedBy?: string;
+  hasCard: boolean;
+  subscribed: boolean;
+  plan: BillingPlan;
+  priceDiffers: boolean;
+  daysUntilDue: number;
+  suspendAfterDays: number;
+}
+
+export interface Invoice {
+  invoiceId: string;
+  number?: string;
+  status: "draft" | "open" | "paid" | "void" | "uncollectible";
+  subtotalSek: number;
+  taxSek: number;
+  totalSek: number;
+  amountPaidSek: number;
+  amountRemainingSek: number;
+  outstandingSek: number;
+  createdAt?: string;
+  dueDate?: string;
+  paidAt?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  hostedInvoiceUrl?: string;
+  invoicePdf?: string;
+  paidOutOfBand: boolean;
+}
+
+export interface BillingView {
+  billing: Billing;
+  invoices: Invoice[];
+}
+
+export interface FinanceKpis {
+  mrrSek: number;
+  revenueSek: number;
+  collectedSek: number;
+  outstandingSek: number;
+  costSek: number;
+  marginSek: number;
+  marginPct: number | null;
+  customers: number;
+  activeCustomers: number;
+  payingCustomers: number;
+  newCustomers: number;
+  churnedCustomers: number;
+  churnPct: number | null;
+  arpuSek: number | null;
+  bookings: number;
+  orders: number;
+  costPerBookingSek: number | null;
+  costPerOrderSek: number | null;
+  requests: number;
+  emails: number;
+  sms: number;
+}
+
+export interface FinancePoint {
+  day: string;
+  invoicedSek: number;
+  paidSek: number;
+  costSek: number;
+  mrrSek: number;
+  bookings: number;
+  orders: number;
+  requests: number;
+  activeTenants: number;
+}
+
+export interface FinanceTenantRow {
+  tenantId: string;
+  name: string;
+  slug: string;
+  orgNumber?: string;
+  legalName?: string;
+  status: TenantStatus;
+  planId?: string;
+  billingStatus: BillingStatus;
+  pastDueSince?: string;
+  mrrSek: number;
+  revenueSek: number;
+  collectedSek: number;
+  creditedSek: number;
+  outstandingSek: number;
+  costSek: number;
+  costSplitSek: { baseline: number; requests: number; email: number; sms: number };
+  marginSek: number;
+  marginPct: number | null;
+  bookings: number;
+  orders: number;
+  requests: number;
+  emails: number;
+  sms: number;
+  marketingEmails: number;
+  costPerBookingSek: number | null;
+  costPerOrderSek: number | null;
+  activeDays: number;
+  invoiceCount: number;
+  createdAt?: string;
+  offboardedAt?: string;
+}
+
+export interface FinanceJob {
+  startedAt?: string;
+  finishedAt?: string;
+  days?: string[];
+  done?: string[];
+  warnings: string[];
+}
+
+export interface FinanceOverview {
+  period: { from: string; to: string; days: number; includeInactive: boolean; tenantId: string | null };
+  kpis: FinanceKpis;
+  series: FinancePoint[];
+  tenants: FinanceTenantRow[];
+  attention: {
+    pastDue: { tenantId: string; name: string; since: string; status: TenantStatus }[];
+    noSubscription: { tenantId: string; name: string; createdAt?: string }[];
+  };
+  job: FinanceJob | null;
+  asOf: string | null;
+}
+
+export interface FinanceTenantDetail {
+  period: { from: string; to: string };
+  tenant: FinanceTenantRow;
+  series: FinancePoint[];
+  days: Record<string, unknown>[];
+  invoices: Invoice[];
 }

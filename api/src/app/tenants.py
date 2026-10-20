@@ -115,6 +115,7 @@ def list_tenants(req) -> tuple[int, dict]:
         stripe = t.get("stripe") or {}
         rows.append({
             "tenantId": t["tenantId"], "name": t.get("name"), "slug": t.get("slug"),
+            "legalName": t.get("legalName"), "orgNumber": t.get("orgNumber"),
             "status": t.get("status"), "planId": t.get("planId"),
             "locationCount": t.get("locationCount", 0),
             "maxLocations": (t.get("entitlements") or {}).get("maxLocations"),
@@ -328,7 +329,10 @@ def set_plan(req) -> tuple[int, dict]:
     write_audit(tenant_id, "plan_changed", req.actor, {
         "from": {"planId": profile.get("planId"), "entitlements": profile.get("entitlements")},
         "to": {"planId": plan_id, "entitlements": ent}})
-    return 200, {"tenant": public(from_ddb(out["Attributes"]))}
+    from .billing import after_plan_change          # billing imports this module
+    subscription = after_plan_change(tenant_id, profile, plan, req.actor)
+    tenant = public(from_ddb(out["Attributes"])) if subscription is None else public(get_profile(tenant_id))
+    return 200, {"tenant": tenant, "subscription": subscription}
 
 
 # ------------------------------------------------------------------ lifecycle
@@ -381,28 +385,34 @@ def _reason(req) -> str | None:
     return reason
 
 
-def suspend(req) -> tuple[int, dict]:
+def suspend_tenant(tenant_id: str, actor: str, reason: str | None) -> dict:
     """Block every user of the tenant. Allowed again on a suspended tenant, so
-    a run that failed for some users can simply be repeated."""
-    tenant_id = req.path["tenantId"]
-    reason = _reason(req)
+    a run that failed for some users can simply be repeated. Also what the
+    dunning task does to a customer whose subscription is long past due."""
     get_profile(tenant_id)
-    _set_status(tenant_id, "suspended", ("active", "suspended"), req.actor)
+    _set_status(tenant_id, "suspended", ("active", "suspended"), actor)
     # Profile status is left alone on purpose: resume re-enables only users
     # whose profile says active, so people an owner disabled stay disabled.
     n, failed = _cognito_each(tenant_users(tenant_id), "admin_disable_user", "admin_user_global_sign_out")
-    write_audit(tenant_id, "suspended", req.actor, {"usersDisabled": n, "failed": failed, "reason": reason})
-    return 200, {"status": "suspended", "usersDisabled": n, "failed": failed}
+    write_audit(tenant_id, "suspended", actor, {"usersDisabled": n, "failed": failed, "reason": reason})
+    return {"status": "suspended", "usersDisabled": n, "failed": failed}
+
+
+def resume_tenant(tenant_id: str, actor: str) -> dict:
+    get_profile(tenant_id)
+    _set_status(tenant_id, "active", ("suspended", "active"), actor)
+    users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
+    n, failed = _cognito_each(users, "admin_enable_user")
+    write_audit(tenant_id, "resumed", actor, {"usersEnabled": n, "failed": failed})
+    return {"status": "active", "usersEnabled": n, "failed": failed}
+
+
+def suspend(req) -> tuple[int, dict]:
+    return 200, suspend_tenant(req.path["tenantId"], req.actor, _reason(req))
 
 
 def resume(req) -> tuple[int, dict]:
-    tenant_id = req.path["tenantId"]
-    get_profile(tenant_id)
-    _set_status(tenant_id, "active", ("suspended", "active"), req.actor)
-    users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
-    n, failed = _cognito_each(users, "admin_enable_user")
-    write_audit(tenant_id, "resumed", req.actor, {"usersEnabled": n, "failed": failed})
-    return 200, {"status": "active", "usersEnabled": n, "failed": failed}
+    return 200, resume_tenant(req.path["tenantId"], req.actor)
 
 
 def purge_now(req) -> tuple[int, dict]:
@@ -448,6 +458,11 @@ def offboard(req) -> tuple[int, dict]:
         raise ApiError(409, "invalid_status", "Wait until setup has finished (or failed)",
                        currentStatus="provisioning")
     _set_status(tenant_id, "offboarding", ("active", "suspended", "provisioning_failed", "offboarding"), req.actor)
+    # The subscription ends now with a final prorated invoice; a Stripe
+    # failure is reported and does not stop the offboarding (the Billing tab
+    # keeps its Cancel button until the webhook or a retry says canceled).
+    from .billing import cancel_for_offboarding       # billing imports this module
+    subscription = cancel_for_offboarding(tenant_id, profile, req.actor)
     sfn = client("stepfunctions")
     try:
         sfn.start_execution(
@@ -456,7 +471,7 @@ def offboard(req) -> tuple[int, dict]:
     except sfn.exceptions.ExecutionAlreadyExists:
         pass                                    # already running / ran - nothing to do
     write_audit(tenant_id, "offboarding_started", req.actor)
-    return 202, {"status": "offboarding"}
+    return 202, {"status": "offboarding", "subscription": subscription}
 
 
 def retry_onboarding(req) -> tuple[int, dict]:

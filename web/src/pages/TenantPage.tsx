@@ -8,16 +8,17 @@ import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+import BillingTab from "../components/BillingTab";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
-const TABS = ["Overview", "Locations", "Users", "Plan", "Payments", "Domains", "Activity", "Danger zone"] as const;
+const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TenantPage() {
   const { tenantId = "" } = useParams();
   const [search, setSearch] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : "Overview");
+  const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : "Overview");
   const { data, error, loading, reload } = useLoad(() => api.tenant(tenantId), [tenantId]);
 
   // Poll while something is in progress (onboarding, domain workflows, offboarding).
@@ -72,6 +73,7 @@ export default function TenantPage() {
       {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => setTab("Plan")} />}
       {tab === "Users" && <Users tenant={t} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
+      {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} />}
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
       {tab === "Domains" && <Domains detail={data} onChanged={reload} />}
       {tab === "Activity" && <Activity detail={data} />}

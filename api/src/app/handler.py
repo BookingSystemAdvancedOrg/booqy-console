@@ -9,7 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import domains, locations, mail, operators, outbox, stripe_connect, tenants, terminal, users, zones
+from . import (billing, domains, finance, locations, mail, operators, outbox, stripe_connect, tenants, terminal,
+               users, zones)
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -62,6 +63,15 @@ ROUTES = {
     "GET /platform/mail/newsletters": mail.list_newsletters,
     "POST /platform/mail/newsletters": mail.send,
     "GET /platform/mail/newsletters/{newsletterId}": mail.get_newsletter,
+    # Finance: subscriptions (Stripe Billing) and the Finance page
+    "GET /platform/finance/overview": finance.overview,
+    "GET /platform/finance/tenants/{tenantId}": finance.tenant_detail,
+    "POST /platform/finance/rebuild": finance.rebuild,
+    "POST /platform/finance/stripe-sync": finance.stripe_sync,
+    "GET /platform/tenants/{tenantId}/billing": billing.get_billing,
+    "POST /platform/tenants/{tenantId}/billing/subscription": billing.start_subscription,
+    "PATCH /platform/tenants/{tenantId}/billing/subscription": billing.update_subscription,
+    "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
 }
 
 OPERATOR_GROUP = "platform_admin"
@@ -101,6 +111,12 @@ def handler(event, context):
         result = mail.mail_task(event, context)
         log.info(json.dumps({"mailTask": event.get("mailTask"), "newsletterId": event.get("newsletterId"),
                              "result": result.get("status")}))
+        return result
+    # The daily dunning schedule (EventBridge Scheduler, {"financeTask":
+    # "dunning"}); only the scheduler role may invoke the function this way.
+    if "financeTask" in event and "routeKey" not in event:
+        result = billing.finance_task(event, context)
+        log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))
         return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
