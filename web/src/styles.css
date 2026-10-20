@@ -372,6 +372,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .outbox { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; align-items: start; }
 .outbox--reading { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .outbox .table td { white-space: nowrap; }
+.outbox-tools { margin-top: 0; flex: none; }
 .outbox .table td:last-child { white-space: normal; overflow-wrap: anywhere; max-width: 60ch; min-width: 18ch; }
 .outbox .table tr.clickable { cursor: pointer; }
 .outbox .table tr.clickable:hover td { background: var(--paper-2); }

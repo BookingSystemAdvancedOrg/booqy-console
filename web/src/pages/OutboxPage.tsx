@@ -12,13 +12,13 @@ function linksOf(m: OutboxMessage): string[] {
   return [...found];
 }
 
-function MessageView({ id }: { id: string }) {
+function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: m, error, loading } = useLoad(() => api.outboxMessage(id), [id]);
   const [tab, setTab] = useState<"html" | "text">("html");
   useEffect(() => setTab("html"), [id]);
 
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !m) return <Printing />;
+  if (loading || !m) return <div className="card"><div className="card__body"><Printing inline /></div></div>;
   const links = linksOf(m);
   const showHtml = m.channel === "email" && !!m.html && tab === "html";
 
@@ -26,12 +26,15 @@ function MessageView({ id }: { id: string }) {
     <div className="card">
       <div className="card__head">
         <h2>{m.channel === "sms" ? "SMS" : m.subject || "(no subject)"}</h2>
-        {m.channel === "email" && m.html && (
-          <div className="row">
-            <button className={`btn ${tab === "html" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("html")}>HTML</button>
-            <button className={`btn ${tab === "text" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("text")}>Text</button>
-          </div>
-        )}
+        <div className="row outbox-tools">
+          {m.channel === "email" && m.html && (
+            <>
+              <button className={`btn btn--small ${tab === "html" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("html")}>HTML</button>
+              <button className={`btn btn--small ${tab === "text" ? "btn--primary" : "btn--ghost"}`} onClick={() => setTab("text")}>Text</button>
+            </>
+          )}
+          <button className="btn btn--ghost btn--small" onClick={onClose} aria-label="Close message" title="Back to the list">✕</button>
+        </div>
       </div>
       <div className="card__body">
         <dl className="outbox-meta">
@@ -138,7 +141,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
               </div>
             )}
           </div>
-          {selected && <MessageView id={selected} />}
+          {selected && <MessageView id={selected} onClose={() => setSelected(null)} />}
         </div>
       )}
     </>
