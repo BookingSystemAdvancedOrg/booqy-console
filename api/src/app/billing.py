@@ -22,8 +22,20 @@ What this module writes:
 
 From the first write on, platform-stripe-webhook keeps PROFILE.billing and
 the ledger current. The daily dunning task (financeTask, EventBridge
-Scheduler) suspends customers past due longer than
-BILLING_SUSPEND_AFTER_DAYS and resumes those it suspended once they paid.
+Scheduler) then works the unpaid invoices, all through Stripe:
+  * reminders: from the day after the due date and every
+    BILLING_REMINDER_INTERVAL_DAYS days, Stripe re-sends the invoice email
+    (POST /invoices/{id}/send; remindersSent / lastReminderAt on the row);
+  * late fee: BILLING_LATE_FEE_AFTER_DAYS days after the due date, one
+    VAT-free invoice item of BILLING_LATE_FEE_SEK on the customer
+    (förseningsavgift), billed on their next invoice;
+  * interest: when a late invoice is paid, one VAT-free invoice item for
+    the overdue amount at BILLING_REFERENCE_RATE_PCT +
+    BILLING_INTEREST_MARGIN_PCT per year for the days late
+    (dröjsmålsränta); a customer without a running subscription gets a
+    one-off invoice for the items instead;
+  * suspension: customers past due longer than BILLING_SUSPEND_AFTER_DAYS
+    are suspended and resumed once they paid.
 """
 
 import json
@@ -217,6 +229,7 @@ def _invoice_row(tenant_id: str, invoice: dict) -> dict:
         "dueDate": _iso(invoice.get("due_date")), "periodStart": _iso(invoice.get("period_start")),
         "periodEnd": _iso(invoice.get("period_end")), "hostedInvoiceUrl": invoice.get("hosted_invoice_url"),
         "invoicePdf": invoice.get("invoice_pdf"), "paidOutOfBand": bool(invoice.get("paid_out_of_band")),
+        "collectionMethod": invoice.get("collection_method"),
         "updatedAt": now_iso(),
     }
 
@@ -288,6 +301,10 @@ def list_invoices(tenant_id: str, limit: int = 60) -> list[dict]:
         remaining = r.get("amountRemainingSek") or Decimal(0)
         out.append({
             "invoiceId": r.get("invoiceId"), "number": r.get("number"), "status": r.get("status"),
+            "month": (r.get("periodStart") or r.get("createdAt") or "")[:7] or None,
+            "daysLate": days_late(r), "remindersSent": int(r.get("remindersSent") or 0),
+            "lastReminderAt": r.get("lastReminderAt"), "lateFeeSek": r.get("lateFeeSek"),
+            "interestSek": r.get("interestSek"), "collectionMethod": r.get("collectionMethod"),
             "subtotalSek": r.get("subtotalSek"), "taxSek": r.get("taxSek"), "totalSek": total,
             "amountPaidSek": r.get("amountPaidSek"), "amountRemainingSek": remaining,
             "outstandingSek": (remaining * (r.get("subtotalSek") or Decimal(0)) / total).quantize(CENTS)
@@ -554,6 +571,161 @@ def sync_from_stripe(actor: str) -> dict:
     return summary
 
 
+# ------------------------------------------------------------- reminders, fees, interest
+def _env_num(name: str, default: str) -> Decimal:
+    try:
+        return Decimal(env(name, default) or default)
+    except ArithmeticError:
+        return Decimal(default)
+
+
+def _parse(iso: str | None) -> datetime | None:
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def days_late(invoice: dict, now: datetime | None = None) -> int:
+    """Days between the due date and now (or the payment), 0 when not late."""
+    due = _parse(invoice.get("dueDate"))
+    if due is None:
+        return 0
+    end = _parse(invoice.get("paidAt")) if invoice.get("status") == "paid" else None
+    end = end or now or datetime.now(timezone.utc)
+    return max(0, (end.date() - due.date()).days)
+
+
+def interest_sek(amount: Decimal, days: int, *, reference_pct: Decimal, margin_pct: Decimal) -> Decimal:
+    """Simple interest: amount x (reference + margin) % per year x days / 365."""
+    if days <= 0 or amount <= 0:
+        return Decimal("0.00")
+    rate = (reference_pct + margin_pct) / Decimal(100)
+    return (amount * rate * Decimal(days) / Decimal(365)).quantize(CENTS, rounding=ROUND_HALF_UP)
+
+
+def _mark(row: dict, **fields) -> None:
+    names = {f"#f{i}": k for i, k in enumerate(fields)}
+    values = {f":v{i}": to_ddb_value(v) for i, v in enumerate(fields.values())}
+    client("dynamodb").update_item(TableName=finance_table(), Key={"PK": {"S": row["PK"]}, "SK": {"S": row["SK"]}},
+                                   UpdateExpression="SET " + ", ".join(f"{n} = :v{i}" for i, n in enumerate(names)),
+                                   ConditionExpression="attribute_exists(PK)",
+                                   ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+
+
+def open_invoices(tenant_id: str) -> list[dict]:
+    return [r for r in query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
+                                 ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
+            if r.get("status") in ("open", "paid")]
+
+
+def send_reminder(tenant_id: str, row: dict, actor: str) -> dict:
+    """Stripe re-sends the invoice email (emailed invoices only)."""
+    if row.get("status") != "open":
+        raise ApiError(409, "not_open", "Only an open invoice can be reminded about")
+    invoice = stripe_request("POST", f"/invoices/{row['invoiceId']}/send", {})
+    if invoice.get("collection_method") == "charge_automatically":
+        raise ApiError(409, "charged_automatically", "This invoice is charged to a card; Stripe retries it by itself")
+    n = int(row.get("remindersSent") or 0) + 1
+    _mark(row, remindersSent=n, lastReminderAt=now_iso(), lastReminderBy=actor)
+    write_audit(tenant_id, "invoice_reminder_sent", actor, {"invoiceId": row["invoiceId"], "number": row.get("number"),
+                                                            "reminder": n})
+    return {"remindersSent": n}
+
+
+def _add_item(customer_id: str, amount: Decimal, description: str, metadata: dict, key: str) -> str:
+    """A VAT-free invoice item on the customer; Stripe puts it on the next
+    invoice (or _bill_pending_items makes one)."""
+    item = stripe_request("POST", "/invoiceitems", {
+        "customer": customer_id, "amount": int((amount * 100).to_integral_value(rounding=ROUND_HALF_UP)),
+        "currency": "sek", "description": description, "tax_rates": "",
+        **{f"metadata[{k}]": v for k, v in metadata.items()},
+    }, idempotency_key=key)
+    return item["id"]
+
+
+def _bill_pending_items(customer_id: str, tenant_id: str) -> str | None:
+    """A customer without a running subscription has no next invoice: bill
+    the pending items now on a one-off invoice that Stripe emails."""
+    invoice = stripe_request("POST", "/invoices", {
+        "customer": customer_id, "collection_method": "send_invoice",
+        "days_until_due": int(env("BILLING_DAYS_UNTIL_DUE", "30")), "auto_advance": "true",
+        "pending_invoice_items_behavior": "include", "metadata[tenantId]": tenant_id, "metadata[kind]": "late_fees",
+    })
+    stripe_request("POST", f"/invoices/{invoice['id']}/finalize", {})
+    stripe_request("POST", f"/invoices/{invoice['id']}/send", {})
+    return invoice["id"]
+
+
+def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
+    """Reminders, the late fee and the interest for one customer's invoices.
+    Every step is recorded on the ledger row, so a re-run never repeats it."""
+    tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
+    billing = _billing(profile)
+    customer_id = billing.get("customerId")
+    out = {"reminded": [], "fees": [], "interest": [], "oneOff": None}
+    if not customer_id:
+        return out
+    interval = int(_env_num("BILLING_REMINDER_INTERVAL_DAYS", "7"))
+    fee = _env_num("BILLING_LATE_FEE_SEK", "450")
+    fee_after = int(_env_num("BILLING_LATE_FEE_AFTER_DAYS", "7"))
+    reference, margin = _env_num("BILLING_REFERENCE_RATE_PCT", "2"), _env_num("BILLING_INTEREST_MARGIN_PCT", "8")
+    added_items = False
+    for row in open_invoices(tenant_id):
+        late = days_late(row, now)
+        number = row.get("number") or row["invoiceId"]
+        if row.get("status") == "open" and late >= 1 and interval > 0 and row.get("collectionMethod") != "charge_automatically":
+            last = _parse(row.get("lastReminderAt"))
+            if last is None or (now - last).days >= interval:
+                try:
+                    stripe_request("POST", f"/invoices/{row['invoiceId']}/send", {})
+                    n = int(row.get("remindersSent") or 0) + 1
+                    _mark(row, remindersSent=n, lastReminderAt=now_iso(), lastReminderBy=actor)
+                    out["reminded"].append(f"{name} {number} (reminder {n}, {late} days late)")
+                except ApiError as e:
+                    out["reminded"].append(f"{name} {number}: FAILED {e.message}")
+        if row.get("status") == "open" and fee > 0 and late >= fee_after and not row.get("lateFeeAdded"):
+            item_id = _add_item(customer_id, fee, f"Förseningsavgift, faktura {number}",
+                                {"tenantId": tenant_id, "invoiceId": row["invoiceId"], "kind": "late_fee"},
+                                f"late-fee-{row['invoiceId']}")
+            _mark(row, lateFeeAdded=now_iso(), lateFeeSek=fee, lateFeeItemId=item_id)
+            write_audit(tenant_id, "late_fee_added", actor, {"invoiceId": row["invoiceId"], "number": number, "feeSek": fee})
+            out["fees"].append(f"{name} {number} ({fee} kr, {late} days late)")
+            added_items = True
+        if row.get("status") == "paid" and late >= 1 and not row.get("interestAdded"):
+            amount = interest_sek(Decimal(row.get("totalSek") or 0), late, reference_pct=reference, margin_pct=margin)
+            if amount >= 1:
+                item_id = _add_item(customer_id, amount,
+                                    f"Dröjsmålsränta {reference + margin} % i {late} dagar, faktura {number}",
+                                    {"tenantId": tenant_id, "invoiceId": row["invoiceId"], "kind": "interest", "days": str(late)},
+                                    f"interest-{row['invoiceId']}")
+                added_items = True
+            else:
+                item_id = None
+            _mark(row, interestAdded=now_iso(), interestSek=amount, interestDays=late, interestItemId=item_id or "-")
+            write_audit(tenant_id, "interest_added", actor, {"invoiceId": row["invoiceId"], "number": number,
+                                                             "interestSek": amount, "days": late})
+            out["interest"].append(f"{name} {number} ({amount} kr for {late} days)")
+    if added_items and billing.get("status") not in OPEN_STATUSES:
+        out["oneOff"] = _bill_pending_items(customer_id, tenant_id)
+        write_audit(tenant_id, "late_fees_invoiced", actor, {"invoiceId": out["oneOff"]})
+    return out
+
+
+def remind_invoice(req) -> tuple[int, dict]:
+    """Send a reminder now (the Payments view and the Billing tab)."""
+    tenant_id, invoice_id = req.path["tenantId"], req.path["invoiceId"]
+    get_profile(tenant_id)
+    rows = [r for r in query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
+                                 ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
+            if r.get("invoiceId") == invoice_id]
+    if not rows:
+        raise ApiError(404, "not_found", "No such invoice")
+    return 200, send_reminder(tenant_id, rows[0], req.actor)
+
+
 # ------------------------------------------------------------- dunning
 def _days_since(iso: str | None) -> int | None:
     if not iso:
@@ -571,11 +743,19 @@ def dunning_task(event: dict, context) -> dict:
     operators when it did something."""
     actor = "dunning"
     limit = int(env("BILLING_SUSPEND_AFTER_DAYS", "14"))
-    suspended, resumed, failed = [], [], []
+    now = datetime.now(timezone.utc)
+    suspended, resumed, failed, reminded, fees, interest = [], [], [], [], [], []
     for profile in _all_profiles():
         billing = _billing(profile)
         tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
         days = _days_since(billing.get("pastDueSince"))
+        try:
+            worked = work_invoices(profile, now, actor)
+            reminded += worked["reminded"]
+            fees += worked["fees"]
+            interest += worked["interest"]
+        except (ApiError, ClientError, BotoCoreError) as e:
+            failed.append(f"{name} invoices: {getattr(e, 'message', None) or e}"[:300])
         try:
             if limit > 0 and profile.get("status") == "active" and days is not None and days >= limit:
                 suspend_tenant(tenant_id, actor, f"Subscription past due for {days} days")
@@ -591,15 +771,19 @@ def dunning_task(event: dict, context) -> dict:
                 resumed.append(name)
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name}: {getattr(e, 'message', None) or e}"[:300])
-    summary = {"status": "done", "limitDays": limit, "suspended": suspended, "resumed": resumed, "failed": failed}
-    if suspended or resumed or failed:
+    summary = {"status": "done", "limitDays": limit, "suspended": suspended, "resumed": resumed, "failed": failed,
+               "reminded": reminded, "fees": fees, "interest": interest}
+    if suspended or resumed or failed or reminded or fees or interest:
         lines = [f"Dunning ({env('ENVIRONMENT', 'dev')}): past due limit {limit} days.", ""]
+        lines += [f"Reminder sent: {r}" for r in reminded] + [f"Late fee added: {f}" for f in fees]
+        lines += [f"Interest added: {i}" for i in interest]
         lines += [f"Suspended: {s}" for s in suspended] + [f"Resumed: {r}" for r in resumed] + [f"FAILED: {x}" for x in failed]
         topic = env("ALERT_TOPIC_ARN", "")
         if topic:
             try:
                 client("sns").publish(TopicArn=topic, Subject=f"[{env('ENVIRONMENT', 'dev')}] Booqy dunning: "
-                                      f"{len(suspended)} suspended, {len(resumed)} resumed", Message="\n".join(lines))
+                                      f"{len(reminded)} reminded, {len(fees)} fees, {len(suspended)} suspended, "
+                                      f"{len(resumed)} resumed", Message="\n".join(lines))
             except (ClientError, BotoCoreError):
                 log.warning("dunning summary not published", exc_info=True)
     log.info(json.dumps(summary, default=str))

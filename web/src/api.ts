@@ -1,6 +1,6 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, Money, RegistrantContact, SupportCase, TransferCheck, Zone,
+  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -135,6 +135,13 @@ export const api = {
     request<FinanceTenantDetail>("GET", `/platform/finance/tenants/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
   financeRebuild: (from: string, to: string) =>
     request<{ from: string; to: string; status: string }>("POST", "/platform/finance/rebuild", { from, to }),
+  financeInvoices: (params: { from: string; to: string; status?: string }) => {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.status && params.status !== "all") q.set("status", params.status);
+    return request<PaymentsView>("GET", `/platform/finance/invoices?${q}`);
+  },
+  remindInvoice: (id: string, invoiceId: string) =>
+    request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
   financeStripeSync: () =>
     request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
       "POST", "/platform/finance/stripe-sync", {}),

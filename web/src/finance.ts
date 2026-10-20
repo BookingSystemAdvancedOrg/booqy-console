@@ -161,3 +161,21 @@ export function matchesCustomer(row: { name?: string; legalName?: string; orgNum
   return [row.name, row.legalName, row.slug].some((s) => s?.toLowerCase().includes(q))
     || (!!digits && !!row.orgNumber && row.orgNumber.replace(/\D/g, "").includes(digits));
 }
+
+/** First and last day of a yyyy-mm month. */
+export function monthRange(month: string): { from: string; to: string } {
+  const [y, m] = month.split("-").map(Number);
+  return { from: isoDay(new Date(y, m - 1, 1)), to: isoDay(new Date(y, m, 0)) };
+}
+
+export function shiftMonth(month: string, by: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + by, 1);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+}
+
+export function monthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const text = new Date(y, m - 1, 1).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

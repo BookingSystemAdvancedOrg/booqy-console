@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { BarLineChart, HBarChart, LineChart } from "../components/charts";
+import PaymentsView from "../components/PaymentsView";
 import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import {
   PRESETS, Preset, SortKey, addDays, bucketSeries, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, isoDay,
@@ -14,7 +15,10 @@ const BILLING_TEXT: Record<string, string> = {
   paused: "Paused", canceled: "Cancelled", incomplete: "Incomplete", incomplete_expired: "Expired", unknown: "Unknown",
 };
 
-export default function FinancePage() {
+const VIEWS = ["Overview", "Payments"] as const;
+
+export default function FinancePage({ view: initialView = "Overview" }: { view?: (typeof VIEWS)[number] }) {
+  const [view, setView] = useState<(typeof VIEWS)[number]>(initialView);
   const [preset, setPreset] = useState<Preset>("month");
   const [range, setRange] = useState(() => presetRange("month"));
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -67,6 +71,14 @@ export default function FinancePage() {
         </div>
       </div>
 
+      <nav className="tabs">
+        {VIEWS.map((name) => (
+          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} onClick={() => setView(name)}>{name}</button>
+        ))}
+      </nav>
+
+      {view === "Payments" && <PaymentsView />}
+      {view === "Overview" && <>
       <div className="toolbar finance-toolbar">
         <div className="chips" role="group" aria-label="Period">
           {PRESETS.map((p) => (
@@ -222,6 +234,8 @@ export default function FinancePage() {
           </div>
         </>
       )}
+
+      </>}
 
       {rebuild && <RebuildModal range={range} onClose={() => setRebuild(false)} onStarted={() => { setRebuild(false); }} />}
     </>

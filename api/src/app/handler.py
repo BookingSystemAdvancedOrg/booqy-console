@@ -72,6 +72,8 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/billing/subscription": billing.start_subscription,
     "PATCH /platform/tenants/{tenantId}/billing/subscription": billing.update_subscription,
     "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
+    "POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind": billing.remind_invoice,
+    "GET /platform/finance/invoices": finance.invoices,
 }
 
 OPERATOR_GROUP = "platform_admin"

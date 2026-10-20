@@ -243,6 +243,49 @@ def tenant_detail(req) -> tuple[int, dict]:
                  "days": days, "invoices": list_invoices(tenant_id)}
 
 
+def invoices(req) -> tuple[int, dict]:
+    """The Payments view: every invoice whose period (or date) falls in the
+    range, with days late, reminders and fees. status filter: open, paid,
+    overdue (open and past due), all (default)."""
+    q = req.query or {}
+    first, last = _range(q)
+    wanted = (q.get("status") or "all").strip()
+    if wanted not in ("all", "open", "paid", "overdue", "void", "uncollectible"):
+        raise ApiError(400, "validation_failed", "status: all, open, paid, overdue, void or uncollectible",
+                       fields={"status": "Unknown"})
+    from .billing import list_invoices           # billing imports tenants, not this module
+    rows = []
+    for p in _all_profiles():
+        if not isinstance(p.get("billing"), dict) or not p["billing"].get("customerId"):
+            continue
+        for inv in list_invoices(p["tenantId"], limit=1000):
+            when = (inv.get("periodStart") or inv.get("createdAt") or "")[:10]
+            if not (first <= when <= last):
+                continue
+            late = inv["daysLate"]
+            if wanted == "overdue" and not (inv["status"] == "open" and late > 0):
+                continue
+            if wanted not in ("all", "overdue") and inv["status"] != wanted:
+                continue
+            rows.append({**inv, "tenantId": p["tenantId"], "name": p.get("name"), "slug": p.get("slug"),
+                         "orgNumber": p.get("orgNumber"), "tenantStatus": p.get("status")})
+    rows.sort(key=lambda r: ((r.get("month") or ""), (r.get("name") or "").lower()), reverse=True)
+    paid = sum(1 for r in rows if r["status"] == "paid")
+    overdue = [r for r in rows if r["status"] == "open" and r["daysLate"] > 0]
+    return 200, {
+        "period": {"from": first, "to": last, "status": wanted},
+        "summary": {"invoices": len(rows), "paid": paid, "open": sum(1 for r in rows if r["status"] == "open"),
+                    "overdue": len(overdue),
+                    "invoicedSek": _q(sum((Decimal(r.get("subtotalSek") or 0) for r in rows if r["status"] != "void"), Decimal(0))),
+                    "collectedSek": _q(sum((Decimal(r.get("subtotalSek") or 0) for r in rows if r["status"] == "paid"), Decimal(0))),
+                    "outstandingSek": _q(sum((Decimal(r.get("outstandingSek") or 0) for r in rows), Decimal(0))),
+                    "overdueSek": _q(sum((Decimal(r.get("outstandingSek") or 0) for r in overdue), Decimal(0))),
+                    "lateFeesSek": _q(sum((Decimal(r.get("lateFeeSek") or 0) for r in rows), Decimal(0))),
+                    "interestSek": _q(sum((Decimal(r.get("interestSek") or 0) for r in rows), Decimal(0)))},
+        "invoices": rows,
+    }
+
+
 def rebuild(req) -> tuple[int, dict]:
     """Recomputes a date range (finance-rollup, asynchronously): after a
     changed exchange rate or allocation, or when a night was missed.

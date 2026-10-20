@@ -66,6 +66,16 @@ function row(name: string, marginSek: number, extra: Partial<FinanceTenantRow> =
   };
 }
 
+describe("months", () => {
+  it("gives a month's range and neighbours", async () => {
+    const { monthRange, shiftMonth, monthLabel } = await import("./finance");
+    expect(monthRange("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(monthLabel("2026-10")).toBe("Oktober 2026");
+  });
+});
+
 describe("rows", () => {
   it("splits top and bottom only when there are enough customers", () => {
     const rows = [row("A", 5), row("B", 1), row("C", -2)];

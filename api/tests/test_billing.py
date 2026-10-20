@@ -41,7 +41,8 @@ def _price(price_id, amount):
 @pytest.fixture
 def stripe(monkeypatch):
     from app import billing
-    state = {"calls": [], "subs": {}, "n": 0, "c": 0, "card": None, "invoices": []}
+    state = {"calls": [], "subs": {}, "n": 0, "c": 0, "card": None, "invoices": [], "items": [], "sent": [],
+             "oneoff": []}
 
     def sub_obj(sub_id):
         return state["subs"][sub_id]
@@ -93,6 +94,18 @@ def stripe(monkeypatch):
             return {"id": "cs_1", "url": "https://checkout.stripe.com/c/cs_1", "expires_at": 1_800_000_000}
         if method == "GET" and path == "/invoices":
             return {"data": state["invoices"], "has_more": False}
+        if method == "POST" and path.startswith("/invoices/") and path.endswith("/send"):
+            invoice_id = path.split("/")[2]
+            state["sent"].append(invoice_id)
+            return {"id": invoice_id, "collection_method": "send_invoice"}
+        if method == "POST" and path.startswith("/invoices/") and path.endswith("/finalize"):
+            return {"id": path.split("/")[2], "status": "open"}
+        if method == "POST" and path == "/invoiceitems":
+            state["items"].append({**params, "idempotency_key": idempotency_key})
+            return {"id": f"ii_{len(state['items'])}"}
+        if method == "POST" and path == "/invoices":
+            state["oneoff"].append(params)
+            return {"id": f"in_oneoff_{len(state['oneoff'])}"}
         raise AssertionError(f"unexpected Stripe call {method} {path}")
 
     monkeypatch.setattr(billing, "stripe_request", fake)
@@ -339,3 +352,127 @@ def test_dunning_off_when_limit_is_zero(finance, stripe, aws, tenant, monkeypatc
     _set_billing(aws, tenant, status="past_due", pastDueSince="2020-01-01T00:00:00Z")
     out = handler({"financeTask": "dunning"}, None)
     assert out["suspended"] == [] and _profile(aws, tenant)["status"] == "active"
+
+
+# ------------------------------------------------------------ reminders, fees, interest
+def _ledger(finance, tenant_id, invoice_id, **fields):
+    finance.put_item(Item={"PK": f"TENANT#{tenant_id}", "SK": f"INVOICE#2026-10-01#{invoice_id}", "invoiceId": invoice_id,
+                           "number": f"F-{invoice_id[-1]}", "currency": "sek", "subtotalSek": Decimal("990"),
+                           "taxSek": Decimal("247.5"), "totalSek": Decimal("1237.50"), "amountRemainingSek": Decimal("1237.50"),
+                           "amountPaidSek": Decimal(0), "createdAt": "2026-10-01T00:00:00Z",
+                           "periodStart": "2026-10-01T00:00:00Z", "periodEnd": "2026-11-01T00:00:00Z",
+                           "collectionMethod": "send_invoice", **fields})
+
+
+def _ago(days):
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _row(finance, tenant_id, invoice_id):
+    return finance.get_item(Key={"PK": f"TENANT#{tenant_id}", "SK": f"INVOICE#2026-10-01#{invoice_id}"})["Item"]
+
+
+def test_dunning_reminds_weekly_until_paid(finance, stripe, aws, tenant, monkeypatch):
+    from app.handler import handler
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(0))        # due today: not late yet
+    _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(2))        # 2 days late: first reminder
+    _ledger(finance, tenant, "in_c", status="open", dueDate=_ago(10), remindersSent=1, lastReminderAt=_ago(3))  # too soon
+    _ledger(finance, tenant, "in_d", status="open", dueDate=_ago(16), remindersSent=2, lastReminderAt=_ago(7))  # due again
+    _ledger(finance, tenant, "in_e", status="open", dueDate=_ago(3), collectionMethod="charge_automatically")   # card: Stripe retries
+    out = handler({"financeTask": "dunning"}, None)
+    assert sorted(stripe["sent"]) == ["in_b", "in_d"]
+    assert len(out["reminded"]) == 2 and "reminder 1, 2 days late" in out["reminded"][0]
+    assert _row(finance, tenant, "in_b")["remindersSent"] == 1 and _row(finance, tenant, "in_d")["remindersSent"] == 3
+    assert "remindersSent" not in _row(finance, tenant, "in_a")
+    # the next day nothing is due again
+    stripe["sent"].clear()
+    handler({"financeTask": "dunning"}, None)
+    assert stripe["sent"] == []
+    monkeypatch.setenv("BILLING_REMINDER_INTERVAL_DAYS", "0")
+    _ledger(finance, tenant, "in_f", status="open", dueDate=_ago(30))
+    handler({"financeTask": "dunning"}, None)
+    assert stripe["sent"] == []
+
+
+def test_dunning_adds_the_late_fee_once_after_the_grace_period(finance, stripe, aws, tenant):
+    from app.handler import handler
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(6))     # inside the 7-day grace period
+    _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(7))     # fee today
+    out = handler({"financeTask": "dunning"}, None)
+    assert len(out["fees"]) == 1 and "F-b (450 kr, 7 days late)" in out["fees"][0]
+    item = stripe["items"][0]
+    assert item["amount"] == 45000 and item["currency"] == "sek" and item["tax_rates"] == ""
+    assert item["customer"] == "cus_test1" and item["metadata[kind]"] == "late_fee" and item["idempotency_key"] == "late-fee-in_b"
+    assert "Förseningsavgift" in item["description"] and "F-b" in item["description"]
+    row = _row(finance, tenant, "in_b")
+    assert row["lateFeeSek"] == 450 and row["lateFeeItemId"] == "ii_1"
+    assert "lateFeeAdded" not in _row(finance, tenant, "in_a")
+    assert stripe["oneoff"] == []                      # a running subscription bills it on the next invoice
+    handler({"financeTask": "dunning"}, None)
+    assert len(stripe["items"]) == 1                  # never twice
+
+
+def test_dunning_adds_interest_when_a_late_invoice_is_paid(finance, stripe, aws, tenant, monkeypatch):
+    from app.handler import handler
+    monkeypatch.setenv("BILLING_REFERENCE_RATE_PCT", "2")
+    monkeypatch.setenv("BILLING_INTEREST_MARGIN_PCT", "8")
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    _ledger(finance, tenant, "in_a", status="paid", dueDate="2026-09-30T00:00:00Z", paidAt="2026-10-20T10:00:00Z",
+            amountPaidSek=Decimal("1237.50"), amountRemainingSek=Decimal(0))   # 20 days late
+    _ledger(finance, tenant, "in_b", status="paid", dueDate="2026-09-30T00:00:00Z", paidAt="2026-09-28T10:00:00Z",
+            amountPaidSek=Decimal("1237.50"), amountRemainingSek=Decimal(0))   # on time
+    out = handler({"financeTask": "dunning"}, None)
+    # 1237.50 x 10 % x 20 / 365 = 6.78 kr
+    assert out["interest"] == ["Pizzeria Roma F-a (6.78 kr for 20 days)"]
+    item = stripe["items"][0]
+    assert item["amount"] == 678 and item["metadata[kind]"] == "interest" and item["metadata[days]"] == "20"
+    assert "Dröjsmålsränta 10 %" in item["description"]
+    row = _row(finance, tenant, "in_a")
+    assert row["interestSek"] == Decimal("6.78") and row["interestDays"] == 20
+    assert "interestAdded" not in _row(finance, tenant, "in_b")
+    handler({"financeTask": "dunning"}, None)
+    assert len(stripe["items"]) == 1
+
+
+def test_fees_for_a_cancelled_customer_go_on_a_one_off_invoice(finance, stripe, aws, tenant):
+    from app.handler import handler
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "cancel"})
+    _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(9))
+    out = handler({"financeTask": "dunning"}, None)
+    assert len(out["fees"]) == 1
+    assert len(stripe["oneoff"]) == 1 and stripe["oneoff"][0]["pending_invoice_items_behavior"] == "include"
+    assert "in_oneoff_1" in stripe["sent"]            # finalized and emailed at once
+
+
+def test_interest_maths():
+    from app.billing import interest_sek
+    assert interest_sek(Decimal("1237.50"), 20, reference_pct=Decimal("2"), margin_pct=Decimal("8")) == Decimal("6.78")
+    assert interest_sek(Decimal("1000"), 365, reference_pct=Decimal("2.5"), margin_pct=Decimal("8")) == Decimal("105.00")
+    assert interest_sek(Decimal("1000"), 0, reference_pct=Decimal("2"), margin_pct=Decimal("8")) == Decimal("0.00")
+
+
+def test_manual_reminder_route(finance, stripe, aws, tenant):
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(1))
+    _ledger(finance, tenant, "in_p", status="paid", dueDate=_ago(1), paidAt=_ago(0))
+    status, body = call("POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind",
+                        {"tenantId": tenant, "invoiceId": "in_a"}, body={}, actor="ops@booqy.se")
+    assert status == 200 and body == {"remindersSent": 1} and stripe["sent"] == ["in_a"]
+    assert _row(finance, tenant, "in_a")["lastReminderBy"] == "ops@booqy.se"
+    status, body = call("POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind",
+                        {"tenantId": tenant, "invoiceId": "in_p"}, body={})
+    assert status == 409 and body["error"] == "not_open"
+    status, body = call("POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind",
+                        {"tenantId": tenant, "invoiceId": "in_zzz"}, body={})
+    assert status == 404
+    status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
+    by_id = {i["invoiceId"]: i for i in body["invoices"]}
+    assert by_id["in_a"]["remindersSent"] == 1 and by_id["in_a"]["daysLate"] == 1 and by_id["in_a"]["month"] == "2026-10"

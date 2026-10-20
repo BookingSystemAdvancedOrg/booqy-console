@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Billing, BillingView, Tenant } from "../types";
 
 const mocks = vi.hoisted(() => ({
-  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(),
+  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(),
 }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
@@ -52,14 +52,20 @@ describe("BillingTab", () => {
                    collectionMethod: "send_invoice", currentPeriodStart: "2026-10-01T00:00:00Z", currentPeriodEnd: "2026-11-01T00:00:00Z",
                    priceDiffers: true }),
       invoices: [{ invoiceId: "in_1", number: "F-0001", status: "open", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5,
-                   amountPaidSek: 0, amountRemainingSek: 1237.5, outstandingSek: 990, dueDate: "2026-11-01T00:00:00Z",
-                   periodStart: "2026-10-01T00:00:00Z", periodEnd: "2026-11-01T00:00:00Z", hostedInvoiceUrl: "https://invoice.stripe.com/x",
-                   paidOutOfBand: false }],
+                   amountPaidSek: 0, amountRemainingSek: 1237.5, outstandingSek: 990, dueDate: "2026-10-01T00:00:00Z",
+                   periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", hostedInvoiceUrl: "https://invoice.stripe.com/x",
+                   paidOutOfBand: false, daysLate: 12, remindersSent: 1, lateFeeSek: 450, interestSek: null, collectionMethod: "send_invoice" }],
     });
     mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
+    mocks.remindInvoice.mockResolvedValue({ remindersSent: 2 });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByText("Active")).toBeInTheDocument();
     expect(screen.getByText("F-0001")).toBeInTheDocument();
+    expect(screen.getByText("12 days")).toBeInTheDocument();
+    expect(screen.getByText("1 reminder")).toBeInTheDocument();
+    expect(screen.getByText(/450,00 kr fees/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send reminder" }));
+    await waitFor(() => expect(mocks.remindInvoice).toHaveBeenCalledWith("t1", "in_1"));
     expect(screen.getByText("Open", { selector: ".status" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "https://invoice.stripe.com/x");
     expect(screen.getByText(/The plan's price changed/)).toBeInTheDocument();

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   tenants: vi.fn(),
   financeRebuild: vi.fn(),
   financeStripeSync: vi.fn(),
+  financeInvoices: vi.fn(),
+  remindInvoice: vi.fn(),
 }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
@@ -130,6 +132,44 @@ describe("FinancePage", () => {
     await user.click(screen.getByRole("button", { name: "Start rebuild" }));
     expect(await screen.findByText(/Rebuild started for 2026-10-01 to 2026-10-20/)).toBeInTheDocument();
     expect(mocks.financeRebuild).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches to the Payments view: a month's invoices with reminders and fees", async () => {
+    const user = userEvent.setup();
+    mocks.financeInvoices.mockResolvedValue({
+      period: { from: "2026-10-01", to: "2026-10-31", status: "all" },
+      summary: { invoices: 2, paid: 1, open: 1, overdue: 1, invoicedSek: 2980, collectedSek: 1990, outstandingSek: 990,
+                 overdueSek: 990, lateFeesSek: 450, interestSek: 0 },
+      invoices: [
+        { invoiceId: "in_x", number: "F-0003", status: "open", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5, amountPaidSek: 0,
+          amountRemainingSek: 1237.5, outstandingSek: 990, dueDate: "2026-10-31T00:00:00Z", periodStart: "2026-10-01T00:00:00Z",
+          periodEnd: "2026-11-01T00:00:00Z", paidOutOfBand: false, month: "2026-10", daysLate: 9, remindersSent: 2,
+          lastReminderAt: "2026-11-08T05:00:00Z", lateFeeSek: 450, interestSek: null, collectionMethod: "send_invoice",
+          tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", tenantStatus: "active" },
+        { invoiceId: "in_y", number: "F-0004", status: "paid", subtotalSek: 1990, taxSek: 497.5, totalSek: 2487.5, amountPaidSek: 2487.5,
+          amountRemainingSek: 0, outstandingSek: 0, dueDate: "2026-10-31T00:00:00Z", paidAt: "2026-10-20T00:00:00Z",
+          periodStart: "2026-10-01T00:00:00Z", periodEnd: "2026-11-01T00:00:00Z", paidOutOfBand: true, month: "2026-10",
+          daysLate: 0, remindersSent: 0, collectionMethod: "send_invoice",
+          tenantId: "t2", name: "Bistro Linnea", slug: "linnea", orgNumber: "556000-0001", tenantStatus: "active" },
+      ],
+    });
+    mocks.remindInvoice.mockResolvedValue({ remindersSent: 3 });
+    renderPage();
+    await screen.findByText("2 980 kr");
+    await user.click(screen.getByRole("button", { name: "Payments" }));
+    expect(await screen.findByText("1 of 2 paid")).toBeInTheDocument();
+    expect(mocks.financeInvoices).toHaveBeenLastCalledWith(expect.objectContaining({ status: "all" }));
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText("9 d")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("2 sent")).toBeInTheDocument();
+    expect(within(rows[1]).getByText(/bankgiro/)).toBeInTheDocument();
+    await user.click(within(rows[0]).getByRole("button", { name: "Send reminder" }));
+    await waitFor(() => expect(mocks.remindInvoice).toHaveBeenCalledWith("t1", "in_x"));
+    await user.click(screen.getByRole("button", { name: /^Overdue/ }));
+    await waitFor(() => expect(mocks.financeInvoices).toHaveBeenLastCalledWith(expect.objectContaining({ status: "overdue" })));
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    await waitFor(() => expect(mocks.financeInvoices).toHaveBeenLastCalledWith(expect.objectContaining({ from: expect.stringMatching(/-01$/) })));
   });
 
   it("shows the API error", async () => {

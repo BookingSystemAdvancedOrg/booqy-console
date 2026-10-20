@@ -421,6 +421,33 @@ export interface Invoice {
   hostedInvoiceUrl?: string;
   invoicePdf?: string;
   paidOutOfBand: boolean;
+  /** yyyy-mm of the period the invoice is for */
+  month?: string | null;
+  daysLate: number;
+  remindersSent: number;
+  lastReminderAt?: string;
+  lateFeeSek?: number | null;
+  interestSek?: number | null;
+  collectionMethod?: "send_invoice" | "charge_automatically" | null;
+}
+
+/** One row of the Payments view: an invoice with its customer. */
+export interface PaymentRow extends Invoice {
+  tenantId: string;
+  name: string;
+  slug: string;
+  orgNumber?: string;
+  tenantStatus: TenantStatus;
+}
+
+export interface PaymentsView {
+  period: { from: string; to: string; status: string };
+  summary: {
+    invoices: number; paid: number; open: number; overdue: number;
+    invoicedSek: number; collectedSek: number; outstandingSek: number; overdueSek: number;
+    lateFeesSek: number; interestSek: number;
+  };
+  invoices: PaymentRow[];
 }
 
 export interface BillingView {

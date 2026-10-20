@@ -41,8 +41,10 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
         <p className="muted small">
           Invoiced monthly through Stripe Billing on your platform account: the plan price plus 25 % VAT. Stripe emails
           the invoice; the restaurant pays by card on the invoice page, automatically with a card on file, or by bankgiro
-          to your account (then mark the invoice paid in Stripe). A customer past due for {b.suspendAfterDays} days is
-          suspended automatically{b.suspendAfterDays === 0 ? " (off)" : ""} and resumed when they pay.
+          to your account (then mark the invoice paid in Stripe). An unpaid invoice is reminded about weekly after its due
+          date, gets the statutory late fee after the grace period and interest for the days late on the next invoice; a
+          customer past due for {b.suspendAfterDays} days is suspended automatically{b.suspendAfterDays === 0 ? " (off)" : ""}
+          and resumed when they pay.
         </p>
         {cardParam === "added" && <Notice kind="ok">The card was added in Stripe. Press "Charge the card" to use it for the subscription.</Notice>}
         {b.priceDiffers && (
@@ -94,7 +96,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
         {tenant.status !== "active" && !running && <p className="muted small">A subscription can be started for an active customer.</p>}
       </Card>
 
-      <Invoices invoices={data.invoices} />
+      <Invoices invoices={data.invoices} tenantId={tenant.tenantId} onChanged={() => void reload()} />
 
       {start && (
         <StartModal tenant={tenant} billing={b} onClose={() => setStart(false)}
@@ -161,31 +163,48 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
   );
 }
 
-function Invoices({ invoices }: { invoices: Invoice[] }) {
+function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tenantId: string; onChanged: () => void }) {
+  const remind = useAction();
   return (
     <Card title="Invoices">
       {invoices.length === 0 ? (
         <p className="muted small">No invoices yet. They appear here when Stripe creates them (and after "Import from Stripe" on the Finance page).</p>
       ) : (
         <div className="table-wrap table-wrap--inner">
+          <ErrorNotice error={remind.error} />
           <table className="table">
-            <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th></th></tr></thead>
+            <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
             <tbody>
-              {invoices.map((i) => (
-                <tr key={i.invoiceId}>
-                  <td className="mono">{i.number ?? i.invoiceId}</td>
-                  <td><span className={`status status--invoice-${i.status}`}>{INVOICE_TEXT[i.status] ?? i.status}</span></td>
-                  <td className="small">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
-                  <td className="num">{fmtSek(i.subtotalSek)}</td>
-                  <td className="num">{fmtSek(i.totalSek)}</td>
-                  <td className="small">{fmtDay(i.dueDate)}</td>
-                  <td className="small">{i.paidAt ? fmtDay(i.paidAt) + (i.paidOutOfBand ? " (bankgiro)" : "") : "-"}</td>
-                  <td className="small">
-                    {i.hostedInvoiceUrl && <a href={i.hostedInvoiceUrl} target="_blank" rel="noreferrer">Open</a>}
-                    {i.invoicePdf && <> · <a href={i.invoicePdf} target="_blank" rel="noreferrer">PDF</a></>}
-                  </td>
-                </tr>
-              ))}
+              {invoices.map((i) => {
+                const overdue = i.status === "open" && i.daysLate > 0;
+                const fees = (Number(i.lateFeeSek) || 0) + (Number(i.interestSek) || 0);
+                return (
+                  <tr key={i.invoiceId}>
+                    <td className="mono">{i.number ?? i.invoiceId}</td>
+                    <td><span className={`status status--invoice-${i.status}`}>{INVOICE_TEXT[i.status] ?? i.status}</span></td>
+                    <td className="small">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
+                    <td className="num">{fmtSek(i.subtotalSek)}</td>
+                    <td className="num">{fmtSek(i.totalSek)}</td>
+                    <td className="small">{fmtDay(i.dueDate)}</td>
+                    <td className="small">{i.paidAt ? fmtDay(i.paidAt) + (i.paidOutOfBand ? " (bankgiro)" : "") : "-"}</td>
+                    <td className={`small${overdue ? " bad" : ""}`}>
+                      {i.daysLate > 0 ? `${i.daysLate} days` : "-"}
+                      {i.remindersSent > 0 && <div className="muted">{i.remindersSent} reminder{i.remindersSent === 1 ? "" : "s"}</div>}
+                      {fees > 0 && <div className="muted">{fmtSek(fees, { decimals: true })} fees</div>}
+                    </td>
+                    <td className="small">
+                      {i.hostedInvoiceUrl && <a href={i.hostedInvoiceUrl} target="_blank" rel="noreferrer">Open</a>}
+                      {i.invoicePdf && <> · <a href={i.invoicePdf} target="_blank" rel="noreferrer">PDF</a></>}
+                      {overdue && i.collectionMethod !== "charge_automatically" && (
+                        <div><button className="link" disabled={remind.busy}
+                                     onClick={async () => { if (await remind.run(() => api.remindInvoice(tenantId, i.invoiceId))) onChanged(); }}>
+                          {remind.busy ? "Sending…" : "Send reminder"}
+                        </button></div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

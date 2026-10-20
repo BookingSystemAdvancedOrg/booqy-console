@@ -75,14 +75,18 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 The domain-provision workflow also invokes this Lambda directly
 (`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -
 see `api/src/app/zones.py`. EventBridge Scheduler invokes it daily with
-`{"financeTask": "dunning"}`: customers whose subscription is past due
-longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended (as with Suspend),
-and resumed when they pay - `api/src/app/billing.py`.
+`{"financeTask": "dunning"}`: unpaid invoices get weekly reminders (Stripe
+re-sends the email), the statutory late fee after the grace period and
+interest for the days late when paid, all as Stripe invoice items;
+customers past due longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended
+(as with Suspend) and resumed when they pay - `api/src/app/billing.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
 | `GET .../billing` | the customer's subscription (Stripe Billing on the platform account: status, plan price, MRR, period, past due) and invoices |
 | `POST .../billing/subscription` | start it: `{collectionMethod: send_invoice \| charge_automatically, startDate?}` (a future date = first invoice then) |
 | `PATCH .../billing/subscription` | `{action: pause \| resume \| cancel \| sync_price \| use_card}` |
 | `POST .../billing/card-link` | Stripe Checkout (setup mode) link where the restaurant adds a card |
+| `POST .../billing/invoices/{invoiceId}/remind` | Stripe re-sends the invoice email now (open invoices) |
+| `GET /platform/finance/invoices?from&to&status` | the Payments view: every invoice of the period with days late, reminders, fees; status all, paid, open, overdue |
 | `GET /platform/finance/overview?from&to&includeInactive&tenantId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
 | `GET /platform/finance/tenants/{id}?from&to` | one customer's figures, day rows and invoices |
 | `POST /platform/finance/rebuild` | `{from, to}`: recompute a range (invokes finance-rollup, max 92 days) |
@@ -105,8 +109,11 @@ come from the `finance` table, written nightly by `finance-rollup`
 (Cost Explorer + usage per customer, application repo) and by the
 Stripe webhook; see the infrastructure repo's `docs/FINANCE.md`.
 
-The customer page's **Billing** tab starts, pauses, cancels and updates
-the subscription, creates card links and lists the invoices.
+**Payments** (a tab on the Finance page) shows who has paid for a month:
+one row per invoice with days late, reminders sent, fees and a Send
+reminder button. The customer page's **Billing** tab starts, pauses,
+cancels and updates the subscription, creates card links and lists the
+invoices.
 
 ## Local development
 

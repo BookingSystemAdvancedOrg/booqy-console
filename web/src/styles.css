@@ -546,3 +546,10 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 /* a ticket in a stack must shrink to the screen, however wide its table is */
 .stack > .card, .cols > .card, .charts > .card { min-width: 0; }
 .table-wrap--inner { max-width: 100%; }
+
+/* --- payments view ------------------------------------------------------------------- */
+.month-pick { display: flex; gap: 6px; align-items: center; }
+.month-pick__input { width: 170px; }
+.kpis--row { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.finance-table tr.overdue td:first-child { box-shadow: inset 3px 0 0 var(--ink-red); }
+.finance-table .btn--small { white-space: nowrap; }

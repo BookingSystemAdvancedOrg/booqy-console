@@ -140,3 +140,29 @@ def test_rebuild_invokes_the_rollup(two_tenants, monkeypatch):
         assert calls[0]["InvocationType"] == "Event" and calls[0]["FunctionName"].endswith("dev-finance-rollup:live")
     status, body = call("POST /platform/finance/rebuild", body={"from": "2020-01-01", "to": "2020-06-01"})
     assert status == 400
+
+
+def test_payments_view_lists_invoices_by_month_and_status(two_tenants, finance):  # noqa: F811
+    from test_billing import _ledger, _ago
+    tenant, other = two_tenants
+    _ledger(finance, tenant, "in_x", status="open", dueDate=_ago(3), remindersSent=1, lateFeeSek=Decimal("450"))
+    _ledger(finance, other, "in_y", status="paid", dueDate=_ago(10), paidAt=_ago(2), amountPaidSek=Decimal("1237.50"),
+            amountRemainingSek=Decimal(0), interestSek=Decimal("2.71"))
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-10-01", "to": "2026-10-31"})
+    assert status == 200, body
+    ids = {r["invoiceId"] for r in body["invoices"]}
+    assert ids == {"in_x", "in_y"}          # in_1 / in_2 of the fixture carry no dates
+    x = next(r for r in body["invoices"] if r["invoiceId"] == "in_x")
+    assert x["name"] == "Pizzeria Roma" and x["month"] == "2026-10" and x["daysLate"] == 3 and x["remindersSent"] == 1
+    assert x["lateFeeSek"] == 450 and x["outstandingSek"] == 990
+    s = body["summary"]
+    assert s["invoices"] == 2 and s["paid"] == 1 and s["overdue"] == 1 and s["lateFeesSek"] == 450 and s["interestSek"] == 2.71
+    assert s["outstandingSek"] == 990 and s["overdueSek"] == 990 and s["collectedSek"] == 990
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-10-01", "to": "2026-10-31", "status": "overdue"})
+    assert [r["invoiceId"] for r in body["invoices"]] == ["in_x"]
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-10-01", "to": "2026-10-31", "status": "paid"})
+    assert [r["invoiceId"] for r in body["invoices"]] == ["in_y"]
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-11-01", "to": "2026-11-30"})
+    assert body["invoices"] == []
+    status, body = call("GET /platform/finance/invoices", query={"status": "late"})
+    assert status == 400
