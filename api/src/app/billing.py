@@ -49,9 +49,10 @@ from . import validation as v
 from .core import (ApiError, client, env, log, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
                    write_audit)
 from .stripe_connect import stripe_request
-from .tenants import get_plan, get_profile, resume_tenant, suspend_tenant, tkey
+from .tenants import ensure_billing_map, get_plan, get_profile, offboard_tenant, resume_tenant, suspend_tenant, tkey
 
 COLLECTION_METHODS = ("send_invoice", "charge_automatically")
+TERMS = ("trial", "subscription")
 OPEN_STATUSES = ("active", "trialing", "past_due", "unpaid", "incomplete")
 PAST_DUE_STATUSES = ("past_due", "unpaid")
 SUBSCRIPTION_FIELDS = ("subscriptionId", "status", "priceId", "planId", "mrrSek", "collectionMethod",
@@ -112,7 +113,7 @@ def subscription_state(subscription: dict, *, deleted: bool = False) -> dict:
         "subscriptionId": _id(subscription.get("id")),
         "status": "canceled" if deleted else (subscription.get("status") or "unknown"),
         "priceId": _id(price.get("id")),
-        "planId": metadata.get("planId") or price.get("lookup_key") or None,
+        "planId": metadata.get("planId") or (subscription.get("metadata") or {}).get("planId") or price.get("lookup_key") or None,
         "mrrSek": Decimal(0) if deleted else monthly_sek(subscription),
         "collectionMethod": subscription.get("collection_method") or None,
         "currentPeriodStart": _iso(first.get("current_period_start") or subscription.get("current_period_start")),
@@ -127,7 +128,7 @@ def subscription_state(subscription: dict, *, deleted: bool = False) -> dict:
 def store_subscription(tenant_id: str, customer_id: str, state: dict, *, extra: dict | None = None) -> bool:
     """Writes the state on PROFILE.billing (the console's own writes carry no
     Stripe event time, so they never block a later webhook)."""
-    names = {"#b": "billing", "#c": "customerId", "#u": "updatedAt", "#p": "pastDueSince"}
+    names = {"#b": "billing", "#c": "customerId", "#u": "updatedAt"}
     values = {":cus": {"S": customer_id}, ":now": {"S": now_iso()}}
     sets, removes = ["#b.#u = :now"], []
     fields = {**state, **(extra or {})}
@@ -139,8 +140,10 @@ def store_subscription(tenant_id: str, customer_id: str, state: dict, *, extra: 
             values[f":v{i}"] = to_ddb_value(value)
             sets.append(f"#b.#f{i} = :v{i}")
     if state.get("status") in PAST_DUE_STATUSES:
+        names["#p"] = "pastDueSince"
         sets.append("#b.#p = if_not_exists(#b.#p, :now)")
     elif state.get("status") in ("active", "trialing", "canceled"):
+        names["#p"] = "pastDueSince"
         removes.append("#b.#p")
     expression = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
     try:
@@ -187,15 +190,16 @@ def ensure_customer(tenant_id: str, profile: dict, actor: str) -> str:
                            idempotency_key=f"customer-vat-{tenant_id}")
         except ApiError as e:
             log.warning("VAT number not registered on %s: %s", customer_id, e.message)
-    billing = {"customerId": customer_id, "customerCreatedAt": now_iso(), "customerCreatedBy": actor}
+    ensure_billing_map(tenant_id)
     try:
         client("dynamodb").transact_write_items(TransactItems=[
             {"Put": {"TableName": tenant_table(), "ConditionExpression": "attribute_not_exists(PK)",
                      "Item": to_ddb({"PK": f"STRIPE_CUSTOMER#{customer_id}", "SK": "TENANT", "tenantId": tenant_id})}},
             {"Update": {"TableName": tenant_table(), "Key": tkey(tenant_id),
-                        "UpdateExpression": "SET billing = if_not_exists(billing, :b), updatedAt = :n",
+                        "UpdateExpression": "SET billing.customerId = :c, billing.customerCreatedAt = :n, "
+                                            "billing.customerCreatedBy = :by, updatedAt = :n",
                         "ConditionExpression": "attribute_exists(PK) AND attribute_not_exists(billing.customerId)",
-                        "ExpressionAttributeValues": {":b": to_ddb_value(billing), ":n": {"S": now_iso()}}}},
+                        "ExpressionAttributeValues": {":c": {"S": customer_id}, ":n": {"S": now_iso()}, ":by": {"S": actor}}}},
         ])
     except ClientError as e:
         if e.response["Error"]["Code"] == "TransactionCanceledException":
@@ -330,6 +334,47 @@ def _plan_price(profile: dict) -> tuple[dict, str]:
     return plan, price_id
 
 
+def effective_price(profile: dict, plan: dict) -> int | None:
+    """The customer's own monthly price (ex VAT) when one is set, else None
+    (= the plan's price)."""
+    price = _billing(profile).get("priceSek")
+    if price is None or int(price) == int(plan.get("priceSek") or -1):
+        return None
+    return int(price)
+
+
+def _item_params(plan: dict, price_id: str, price_sek: int | None, prefix: str = "items[0]") -> dict:
+    """Stripe subscription item: the plan's price, or the customer's own
+    amount as a price on the plan's product."""
+    if price_sek is None:
+        return {f"{prefix}[price]": price_id}
+    product = plan.get("stripeProductId")
+    if not product:
+        raise ApiError(409, "plan_without_price", f"The plan {plan.get('name')} has no Stripe product yet - apply the infrastructure")
+    return {f"{prefix}[price_data][currency]": "sek", f"{prefix}[price_data][product]": product,
+            f"{prefix}[price_data][unit_amount]": int(price_sek) * 100, f"{prefix}[price_data][tax_behavior]": "exclusive",
+            f"{prefix}[price_data][recurring][interval]": "month"}
+
+
+def _add_months(when: datetime, months: int) -> datetime:
+    month = when.month - 1 + months
+    year = when.year + month // 12
+    month = month % 12 + 1
+    last = [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+    return when.replace(year=year, month=month, day=min(when.day, last))
+
+
+def end_date(billing: dict, now: datetime) -> datetime:
+    """When a cancellation takes effect: a try-out ends with the paid month,
+    a subscription BILLING_NOTICE_MONTHS after the current month ends."""
+    period_end = _parse(billing.get("currentPeriodEnd")) or _add_months(now, 1)
+    if period_end < now:
+        period_end = _add_months(now, 1)
+    if billing.get("terms") == "trial":
+        return period_end
+    return _add_months(period_end, int(_env_num("BILLING_NOTICE_MONTHS", "3")))
+
+
 def _view(profile: dict) -> dict:
     billing = _billing(profile)
     plan = get_plan(profile.get("planId") or "") or {}
@@ -345,11 +390,22 @@ def _view(profile: dict) -> dict:
         "lastPaidAt": billing.get("lastPaidAt"), "lastPaymentFailedAt": billing.get("lastPaymentFailedAt"),
         "startedAt": billing.get("startedAt"), "startedBy": billing.get("startedBy"),
         "hasCard": bool(billing.get("defaultPaymentMethod")),
+        "terms": billing.get("terms") or "subscription",
+        "termsSince": billing.get("termsSince"),
+        "trialEndsAt": (_add_months(_parse(billing["termsSince"]), int(_env_num("BILLING_TRIAL_MONTHS", "6"))).isoformat()
+                        if billing.get("terms") == "trial" and _parse(billing.get("termsSince")) and _env_num("BILLING_TRIAL_MONTHS", "6") > 0
+                        else None),
+        "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
+        "monthlySek": int(billing["priceSek"]) if billing.get("priceSek") is not None else plan.get("priceSek"),
+        "noticeMonths": int(_env_num("BILLING_NOTICE_MONTHS", "3")),
+        "trialMonths": int(_env_num("BILLING_TRIAL_MONTHS", "6")),
+        "offboardAtEnd": bool(billing.get("offboardAtEnd")),
+        "endsAt": billing.get("cancelAt"),
         "subscribed": bool(billing.get("subscriptionId")) and status in OPEN_STATUSES,
         "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek"),
                  "stripePriceId": plan.get("stripePriceId")},
-        "priceDiffers": bool(billing.get("subscriptionId")) and status in OPEN_STATUSES
-        and bool(plan.get("stripePriceId")) and billing.get("priceId") != plan.get("stripePriceId"),
+        "priceDiffers": bool(billing.get("subscriptionId")) and status in OPEN_STATUSES and bool(plan.get("stripePriceId"))
+        and int(billing.get("mrrSek") or 0) != int(billing["priceSek"] if billing.get("priceSek") is not None else plan.get("priceSek") or 0),
         "daysUntilDue": int(env("BILLING_DAYS_UNTIL_DUE", "30")),
         "suspendAfterDays": int(env("BILLING_SUSPEND_AFTER_DAYS", "14")),
     }
@@ -361,46 +417,71 @@ def get_billing(req) -> tuple[int, dict]:
     return 200, {"billing": _view(profile), "invoices": list_invoices(tenant_id)}
 
 
+def _start_day(f: v.Fields, field: str = "startDate") -> date | None:
+    raw = f.text(field, max_len=10)
+    if not raw:
+        return None
+    try:
+        day = date.fromisoformat(raw)
+    except ValueError:
+        f.fail(field, "Use yyyy-mm-dd")
+        return None
+    if day <= datetime.now(timezone.utc).date():
+        return None                     # today or earlier = start now
+    if day > datetime.now(timezone.utc).date() + timedelta(days=365):
+        f.fail(field, "At most a year ahead")
+    return day
+
+
 def start_subscription(req) -> tuple[int, dict]:
-    """Starts the customer's subscription on their plan's price. Invoices by
-    email by default; `startDate` (yyyy-mm-dd, in the future) delays the
-    first invoice until then (a Stripe trial, nothing is charged before)."""
+    """Starts the customer's subscription (Billing tab). Invoices by email by
+    default; `startDate` (yyyy-mm-dd, in the future) delays the first
+    invoice until then (a Stripe trial, nothing is charged before);
+    `priceSek` is the customer's own monthly price, `terms` trial or
+    subscription."""
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
     method = f.text("collectionMethod", max_len=30) or "send_invoice"
     if method not in COLLECTION_METHODS:
         f.fail("collectionMethod", "send_invoice (emailed invoice) or charge_automatically (card on file)")
-    start_raw = f.text("startDate", max_len=10)
-    start_day = None
-    if start_raw:
-        try:
-            start_day = date.fromisoformat(start_raw)
-        except ValueError:
-            f.fail("startDate", "Use yyyy-mm-dd")
-        else:
-            if start_day <= datetime.now(timezone.utc).date():
-                start_day = None            # today or earlier = start now
-            elif start_day > datetime.now(timezone.utc).date() + timedelta(days=365):
-                f.fail("startDate", "At most a year ahead")
+    start_day = _start_day(f)
+    terms = f.text("terms", max_len=20)
+    if terms is not None and terms not in TERMS:
+        f.fail("terms", "trial (try-out period) or subscription")
+    price_sek = f.integer("priceSek", minimum=0, maximum=1_000_000)
     f.done()
     profile = get_profile(tenant_id)
-    if profile.get("status") != "active":
+    view = start_for(tenant_id, profile, actor=req.actor, method=method, start_day=start_day.isoformat() if start_day else None,
+                     price_sek=price_sek, terms=terms)
+    return 201, {"billing": view}
+
+
+def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_invoice", start_day: str | None = None,
+              price_sek: int | None = None, terms: str | None = None) -> dict:
+    """Creates the Stripe customer (if needed) and the subscription on the
+    plan's product: the plan's price, or the customer's own amount."""
+    if profile.get("status") not in ("provisioning", "active"):
         raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
                        currentStatus=profile.get("status"))
     billing = _billing(profile)
     if billing.get("subscriptionId") and billing.get("status") in OPEN_STATUSES:
         raise ApiError(409, "already_subscribed", "The customer already has a subscription")
     plan, price_id = _plan_price(profile)
-    customer_id = ensure_customer(tenant_id, profile, req.actor)
+    if price_sek is None:
+        price_sek = effective_price(profile, plan)
+    elif int(price_sek) == int(plan.get("priceSek") or -1):
+        price_sek = None
+    terms = terms or billing.get("terms") or "subscription"
+    customer_id = ensure_customer(tenant_id, profile, actor)
     if method == "charge_automatically":
         customer = stripe_request("GET", f"/customers/{customer_id}")
         if not ((customer.get("invoice_settings") or {}).get("default_payment_method")):
             raise ApiError(409, "no_card", "No card on file yet - create a card link, let the restaurant add a card, "
                                            "then start with charge automatically (or invoice by email instead)")
     params = {
-        "customer": customer_id, "items[0][price]": price_id, "collection_method": method,
-        "metadata[tenantId]": tenant_id, "metadata[planId]": plan.get("planId") or "",
-        "proration_behavior": "none",
+        "customer": customer_id, "collection_method": method,
+        "metadata[tenantId]": tenant_id, "metadata[planId]": plan.get("planId") or "", "metadata[terms]": terms,
+        "proration_behavior": "none", **_item_params(plan, price_id, price_sek),
     }
     if method == "send_invoice":
         params["days_until_due"] = int(env("BILLING_DAYS_UNTIL_DUE", "30"))
@@ -408,16 +489,17 @@ def start_subscription(req) -> tuple[int, dict]:
     if tax_rate:
         params["default_tax_rates[0]"] = tax_rate
     if start_day:
-        params["trial_end"] = int(datetime.combine(start_day, datetime.min.time(), tzinfo=timezone.utc).timestamp())
+        params["trial_end"] = int(datetime.combine(date.fromisoformat(start_day), datetime.min.time(), tzinfo=timezone.utc).timestamp())
     sub = stripe_request("POST", "/subscriptions", params,
                          idempotency_key=f"subscription-{tenant_id}-{int(time.time() // 3600)}")
     state = subscription_state(sub)
     store_subscription(tenant_id, customer_id, state,
-                       extra={"startedAt": now_iso(), "startedBy": req.actor, "autoSuspended": None})
-    write_audit(tenant_id, "subscription_started", req.actor,
+                       extra={"startedAt": now_iso(), "startedBy": actor, "autoSuspended": None, "terms": terms,
+                              "termsSince": now_iso(), "priceSek": price_sek, "offboardAtEnd": None})
+    write_audit(tenant_id, "subscription_started", actor,
                 {"subscriptionId": state["subscriptionId"], "planId": plan.get("planId"), "collectionMethod": method,
-                 "startDate": start_day.isoformat() if start_day else None})
-    return 201, {"billing": _view(get_profile(tenant_id))}
+                 "terms": terms, "priceSek": price_sek, "startDate": start_day})
+    return _view(get_profile(tenant_id))
 
 
 def _subscription_item(subscription_id: str) -> str:
@@ -430,11 +512,16 @@ def _subscription_item(subscription_id: str) -> str:
 
 def update_subscription(req) -> tuple[int, dict]:
     """action: pause (stop invoicing, keep the subscription), resume,
-    cancel (final prorated invoice now), sync_price (move to the plan's
-    current price), use_card (charge the card the restaurant added)."""
+    cancel (ends with the terms: a try-out at the end of the paid month, a
+    subscription after the notice period; `offboardAtEnd` default true),
+    cancel_now (final prorated invoice today), keep (undo a cancellation),
+    convert (try-out -> subscription), sync_price (the plan's current
+    price, or the customer's own, from the next invoice), use_card (charge
+    the card the restaurant added)."""
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
     action = f.text("action", required=True, max_len=20)
+    offboard_at_end = f.boolean("offboardAtEnd")
     f.done()
     profile = get_profile(tenant_id)
     billing = _billing(profile)
@@ -442,19 +529,37 @@ def update_subscription(req) -> tuple[int, dict]:
     if not sub_id or billing.get("status") not in OPEN_STATUSES:
         raise ApiError(409, "not_subscribed", "The customer has no running subscription")
     details: dict = {}
+    extra: dict | None = None
     if action == "pause":
         sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"pause_collection[behavior]": "void"})
     elif action == "resume":
         sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"pause_collection": ""})
     elif action == "cancel":
+        ends = end_date(billing, datetime.now(timezone.utc))
+        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"cancel_at": int(ends.timestamp())})
+        extra = {"offboardAtEnd": offboard_at_end is not False, "cancelRequestedAt": now_iso(), "cancelRequestedBy": req.actor}
+        details = {"endsAt": ends.isoformat(), "terms": billing.get("terms") or "subscription",
+                   "offboardAtEnd": extra["offboardAtEnd"]}
+    elif action == "cancel_now":
         sub = stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "true", "prorate": "true"})
+        extra = {"offboardAtEnd": offboard_at_end is True}
+    elif action == "keep":
+        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"cancel_at": ""})
+        extra = {"offboardAtEnd": None, "cancelRequestedAt": None, "cancelRequestedBy": None}
+    elif action == "convert":
+        if (billing.get("terms") or "subscription") != "trial":
+            raise ApiError(409, "not_trial", "The customer is already on a subscription")
+        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"metadata[terms]": "subscription"})
+        extra = {"terms": "subscription", "termsSince": now_iso(), "convertedBy": req.actor}
+        details = {"from": "trial", "to": "subscription"}
     elif action == "sync_price":
         plan, price_id = _plan_price(profile)
+        price_sek = effective_price(profile, plan)
         item_id = _subscription_item(sub_id)
         sub = stripe_request("POST", f"/subscriptions/{sub_id}", {
-            "items[0][id]": item_id, "items[0][price]": price_id, "proration_behavior": "create_prorations",
+            "items[0][id]": item_id, **_item_params(plan, price_id, price_sek), "proration_behavior": "none",
             "metadata[planId]": plan.get("planId") or ""})
-        details = {"planId": plan.get("planId"), "priceId": price_id}
+        details = {"planId": plan.get("planId"), "priceId": price_id, "priceSek": price_sek}
     elif action == "use_card":
         methods = stripe_request("GET", "/payment_methods", {"customer": customer_id, "type": "card", "limit": 1})
         cards = methods.get("data") or []
@@ -467,9 +572,10 @@ def update_subscription(req) -> tuple[int, dict]:
         details = {"paymentMethod": card}
     else:
         raise ApiError(400, "validation_failed", "Unknown action",
-                       fields={"action": "pause, resume, cancel, sync_price or use_card"})
-    state = subscription_state(sub, deleted=action == "cancel" or sub.get("status") == "canceled")
-    extra = {"defaultPaymentMethod": details.get("paymentMethod")} if action == "use_card" else None
+                       fields={"action": "pause, resume, cancel, cancel_now, keep, convert, sync_price or use_card"})
+    state = subscription_state(sub, deleted=action == "cancel_now" or sub.get("status") == "canceled")
+    if action == "use_card":
+        extra = {"defaultPaymentMethod": details.get("paymentMethod")}
     store_subscription(tenant_id, customer_id, state, extra=extra)
     write_audit(tenant_id, f"subscription_{action}", req.actor, {"subscriptionId": sub_id, **details})
     return 200, {"billing": _view(get_profile(tenant_id))}
@@ -492,24 +598,34 @@ def card_link(req) -> tuple[int, dict]:
 
 # ------------------------------------------------------------- hooks from tenants
 def after_plan_change(tenant_id: str, profile: dict, plan: dict, actor: str) -> dict | None:
-    """Moves a running subscription to the new plan's price (prorated).
-    Best effort: a Stripe hiccup is reported, the plan change stands."""
+    """Moves a running subscription to the new plan's price, or the
+    customer's own amount, from the next invoice (no proration: the paid
+    month stays as it is). Best effort: a Stripe hiccup is reported, the
+    plan change stands."""
     billing = _billing(profile)
     sub_id = billing.get("subscriptionId")
     price_id = plan.get("stripePriceId")
-    if not sub_id or billing.get("status") not in OPEN_STATUSES or not price_id or billing.get("priceId") == price_id:
+    if not sub_id or billing.get("status") not in OPEN_STATUSES or not price_id:
+        return None
+    price_sek = effective_price(profile, plan)
+    current = int(billing.get("mrrSek") or 0)
+    wanted = price_sek if price_sek is not None else int(plan.get("priceSek") or 0)
+    if billing.get("priceId") == price_id and price_sek is None:
+        return None
+    if price_sek is not None and current == wanted and billing.get("priceId") != price_id and billing.get("planId") == plan.get("planId"):
         return None
     try:
         item_id = _subscription_item(sub_id)
         sub = stripe_request("POST", f"/subscriptions/{sub_id}", {
-            "items[0][id]": item_id, "items[0][price]": price_id, "proration_behavior": "create_prorations",
+            "items[0][id]": item_id, **_item_params(plan, price_id, price_sek), "proration_behavior": "none",
             "metadata[planId]": plan.get("planId") or ""})
     except ApiError as e:
         log.warning("subscription %s not moved to %s: %s", sub_id, price_id, e.message)
         return {"error": e.message}
     store_subscription(tenant_id, billing["customerId"], subscription_state(sub))
-    write_audit(tenant_id, "subscription_price_synced", actor, {"subscriptionId": sub_id, "priceId": price_id})
-    return {"priceId": price_id}
+    write_audit(tenant_id, "subscription_price_synced", actor,
+                {"subscriptionId": sub_id, "priceId": price_id, "priceSek": price_sek, "from": "next invoice"})
+    return {"priceId": price_id, "priceSek": price_sek, "monthlySek": wanted, "from": "next invoice"}
 
 
 def cancel_for_offboarding(tenant_id: str, profile: dict, actor: str) -> dict | None:
@@ -744,7 +860,8 @@ def dunning_task(event: dict, context) -> dict:
     actor = "dunning"
     limit = int(env("BILLING_SUSPEND_AFTER_DAYS", "14"))
     now = datetime.now(timezone.utc)
-    suspended, resumed, failed, reminded, fees, interest = [], [], [], [], [], []
+    trial_months = int(_env_num("BILLING_TRIAL_MONTHS", "6"))
+    suspended, resumed, failed, reminded, fees, interest, converted, offboarded = [], [], [], [], [], [], [], []
     for profile in _all_profiles():
         billing = _billing(profile)
         tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
@@ -756,6 +873,26 @@ def dunning_task(event: dict, context) -> dict:
             interest += worked["interest"]
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name} invoices: {getattr(e, 'message', None) or e}"[:300])
+        try:
+            # A try-out that has run its course becomes a subscription.
+            since = _parse(billing.get("termsSince"))
+            if (billing.get("terms") == "trial" and trial_months > 0 and since and billing.get("subscriptionId")
+                    and billing.get("status") in OPEN_STATUSES and not billing.get("cancelAt")
+                    and now >= _add_months(since, trial_months)):
+                stripe_request("POST", f"/subscriptions/{billing['subscriptionId']}", {"metadata[terms]": "subscription"})
+                store_subscription(tenant_id, billing["customerId"], {},
+                                   extra={"terms": "subscription", "termsSince": now_iso(), "convertedBy": actor})
+                write_audit(tenant_id, "subscription_converted", actor, {"from": "trial", "after_months": trial_months})
+                converted.append(f"{name} (try-out since {since.date().isoformat()})")
+            # A cancelled subscription that has ended: the customer is offboarded.
+            if (billing.get("offboardAtEnd") and billing.get("status") == "canceled"
+                    and profile.get("status") in ("active", "suspended")):
+                offboard_tenant(tenant_id, profile, actor, reason="subscription ended")
+                client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
+                                               UpdateExpression="REMOVE billing.offboardAtEnd")
+                offboarded.append(name)
+        except (ApiError, ClientError, BotoCoreError) as e:
+            failed.append(f"{name} terms: {getattr(e, 'message', None) or e}"[:300])
         try:
             if limit > 0 and profile.get("status") == "active" and days is not None and days >= limit:
                 suspend_tenant(tenant_id, actor, f"Subscription past due for {days} days")
@@ -772,11 +909,12 @@ def dunning_task(event: dict, context) -> dict:
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name}: {getattr(e, 'message', None) or e}"[:300])
     summary = {"status": "done", "limitDays": limit, "suspended": suspended, "resumed": resumed, "failed": failed,
-               "reminded": reminded, "fees": fees, "interest": interest}
-    if suspended or resumed or failed or reminded or fees or interest:
+               "reminded": reminded, "fees": fees, "interest": interest, "converted": converted, "offboarded": offboarded}
+    if suspended or resumed or failed or reminded or fees or interest or converted or offboarded:
         lines = [f"Dunning ({env('ENVIRONMENT', 'dev')}): past due limit {limit} days.", ""]
         lines += [f"Reminder sent: {r}" for r in reminded] + [f"Late fee added: {f}" for f in fees]
         lines += [f"Interest added: {i}" for i in interest]
+        lines += [f"Try-out became a subscription: {c}" for c in converted] + [f"Offboarded (subscription ended): {o}" for o in offboarded]
         lines += [f"Suspended: {s}" for s in suspended] + [f"Resumed: {r}" for r in resumed] + [f"FAILED: {x}" for x in failed]
         topic = env("ALERT_TOPIC_ARN", "")
         if topic:

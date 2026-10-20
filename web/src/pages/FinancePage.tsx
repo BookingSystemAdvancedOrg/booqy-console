@@ -25,6 +25,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const [range, setRange] = useState(() => presetRange("month"));
   const [includeInactive, setIncludeInactive] = useState(false);
   const [customer, setCustomer] = useState<TenantSummary | null>(null);
+  const [locationId, setLocationId] = useState<string | null>(null);
   const [needle, setNeedle] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "marginSek", dir: "desc" });
   const [rebuild, setRebuild] = useState(false);
@@ -32,13 +33,13 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   // The period and the one before it (same length), for the comparisons.
   const { data: loaded, error, loading, reload } = useLoad(
     () => {
-      const scope = { includeInactive, tenantId: customer?.tenantId ?? null };
+      const scope = { includeInactive, tenantId: customer?.tenantId ?? null, locationId: customer ? locationId : null };
       return Promise.all([
         api.financeOverview({ ...range, ...scope }),
         api.financeOverview({ ...previousRange(range.from, range.to), ...scope }).catch(() => null),
       ]).then(([now, before]) => ({ now, before }));
     },
-    [range.from, range.to, includeInactive, customer?.tenantId],
+    [range.from, range.to, includeInactive, customer?.tenantId, locationId],
   );
   const data: FinanceOverview | null = loaded?.now ?? null;
   const before = loaded?.before?.kpis ?? null;
@@ -115,11 +116,20 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
           <span>Include inactive customers</span>
         </label>
+        {customer && (data?.locations?.length ?? 0) > 0 && (
+          <label className="range__field">
+            <span>Location</span>
+            <select className="input" value={locationId ?? ""} aria-label="Location" onChange={(e) => setLocationId(e.target.value || null)}>
+              <option value="">All locations</option>
+              {data!.locations!.map((l) => <option key={l.locationId} value={l.locationId}>{l.name ?? l.locationId}</option>)}
+            </select>
+          </label>
+        )}
         <div className="customer-filter">
           {customer ? (
             <span className="chip chip--on chip--customer">
               {customer.name}
-              <button className="chip__x" aria-label="Show all customers" onClick={() => setCustomer(null)}>✕</button>
+              <button className="chip__x" aria-label="Show all customers" onClick={() => { setCustomer(null); setLocationId(null); }}>✕</button>
             </span>
           ) : (
             <>
@@ -129,7 +139,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                 <ul className="suggestions" role="listbox">
                   {suggestions.map((t) => (
                     <li key={t.tenantId}>
-                      <button role="option" aria-selected={false} onClick={() => { setCustomer(t); setNeedle(""); }}>
+                      <button role="option" aria-selected={false} onClick={() => { setCustomer(t); setLocationId(null); setNeedle(""); }}>
                         <strong>{t.name}</strong> <span className="muted mono small">{t.slug}</span> <Status value={t.status} />
                       </button>
                     </li>
@@ -143,7 +153,12 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       </div>
 
       <ErrorNotice error={error ?? sync.error} />
-      {sync.error === null && sync.busy === false && null}
+      {data?.period.locationId && (
+        <Notice kind="info">
+          Showing one location: usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
+          restaurant's, since there is one subscription per restaurant.
+        </Notice>
+      )}
       {data?.job?.warnings?.length ? (
         <Notice kind="warn">
           <strong>The nightly job reported problems:</strong>

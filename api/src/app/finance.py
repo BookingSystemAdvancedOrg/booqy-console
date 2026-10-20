@@ -20,7 +20,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
-from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table
+from .core import ApiError, client, env, from_ddb, location_table, log, query_all, tenant_table
 from .tenants import get_profile
 
 MAX_RANGE_DAYS = 400
@@ -73,10 +73,17 @@ def _all_profiles() -> list[dict]:
                      ExpressionAttributeValues={":t": {"S": "TENANT"}})
 
 
-def _days(tenant_id: str, first: str, last: str) -> list[dict]:
+def _days(tenant_id: str, first: str, last: str, location_id: str | None = None) -> list[dict]:
+    prefix = f"LOC#{location_id}#DAY#" if location_id else "DAY#"
     return query_all(TableName=_finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
-                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":a": {"S": f"DAY#{first}"},
-                                                ":b": {"S": f"DAY#{last}"}})
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":a": {"S": f"{prefix}{first}"},
+                                                ":b": {"S": f"{prefix}{last}"}})
+
+
+def _locations(tenant_id: str) -> list[dict]:
+    rows = query_all(TableName=location_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :l)",
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":l": {"S": "LOCATION#"}})
+    return [{"locationId": r.get("locationId"), "name": r.get("name")} for r in rows if r.get("locationId")]
 
 
 def _invoices(tenant_id: str) -> list[dict]:
@@ -121,13 +128,22 @@ def _billing_status(profile: dict) -> str:
     return status or "none"
 
 
-def _tenant_totals(profile: dict, first: str, last: str, series: dict) -> dict:
+def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_id: str | None = None) -> dict:
+    """One customer's sums over the range. With a location: that location's
+    usage and allocated cost (its LOC rows); revenue stays the customer's."""
     tenant_id = profile["tenantId"]
     sums = {k: Decimal(0) for k in SUM_FIELDS}
     split = {"baseline": Decimal(0), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}
     active_days = 0
-    for row in _days(tenant_id, first, last):
-        day = row["SK"][4:]
+    revenue_rows = {r["SK"][4:]: r for r in _days(tenant_id, first, last)} if location_id else {}
+    for row in _days(tenant_id, first, last, location_id):
+        day = row["SK"].rsplit("#", 1)[1] if location_id else row["SK"][4:]
+        if location_id:
+            # revenue, credits and MRR are the restaurant's, not the location's
+            tenant_row = revenue_rows.get(day) or {}
+            row = {**row, "invoicedSek": tenant_row.get("invoicedSek"), "paidSek": tenant_row.get("paidSek"),
+                   "creditedSek": tenant_row.get("creditedSek"), "mrrSek": tenant_row.get("mrrSek"),
+                   "active": tenant_row.get("active"), "marketingEmails": 0}
         for k in SUM_FIELDS:
             sums[k] += Decimal(row.get(k) or 0)
         for k in split:
@@ -172,13 +188,16 @@ def overview(req) -> tuple[int, dict]:
     first, last = _range(req.query or {})
     include_inactive = (req.query or {}).get("includeInactive") in ("1", "true", "yes")
     only = ((req.query or {}).get("tenantId") or "").strip() or None
+    location_id = ((req.query or {}).get("locationId") or "").strip() or None
+    if location_id and not only:
+        raise ApiError(400, "validation_failed", "A location filter needs a customer", fields={"locationId": "Pick a customer"})
     profiles = _all_profiles()
     if only and not any(p["tenantId"] == only for p in profiles):
         raise ApiError(404, "not_found", "No such customer")
     counted = [p for p in profiles if (only and p["tenantId"] == only)
                or (not only and (include_inactive or p.get("status") in ACTIVE_DEFAULT))]
     series: dict = {}
-    tenants = [_tenant_totals(p, first, last, series) for p in counted]
+    tenants = [_tenant_totals(p, first, last, series, location_id) for p in counted]
     tenants.sort(key=lambda t: (t["marginSek"], t["name"] or ""), reverse=True)
 
     revenue = _q(sum((t["revenueSek"] for t in tenants), Decimal(0)))
@@ -209,7 +228,9 @@ def overview(req) -> tuple[int, dict]:
     job = _job()
     return 200, {
         "period": {"from": first, "to": last, "days": (date.fromisoformat(last) - date.fromisoformat(first)).days + 1,
-                   "includeInactive": include_inactive, "tenantId": only},
+                   "includeInactive": include_inactive, "tenantId": only, "locationId": location_id,
+                   "revenueScope": "tenant" if location_id else None},
+        "locations": _locations(only) if only else [],
         "kpis": {
             "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "outstandingSek": outstanding,
             "costSek": cost, "marginSek": margin, "marginPct": _pct(margin, revenue),
@@ -240,7 +261,7 @@ def tenant_detail(req) -> tuple[int, dict]:
             for r in sorted(_days(tenant_id, first, last), key=lambda r: r["SK"])]
     from .billing import list_invoices           # billing imports tenants, not this module
     return 200, {"period": {"from": first, "to": last}, "tenant": totals, "series": [series[d] for d in sorted(series)],
-                 "days": days, "invoices": list_invoices(tenant_id)}
+                 "days": days, "invoices": list_invoices(tenant_id), "locations": _locations(tenant_id)}
 
 
 def invoices(req) -> tuple[int, dict]:

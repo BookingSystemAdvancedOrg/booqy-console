@@ -28,8 +28,9 @@ def finance(aws, monkeypatch):
                             KeySchema=[{"AttributeName": "PK", "KeyType": "HASH"}, {"AttributeName": "SK", "KeyType": "RANGE"}])
     for plan_id, price in (("starter", "price_starter"), ("growth", "price_growth")):
         aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"PLAN#{plan_id}"}, "SK": {"S": "PLAN"}},
-                               UpdateExpression="SET stripePriceId = :p, priceSek = :s",
-                               ExpressionAttributeValues={":p": {"S": price}, ":s": {"N": "990" if plan_id == "starter" else "1990"}})
+                               UpdateExpression="SET stripePriceId = :p, priceSek = :s, stripeProductId = :pr",
+                               ExpressionAttributeValues={":p": {"S": price}, ":s": {"N": "990" if plan_id == "starter" else "1990"},
+                                                          ":pr": {"S": f"prod_{plan_id}"}})
     return boto3.resource("dynamodb", region_name=REGION).Table(FINANCE_TABLE)
 
 
@@ -47,6 +48,14 @@ def stripe(monkeypatch):
     def sub_obj(sub_id):
         return state["subs"][sub_id]
 
+    def item_price(params, prefix="items[0]"):
+        if f"{prefix}[price_data][unit_amount]" in params:
+            amount = int(params[f"{prefix}[price_data][unit_amount]"])
+            return {"id": f"price_custom_{amount}", "unit_amount": amount, "metadata": {},
+                    "product": params[f"{prefix}[price_data][product]"], "recurring": {"interval": "month", "interval_count": 1}}
+        price_id = params[f"{prefix}[price]"]
+        return _price(price_id, {"price_starter": 99000, "price_starter2": 109000, "price_growth": 199000}.get(price_id, 99000))
+
     def fake(method, path, params=None, *, account=None, idempotency_key=None):
         params = params or {}
         state["calls"].append((method, path, params, idempotency_key))
@@ -62,9 +71,10 @@ def stripe(monkeypatch):
         if method == "POST" and path == "/subscriptions":
             state["n"] += 1
             sub_id = f"sub_{state['n']}"
-            price = _price(params["items[0][price]"], 99000 if "starter" in params["items[0][price]"] else 199000)
+            price = item_price(params)
             sub = {"id": sub_id, "status": "trialing" if params.get("trial_end") else "active",
                    "customer": params["customer"], "collection_method": params["collection_method"],
+                   "metadata": {k[9:-1]: v for k, v in params.items() if k.startswith("metadata[")},
                    "trial_end": params.get("trial_end"), "pause_collection": None, "cancel_at": None,
                    "items": {"data": [{"id": f"si_{state['n']}", "quantity": 1, "price": price,
                                        "current_period_start": 1_790_000_000, "current_period_end": 1_792_600_000}]}}
@@ -82,11 +92,16 @@ def stripe(monkeypatch):
                 sub["pause_collection"] = {"behavior": params["pause_collection[behavior]"]}
             if params.get("pause_collection") == "":
                 sub["pause_collection"] = None
-            if "items[0][price]" in params:
-                sub["items"]["data"][0]["price"] = _price(params["items[0][price]"],
-                                                         99000 if "starter" in params["items[0][price]"] else 199000)
+            if "items[0][price]" in params or "items[0][price_data][unit_amount]" in params:
+                sub["items"]["data"][0]["price"] = item_price(params)
+                state["last_update"] = params
             if "collection_method" in params:
                 sub["collection_method"] = params["collection_method"]
+            if "cancel_at" in params:
+                sub["cancel_at"] = int(params["cancel_at"]) if params["cancel_at"] != "" else None
+            for k, v in params.items():
+                if k.startswith("metadata["):
+                    sub.setdefault("metadata", {})[k[9:-1]] = v
             return sub
         if method == "GET" and path == "/payment_methods":
             return {"data": [{"id": state["card"]}] if state["card"] else []}
@@ -131,7 +146,10 @@ def test_billing_tab_before_any_subscription(finance, stripe, tenant):
     assert body["invoices"] == []
 
 
-def test_start_needs_an_active_customer(finance, stripe, tenant):
+def test_start_needs_a_customer_that_is_not_suspended_or_gone(finance, stripe, aws, tenant):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET #s = :a", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":a": {"S": "suspended"}})
     status, body = call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
     assert status == 409 and body["error"] == "invalid_status"
 
@@ -205,10 +223,10 @@ def test_plan_change_moves_the_subscription_to_the_new_price(finance, stripe, aw
     call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
     status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "growth"})
     assert status == 200, body
-    assert body["subscription"] == {"priceId": "price_growth"}
+    assert body["subscription"] == {"priceId": "price_growth", "priceSek": None, "monthlySek": 1990, "from": "next invoice"}
     assert body["tenant"]["billing"]["priceId"] == "price_growth" and body["tenant"]["billing"]["mrrSek"] == 1990
     move = next(c for c in stripe["calls"] if c[0] == "POST" and c[1] == "/subscriptions/sub_1")
-    assert move[2]["items[0][id]"] == "si_1" and move[2]["proration_behavior"] == "create_prorations"
+    assert move[2]["items[0][id]"] == "si_1" and move[2]["proration_behavior"] == "none"
 
 
 def test_pause_resume_cancel_and_sync_price(finance, stripe, aws, tenant):
@@ -221,12 +239,14 @@ def test_pause_resume_cancel_and_sync_price(finance, stripe, aws, tenant):
     assert status == 200 and body["billing"]["pauseCollection"] is False
     # the plan got a new price in Terraform: the tab says so, sync moves to it
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": "PLAN#starter"}, "SK": {"S": "PLAN"}},
-                           UpdateExpression="SET stripePriceId = :p", ExpressionAttributeValues={":p": {"S": "price_starter2"}})
+                           UpdateExpression="SET stripePriceId = :p, priceSek = :s",
+                           ExpressionAttributeValues={":p": {"S": "price_starter2"}, ":s": {"N": "1090"}})
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
     assert body["billing"]["priceDiffers"] is True
     status, body = call(patch, {"tenantId": tenant}, body={"action": "sync_price"})
     assert status == 200 and body["billing"]["priceId"] == "price_starter2" and body["billing"]["priceDiffers"] is False
-    status, body = call(patch, {"tenantId": tenant}, body={"action": "cancel"})
+    assert body["billing"]["mrrSek"] == 1090
+    status, body = call(patch, {"tenantId": tenant}, body={"action": "cancel_now"})
     assert status == 200 and body["billing"]["status"] == "canceled" and body["billing"]["subscribed"] is False
     assert body["billing"]["mrrSek"] == 0
     cancel = next(c for c in stripe["calls"] if c[0] == "DELETE")
@@ -443,7 +463,7 @@ def test_fees_for_a_cancelled_customer_go_on_a_one_off_invoice(finance, stripe, 
     from app.handler import handler
     _activate(aws, tenant)
     call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
-    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "cancel"})
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "cancel_now"})
     _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(9))
     out = handler({"financeTask": "dunning"}, None)
     assert len(out["fees"]) == 1
@@ -476,3 +496,105 @@ def test_manual_reminder_route(finance, stripe, aws, tenant):
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
     by_id = {i["invoiceId"]: i for i in body["invoices"]}
     assert by_id["in_a"]["remindersSent"] == 1 and by_id["in_a"]["daysLate"] == 1 and by_id["in_a"]["month"] == "2026-10"
+
+
+# ------------------------------------------------------------ price, terms, notice, try-out
+def _period_end():
+    return datetime.fromtimestamp(1_792_600_000, timezone.utc)
+
+
+def test_create_customer_with_a_try_out_and_own_price_starts_invoicing(finance, stripe, aws):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "billing": {
+        "terms": "trial", "priceSek": 790, "startInvoicing": True}}, actor="ops@booqy.se")
+    assert status == 202, body
+    b = body["billing"]
+    assert b["terms"] == "trial" and b["priceSek"] == 790 and b["monthlySek"] == 790 and b["subscribed"] is True
+    assert b["trialEndsAt"] and b["noticeMonths"] == 3 and b["trialMonths"] == 6 and b["planId"] == "starter"
+    sub_call = next(c for c in stripe["calls"] if c[1] == "/subscriptions")
+    assert sub_call[2]["items[0][price_data][unit_amount]"] == 79000 and sub_call[2]["items[0][price_data][product]"] == "prod_starter"
+    assert sub_call[2]["items[0][price_data][tax_behavior]"] == "exclusive" and sub_call[2]["metadata[terms]"] == "trial"
+    profile = _profile(aws, body["tenantId"])
+    assert profile["status"] == "provisioning" and profile["billing"]["priceSek"] == 790 and profile["billing"]["mrrSek"] == 790
+
+
+def test_create_customer_on_the_plan_price_without_invoicing(finance, stripe, aws):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-2", "ownerEmail": "o2@roma.se",
+                                                        "billing": {"terms": "subscription", "priceSek": 990}})
+    assert status == 202 and "billing" not in body
+    profile = _profile(aws, body["tenantId"])
+    assert profile["billing"] == {"terms": "subscription"} and not any(c[1] == "/subscriptions" for c in stripe["calls"])
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-3", "ownerEmail": "o3@roma.se",
+                                                        "billing": {"terms": "weekly", "priceSek": -5}})
+    assert status == 400 and set(body["fields"]) == {"billing.terms", "billing.priceSek"}
+
+
+def test_cancel_with_notice_ends_three_months_after_the_paid_month(finance, stripe, aws, tenant):
+    from app.billing import _add_months
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    status, body = call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+                        body={"action": "cancel"}, actor="ops@booqy.se")
+    assert status == 200, body
+    expected = _add_months(_period_end(), 3)
+    assert stripe["subs"]["sub_1"]["cancel_at"] == int(expected.timestamp())
+    b = body["billing"]
+    assert b["endsAt"].startswith(expected.date().isoformat()) and b["offboardAtEnd"] is True and b["subscribed"] is True
+    assert _profile(aws, tenant)["billing"]["cancelRequestedBy"] == "ops@booqy.se"
+    # changed their mind
+    status, body = call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "keep"})
+    assert status == 200 and body["billing"]["endsAt"] is None and body["billing"]["offboardAtEnd"] is False
+    assert stripe["subs"]["sub_1"]["cancel_at"] is None
+
+
+def test_try_out_cancels_at_the_end_of_the_paid_month_and_can_be_converted(finance, stripe, aws, tenant):
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"terms": "trial"})
+    status, body = call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+                        body={"action": "cancel", "offboardAtEnd": False})
+    assert status == 200 and stripe["subs"]["sub_1"]["cancel_at"] == int(_period_end().timestamp())
+    assert body["billing"]["offboardAtEnd"] is False
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "keep"})
+    status, body = call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "convert"})
+    assert status == 200 and body["billing"]["terms"] == "subscription" and body["billing"]["trialEndsAt"] is None
+    assert stripe["subs"]["sub_1"]["metadata"]["terms"] == "subscription"
+    status, body = call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"action": "convert"})
+    assert status == 409 and body["error"] == "not_trial"
+
+
+def test_plan_or_price_change_applies_from_the_next_invoice(finance, stripe, aws, tenant):
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "starter", "priceSek": 1490})
+    assert status == 200, body
+    assert body["subscription"] == {"priceId": "price_starter", "priceSek": 1490, "monthlySek": 1490, "from": "next invoice"}
+    assert stripe["last_update"]["items[0][price_data][unit_amount]"] == 149000 and stripe["last_update"]["proration_behavior"] == "none"
+    assert _profile(aws, tenant)["billing"]["priceSek"] == 1490 and _profile(aws, tenant)["billing"]["mrrSek"] == 1490
+    # back to the plan's own price: the custom amount goes away
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "growth"})
+    assert status == 200 and body["subscription"]["monthlySek"] == 1990 and body["subscription"]["priceSek"] is None
+    assert "priceSek" not in _profile(aws, tenant)["billing"] and stripe["last_update"]["items[0][price]"] == "price_growth"
+    status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
+    assert body["billing"]["monthlySek"] == 1990 and body["billing"]["priceDiffers"] is False
+
+
+def test_daily_task_converts_old_try_outs_and_offboards_ended_subscriptions(finance, stripe, aws, tenant):
+    from app.handler import handler
+    from conftest import NEW_TENANT
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"terms": "trial"})
+    _set_billing(aws, tenant, termsSince=(datetime.now(timezone.utc) - timedelta(days=200)).isoformat().replace("+00:00", "Z"))
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "gone", "ownerEmail": "o@gone.se"})
+    gone = body["tenantId"]
+    _activate(aws, gone)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": gone}, body={})
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": gone}, body={"action": "cancel"})
+    _set_billing(aws, gone, status="canceled")          # what the webhook writes when Stripe cancels at cancel_at
+    out = handler({"financeTask": "dunning"}, None)
+    assert out["converted"] == ["Pizzeria Roma (try-out since " + (datetime.now(timezone.utc) - timedelta(days=200)).date().isoformat() + ")"]
+    assert _profile(aws, tenant)["billing"]["terms"] == "subscription"
+    assert out["offboarded"] == ["Pizzeria Roma"] and _profile(aws, gone)["status"] == "offboarding"
+    assert "offboardAtEnd" not in _profile(aws, gone)["billing"]
+    out = handler({"financeTask": "dunning"}, None)
+    assert out["converted"] == [] and out["offboarded"] == []

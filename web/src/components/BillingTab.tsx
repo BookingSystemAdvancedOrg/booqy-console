@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
-import { fmtDay, fmtSek, isoDay } from "../finance";
+import { addMonths, fmtDay, fmtSek, isoDay } from "../finance";
 import type { Billing, Invoice, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, Printing, fmtDate, useAction, useLoad } from "./ui";
 
@@ -23,6 +23,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const link = useAction();
   const [start, setStart] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [offboardAtEnd, setOffboardAtEnd] = useState(true);
   const [url, setUrl] = useState<string | null>(null);
 
   if (loading && !data) return <Printing />;
@@ -31,9 +32,14 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const status = billingStatus(b);
   const running = b.subscribed;
 
-  async function run(action: "pause" | "resume" | "cancel" | "sync_price" | "use_card") {
-    if (await act.run(() => api.updateSubscription(tenant.tenantId, action))) { setConfirmCancel(false); void reload(); onChanged(); }
+  async function run(action: "pause" | "resume" | "cancel" | "cancel_now" | "keep" | "convert" | "sync_price" | "use_card",
+                     options: { offboardAtEnd?: boolean } = {}) {
+    if (await act.run(() => api.updateSubscription(tenant.tenantId, action, options))) { setConfirmCancel(false); void reload(); onChanged(); }
   }
+  const isTrial = b.terms === "trial";
+  // When a cancellation would take effect: a try-out with the paid month, a subscription after the notice.
+  const periodEnd = b.currentPeriodEnd ? b.currentPeriodEnd.slice(0, 10) : addMonths(isoDay(new Date()), 1);
+  const wouldEnd = isTrial ? periodEnd : addMonths(periodEnd, b.noticeMonths);
 
   return (
     <div className="stack">
@@ -43,7 +49,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           the invoice; the restaurant pays by card on the invoice page, automatically with a card on file, or by bankgiro
           to your account (then mark the invoice paid in Stripe). An unpaid invoice is reminded about weekly after its due
           date, gets the statutory late fee after the grace period and interest for the days late on the next invoice; a
-          customer past due for {b.suspendAfterDays} days is suspended automatically{b.suspendAfterDays === 0 ? " (off)" : ""}
+          customer past due for {b.suspendAfterDays} days is suspended automatically{b.suspendAfterDays === 0 ? " (off)" : ""}{" "}
           and resumed when they pay.
         </p>
         {cardParam === "added" && <Notice kind="ok">The card was added in Stripe. Press "Charge the card" to use it for the subscription.</Notice>}
@@ -54,9 +60,19 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           </Notice>
         )}
         {b.pastDueSince && <Notice kind="error">Past due since {fmtDate(b.pastDueSince)}{b.autoSuspended ? "; the customer was suspended automatically" : ""}.</Notice>}
+        {running && b.endsAt && (
+          <Notice kind="warn">
+            Cancelled: the subscription ends on {fmtDay(b.endsAt)}{b.offboardAtEnd ? " and the customer is offboarded automatically then" : "; the customer keeps their access until you offboard them"}.
+            <button className="link" disabled={act.busy} onClick={() => run("keep")}>Keep the subscription</button>
+          </Notice>
+        )}
         {!b.plan.stripePriceId && <Notice kind="warn">The plan {b.plan.name ?? tenant.planId} has no Stripe price yet (price_sek in the infrastructure tfvars).</Notice>}
         <dl className="dl">
           <Row label="Plan" value={b.plan.name ? `${b.plan.name}, ${fmtSek(b.plan.priceSek)} per month ex VAT` : tenant.planId} />
+          <Row label="This customer pays" value={b.monthlySek != null ? `${fmtSek(b.monthlySek)} per month ex VAT${b.priceSek != null ? " (own price)" : ""}` : undefined} />
+          <Row label="Terms" value={isTrial
+            ? `Try-out period${b.termsSince ? ` since ${fmtDay(b.termsSince)}` : ""}: can leave at the end of any paid month${b.trialEndsAt ? `; becomes a subscription on ${fmtDay(b.trialEndsAt)}` : ""}`
+            : `Subscription, ${b.noticeMonths} months' notice${b.termsSince ? ` (since ${fmtDay(b.termsSince)})` : ""}`} />
           <Row label="Stripe customer" value={b.customerId} mono />
           <Row label="Subscription" value={b.subscriptionId} mono />
           <Row label="MRR" value={running ? fmtSek(b.mrrSek) : undefined} />
@@ -87,11 +103,12 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           {running && b.collectionMethod !== "charge_automatically" && (
             <button className="btn btn--ghost" disabled={act.busy} onClick={() => run("use_card")}>Charge the card</button>
           )}
+          {running && isTrial && <button className="btn btn--ghost" disabled={act.busy} onClick={() => run("convert")}>Convert to subscription</button>}
           <button className="btn btn--ghost" disabled={link.busy}
                   onClick={async () => { const r = await link.run(() => api.cardLink(tenant.tenantId)); if (r) setUrl(r.url); }}>
             {link.busy ? "Creating…" : "Create card link"}
           </button>
-          {running && <button className="btn btn--ghost danger" disabled={act.busy} onClick={() => setConfirmCancel(true)}>Cancel subscription</button>}
+          {running && !b.endsAt && <button className="btn btn--ghost danger" disabled={act.busy} onClick={() => setConfirmCancel(true)}>Cancel subscription</button>}
         </div>
         {tenant.status !== "active" && !running && <p className="muted small">A subscription can be started for an active customer.</p>}
       </Card>
@@ -105,12 +122,23 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
       {confirmCancel && (
         <Modal title="Cancel the subscription?" onClose={() => setConfirmCancel(false)}>
           <div className="stack">
-            <p>Stripe ends the subscription now and issues a final invoice for the days used this period. The invoices and
-              the Stripe customer stay. The customer's access is not affected (use Suspend or Offboard for that).</p>
+            <p>
+              {isTrial
+                ? <>The customer is in a try-out period: the subscription ends with the paid month, on <strong>{fmtDay(wouldEnd)}</strong>. No more invoices.</>
+                : <>Subscription terms: {b.noticeMonths} months' notice. The subscription ends on <strong>{fmtDay(wouldEnd)}</strong>; the customer is invoiced until then.</>}
+              {" "}The invoices and the Stripe customer stay.
+            </p>
+            <label className="check">
+              <input type="checkbox" checked={offboardAtEnd} onChange={(e) => setOffboardAtEnd(e.target.checked)} />
+              Offboard the customer automatically when it ends (users signed out, data deleted after the retention period)
+            </label>
             <ErrorNotice error={act.error} />
             <div className="row">
-              <button className="btn btn--danger" disabled={act.busy} onClick={() => run("cancel")}>{act.busy ? "Cancelling…" : "Cancel subscription"}</button>
+              <button className="btn btn--danger" disabled={act.busy} onClick={() => run("cancel", { offboardAtEnd })}>
+                {act.busy ? "Cancelling…" : `End on ${fmtDay(wouldEnd)}`}
+              </button>
               <button className="btn btn--ghost" onClick={() => setConfirmCancel(false)}>Keep it</button>
+              <button className="link danger" disabled={act.busy} onClick={() => run("cancel_now", { offboardAtEnd })}>End today instead (final invoice now)</button>
             </div>
           </div>
         </Modal>
@@ -121,12 +149,15 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
 
 function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; billing: Billing; onClose: () => void; onDone: () => void }) {
   const [method, setMethod] = useState<"send_invoice" | "charge_automatically">("send_invoice");
+  const [terms, setTerms] = useState<"trial" | "subscription">(billing.terms ?? "trial");
+  const [price, setPrice] = useState(billing.monthlySek != null ? String(billing.monthlySek) : "");
   const [startDate, setStartDate] = useState("");
   const a = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const body: { collectionMethod: typeof method; startDate?: string } = { collectionMethod: method };
+    const body: { collectionMethod: typeof method; startDate?: string; terms: typeof terms; priceSek?: number } = { collectionMethod: method, terms };
     if (startDate) body.startDate = startDate;
+    if (price !== "") body.priceSek = Number(price);
     if (await a.run(() => api.startSubscription(tenant.tenantId, body))) onDone();
   }
   return (
@@ -136,6 +167,25 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
           <strong>{billing.plan.name ?? tenant.planId}</strong>: {fmtSek(billing.plan.priceSek)} per month excluding VAT, 25 % VAT
           added on the invoice. Billed to {tenant.legalName ?? tenant.name} ({tenant.billingEmail ?? tenant.ownerEmail ?? "owner email"}).
         </p>
+        <div className="grid">
+          <label className="field">
+            <span className="field__label">Monthly price, SEK ex VAT</span>
+            <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+            <span className="field__hint">The plan's price is {fmtSek(billing.plan.priceSek)}; a different amount is this customer's own price.</span>
+          </label>
+        </div>
+        <div className="choices">
+          <label className={`choice${terms === "trial" ? " choice--on" : ""}`}>
+            <input type="radio" name="terms" checked={terms === "trial"} onChange={() => setTerms("trial")} />
+            <strong>Try-out period</strong>
+            <span className="muted small">Can leave at the end of any paid month; becomes a subscription after {billing.trialMonths} months.</span>
+          </label>
+          <label className={`choice${terms === "subscription" ? " choice--on" : ""}`}>
+            <input type="radio" name="terms" checked={terms === "subscription"} onChange={() => setTerms("subscription")} />
+            <strong>Subscription</strong>
+            <span className="muted small">{billing.noticeMonths} months' notice.</span>
+          </label>
+        </div>
         <div className="choices">
           <label className={`choice${method === "send_invoice" ? " choice--on" : ""}`}>
             <input type="radio" name="method" checked={method === "send_invoice"} onChange={() => setMethod("send_invoice")} />

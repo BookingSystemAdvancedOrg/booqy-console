@@ -364,33 +364,39 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const [planId, setPlanId] = useState(tenant.planId);
   const [maxLocations, setMax] = useState(String(tenant.entitlements.maxLocations));
   const [features, setFeatures] = useState(tenant.entitlements.features);
+  const ownPrice = tenant.billing?.priceSek;
+  const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
   const a = useAction();
   const plan = plans.data?.find((p) => p.planId === planId);
 
   useEffect(() => {
-    // Back on the current plan: show the tenant's real limits (incl. overrides);
-    // another plan: start from that plan's defaults.
+    // Back on the current plan: show the tenant's real limits (incl. overrides)
+    // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {
       setMax(String(tenant.entitlements.maxLocations));
       setFeatures(tenant.entitlements.features);
+      setPrice(ownPrice != null ? String(ownPrice) : plan?.priceSek != null ? String(plan.priceSek) : "");
     } else if (plan) {
       setMax(String(plan.maxLocations));
       setFeatures(plan.features);
+      setPrice(plan.priceSek != null ? String(plan.priceSek) : "");
     }
-  }, [planId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(force = false) {
     const overrides: Record<string, unknown> = {};
     if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
     const changed = plan ? Object.fromEntries(Object.entries(features).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
-    if (await a.run(() => api.setPlan(tenant.tenantId, { planId, overrides, force }))) onSaved();
+    const body: { planId: string; overrides: Record<string, unknown>; force: boolean; priceSek?: number } = { planId, overrides, force };
+    if (price !== "") body.priceSek = Number(price);
+    if (await a.run(() => api.setPlan(tenant.tenantId, body))) onSaved();
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
 
   return (
     <Card title="Plan & limits">
-      <p className="muted small">Takes effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location.</p>
+      <p className="muted small">Limits take effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is.</p>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
           <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}`}>
@@ -402,6 +408,10 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
       <div className="grid">
         <Field label="Locations allowed" error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
           <input className="input" type="number" min={1} max={100} value={maxLocations} onChange={(e) => setMax(e.target.value)} />
+        </Field>
+        <Field label="Monthly price, SEK ex VAT" error={a.fields.priceSek}
+               hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
+          <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <div className="field">
           <span className="field__label">Features</span>

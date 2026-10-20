@@ -73,6 +73,9 @@ describe("months", () => {
     expect(shiftMonth("2026-01", -1)).toBe("2025-12");
     expect(shiftMonth("2026-12", 1)).toBe("2027-01");
     expect(monthLabel("2026-10")).toBe("Oktober 2026");
+    const { addMonths } = await import("./finance");
+    expect(addMonths("2026-11-01", 3)).toBe("2027-02-01");
+    expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
   });
 });
 

@@ -57,7 +57,8 @@ def test_overview_sums_the_range_for_active_customers(two_tenants):
     assert k["mrrSek"] == 2980 and k["payingCustomers"] == 2 and k["arpuSek"] == 1490
     assert k["bookings"] == 23 and k["orders"] == 11 and k["costPerBookingSek"] == 4.35 and k["costPerOrderSek"] == 9.09
     assert k["customers"] == 2 and k["activeCustomers"] == 2 and k["churnedCustomers"] == 0
-    assert body["period"] == {"from": "2026-10-01", "to": "2026-10-02", "days": 2, "includeInactive": False, "tenantId": None}
+    assert body["period"] == {"from": "2026-10-01", "to": "2026-10-02", "days": 2, "includeInactive": False, "tenantId": None,
+                              "locationId": None, "revenueScope": None}
     rows = {t["tenantId"]: t for t in body["tenants"]}
     assert rows[tenant]["revenueSek"] == 990 and rows[tenant]["costSek"] == 30 and rows[tenant]["marginSek"] == 960
     assert rows[tenant]["costSplitSek"]["requests"] == 15 and rows[tenant]["emails"] == 5
@@ -165,4 +166,25 @@ def test_payments_view_lists_invoices_by_month_and_status(two_tenants, finance):
     status, body = call("GET /platform/finance/invoices", query={"from": "2026-11-01", "to": "2026-11-30"})
     assert body["invoices"] == []
     status, body = call("GET /platform/finance/invoices", query={"status": "late"})
+    assert status == 400
+
+
+def test_overview_scoped_to_one_location(two_tenants, finance, aws):  # noqa: F811
+    tenant, other = two_tenants
+    status, body = call("GET /platform/tenants/{tenantId}", {"tenantId": other})
+    loc = body["locations"][0]["locationId"]
+    finance.put_item(Item={"PK": f"TENANT#{other}", "SK": f"LOC#{loc}#DAY#2026-10-01", "requests": 120, "bookings": 6,
+                           "orders": 3, "emails": 2, "costSek": Decimal("25"), "locationId": loc})
+    finance.put_item(Item={"PK": f"TENANT#{other}", "SK": f"LOC#{loc}#DAY#2026-10-02", "requests": 80, "bookings": 2,
+                           "orders": 1, "costSek": Decimal("15"), "locationId": loc})
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-02", "tenantId": other,
+                                                                 "locationId": loc})
+    assert status == 200, body
+    k = body["kpis"]
+    assert k["costSek"] == 40 and k["bookings"] == 8 and k["orders"] == 4 and k["requests"] == 200 and k["emails"] == 2
+    assert k["revenueSek"] == 1890 and k["mrrSek"] == 1990           # the restaurant's, not the location's
+    assert body["period"]["locationId"] == loc and body["period"]["revenueScope"] == "tenant"
+    assert body["locations"] == [{"locationId": loc, "name": "Roma Södermalm"}]
+    assert body["series"][0]["costSek"] == 25 and body["series"][0]["invoicedSek"] == 1990
+    status, body = call("GET /platform/finance/overview", query={"locationId": loc})
     assert status == 400

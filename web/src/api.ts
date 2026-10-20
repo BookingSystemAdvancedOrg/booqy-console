@@ -75,7 +75,7 @@ export const api = {
     request<{ tenantId: string; status: string }>("POST", "/platform/tenants", input),
   updateTenant: (id: string, patch: Record<string, unknown>) =>
     request<{ tenant: Tenant }>("PATCH", t(id), patch),
-  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean }) =>
+  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number }) =>
     request<{ tenant: Tenant }>("PUT", `${t(id)}/plan`, body),
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
@@ -120,15 +120,18 @@ export const api = {
 
   // Subscriptions (Stripe Billing on the platform account) and the Finance page
   billing: (id: string) => request<BillingView>("GET", `${t(id)}/billing`),
-  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string }) =>
+  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
+                                          terms?: "trial" | "subscription"; priceSek?: number }) =>
     request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
-  updateSubscription: (id: string, action: "pause" | "resume" | "cancel" | "sync_price" | "use_card") =>
-    request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action }),
+  updateSubscription: (id: string, action: "pause" | "resume" | "cancel" | "cancel_now" | "keep" | "convert" | "sync_price" | "use_card",
+                       options: { offboardAtEnd?: boolean } = {}) =>
+    request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
   cardLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/billing/card-link`, {}),
-  financeOverview: (params: { from: string; to: string; includeInactive?: boolean; tenantId?: string | null }) => {
+  financeOverview: (params: { from: string; to: string; includeInactive?: boolean; tenantId?: string | null; locationId?: string | null }) => {
     const q = new URLSearchParams({ from: params.from, to: params.to });
     if (params.includeInactive) q.set("includeInactive", "1");
     if (params.tenantId) q.set("tenantId", params.tenantId);
+    if (params.tenantId && params.locationId) q.set("locationId", params.locationId);
     return request<FinanceOverview>("GET", `/platform/finance/overview?${q}`);
   },
   financeTenant: (id: string, params: { from: string; to: string }) =>

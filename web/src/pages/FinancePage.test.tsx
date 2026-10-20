@@ -103,6 +103,25 @@ describe("FinancePage", () => {
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ tenantId: null })));
   });
 
+  it("offers the customer's locations and scopes the figures to one", async () => {
+    const user = userEvent.setup();
+    mocks.financeOverview.mockImplementation(async (p: { tenantId?: string | null; locationId?: string | null }) => ({
+      ...overview(), period: { ...overview().period, tenantId: p.tenantId ?? null, locationId: p.locationId ?? null, revenueScope: p.locationId ? "tenant" : null },
+      locations: p.tenantId ? [{ locationId: "loc-1", name: "Södermalm" }, { locationId: "loc-2", name: "Vasastan" }] : [],
+    }));
+    renderPage();
+    await screen.findAllByText("2 980 kr");
+    expect(screen.queryByLabelText("Location")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Filter by customer"), "roma");
+    await user.click(await screen.findByRole("option", { name: /Pizzeria Roma/ }));
+    const select = await screen.findByLabelText("Location");
+    await user.selectOptions(select, "loc-2");
+    await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "t1", locationId: "loc-2" })));
+    expect(await screen.findByText(/Showing one location/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show all customers" }));
+    await waitFor(() => expect(screen.queryByLabelText("Location")).not.toBeInTheDocument());
+  });
+
   it("sorts the table by a column", async () => {
     const user = userEvent.setup();
     renderPage();

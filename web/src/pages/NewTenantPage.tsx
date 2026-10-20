@@ -28,6 +28,8 @@ const LABELS: Record<string, string> = {
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
   "overrides.maxLocations": "Locations allowed", locations: "Locations", notes: "Notes",
+  "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "First invoice date",
+  "billing.collectionMethod": "Invoicing",
 };
 const LOCATION_LABELS: Record<string, string> = { name: "name", address: "address", phone: "phone", email: "email" };
 
@@ -69,6 +71,12 @@ export default function NewTenantPage() {
   });
   const [slugTouched, setSlugTouched] = useState(false);
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
+  // Invoicing: the plan's price unless typed over, try-out or subscription terms, start now.
+  const [price, setPrice] = useState("");
+  const [priceTouched, setPriceTouched] = useState(false);
+  const [terms, setTerms] = useState<"trial" | "subscription">("trial");
+  const [startInvoicing, setStartInvoicing] = useState(true);
+  const [startDate, setStartDate] = useState("");
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
     const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
@@ -82,6 +90,7 @@ export default function NewTenantPage() {
 
   const plan = plans.data?.find((p) => p.planId === f.planId) ?? null;
   const maxLocations = f.maxLocations ? Number(f.maxLocations) : plan?.maxLocations ?? 1;
+  const shownPrice = priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
 
   const errorsFor = (prefix: string) =>
@@ -115,6 +124,10 @@ export default function NewTenantPage() {
       ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
       ...(f.maxLocations ? { overrides: { maxLocations: Number(f.maxLocations) } } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
+      billing: compact({
+        terms, startInvoicing, priceSek: shownPrice !== "" ? Number(shownPrice) : undefined,
+        startDate: startInvoicing && startDate ? startDate : undefined,
+      }),
     };
     const res = await run(() => api.createTenant(body as never));
     if (res) navigate(`/tenants/${res.tenantId}?created=1`);
@@ -214,7 +227,45 @@ export default function NewTenantPage() {
                  hint={plan ? `Leave empty for the plan's ${plan.maxLocations}` : "Pick a plan first"}>
             <input id="f-overrides.maxLocations" className="input" type="number" min={1} max={100} value={f.maxLocations} onChange={set("maxLocations")} />
           </Field>
+          <Field label="Monthly price, SEK ex VAT" error={fields["billing.priceSek"]}
+                 hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
+            <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
+                   onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
+          </Field>
         </div>
+      </Card>
+
+      <Card title="4b · Invoicing">
+        <p className="muted small">
+          Invoiced monthly through Stripe (price plus 25 % VAT, invoice by email, 30 days to pay). A try-out customer can
+          leave at the end of any paid month and becomes a subscription by itself after 6 months, or when you convert them;
+          a subscription customer leaves 3 months after the current month ends.
+        </p>
+        <div className="choices">
+          <label className={`choice${terms === "trial" ? " choice--on" : ""}`}>
+            <input id="f-billing.terms" type="radio" name="terms" checked={terms === "trial"} onChange={() => setTerms("trial")} />
+            <strong>Try-out period</strong>
+            <span className="muted small">Pays monthly, can stop at the end of any paid month. Becomes a subscription after 6 months.</span>
+          </label>
+          <label className={`choice${terms === "subscription" ? " choice--on" : ""}`}>
+            <input type="radio" name="terms" checked={terms === "subscription"} onChange={() => setTerms("subscription")} />
+            <strong>Subscription</strong>
+            <span className="muted small">Pays monthly with 3 months' notice.</span>
+          </label>
+        </div>
+        {fields["billing.terms"] && <p className="field__msg">{fields["billing.terms"]}</p>}
+        <label className="check">
+          <input type="checkbox" checked={startInvoicing} onChange={(e) => setStartInvoicing(e.target.checked)} />
+          Start invoicing when the customer is created
+        </label>
+        {startInvoicing && (
+          <div className="grid">
+            <Field label="First invoice date (optional)" error={fields["billing.startDate"]} hint="Empty = the first invoice today; a later date delays it, nothing is charged before">
+              <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </Field>
+          </div>
+        )}
+        {!startInvoicing && <p className="muted small">You can start it later from the customer's Billing tab.</p>}
       </Card>
 
       <Card title={`5 · Locations (${locations.length} of ${maxLocations})`}
@@ -264,6 +315,7 @@ export default function NewTenantPage() {
             <div className="small muted">
               On submit: tenant + locations are saved → owner invited by email → Stripe connected account created
               {PLATFORM_DOMAIN ? ` → ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""} → status becomes Active (about a minute).
+              {startInvoicing ? ` Invoicing starts${startDate ? ` on ${startDate}` : " today"} at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT (${terms === "trial" ? "try-out" : "subscription"}).` : ""}
             </div>
           )}
         </div>

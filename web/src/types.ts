@@ -8,7 +8,11 @@ export interface Plan {
   name: string;
   maxLocations: number;
   features: Features;
+  /** Monthly price excluding VAT (the plan's default; a customer can have their own). */
+  priceSek?: number | null;
 }
+
+export type BillingTerms = "trial" | "subscription";
 
 export interface Address {
   street: string;
@@ -59,6 +63,7 @@ export interface Tenant {
   /** When tenant-purge deletes the data (set at offboarding). */
   purgeAt?: string;
   purgedAt?: string;
+  billing?: Partial<Billing> & { customerId?: string };
 }
 
 export interface TenantSummary {
@@ -263,6 +268,8 @@ export interface NewTenantInput {
   billingEmail?: string;
   senderName?: string;
   replyToEmail?: string;
+  billing?: { terms: BillingTerms; priceSek?: number; startInvoicing?: boolean; startDate?: string;
+              collectionMethod?: "send_invoice" | "charge_automatically" };
   address?: Address;
   notes?: string;
   overrides?: { maxLocations?: number };
@@ -396,6 +403,20 @@ export interface Billing {
   startedAt?: string;
   startedBy?: string;
   hasCard: boolean;
+  /** trial = try-out period: leaves at the end of any paid month; subscription = notice period. */
+  terms: BillingTerms;
+  termsSince?: string;
+  /** When a try-out becomes a subscription by itself. */
+  trialEndsAt?: string | null;
+  /** The customer's own monthly price ex VAT, or null for the plan's. */
+  priceSek?: number | null;
+  /** What they pay per month ex VAT (own price or the plan's). */
+  monthlySek?: number | null;
+  noticeMonths: number;
+  trialMonths: number;
+  offboardAtEnd: boolean;
+  /** When a requested cancellation takes effect. */
+  endsAt?: string | null;
   subscribed: boolean;
   plan: BillingPlan;
   priceDiffers: boolean;
@@ -533,7 +554,10 @@ export interface FinanceJob {
 }
 
 export interface FinanceOverview {
-  period: { from: string; to: string; days: number; includeInactive: boolean; tenantId: string | null };
+  period: { from: string; to: string; days: number; includeInactive: boolean; tenantId: string | null;
+            locationId?: string | null; revenueScope?: "tenant" | null };
+  /** The picked customer's locations (for the location filter). */
+  locations?: { locationId: string; name?: string }[];
   kpis: FinanceKpis;
   series: FinancePoint[];
   tenants: FinanceTenantRow[];

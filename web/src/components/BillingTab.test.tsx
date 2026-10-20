@@ -19,9 +19,9 @@ function billing(extra: Partial<Billing> = {}): BillingView {
   return {
     billing: {
       pauseCollection: false, autoSuspended: false, hasCard: false, subscribed: false, priceDiffers: false,
-      daysUntilDue: 30, suspendAfterDays: 14,
+      daysUntilDue: 30, suspendAfterDays: 14, terms: "trial", monthlySek: 990, noticeMonths: 3, trialMonths: 6, offboardAtEnd: false,
       plan: { planId: "starter", name: "Starter", priceSek: 990, stripePriceId: "price_starter" }, ...extra,
-    },
+    } as Billing,
     invoices: [],
   };
 }
@@ -39,9 +39,14 @@ describe("BillingTab", () => {
     await user.click(screen.getByRole("button", { name: "Start subscription" }));
     expect(screen.getByText(/990 kr per month excluding VAT/)).toBeInTheDocument();
     await user.click(screen.getByText("Charge a card on file"));
+    await user.click(screen.getByText("Subscription", { selector: "strong" }));
+    const priceInput = screen.getByLabelText(/Monthly price/);
+    await user.clear(priceInput);
+    await user.type(priceInput, "790");
     await user.type(screen.getByLabelText(/First invoice date/), "2030-01-01");
     await user.click(screen.getAllByRole("button", { name: "Start subscription" }).at(-1)!);
-    await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", { collectionMethod: "charge_automatically", startDate: "2030-01-01" }));
+    await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", {
+      collectionMethod: "charge_automatically", startDate: "2030-01-01", terms: "subscription", priceSek: 790 }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
@@ -50,7 +55,7 @@ describe("BillingTab", () => {
     mocks.billing.mockResolvedValue({
       ...billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1", mrrSek: 990,
                    collectionMethod: "send_invoice", currentPeriodStart: "2026-10-01T00:00:00Z", currentPeriodEnd: "2026-11-01T00:00:00Z",
-                   priceDiffers: true }),
+                   priceDiffers: true, terms: "subscription", termsSince: "2026-06-02T00:00:00Z" }),
       invoices: [{ invoiceId: "in_1", number: "F-0001", status: "open", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5,
                    amountPaidSek: 0, amountRemainingSek: 1237.5, outstandingSek: 990, dueDate: "2026-10-01T00:00:00Z",
                    periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", hostedInvoiceUrl: "https://invoice.stripe.com/x",
@@ -70,10 +75,44 @@ describe("BillingTab", () => {
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "https://invoice.stripe.com/x");
     expect(screen.getByText(/The plan's price changed/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Pause invoicing" }));
-    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "pause"));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "pause", {}));
+    expect(screen.getByText(/Subscription, 3 months' notice/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel subscription" }));
-    await user.click(screen.getAllByRole("button", { name: "Cancel subscription" }).at(-1)!);
-    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "cancel"));
+    // 3 months after the paid month ends (1 Nov) = 1 Feb
+    expect(screen.getByRole("button", { name: /End on 1 feb/ })).toBeInTheDocument();
+    await user.click(screen.getByLabelText(/Offboard the customer automatically/));
+    await user.click(screen.getByRole("button", { name: /End on 1 feb/ }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "cancel", { offboardAtEnd: false }));
+  });
+
+  it("shows a try-out's terms and converts it", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue(billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1", mrrSek: 790,
+      priceSek: 790, monthlySek: 790, terms: "trial", termsSince: "2026-06-02T00:00:00Z", trialEndsAt: "2026-12-02T00:00:00Z",
+      currentPeriodEnd: "2026-11-01T00:00:00Z" }));
+    mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText(/Try-out period since 2 juni/)).toBeInTheDocument();
+    expect(screen.getByText(/790 kr per month ex VAT \(own price\)/)).toBeInTheDocument();
+    expect(screen.getByText(/becomes a subscription on 2 dec/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel subscription" }));
+    expect(screen.getByText(/ends with the paid month/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /End on 1 nov/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep it" }));
+    await user.click(screen.getByRole("button", { name: "Convert to subscription" }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "convert", {}));
+  });
+
+  it("offers to keep a cancelled subscription", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue(billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1",
+      terms: "subscription", endsAt: "2027-02-01T00:00:00Z", offboardAtEnd: true, currentPeriodEnd: "2026-11-01T00:00:00Z" }));
+    mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText(/ends on 1 feb/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep the subscription" }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "keep", {}));
   });
 
   it("creates a card link", async () => {

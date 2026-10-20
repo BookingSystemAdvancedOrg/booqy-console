@@ -201,3 +201,12 @@ export function insightTitle(base: string, pct: number | null, up = "up", down =
   if (Math.abs(pct) < 0.05) return `${base}: unchanged`;
   return `${base}: ${fmtPct(Math.abs(pct))} ${pct > 0 ? up : down}`;
 }
+
+/** The same day `n` months later (clamped to the month's last day), as yyyy-mm-dd. */
+export function addMonths(iso: string, n: number): string {
+  const d = parseDay(iso.slice(0, 10));
+  const target = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d.getDate(), last));
+  return isoDay(target);
+}
