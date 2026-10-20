@@ -22,6 +22,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/suspend": tenants.suspend,
     "POST /platform/tenants/{tenantId}/resume": tenants.resume,
     "POST /platform/tenants/{tenantId}/offboard": tenants.offboard,
+    "POST /platform/tenants/{tenantId}/purge": tenants.purge_now,
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
     "GET /platform/tenants/{tenantId}/users": users.list_users,
     "POST /platform/tenants/{tenantId}/owners": users.invite_owner,

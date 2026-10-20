@@ -405,10 +405,36 @@ def resume(req) -> tuple[int, dict]:
     return 200, {"status": "active", "usersEnabled": n, "failed": failed}
 
 
+def purge_now(req) -> tuple[int, dict]:
+    """'Delete data now' on an offboarded tenant (e.g. the customer asked for
+    erasure): moves purgeAt to now. The tenant-purge Lambda (infrastructure
+    schedule, nightly in production) deletes the data on its next run; this
+    API only ever moves the date."""
+    tenant_id = req.path["tenantId"]
+    profile = get_profile(tenant_id)
+    if req.body.get("confirmSlug") != profile.get("slug"):
+        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
+                       fields={"confirmSlug": "Does not match"})
+    now = now_iso()
+    try:
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key=tkey(tenant_id),
+            UpdateExpression="SET purgeAt = :n, updatedAt = :n, updatedBy = :b",
+            ConditionExpression="#s = :off",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":n": {"S": now}, ":b": {"S": req.actor}, ":off": {"S": "offboarded"}})
+    except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
+        current = (get_profile(tenant_id) or {}).get("status")
+        raise ApiError(409, "invalid_status", f"Only an offboarded customer's data can be deleted (it is {current})",
+                       currentStatus=current) from e
+    write_audit(tenant_id, "purge_requested", req.actor, {"previousPurgeAt": profile.get("purgeAt")})
+    return 202, {"status": "offboarded", "purgeAt": now}
+
+
 def offboard(req) -> tuple[int, dict]:
-    """'Delete customer': disable users, detach domains, mark offboarded. Data
-    is kept (exports, 7-year bookkeeping retention); purging is a separate,
-    manual decision.
+    """'Delete customer': disable users, detach domains, mark offboarded with
+    purgeAt = now + the retention days. The data itself is deleted by the
+    tenant-purge Lambda once purgeAt has passed (purge_now moves it).
 
     The status flips to offboarding first (conditional), and the execution
     name is fixed per tenant - a double click or two operators can't start

@@ -1,5 +1,5 @@
 export type TenantStatus =
-  | "provisioning" | "provisioning_failed" | "active" | "suspended" | "offboarding" | "offboarded";
+  | "provisioning" | "provisioning_failed" | "active" | "suspended" | "offboarding" | "offboarded" | "purged";
 
 export type Features = Record<string, boolean>;
 
@@ -55,6 +55,10 @@ export interface Tenant {
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
+  offboardedAt?: string;
+  /** When tenant-purge deletes the data (set at offboarding). */
+  purgeAt?: string;
+  purgedAt?: string;
 }
 
 export interface TenantSummary {

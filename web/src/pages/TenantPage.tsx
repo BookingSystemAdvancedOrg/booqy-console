@@ -615,7 +615,7 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
   };
   const [reason, setReason] = useState("");
   const [confirm, setConfirm] = useState("");
-  const done = tenant.status === "offboarding" || tenant.status === "offboarded";
+  const done = ["offboarding", "offboarded", "purged"].includes(tenant.status);
   return (
     <div className="stack">
       <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger">
@@ -645,8 +645,8 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
       <Card title="Delete (offboard) customer" tone="danger">
         <p>
           Disables and signs out all users, takes the website and its domains offline, and marks the customer offboarded.
-          Their data is kept (bookkeeping records must be kept 7 years; exports on request) - permanent deletion is a separate,
-          manual step. Their Stripe account stays theirs.
+          Their data is deleted automatically after the retention period (90 days in production; export it before then if they ask for it). Catering documents
+          are kept 7 years for bookkeeping, and their Stripe account stays theirs.
         </p>
         <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
           <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={done} />
@@ -657,6 +657,47 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
           {done ? `Customer is ${tenant.status}` : "Offboard customer"}
         </button>
       </Card>
+      {(tenant.status === "offboarded" || tenant.status === "purged") && <DeleteData tenant={tenant} onChanged={onChanged} />}
     </div>
+  );
+}
+
+function DeleteData({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+  const a = useAction();
+  const [confirm, setConfirm] = useState("");
+  if (tenant.status === "purged") {
+    return (
+      <Card title="Customer data" tone="danger">
+        <p>
+          Deleted {fmtDate(tenant.purgedAt)}. Only this company record is left (no personal data); the slug stays reserved.
+          Catering documents are kept 7 years for bookkeeping.
+        </p>
+      </Card>
+    );
+  }
+  const due = !!tenant.purgeAt && new Date(tenant.purgeAt).getTime() <= Date.now();
+  return (
+    <Card title="Customer data" tone="danger">
+      <ErrorNotice error={a.error} />
+      {!tenant.purgeAt ? (
+        <p>A deletion date is set at the next deletion run.</p>
+      ) : due ? (
+        <Notice kind="info">Deleted at the next deletion run (nightly). Nothing to do.</Notice>
+      ) : (
+        <p>Bookings, orders, menus, layouts, catering requests, marketing contacts, users and images are deleted on <strong>{fmtDate(tenant.purgeAt)}</strong>.</p>
+      )}
+      {!due && (
+        <>
+          <p>If the customer asks to be erased, delete it now instead: it can't be undone.</p>
+          <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
+            <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </Field>
+          <button className="btn btn--danger" disabled={confirm !== tenant.slug || a.busy}
+                  onClick={async () => { if (await a.run(() => api.purgeNow(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }}>
+            Delete data now
+          </button>
+        </>
+      )}
+    </Card>
   );
 }

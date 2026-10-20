@@ -28,6 +28,7 @@ const STATUS_TEXT: Record<string, string> = {
   suspended: "Suspended",
   offboarding: "Offboarding",
   offboarded: "Offboarded",
+  purged: "Data deleted",
   pending_dns: "Waiting for DNS",
   pending_validation: "Issuing certificate",
   validation_timeout: "DNS never appeared",

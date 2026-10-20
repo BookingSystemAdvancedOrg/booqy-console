@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { ErrorNotice, Status, fmtDate, useLoad } from "../components/ui";
 
-const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded"] as const;
+const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());

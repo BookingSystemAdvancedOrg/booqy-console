@@ -80,6 +80,7 @@ export const api = {
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
   offboard: (id: string, confirmSlug: string) => request("POST", `${t(id)}/offboard`, { confirmSlug }),
+  purgeNow: (id: string, confirmSlug: string) => request("POST", `${t(id)}/purge`, { confirmSlug }),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
   users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
