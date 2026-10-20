@@ -70,17 +70,47 @@
   --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* the desk the board hangs on: thermal paper with faint receipt ruling */
+  --desk: var(--paper);
+  --desk-rule: rgb(28 25 24 / 0.045);
+  --board-max: 1320px;
+
   font: 15px/1.55 var(--sans);
   font-stretch: 100%;
   color: var(--fg);
-  background: var(--ox-800);
+  background: var(--desk);
   color-scheme: dark;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   accent-color: var(--print);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--ox-800); color: var(--fg); }
+body {
+  margin: 0;
+  color: var(--fg);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 27px, var(--desk-rule) 27px 28px),
+    var(--desk);
+}
+
+/* The board: everything the operator works on is one oxblood sheet hanging
+   on the paper desk, with the paper showing at the sides on wide screens. */
+.app, .auth, .boot {
+  position: relative;
+  max-width: var(--board-max);
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--ox-800);
+  box-shadow: 0 30px 50px -20px rgb(0 0 0 / 0.45), 0 2px 4px rgb(0 0 0 / 0.25), 0 0 0 1px rgb(28 25 24 / 0.08);
+}
+.app::before, .auth::before, .boot::before {   /* the sheet's own edge tone, like the tickets */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.12), transparent 4%, transparent 96%, rgb(0 0 0 / 0.12));
+}
+.app > *, .auth > *, .boot > * { position: relative; }
 ::selection { background: var(--ink-red); color: #fff; }
 .paper ::selection { background: var(--print); color: var(--paper); }
 :focus-visible { outline: 3px solid var(--on-ox); outline-offset: 3px; border-radius: 2px; }
@@ -145,7 +175,8 @@ a:hover { text-decoration-thickness: 2px; }
 
 /* --- shell: the wall, the bar, the rail --------------------------------------- */
 .topbar { display: flex; align-items: center; gap: 18px; min-height: 60px; padding: 4px 24px 0; background: var(--ox-800); color: var(--on-ox); position: sticky; top: 0; z-index: 5; }
-.topbar::after {   /* the steel rail across the top of the wall */
+.topbar::before { content: ""; position: absolute; inset: 0 0 -14px; background: var(--ox-800); z-index: -1; }
+.topbar::after {   /* the steel rail across the top of the board */
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: -14px;
@@ -169,7 +200,7 @@ a:hover { text-decoration-thickness: 2px; }
 .page-head .status { transform: rotate(-4deg); }
 .crumbs { margin: 0 0 10px; font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ox-3); }
 .crumbs a { color: var(--on-ox-3); }
-.boot { min-height: 100vh; display: grid; place-items: center; background: var(--ox-800); }
+.boot { display: grid; place-items: center; }
 
 /* pages print in: a short drop from the rail, settling on the shared ease */
 .page { animation: page-in 520ms var(--ease) both; }
@@ -335,7 +366,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .row-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* --- login: the oxblood wall, the sign-in ticket on its rail ------------------------- */
-.auth { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr); background: var(--ox-800); }
+.auth { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr); }
 .auth__brand { background: var(--ox-900); color: var(--on-ox); padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; position: relative; overflow: hidden; }
 .auth__logo .brand__logo { width: 104px; }
 .auth__lead { font: 860 clamp(28px, 2.6vw, 40px)/0.98 var(--sans); font-stretch: 125%; letter-spacing: -0.025em; margin: 0 0 14px; max-width: 13em; text-wrap: balance; }
