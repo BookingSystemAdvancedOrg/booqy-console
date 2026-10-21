@@ -2,9 +2,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Billing, BillingView, Tenant } from "../types";
+import { endDateFor, periodOf, isoDay, addDays } from "../finance";
 
 const mocks = vi.hoisted(() => ({
-  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(),
+  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(), invoiceNow: vi.fn(),
 }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
@@ -14,122 +15,138 @@ const tenant: Tenant = {
   tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", status: "active", planId: "starter",
   entitlements: { maxLocations: 1, features: {} }, locationCount: 1, legalName: "Roma Restaurang AB", ownerEmail: "owner@roma.se",
 };
+const today = isoDay(new Date());
+const { start, end } = periodOf(today);
 
 function billing(extra: Partial<Billing> = {}): BillingView {
   return {
     billing: {
-      pauseCollection: false, autoSuspended: false, hasCard: false, subscribed: false, priceDiffers: false,
-      daysUntilDue: 30, suspendAfterDays: 14, terms: "trial", monthlySek: 990, noticeMonths: 3, trialMonths: 6, offboardAtEnd: false,
-      plan: { planId: "starter", name: "Starter", priceSek: 990, stripePriceId: "price_starter" }, ...extra,
+      status: "none", subscribed: false, terms: "trial", monthlySek: 990, smsPrice: 0.7, smsPriceDefaultSek: 0.7,
+      collectionMethod: "send_invoice", hasCard: false, autoSuspended: false, offboardAtEnd: false, noticeMonths: 3, trialMonths: 6,
+      daysUntilDue: 30, suspendAfterDays: 14, plan: { planId: "starter", name: "Starter", priceSek: 990 },
+      nextInvoice: null, pendingPeriods: 0, ...extra,
     } as Billing,
     invoices: [],
   };
 }
 
+const running = (extra: Partial<Billing> = {}) => billing({
+  status: "active", subscribed: true, customerId: "cus_1", startsAt: "2026-09-10", termsSince: "2026-09-10T00:00:00Z",
+  trialEndsAt: "2027-03-10T00:00:00Z",
+  nextInvoice: { periodStart: start, periodEnd: end, period: "25 sep till 24 okt 2026", days: 30, activeDays: 30, monthlySek: 990,
+                 feeSek: 990, feeText: "Booqy Starter, 25 sep till 24 okt 2026", smsParts: 412, smsPriceSek: 0.7, smsSek: 288.4,
+                 smsText: "SMS 25 sep till 24 okt 2026: 412 delar x 0,70 kr (Södermalm 300, Vasastan 112)",
+                 smsByLocation: { "Södermalm": 300, Vasastan: 112 }, totalSek: 1278.4, final: false,
+                 date: addDays(end, 1), dueDate: addDays(end, 31), smsSoFar: true },
+  ...extra,
+});
+
 beforeEach(() => vi.clearAllMocks());
 
 describe("BillingTab", () => {
-  it("offers to start a subscription and sends the chosen method and date", async () => {
+  it("starts an agreement with terms, own price and the start date", async () => {
     const user = userEvent.setup();
     mocks.billing.mockResolvedValue(billing());
-    mocks.startSubscription.mockResolvedValue({ billing: billing({ subscribed: true, status: "active" }).billing });
+    mocks.startSubscription.mockResolvedValue({ billing: running().billing });
     const onChanged = vi.fn();
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={onChanged} />);
-    expect(await screen.findByText("No subscription")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Start subscription" }));
-    expect(screen.getByText(/990 kr per month excluding VAT/)).toBeInTheDocument();
-    await user.click(screen.getByText("Charge a card on file"));
+    expect(await screen.findByText("No agreement")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start agreement" }));
+    expect(screen.getByText(/Nothing is charged now/)).toBeInTheDocument();
     await user.click(screen.getByText("Subscription", { selector: "strong" }));
     const priceInput = screen.getByLabelText(/Monthly price/);
     await user.clear(priceInput);
     await user.type(priceInput, "790");
-    await user.type(screen.getByLabelText(/First invoice date/), "2030-01-01");
-    await user.click(screen.getAllByRole("button", { name: "Start subscription" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "Start agreement" }).at(-1)!);
     await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", {
-      collectionMethod: "charge_automatically", startDate: "2030-01-01", terms: "subscription", priceSek: 790 }));
+      collectionMethod: "send_invoice", startDate: today, terms: "subscription", priceSek: 790 }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it("shows a running subscription with its actions and invoices", async () => {
+  it("shows a running try-out with the next invoice and converts it", async () => {
     const user = userEvent.setup();
-    mocks.billing.mockResolvedValue({
-      ...billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1", mrrSek: 990,
-                   collectionMethod: "send_invoice", currentPeriodStart: "2026-10-01T00:00:00Z", currentPeriodEnd: "2026-11-01T00:00:00Z",
-                   priceDiffers: true, terms: "subscription", termsSince: "2026-06-02T00:00:00Z" }),
-      invoices: [{ invoiceId: "in_1", number: "F-0001", status: "open", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5,
-                   amountPaidSek: 0, amountRemainingSek: 1237.5, outstandingSek: 990, dueDate: "2026-10-01T00:00:00Z",
-                   periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", hostedInvoiceUrl: "https://invoice.stripe.com/x",
-                   paidOutOfBand: false, daysLate: 12, remindersSent: 1, lateFeeSek: 450, interestSek: null, collectionMethod: "send_invoice" }],
-    });
-    mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
-    mocks.remindInvoice.mockResolvedValue({ remindersSent: 2 });
+    mocks.billing.mockResolvedValue(running());
+    mocks.updateSubscription.mockResolvedValue({ billing: running({ terms: "subscription" }).billing });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByText("Active")).toBeInTheDocument();
-    expect(screen.getByText("F-0001")).toBeInTheDocument();
-    expect(screen.getByText("12 days")).toBeInTheDocument();
-    expect(screen.getByText("1 reminder")).toBeInTheDocument();
-    expect(screen.getByText(/450,00 kr fees/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Send reminder" }));
-    await waitFor(() => expect(mocks.remindInvoice).toHaveBeenCalledWith("t1", "in_1"));
-    expect(screen.getByText("Open", { selector: ".status" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "https://invoice.stripe.com/x");
-    expect(screen.getByText(/The plan's price changed/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Pause invoicing" }));
-    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "pause", {}));
-    expect(screen.getByText(/Subscription, 3 months' notice/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Cancel subscription" }));
-    // 3 months after the paid month ends (1 Nov) = 1 Feb
-    expect(screen.getByRole("button", { name: /End on 1 feb/ })).toBeInTheDocument();
-    await user.click(screen.getByLabelText(/Offboard the customer automatically/));
-    await user.click(screen.getByRole("button", { name: /End on 1 feb/ }));
-    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "cancel", { offboardAtEnd: false }));
-  });
-
-  it("shows a try-out's terms and converts it", async () => {
-    const user = userEvent.setup();
-    mocks.billing.mockResolvedValue(billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1", mrrSek: 790,
-      priceSek: 790, monthlySek: 790, terms: "trial", termsSince: "2026-06-02T00:00:00Z", trialEndsAt: "2026-12-02T00:00:00Z",
-      currentPeriodEnd: "2026-11-01T00:00:00Z" }));
-    mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
-    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
-    expect(await screen.findByText(/Try-out period since 2 juni/)).toBeInTheDocument();
-    expect(screen.getByText(/790 kr per month ex VAT \(own price\)/)).toBeInTheDocument();
-    expect(screen.getByText(/becomes a subscription on 2 dec/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Cancel subscription" }));
-    expect(screen.getByText(/ends with the paid month/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /End on 1 nov/ })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(screen.getByText(/Try-out period since 10 sep/)).toBeInTheDocument();
+    expect(screen.getByText(/Next invoice:/)).toBeInTheDocument();
+    expect(screen.getByText("Booqy Starter, 25 sep till 24 okt 2026")).toBeInTheDocument();
+    expect(screen.getByText(/412 delar x 0,70 kr/)).toBeInTheDocument();
+    expect(screen.getByText(/SMS per location: Södermalm 300, Vasastan 112/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Convert to subscription" }));
     await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "convert", {}));
   });
 
-  it("offers to keep a cancelled subscription", async () => {
+  it("cancels with the end date per the terms and can keep the agreement", async () => {
     const user = userEvent.setup();
-    mocks.billing.mockResolvedValue(billing({ subscribed: true, status: "active", subscriptionId: "sub_1", customerId: "cus_1",
-      terms: "subscription", endsAt: "2027-02-01T00:00:00Z", offboardAtEnd: true, currentPeriodEnd: "2026-11-01T00:00:00Z" }));
-    mocks.updateSubscription.mockResolvedValue({ billing: billing().billing });
+    mocks.billing.mockResolvedValue(running({ terms: "subscription", trialEndsAt: null }));
+    mocks.updateSubscription.mockResolvedValue({ billing: running().billing });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
-    expect(await screen.findByText(/ends on 1 feb/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Keep the subscription" }));
+    await screen.findByText(/Subscription, 3 months' notice/);
+    await user.click(screen.getByRole("button", { name: "Cancel agreement" }));
+    const ends = endDateFor("subscription", 3);
+    const label = new RegExp(`End on ${new Date(ends).getDate()}`);
+    expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    await user.click(screen.getByLabelText(/Offboard the customer automatically/));
+    await user.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "cancel", { offboardAtEnd: false }));
+  });
+
+  it("offers to keep a cancelled agreement and to invoice pending periods", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue(running({ status: "ending", endsAt: "2027-01-24", offboardAtEnd: true, pendingPeriods: 2 }));
+    mocks.updateSubscription.mockResolvedValue({ billing: running().billing });
+    mocks.invoiceNow.mockResolvedValue({ dryRun: false, today, invoices: [{ tenantId: "t1", name: "Pizzeria Roma", totalSek: 990 }], skipped: [], errors: [], migrated: [], totalSek: 990 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText(/ends on 24 jan/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel agreement" })).not.toBeInTheDocument();
+    expect(screen.getByText(/2 complete periods are/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Invoice now" }));
+    await waitFor(() => expect(mocks.invoiceNow).toHaveBeenCalledWith("t1"));
+    expect(await screen.findByText(/1 invoice created/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep the agreement" }));
     await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "keep", {}));
   });
 
-  it("creates a card link", async () => {
+  it("changes the SMS price", async () => {
     const user = userEvent.setup();
-    mocks.billing.mockResolvedValue(billing());
-    mocks.cardLink.mockResolvedValue({ url: "https://checkout.stripe.com/c/cs_1" });
-    render(<BillingTab tenant={tenant} cardParam="added" onChanged={() => {}} />);
-    await screen.findByText("No subscription");
-    expect(screen.getByText(/The card was added in Stripe/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Create card link" }));
-    expect(await screen.findByDisplayValue("https://checkout.stripe.com/c/cs_1")).toBeInTheDocument();
+    mocks.billing.mockResolvedValue(running());
+    mocks.updateSubscription.mockResolvedValue({ billing: running({ smsPriceSek: 0.55, smsPrice: 0.55 }).billing });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await screen.findByText(/0,70 kr per part ex VAT/);
+    await user.click(screen.getByRole("button", { name: "Change" }));
+    const input = screen.getByLabelText("Price per SMS part");
+    await user.clear(input);
+    await user.type(input, "0.55");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "set_sms_price", { smsPriceSek: 0.55 }));
+  });
+
+  it("lists invoices with their period, fee and SMS lines and a reminder button", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({
+      ...running(),
+      invoices: [{ invoiceId: "in_1", number: "F-0001", status: "open", subtotalSek: 1278.4, taxSek: 319.6, totalSek: 1598,
+                   amountPaidSek: 0, amountRemainingSek: 1598, outstandingSek: 1278.4, dueDate: "2026-10-01T00:00:00Z",
+                   periodStart: "2026-08-25", periodEnd: "2026-09-24", hostedInvoiceUrl: "https://invoice.stripe.com/x",
+                   paidOutOfBand: false, daysLate: 12, remindersSent: 1, lateFeeSek: 450, interestSek: null, collectionMethod: "send_invoice",
+                   feeSek: 990, smsParts: 412, smsSek: 288.4 }],
+    });
+    mocks.remindInvoice.mockResolvedValue({ remindersSent: 2 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText("F-0001")).toBeInTheDocument();
+    expect(screen.getByText("25 aug. to 24 sep.")).toBeInTheDocument();
+    expect(screen.getByText(/412 parts, 288,40 kr/)).toBeInTheDocument();
+    expect(screen.getByText("12 days")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send reminder" }));
+    await waitFor(() => expect(mocks.remindInvoice).toHaveBeenCalledWith("t1", "in_1"));
   });
 
   it("cannot start for a customer that is not active or a plan without a price", async () => {
-    mocks.billing.mockResolvedValue(billing({ plan: { planId: "starter", name: "Starter" } }));
+    mocks.billing.mockResolvedValue(billing({ plan: { planId: "starter", name: "Starter", priceSek: null } }));
     render(<BillingTab tenant={{ ...tenant, status: "suspended" }} cardParam={null} onChanged={() => {}} />);
-    expect(await screen.findByRole("button", { name: "Start subscription" })).toBeDisabled();
-    expect(screen.getByText(/has no Stripe price yet/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Start agreement" })).toBeDisabled();
+    expect(screen.getByText(/has no price yet/)).toBeInTheDocument();
   });
 });

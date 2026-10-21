@@ -85,7 +85,7 @@ export function Card(props: { title: string; actions?: ReactNode; children: Reac
   );
 }
 
-export function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
     window.addEventListener("keydown", onKey);
@@ -93,7 +93,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
   }, [props]);
   return (
     <div className="modal" role="dialog" aria-modal aria-label={props.title} onMouseDown={props.onClose}>
-      <div className="modal__panel" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal__panel${props.wide ? " modal__panel--wide" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal__head">
           <h3>{props.title}</h3>
           <button className="btn btn--ghost" onClick={props.onClose} aria-label="Close">✕</button>

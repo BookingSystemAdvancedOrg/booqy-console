@@ -265,6 +265,10 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                  delta={<Delta current={k.costPerBookingSek} previous={before?.costPerBookingSek} invert />} />
             <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
                  delta={<Delta current={k.costPerOrderSek} previous={before?.costPerOrderSek} invert />} />
+            <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
+                 sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
+                 tone={k.smsRevenueSek > 0 || k.smsCostSek > 0 ? (k.smsMarginSek < 0 ? "bad" : "good") : undefined}
+                 delta={<Delta current={k.smsRevenueSek} previous={before?.smsRevenueSek} />} />
           </section>
 
           <div className="charts">
@@ -314,11 +318,12 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                   <Th k="marginSek" sort={sort} setSort={setSort}>Margin</Th>
                   <Th k="bookings" sort={sort} setSort={setSort}>Bookings</Th>
                   <Th k="orders" sort={sort} setSort={setSort}>Orders</Th>
+                  <Th k="smsParts" sort={sort} setSort={setSort}>SMS</Th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((t) => <TenantRow key={t.tenantId} t={t} />)}
-                {rows.length === 0 && <tr><td colSpan={10} className="empty">No customers in this selection.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={11} className="empty">No customers in this selection.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -377,6 +382,7 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
       </td>
       <td className="num">{fmtInt(t.bookings)}</td>
       <td className="num">{fmtInt(t.orders)}</td>
+      <td className="num">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsRevenueSek)}</div></td>
     </tr>
   );
 }

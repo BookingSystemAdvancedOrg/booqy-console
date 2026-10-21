@@ -101,7 +101,7 @@ def test_overview_defaults_and_validation(two_tenants):
 def test_attention_lists_past_due_and_unsubscribed(two_tenants, aws):
     tenant, other = two_tenants
     from test_billing import _set_billing
-    _set_billing(aws, tenant, status="past_due", pastDueSince="2026-10-01T00:00:00Z")
+    _set_billing(aws, tenant, pastDueSince="2026-10-01T00:00:00Z")
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "name": "Nya Krogen", "slug": "nya",
                                                         "ownerEmail": "o@nya.se", "orgNumber": "556000-0019"})
     fresh = body["tenantId"]

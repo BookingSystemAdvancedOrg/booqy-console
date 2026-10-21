@@ -62,6 +62,7 @@ function row(name: string, marginSek: number, extra: Partial<FinanceTenantRow> =
     tenantId: name, name, slug: name.toLowerCase(), status: "active", billingStatus: "active", mrrSek: 0, revenueSek: 0,
     collectedSek: 0, creditedSek: 0, outstandingSek: 0, costSek: 0, costSplitSek: { baseline: 0, requests: 0, email: 0, sms: 0 },
     marginSek, marginPct: null, bookings: 0, orders: 0, requests: 0, emails: 0, sms: 0, marketingEmails: 0,
+    smsParts: 0, smsRevenueSek: 0, smsCostSek: 0, smsMarginSek: 0,
     costPerBookingSek: null, costPerOrderSek: null, activeDays: 0, invoiceCount: 0, ...extra,
   };
 }
@@ -100,5 +101,18 @@ describe("rows", () => {
     expect(matchesCustomer(t, "556677-88")).toBe(true);
     expect(matchesCustomer(t, "linnea")).toBe(false);
     expect(matchesCustomer(t, "")).toBe(true);
+  });
+});
+
+describe("billing periods from the 25th to the 24th", () => {
+  it("finds the period of a day and the next one", async () => {
+    const { periodOf, nextPeriod, periodText, endDateFor } = await import("./finance");
+    expect(periodOf("2026-09-10")).toEqual({ start: "2026-08-25", end: "2026-09-24" });
+    expect(periodOf("2026-09-25")).toEqual({ start: "2026-09-25", end: "2026-10-24" });
+    expect(periodOf("2026-01-03")).toEqual({ start: "2025-12-25", end: "2026-01-24" });
+    expect(nextPeriod("2026-09-24")).toEqual({ start: "2026-09-25", end: "2026-10-24" });
+    expect(periodText("2026-08-25", "2026-09-24")).toBe("25 aug till 24 sep 2026");
+    expect(endDateFor("trial", 3, "2026-10-21")).toBe("2026-10-24");
+    expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-24");
   });
 });

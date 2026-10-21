@@ -142,7 +142,7 @@ export function topAndBottom<T extends { marginSek: number }>(rows: T[], n: numb
 }
 
 export type SortKey = keyof Pick<FinanceTenantRow,
-  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costSek" | "mrrSek" | "bookings" | "orders" | "requests">;
+  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costSek" | "mrrSek" | "bookings" | "orders" | "requests" | "smsParts" | "smsRevenueSek">;
 
 export function sortRows(rows: FinanceTenantRow[], key: SortKey, dir: "asc" | "desc"): FinanceTenantRow[] {
   const sign = dir === "asc" ? 1 : -1;
@@ -209,4 +209,32 @@ export function addMonths(iso: string, n: number): string {
   const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
   target.setDate(Math.min(d.getDate(), last));
   return isoDay(target);
+}
+
+// --- billing periods: the 25th to the 24th ------------------------------------------
+const SV_MONTHS = ["jan", "feb", "mars", "apr", "maj", "juni", "juli", "aug", "sep", "okt", "nov", "dec"];
+
+/** The period a day falls in: from the 25th to the 24th. */
+export function periodOf(iso: string): { start: string; end: string } {
+  const d = parseDay(iso.slice(0, 10));
+  const start = d.getDate() >= 25 ? new Date(d.getFullYear(), d.getMonth(), 25) : new Date(d.getFullYear(), d.getMonth() - 1, 25);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 24);
+  return { start: isoDay(start), end: isoDay(end) };
+}
+
+export function nextPeriod(endIso: string): { start: string; end: string } {
+  return periodOf(addDays(endIso, 1));
+}
+
+export function periodText(startIso: string, endIso: string): string {
+  const a = parseDay(startIso), b = parseDay(endIso);
+  return `${a.getDate()} ${SV_MONTHS[a.getMonth()]} till ${b.getDate()} ${SV_MONTHS[b.getMonth()]} ${b.getFullYear()}`;
+}
+
+/** When a cancellation takes effect: a try-out with the current period, a subscription `noticeMonths` periods later. */
+export function endDateFor(terms: "trial" | "subscription", noticeMonths: number, today = isoDay(new Date())): string {
+  let { end } = periodOf(today);
+  if (terms === "trial") return end;
+  for (let i = 0; i < noticeMonths; i++) end = nextPeriod(end).end;
+  return end;
 }

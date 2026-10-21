@@ -299,6 +299,8 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 
 /* --- tables and lists: printed rows ------------------------------------------------ */
 .table-wrap { overflow-x: auto; margin-bottom: 22px; }
+.table-wrap--inner { margin-bottom: 14px; }
+.table-wrap--inner .table td, .table-wrap--inner .table th { white-space: nowrap; }   /* scroll sideways instead of wrapping each cell */
 .table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .table th { text-align: left; font: 760 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--print); padding: 16px 14px 12px; border-bottom: 1.5px solid var(--print); white-space: nowrap; }
 .table td { padding: 12px 14px; border-bottom: 1.5px dashed var(--paper-line); vertical-align: top; }
@@ -373,6 +375,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .modal__panel { background: var(--paper); padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; animation: drop 480ms var(--ease) both;
   -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
           mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat; }
+.modal__panel--wide { width: min(980px, 100%); }
 .modal__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1.5px dashed var(--paper-line); }
 .modal__head h3 { font: 760 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -687,3 +690,18 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   .chart__area--in { opacity: 0.08; }
   .ring__seg { transition: none; }
 }
+
+/* --- agreement: the next invoice as a till slip ------------------------------- */
+.next-invoice { margin: 16px 0 6px; padding: 12px 14px 10px; background: var(--paper-2); border-radius: 3px; border: 1.5px dashed var(--paper-line); }
+.next-invoice__head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 6px; }
+.next-invoice__lines { width: 100%; border-collapse: collapse; font: 420 13px/1.5 var(--mono); font-stretch: 87.5%; }
+.next-invoice__lines td { padding: 4px 0; border-bottom: 1.5px dashed var(--paper-line); vertical-align: top; }
+.next-invoice__lines td.num { text-align: right; white-space: nowrap; padding-left: 14px; }
+.next-invoice__total td { border-bottom: 0; font-weight: 760; padding-top: 6px; }
+.inline-edit { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline-edit .input { width: 110px; min-height: 32px; padding: 4px 8px; }
+.payments-actions { justify-content: space-between; align-items: center; margin: 0 0 14px; }
+.payments-actions p { max-width: 60ch; }
+.status--billing-ending { color: var(--warn); }
+.status--billing-ended { color: var(--print-2); }
+.status--billing-scheduled { color: var(--warn); }

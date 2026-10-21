@@ -371,57 +371,76 @@ export interface NewsletterRecipient {
 }
 
 // ------------------------------------------------------------------ finance
-/** Status of a customer's SaaS subscription (Stripe Billing on the platform account). */
-export type BillingStatus =
-  | "none" | "active" | "trialing" | "past_due" | "unpaid" | "paused" | "canceled" | "incomplete" | "incomplete_expired" | "unknown";
+/** Where a customer's agreement stands; past_due only on Finance rows while an invoice is overdue. */
+export type BillingStatus = "none" | "scheduled" | "active" | "ending" | "ended" | "past_due";
 
 export interface BillingPlan {
   planId?: string;
   name?: string;
-  priceSek?: number;
-  stripePriceId?: string;
+  priceSek?: number | null;
+}
+
+/** What the next invoice (on the 25th, for the period 25th to 24th) would carry. */
+export interface InvoicePlan {
+  periodStart: string;
+  periodEnd: string;
+  period: string;
+  days: number;
+  activeDays: number;
+  monthlySek: number;
+  feeSek: number;
+  feeText: string;
+  smsParts: number;
+  smsMessages?: number;
+  smsByLocation?: Record<string, number>;
+  smsPriceSek: number;
+  smsSek: number;
+  smsText: string;
+  totalSek: number;
+  final: boolean;
+  nothingToInvoice?: boolean;
 }
 
 export interface Billing {
   customerId?: string;
-  subscriptionId?: string;
-  status?: BillingStatus;
-  planId?: string;
-  priceId?: string;
-  mrrSek?: number;
-  collectionMethod?: "send_invoice" | "charge_automatically";
-  currentPeriodStart?: string;
-  currentPeriodEnd?: string;
-  cancelAt?: string;
-  canceledAt?: string;
-  trialEnd?: string;
-  pauseCollection: boolean;
+  status: BillingStatus;
+  subscribed: boolean;
+  /** trial = try-out period: leaves with the current period, becomes a subscription after trialMonths; subscription = notice period. */
+  terms: BillingTerms;
+  termsSince?: string;
+  trialEndsAt?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  /** The customer's own monthly price ex VAT, or null for the plan's. */
+  priceSek?: number | null;
+  /** What they pay per period ex VAT (own price or the plan's). */
+  monthlySek?: number | null;
+  /** The customer's own price per SMS part, or null for the default. */
+  smsPriceSek?: number | null;
+  /** The price per SMS part in force. */
+  smsPrice: number;
+  smsPriceDefaultSek: number;
+  collectionMethod: "send_invoice" | "charge_automatically";
+  hasCard: boolean;
   pastDueSince?: string;
   autoSuspended: boolean;
   lastPaidAt?: string;
   lastPaymentFailedAt?: string;
   startedAt?: string;
   startedBy?: string;
-  hasCard: boolean;
-  /** trial = try-out period: leaves at the end of any paid month; subscription = notice period. */
-  terms: BillingTerms;
-  termsSince?: string;
-  /** When a try-out becomes a subscription by itself. */
-  trialEndsAt?: string | null;
-  /** The customer's own monthly price ex VAT, or null for the plan's. */
-  priceSek?: number | null;
-  /** What they pay per month ex VAT (own price or the plan's). */
-  monthlySek?: number | null;
+  lastInvoicedPeriodEnd?: string | null;
+  offboardAtEnd: boolean;
   noticeMonths: number;
   trialMonths: number;
-  offboardAtEnd: boolean;
-  /** When a requested cancellation takes effect. */
-  endsAt?: string | null;
-  subscribed: boolean;
-  plan: BillingPlan;
-  priceDiffers: boolean;
   daysUntilDue: number;
   suspendAfterDays: number;
+  plan: BillingPlan;
+  legacySubscriptionId?: string | null;
+  pendingSubscriptionId?: string | null;
+  /** The current period so far (SMS counted to date); null when nothing runs. */
+  nextInvoice: (InvoicePlan & { date: string; dueDate: string; smsSoFar: boolean }) | null;
+  /** Complete periods not invoiced yet (a missed run). */
+  pendingPeriods: number;
 }
 
 export interface Invoice {
@@ -450,6 +469,30 @@ export interface Invoice {
   lateFeeSek?: number | null;
   interestSek?: number | null;
   collectionMethod?: "send_invoice" | "charge_automatically" | null;
+  /** The period's lines, when the console built the invoice. */
+  feeSek?: number | null;
+  smsParts?: number | null;
+  smsSek?: number | null;
+}
+
+/** One line of an invoicing run (preview or real). */
+export interface InvoicingLine extends InvoicePlan {
+  tenantId: string;
+  name: string;
+  invoiceId?: string | null;
+  number?: string;
+  delivery?: string;
+  hostedInvoiceUrl?: string;
+}
+
+export interface InvoicingRun {
+  dryRun: boolean;
+  today: string;
+  invoices: InvoicingLine[];
+  skipped: InvoicingLine[];
+  errors: { tenantId: string; name: string; error: string }[];
+  migrated: { tenantId: string; name: string }[];
+  totalSek: number;
 }
 
 /** One row of the Payments view: an invoice with its customer. */
@@ -506,6 +549,11 @@ export interface FinanceKpis {
   requests: number;
   emails: number;
   sms: number;
+  /** SMS parts the restaurants are charged for, what that earns and the SMS share of the AWS bill. */
+  smsParts: number;
+  smsRevenueSek: number;
+  smsCostSek: number;
+  smsMarginSek: number;
 }
 
 export interface FinancePoint {
@@ -518,6 +566,8 @@ export interface FinancePoint {
   orders: number;
   requests: number;
   activeTenants: number;
+  smsParts?: number;
+  smsRevenueSek?: number;
 }
 
 export interface FinanceTenantRow {
@@ -545,6 +595,11 @@ export interface FinanceTenantRow {
   emails: number;
   sms: number;
   marketingEmails: number;
+  smsParts: number;
+  smsRevenueSek: number;
+  smsCostSek: number;
+  smsMarginSek: number;
+  smsByType?: { booking: number; reminder: number; order: number; catering: number };
   costPerBookingSek: number | null;
   costPerOrderSek: number | null;
   activeDays: number;
