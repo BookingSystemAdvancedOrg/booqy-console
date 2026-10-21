@@ -7,8 +7,8 @@ import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import {
-  PRESETS, Preset, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor,
-  insightTitle, isoDay, matchesCustomer, presetRange, previousRange, sortRows, topAndBottom,
+  SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor,
+  insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "../finance";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 
@@ -21,8 +21,11 @@ const VIEWS = ["Overview", "Payments"] as const;
 
 export default function FinancePage({ view: initialView = "Overview" }: { view?: (typeof VIEWS)[number] }) {
   const [view, setView] = useState<(typeof VIEWS)[number]>(initialView);
-  const [preset, setPreset] = useState<Preset>("month");
-  const [range, setRange] = useState(() => presetRange("month"));
+  // A billing period (25th to 24th) and how many periods back from it; the period in progress runs to today.
+  const choices = useMemo(() => periodChoices(24), []);
+  const [periodFrom, setPeriodFrom] = useState(() => choices[0].from);
+  const [span, setSpan] = useState<Span>(1);
+  const range = useMemo(() => spanRange(periodFrom, span), [periodFrom, span]);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [customer, setCustomer] = useState<TenantSummary | null>(null);
   const [locationId, setLocationId] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       const scope = { includeInactive, tenantId: customer?.tenantId ?? null, locationId: customer ? locationId : null };
       return Promise.all([
         api.financeOverview({ ...range, ...scope }),
-        api.financeOverview({ ...previousRange(range.from, range.to), ...scope }).catch(() => null),
+        api.financeOverview({ ...previousSpanRange(range, span), ...scope }).catch(() => null),
       ]).then(([now, before]) => ({ now, before }));
     },
     [range.from, range.to, includeInactive, customer?.tenantId, locationId],
@@ -44,11 +47,6 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const data: FinanceOverview | null = loaded?.now ?? null;
   const before = loaded?.before?.kpis ?? null;
   const sync = useAction();
-
-  function pick(p: Preset) {
-    setPreset(p);
-    if (p !== "custom") setRange(presetRange(p));
-  }
 
   const days = daysBetween(range.from, range.to);
   const grain = grainFor(days);
@@ -97,22 +95,21 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       {view === "Payments" && <PaymentsView />}
       {view === "Overview" && <>
       <div className="toolbar finance-toolbar">
-        <div className="chips" role="group" aria-label="Period">
-          {PRESETS.map((p) => (
-            <button key={p.id} className={`chip${preset === p.id ? " chip--on" : ""}`} onClick={() => pick(p.id)}>{p.label}</button>
-          ))}
-        </div>
         <div className="range">
-          <label className="range__field">
-            <span>From</span>
-            <input className="input" type="date" value={range.from} max={range.to}
-                   onChange={(e) => { setPreset("custom"); if (e.target.value) setRange({ ...range, from: e.target.value }); }} />
+          <label className="range__field range__field--period">
+            <span>Billing period</span>
+            <select className="input" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}>
+              {choices.map((p) => (
+                <option key={p.from} value={p.from}>{periodLabel(p)}{p.current ? " (now)" : ""}</option>
+              ))}
+            </select>
           </label>
-          <label className="range__field">
-            <span>To</span>
-            <input className="input" type="date" value={range.to} min={range.from} max={isoDay(new Date())}
-                   onChange={(e) => { setPreset("custom"); if (e.target.value) setRange({ ...range, to: e.target.value }); }} />
-          </label>
+        </div>
+        <div className="chips" role="group" aria-label="How many periods">
+          {SPANS.map((s) => (
+            <button key={s.id} className={`chip${span === s.id ? " chip--on" : ""}`} aria-pressed={span === s.id}
+                    onClick={() => setSpan(s.id)}>{s.label}</button>
+          ))}
         </div>
         <label className="switch">
           <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />

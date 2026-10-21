@@ -100,13 +100,20 @@ describe("FinancePage", () => {
     expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ includeInactive: false, tenantId: null }));
   });
 
-  it("asks for the period preset and the inactive toggle", async () => {
+  it("picks a billing period from the list, spans and the inactive toggle", async () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findAllByText("2 980 kr");
-    await user.click(screen.getByRole("button", { name: "This year" }));
-    await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(
-      expect.objectContaining({ from: `${new Date().getFullYear()}-01-01` })));
+    const period = screen.getByLabelText("Billing period") as HTMLSelectElement;
+    expect(period.options).toHaveLength(24);
+    expect(period.options[0].textContent).toMatch(/\(now\)$/);
+    expect(screen.queryByLabelText("From")).toBeNull();                 // no free date pickers any more
+    await user.selectOptions(period, period.options[2].value);
+    const picked = period.options[2].value;
+    await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ from: picked })));
+    await user.click(screen.getByRole("button", { name: "3 periods" }));
+    await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ to: expect.any(String), from: expect.stringMatching(/-25$/) })));
     await user.click(screen.getByLabelText("Include inactive customers"));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ includeInactive: true })));
   });

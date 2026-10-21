@@ -528,6 +528,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .range__field { display: grid; gap: 4px; }
 .range__field span { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ox-2); }
 .range__field .input { width: 150px; }
+.range__field--period .input { width: 250px; }
 .paper .range__field span, .modal .range__field span { color: var(--print-2); }
 .switch { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; font-size: 14px; color: var(--on-ox); cursor: pointer; }
 .switch input { width: 18px; height: 18px; accent-color: var(--paper); }
