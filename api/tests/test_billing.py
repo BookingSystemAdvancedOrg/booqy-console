@@ -11,6 +11,13 @@ import pytest
 
 from conftest import REGION, call
 
+# The fake subscription's billing period is relative to the real clock: the
+# code under test (billing.end_date) treats a period end in the past as
+# already over, so fixed timestamps break the day they pass.
+_NOW = int(time.time())
+PERIOD_START = _NOW - 10 * 86400
+PERIOD_END = _NOW + 20 * 86400
+
 FINANCE_TABLE = "dev-finance"
 
 
@@ -77,7 +84,7 @@ def stripe(monkeypatch):
                    "metadata": {k[9:-1]: v for k, v in params.items() if k.startswith("metadata[")},
                    "trial_end": params.get("trial_end"), "pause_collection": None, "cancel_at": None,
                    "items": {"data": [{"id": f"si_{state['n']}", "quantity": 1, "price": price,
-                                       "current_period_start": 1_790_000_000, "current_period_end": 1_792_600_000}]}}
+                                       "current_period_start": PERIOD_START, "current_period_end": PERIOD_END}]}}
             state["subs"][sub_id] = sub
             return sub
         if path.startswith("/subscriptions/"):
@@ -500,7 +507,7 @@ def test_manual_reminder_route(finance, stripe, aws, tenant):
 
 # ------------------------------------------------------------ price, terms, notice, try-out
 def _period_end():
-    return datetime.fromtimestamp(1_792_600_000, timezone.utc)
+    return datetime.fromtimestamp(PERIOD_END, timezone.utc)
 
 
 def test_create_customer_with_a_try_out_and_own_price_starts_invoicing(finance, stripe, aws):
