@@ -6,6 +6,10 @@ Reads the finance table (infrastructure storage/dynamodb/finance):
                                      that day, MRR snapshot (finance-rollup +
                                      the senders + the Stripe webhook)
     TENANT#<id> / INVOICE#...        the invoice ledger (outstanding amounts)
+    PLATFORM / DAY#<yyyy-mm-dd>      the whole AWS bill that day (costSek,
+                                     costSplitSek, unallocatedSek)
+    PLATFORM / COST#<yyyy-mm-dd>     the Cost Explorer pull (the newest one
+                                     is the date the AWS cost is known to)
     PLATFORM / JOB#latest            when the figures were last computed
 
 Every number is a sum of day rows, so week, month, quarter, year and any
@@ -14,6 +18,12 @@ custom range are the same code path. Amounts are SEK excluding VAT.
 By default only ACTIVE customers count (includeInactive=1 adds suspended,
 offboarding, offboarded and purged customers, whose rows are kept forever).
 `tenantId` scopes everything to one customer.
+
+AWS cost: without a customer filter the KPIs use the platform's WHOLE AWS
+bill (PLATFORM day rows), so days with no active customer and the share of
+customers left out by the filter still count against the margin; the part
+allocated to the customers shown is reported next to it. With a customer
+filter, cost is that customer's allocated share.
 """
 
 import json
@@ -78,6 +88,21 @@ def _days(tenant_id: str, first: str, last: str, location_id: str | None = None)
     return query_all(TableName=_finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
                      ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":a": {"S": f"{prefix}{first}"},
                                                 ":b": {"S": f"{prefix}{last}"}})
+
+
+def _platform_days(first: str, last: str) -> list[dict]:
+    return query_all(TableName=_finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
+                     ExpressionAttributeValues={":pk": {"S": "PLATFORM"}, ":a": {"S": f"DAY#{first}"},
+                                                ":b": {"S": f"DAY#{last}"}})
+
+
+def _cost_as_of() -> str | None:
+    """The newest day Cost Explorer's cost is stored for (it lags about a day)."""
+    items = client("dynamodb").query(
+        TableName=_finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :c)",
+        ExpressionAttributeValues={":pk": {"S": "PLATFORM"}, ":c": {"S": "COST#"}},
+        ScanIndexForward=False, Limit=1, ProjectionExpression="SK").get("Items", [])
+    return items[0]["SK"]["S"][5:] if items else None
 
 
 def _locations(tenant_id: str) -> list[dict]:
@@ -203,7 +228,24 @@ def overview(req) -> tuple[int, dict]:
     revenue = _q(sum((t["revenueSek"] for t in tenants), Decimal(0)))
     collected = _q(sum((t["collectedSek"] for t in tenants), Decimal(0)))
     outstanding = _q(sum((t["outstandingSek"] for t in tenants), Decimal(0)))
-    cost = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
+    allocated = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
+    cost, cost_split, cost_scope = allocated, None, "allocated"
+    platform_rows = [] if only else _platform_days(first, last)
+    if platform_rows:   # none before the rollup's first run: fall back to the allocated sum
+        bill = {"baseline": Decimal(0), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}
+        total = Decimal(0)
+        for row in platform_rows:
+            day = row["SK"][4:]
+            day_cost = Decimal(row.get("costSek") or 0)
+            total += day_cost
+            for k in bill:
+                bill[k] += Decimal((row.get("costSplitSek") or {}).get(k) or 0)
+            point = series.setdefault(day, {"day": day, "invoicedSek": Decimal(0), "paidSek": Decimal(0),
+                                            "costSek": Decimal(0), "mrrSek": Decimal(0), "bookings": 0, "orders": 0,
+                                            "requests": 0, "activeTenants": 0})
+            point["allocatedCostSek"] = point["costSek"]
+            point["costSek"] = day_cost
+        cost, cost_split, cost_scope = _q(total), {k: _q(v) for k, v in bill.items()}, "platform"
     bookings = sum(t["bookings"] for t in tenants)
     orders = sum(t["orders"] for t in tenants)
     margin = _q(revenue - cost)
@@ -234,6 +276,9 @@ def overview(req) -> tuple[int, dict]:
         "kpis": {
             "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "outstandingSek": outstanding,
             "costSek": cost, "marginSek": margin, "marginPct": _pct(margin, revenue),
+            "costScope": cost_scope, "allocatedCostSek": allocated,
+            "unallocatedSek": max(_q(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
+            "costSplitSek": cost_split,
             "customers": len(tenants), "activeCustomers": active_now, "payingCustomers": paying,
             "newCustomers": new_customers, "churnedCustomers": churned,
             "churnPct": _pct(churned, customers_at_start) if customers_at_start else None,
@@ -247,6 +292,7 @@ def overview(req) -> tuple[int, dict]:
         "attention": attention,
         "job": job,
         "asOf": (job or {}).get("finishedAt"),
+        "costAsOf": _cost_as_of(),
     }
 
 

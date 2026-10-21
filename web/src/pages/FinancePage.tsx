@@ -60,7 +60,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     [tenants.data, needle],
   );
   const k = data?.kpis;
-  const split = useMemo(() => costSplitTotals(data?.tenants ?? []), [data]);
+  const split = useMemo(() => data?.kpis.costSplitSek ?? costSplitTotals(data?.tenants ?? []), [data]);
+  const wholeBill = k?.costScope === "platform";
   const mrrStart = data?.series.length ? Number(data.series[0].mrrSek) : null;
   const mrrEnd = data?.series.length ? Number(data.series[data.series.length - 1].mrrSek) : null;
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
@@ -73,6 +74,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           <h1>Finance</h1>
           <p className="muted">
             {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : "No nightly figures yet. "}
+            {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
             Revenue and cost in SEK excluding VAT.
           </p>
         </div>
@@ -215,7 +217,12 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               <Delta current={k.marginSek} previous={before?.marginSek} />
               <dl className="kpi__facts">
                 <dt>Revenue</dt><dd><CountUp value={k.revenueSek} format={fmtSek} /></dd>
-                <dt>AWS cost</dt><dd><CountUp value={k.costSek} format={fmtSek} /></dd>
+                <dt>{wholeBill ? "AWS bill" : "AWS cost"}</dt><dd><CountUp value={k.costSek} format={fmtSek} /></dd>
+                {wholeBill && (
+                  <>
+                    <dt>Allocated to customers</dt><dd>{fmtSek(k.allocatedCostSek ?? 0)}</dd>
+                  </>
+                )}
                 <dt>Period</dt><dd>{fmtDay(data.period.from)} to {fmtDay(data.period.to)}, {data.period.days} days</dd>
               </dl>
             </div>
@@ -246,7 +253,10 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub={`${fmtSek(k.collectedSek)} collected`}
                  delta={<Delta current={k.revenueSek} previous={before?.revenueSek} />} />
             <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
-            <Kpi label="AWS cost" value={<CountUp value={k.costSek} format={fmtSek} />} sub={`${fmtInt(k.requests)} requests`}
+            <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
+                 sub={wholeBill
+                   ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
+                   : `${fmtInt(k.requests)} requests`}
                  delta={<Delta current={k.costSek} previous={before?.costSek} invert />} />
             <Kpi label="Customers" value={<CountUp value={k.customers} format={fmtInt} precision={0.5} />}
                  sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`} />

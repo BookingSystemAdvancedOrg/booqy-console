@@ -188,3 +188,30 @@ def test_overview_scoped_to_one_location(two_tenants, finance, aws):  # noqa: F8
     assert body["series"][0]["costSek"] == 25 and body["series"][0]["invoicedSek"] == 1990
     status, body = call("GET /platform/finance/overview", query={"locationId": loc})
     assert status == 400
+
+
+def test_overview_shows_the_whole_aws_bill_with_the_allocated_part(two_tenants, finance):  # noqa: F811
+    tenant, other = two_tenants
+    # 2026-10-01 and -02 as allocated; 2026-09-30's 999 kr belongs to a customer outside the range anyway.
+    # The bill also has a day nobody was active (all unallocated) and a share left to a customer the
+    # active-only filter hides.
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-01", "costSek": Decimal("75"), "unallocatedSek": Decimal(0),
+                           "costSplitSek": {"baseline": Decimal("25"), "requests": Decimal("50"), "email": Decimal(0), "sms": Decimal(0)}})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-02", "costSek": Decimal("40"), "unallocatedSek": Decimal(0),
+                           "costSplitSek": {"baseline": Decimal("10"), "requests": Decimal("30"), "email": Decimal(0), "sms": Decimal(0)}})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-03", "costSek": Decimal("25"), "unallocatedSek": Decimal("25"),
+                           "costSplitSek": {"baseline": Decimal("25"), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}})
+    for day in ("2026-10-02", "2026-10-03"):
+        finance.put_item(Item={"PK": "PLATFORM", "SK": f"COST#{day}", "day": day})
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-03"})
+    assert status == 200, body
+    k = body["kpis"]
+    assert k["costScope"] == "platform" and k["costSek"] == 140 and k["allocatedCostSek"] == 100 and k["unallocatedSek"] == 40
+    assert k["costSplitSek"] == {"baseline": 60, "requests": 80, "email": 0, "sms": 0}
+    assert k["marginSek"] == 2880 - 140 and k["costPerBookingSek"] == round(140 / 23, 2)
+    assert [p["day"] for p in body["series"]] == ["2026-10-01", "2026-10-02", "2026-10-03"]
+    assert body["series"][2]["costSek"] == 25 and body["series"][0]["allocatedCostSek"] == 60
+    assert body["costAsOf"] == "2026-10-03"
+    # one customer: its allocated share, as before
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-03", "tenantId": other})
+    assert body["kpis"]["costScope"] == "allocated" and body["kpis"]["costSek"] == 70 and body["kpis"]["unallocatedSek"] == 0

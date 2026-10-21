@@ -481,7 +481,15 @@ export interface FinanceKpis {
   revenueSek: number;
   collectedSek: number;
   outstandingSek: number;
+  /** The whole AWS bill ("platform") without a customer filter, else the customer's allocated share. */
   costSek: number;
+  costScope?: "platform" | "allocated";
+  /** The part of costSek allocated to the customers shown. */
+  allocatedCostSek?: number;
+  /** Bill not allocated to the customers shown: days nobody was active, customers left out by the filter. */
+  unallocatedSek?: number;
+  /** The whole bill per bucket (platform scope only). */
+  costSplitSek?: { baseline: number; requests: number; email: number; sms: number } | null;
   marginSek: number;
   marginPct: number | null;
   customers: number;
@@ -567,6 +575,8 @@ export interface FinanceOverview {
   };
   job: FinanceJob | null;
   asOf: string | null;
+  /** Newest day the AWS cost is known for (Cost Explorer lags about a day). */
+  costAsOf?: string | null;
 }
 
 export interface FinanceTenantDetail {

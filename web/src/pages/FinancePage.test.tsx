@@ -61,6 +61,20 @@ beforeEach(() => {
 });
 
 describe("FinancePage", () => {
+  it("shows the whole AWS bill, the part allocated to customers and the cost date", async () => {
+    const base = overview();
+    mocks.financeOverview.mockResolvedValue({
+      ...base, costAsOf: "2026-10-20",
+      kpis: { ...base.kpis, costSek: 140, costScope: "platform", allocatedCostSek: 100, unallocatedSek: 40,
+              costSplitSek: { baseline: 60, requests: 80, email: 0, sms: 0 } },
+    });
+    renderPage();
+    expect(await screen.findByText(/AWS cost known up to 20 okt/)).toBeInTheDocument();
+    expect(screen.getAllByText("AWS bill").length).toBe(2);                       // hero fact and the tile
+    expect(screen.getByText(/^100\skr allocated to customers, 40,00\skr not$/)).toBeInTheDocument();
+    expect(screen.getByText("Allocated to customers")).toBeInTheDocument();
+  });
+
   it("shows the key figures, the charts and the customers", async () => {
     renderPage();
     expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR
