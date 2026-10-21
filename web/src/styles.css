@@ -62,7 +62,7 @@
   --paper-focus: #ffffff;
   --print-hover: #000000;
   --ink-red-hover: #7f141c;
-  --placeholder: #9b928d;
+  --placeholder: #6f6762;
   --selected-row: #ebe7dd;
   --notice-ok-bg: #eef4ee; --notice-ok-line: #c4d8c7; --notice-ok-text: #1f4c2c;
   --notice-warn-bg: #fbf4e4; --notice-warn-line: #ead7a8; --notice-warn-text: #5c3d00;
@@ -115,7 +115,7 @@
   --paper-focus: #3a3431;
   --print-hover: #ffffff;
   --ink-red-hover: #f4a3a8;
-  --placeholder: #8f857f;
+  --placeholder: #a59b95;
   --selected-row: #3a3431;
   --notice-ok-bg: #223a2a; --notice-ok-line: #3b5f45; --notice-ok-text: #9ad6ae;
   --notice-warn-bg: #3a2f16; --notice-warn-line: #6a5526; --notice-warn-text: #e8c478;
@@ -254,7 +254,8 @@ a:hover { text-decoration-thickness: 2px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 1.5px solid var(--fg-line); background: transparent; color: var(--fg); padding: 0 14px; border-radius: 3px; font: 700 14px/1 var(--sans); font-stretch: 112%; letter-spacing: 0.01em; cursor: pointer; text-decoration: none; transition: background-color 160ms var(--ease), border-color 160ms var(--ease), transform 160ms var(--ease), box-shadow 160ms var(--ease); }
 .btn:hover:not(:disabled) { border-color: var(--fg); transform: translateY(-1px); }
 .btn:active:not(:disabled) { transform: translateY(0); }
-.btn:disabled { opacity: .45; cursor: not-allowed; }
+/* disabled: still readable (print-2 on paper-2), just not inviting */
+.btn:disabled { cursor: not-allowed; color: var(--print-2); background: var(--paper-2); border-color: var(--paper-line); box-shadow: none; }
 .btn--primary { background: var(--print); color: var(--paper); border-color: var(--print); box-shadow: 0 2px 6px -2px rgb(0 0 0 / 0.35); }
 .btn--primary:hover:not(:disabled) { background: var(--print-hover); border-color: var(--print-hover); box-shadow: 0 6px 14px -6px rgb(0 0 0 / 0.5); }
 .btn--primary:active:not(:disabled) { box-shadow: none; }
@@ -325,6 +326,8 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
+/* a stamp on the wall needs the lifted inks, not the paper ones */
+.page-head .status { --ok: #8fd3a5; --warn: #e8c478; --ink-red: #f4a3a8; }
 .table .status { animation: none; }
 .table .status, .chip .status { transform: none; }
 
