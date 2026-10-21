@@ -3,7 +3,10 @@
    the top bar, and every record printed on a thermal-paper ticket hanging
    from a short rail. Archivo (wide, heavy) is the ticket's header voice and
    the reading face; Martian Mono is what the printer prints: ids, slugs,
-   amounts, dates, statuses. Depth comes only from paper hanging off steel. */
+   amounts, dates, statuses. Depth comes only from paper hanging off steel.
+   Two modes, chosen with the button in the top bar and set as
+   <html data-theme> (src/theme.ts): light is this look; dark takes the wall
+   to night, soots the paper and prints in light ink. */
 
 @font-face {
   font-family: "Archivo";
@@ -55,6 +58,17 @@
   --warn: #8a5a00;
   --danger: var(--ink-red);
 
+  /* the few colours that are not paper, print or red */
+  --paper-focus: #ffffff;
+  --print-hover: #000000;
+  --ink-red-hover: #7f141c;
+  --placeholder: #6f6762;
+  --selected-row: #ebe7dd;
+  --notice-ok-bg: #eef4ee; --notice-ok-line: #c4d8c7; --notice-ok-text: #1f4c2c;
+  --notice-warn-bg: #fbf4e4; --notice-warn-line: #ead7a8; --notice-warn-text: #5c3d00;
+  --notice-error-bg: #fbeeed; --notice-error-line: #ebc6c3; --notice-error-text: #7a141b;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231c1918' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
   /* text colour follows the material: on-ox on the wall, print on paper */
   --fg: var(--on-ox);
   --fg-2: var(--on-ox-2);
@@ -79,6 +93,41 @@
   -webkit-font-smoothing: antialiased;
   accent-color: var(--print);
 }
+/* Dark mode: the wall goes to night, the paper is sooted, the print is
+   light, the red lifts so it reads on soot. Every text pair at least 4.5:1. */
+:root[data-theme="dark"] {
+  --ox-800: #1f0002;
+  --ox-900: #170001;
+  --ox-700: #3a0509;
+  --paper: #2a2523;
+  --paper-2: #332e2b;
+  --paper-line: #4a423e;
+  --print: #f6ece9;
+  --print-2: #b8aca6;
+  --ink-red: #ee8a90;
+  --steel: #6f757a;
+  --steel-hi: #9aa0a5;
+  --steel-lo: #3c4146;
+  --line-soft: #3f3834;
+  --ok: #7cc695;
+  --warn: #e0b35a;
+  --hang: 0 14px 18px rgb(0 0 0 / 0.55), 0 2px 3px rgb(0 0 0 / 0.4);
+  --paper-focus: #3a3431;
+  --print-hover: #ffffff;
+  --ink-red-hover: #f4a3a8;
+  --placeholder: #a59b95;
+  --selected-row: #3a3431;
+  --notice-ok-bg: #223a2a; --notice-ok-line: #3b5f45; --notice-ok-text: #9ad6ae;
+  --notice-warn-bg: #3a2f16; --notice-warn-line: #6a5526; --notice-warn-text: #e8c478;
+  --notice-error-bg: #432326; --notice-error-line: #6e3a3e; --notice-error-text: #f4a3a8;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f6ece9' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  color-scheme: dark;
+}
+:root[data-theme="dark"] .paper, :root[data-theme="dark"] .card, :root[data-theme="dark"] .table-wrap, :root[data-theme="dark"] .modal__panel,
+:root[data-theme="dark"] .submit-bar, :root[data-theme="dark"] .auth__card, :root[data-theme="dark"] .notice, :root[data-theme="dark"] .printing {
+  color-scheme: dark;
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ox-800); color: var(--fg); }
 ::selection { background: var(--ink-red); color: #fff; }
@@ -163,6 +212,15 @@ a:hover { text-decoration-thickness: 2px; }
 .topbar__nav a:hover { color: var(--on-ox); background: rgb(255 255 255 / 7%); }
 .topbar__nav a.active { color: var(--on-ox); background: rgb(255 255 255 / 11%); }
 .topbar__user { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 13px; color: var(--on-ox-2); }
+
+/* --- light/dark: the button in the top bar (components/ThemeToggle) ------------ */
+.theme-toggle { position: relative; display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--on-ox-2); cursor: pointer; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+.theme-toggle:hover { color: var(--on-ox); background: rgb(255 255 255 / 7%); }
+.theme-toggle-icon { position: relative; display: inline-grid; width: 20px; height: 20px; }
+.theme-toggle-icon svg { grid-area: 1 / 1; width: 20px; height: 20px; transition: opacity 320ms var(--ease), rotate 360ms var(--ease), scale 360ms var(--ease); }
+/* the icon not in effect is gone: faded and turned away; on a switch the sun fades out one way while the moon turns in from the other */
+.theme-toggle[aria-pressed="false"] .theme-toggle-moon { opacity: 0; rotate: -90deg; scale: 0.6; }
+.theme-toggle[aria-pressed="true"] .theme-toggle-sun { opacity: 0; rotate: 90deg; scale: 0.6; }
 .main { max-width: 1180px; margin: 0 auto; padding: 44px 24px 96px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .page-head p { margin: 0; }
@@ -196,22 +254,23 @@ a:hover { text-decoration-thickness: 2px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 1.5px solid var(--fg-line); background: transparent; color: var(--fg); padding: 0 14px; border-radius: 3px; font: 700 14px/1 var(--sans); font-stretch: 112%; letter-spacing: 0.01em; cursor: pointer; text-decoration: none; transition: background-color 160ms var(--ease), border-color 160ms var(--ease), transform 160ms var(--ease), box-shadow 160ms var(--ease); }
 .btn:hover:not(:disabled) { border-color: var(--fg); transform: translateY(-1px); }
 .btn:active:not(:disabled) { transform: translateY(0); }
-.btn:disabled { opacity: .45; cursor: not-allowed; }
+/* disabled: still readable (print-2 on paper-2), just not inviting */
+.btn:disabled { cursor: not-allowed; color: var(--print-2); background: var(--paper-2); border-color: var(--paper-line); box-shadow: none; }
 .btn--primary { background: var(--print); color: var(--paper); border-color: var(--print); box-shadow: 0 2px 6px -2px rgb(0 0 0 / 0.35); }
-.btn--primary:hover:not(:disabled) { background: #000; border-color: #000; box-shadow: 0 6px 14px -6px rgb(0 0 0 / 0.5); }
+.btn--primary:hover:not(:disabled) { background: var(--print-hover); border-color: var(--print-hover); box-shadow: 0 6px 14px -6px rgb(0 0 0 / 0.5); }
 .btn--primary:active:not(:disabled) { box-shadow: none; }
-.btn--danger { background: var(--ink-red); color: #fff; border-color: var(--ink-red); }
-.btn--danger:hover:not(:disabled) { background: #7f141c; border-color: #7f141c; }
+.btn--danger { background: var(--ink-red); color: var(--paper); border-color: var(--ink-red); }
+.btn--danger:hover:not(:disabled) { background: var(--ink-red-hover); border-color: var(--ink-red-hover); }
 .btn--ghost { background: transparent; }
 .btn--small { min-height: 30px; padding: 0 10px; font-size: 12.5px; }
 .btn.danger { color: var(--danger); }
 .link { background: none; border: 0; color: var(--fg); text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer; font: inherit; padding: 0 4px; }
 .input { width: 100%; min-height: 40px; border: 1.5px solid transparent; background: var(--paper-2); border-radius: 3px; padding: 8px 10px; font: inherit; color: var(--print); transition: border-color 160ms var(--ease), background-color 160ms var(--ease); }
-.input::placeholder { color: #9b928d; }
+.input::placeholder { color: var(--placeholder); }
 .input:hover { border-color: var(--paper-line); }
-.input:focus { outline: none; border-color: var(--print); background: #fff; }
+.input:focus { outline: none; border-color: var(--print); background: var(--paper-focus); }
 textarea.input { resize: vertical; }
-select.input { appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231c1918' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 14px; }
+select.input { appearance: none; padding-right: 30px; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 10px center; background-size: 14px; }
 .field { display: grid; gap: 5px; align-content: start; }
 .field--wide { grid-column: 1 / -1; }
 .field__label { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--print-2); }
@@ -267,20 +326,22 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
+/* a stamp on the wall needs the lifted inks, not the paper ones */
+.page-head .status { --ok: #8fd3a5; --warn: #e8c478; --ink-red: #f4a3a8; }
 .table .status { animation: none; }
 .table .status, .chip .status { transform: none; }
 
 .notice { border-radius: 3px; padding: 11px 14px; margin: 0 0 14px; border: 1.5px dashed var(--paper-line); background: var(--paper); font-size: 14px; }
 .notice--info { background: var(--paper); }
-.notice--ok { background: #eef4ee; border-color: #c4d8c7; color: #1f4c2c; }
-.notice--warn { background: #fbf4e4; border-color: #ead7a8; color: #5c3d00; }
-.notice--error { background: #fbeeed; border-color: #ebc6c3; color: #7a141b; }
+.notice--ok { background: var(--notice-ok-bg); border-color: var(--notice-ok-line); color: var(--notice-ok-text); }
+.notice--warn { background: var(--notice-warn-bg); border-color: var(--notice-warn-line); color: var(--notice-warn-text); }
+.notice--error { background: var(--notice-error-bg); border-color: var(--notice-error-line); color: var(--notice-error-text); }
 .notice .link { color: inherit; }
 
 /* --- list page --------------------------------------------------------------------- */
 .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 22px; }
 .toolbar .input { background: var(--paper); border-color: transparent; }
-.toolbar .input:focus { border-color: var(--on-ox); background: #fff; }
+.toolbar .input:focus { border-color: var(--on-ox); background: var(--paper-focus); }
 .search { max-width: 360px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1.5px solid var(--fg-line); background: transparent; border-radius: 3px; min-height: 34px; padding: 0 10px; cursor: pointer; font: 560 13px/1 var(--sans); display: inline-flex; gap: 8px; align-items: center; color: var(--fg); transition: border-color 160ms var(--ease), background-color 160ms var(--ease); }
@@ -319,7 +380,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
   .cols { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; padding: 10px 16px 6px; gap: 10px; }
   .topbar__nav { order: 3; width: 100%; margin: 0 -8px; overflow-x: auto; }
-  .topbar__user span { display: none; }
+  .topbar__user > span { display: none; }
   .main { padding: 34px 16px 72px; }
   .card__head { margin: 0 16px; }
   .card__body { padding: 14px 16px 18px; }
@@ -376,7 +437,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .outbox .table td:last-child { white-space: normal; overflow-wrap: anywhere; max-width: 60ch; min-width: 18ch; }
 .outbox .table tr.clickable { cursor: pointer; }
 .outbox .table tr.clickable:hover td { background: var(--paper-2); }
-.outbox .table tr.selected td { background: #ebe7dd; }
+.outbox .table tr.selected td { background: var(--selected-row); }
 .outbox .nowrap { white-space: nowrap; }
 .outbox .card__head .row { margin-top: 0; }
 .outbox-more { padding: 10px 14px; text-align: center; border-top: 1.5px dashed var(--paper-line); }
@@ -417,7 +478,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 @media (prefers-reduced-motion: reduce) {
   .page, .card, .table-wrap, .status, .modal, .modal__panel, .auth__card, .printing, .printing i { animation: none !important; }
   .printing i { transform: none; }
-  .btn, .chip, .choice, .input, .tab, .topbar__nav a { transition: none; }
+  .btn, .chip, .choice, .input, .tab, .topbar__nav a, .theme-toggle, .theme-toggle-icon svg { transition: none; }
 }
 
 /* --- mail: news to the restaurant owners ----------------------------------- */

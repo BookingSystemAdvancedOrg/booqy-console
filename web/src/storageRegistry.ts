@@ -19,11 +19,19 @@ export interface StorageEntry {
   lifetime: string;
 }
 
+export const THEME_KEY = "booqy-theme";
+
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: "CognitoIdentityServiceProvider.<client>.*",
     kind: "sessionStorage",
     purpose: "Your sign-in (access, ID and refresh token, last user, clock drift), set by AWS Amplify.",
     lifetime: "Until the tab closes; the refresh token expires after 8 hours",
+  },
+  {
+    name: THEME_KEY,
+    kind: "localStorage",
+    purpose: "Your choice of light or dark mode (the button in the top bar). Set only when you press it; otherwise the console follows your system.",
+    lifetime: "Until you clear the browser",
   },
 ];
