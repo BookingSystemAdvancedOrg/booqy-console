@@ -11,6 +11,7 @@ import MailPage from "./pages/MailPage";
 import FinancePage from "./pages/FinancePage";
 import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
+import { ThemeToggle } from "./components/ThemeToggle";
 import "./styles.css";
 
 // Production is the default and is never labelled; only dev says so.
@@ -48,6 +49,7 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
+          <ThemeToggle />
           <button className="btn btn--ghost" onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
       </header>
