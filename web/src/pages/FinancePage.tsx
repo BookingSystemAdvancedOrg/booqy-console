@@ -291,11 +291,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           {data.tenants.length > 1 && (
             <div className="charts">
               <Card title="Best margin">
-                <HBarChart rows={top.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the best margin" />
+                <HBarChart rows={top.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the best margin" valueLabel="Margin" />
               </Card>
               {bottom.length > 0 && (
                 <Card title="Weakest margin">
-                  <HBarChart rows={bottom.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the weakest margin" />
+                  <HBarChart rows={bottom.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the weakest margin" valueLabel="Margin" />
                 </Card>
               )}
             </div>

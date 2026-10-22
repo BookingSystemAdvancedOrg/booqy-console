@@ -706,3 +706,26 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .status--billing-ending { color: var(--warn); }
 .status--billing-ended { color: var(--print-2); }
 .status--billing-scheduled { color: var(--warn); }
+
+/* Chart tooltip (components/ChartTip.tsx): a small paper slip, tokens so dark mode follows. */
+.chart, .ring { position: relative; }
+.chart-tip { position: absolute; left: 0; top: 0; z-index: 5; display: grid; gap: 3px; min-width: 120px; max-width: min(260px, 100%); padding: 8px 10px; border-radius: var(--radius); background: var(--paper); color: var(--print); box-shadow: inset 0 0 0 1px var(--paper-line), 0 10px 24px -10px rgb(0 0 0 / 0.4); font: 500 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; pointer-events: none; visibility: hidden; opacity: 0; transform: translateY(2px); transition: opacity 120ms var(--ease), transform 120ms var(--ease); text-align: left; }
+.chart-tip[data-open="true"] { visibility: visible; opacity: 1; transform: none; }
+.chart-tip--below { transform: translateY(-2px); }
+.chart-tip__heading { font: 700 12px/1.3 var(--sans); }
+.chart-tip__row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chart-tip__label { color: var(--print-2); }
+.chart-tip__value { margin-left: auto; font-weight: 700; }
+.chart-tip__note { color: var(--print-2); font-size: 11px; }
+.chart-tip__swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; display: inline-block; background: var(--print); }
+.chart-tip__swatch--red { background: var(--ink-red); } .chart-tip__swatch--warn { background: #d9961f; }
+.chart-tip__swatch--ok { background: var(--ok); } .chart-tip__swatch--steel { background: var(--steel-lo); }
+.chart-tip__swatch--line { width: 12px; height: 2px; }
+.chart-hit { fill: transparent; pointer-events: all; }
+.chart-band { fill: var(--print); opacity: 0.07; pointer-events: none; }
+.chart__dot--on { r: 4.5px; }
+.ring__seg--on { stroke-width: 18; }
+.chart-tip-surface { touch-action: pan-y; }
+.chart-tip-surface:focus { outline: none; }
+.chart-tip-surface:focus-visible { outline: 2px solid var(--ink-red); outline-offset: 3px; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) { .chart-tip { transition: none; } }
