@@ -37,6 +37,7 @@ def test_create_tenant_writes_everything_and_starts_onboarding(aws, tenant):
     assert t["entitlements"]["maxLocations"] == 1 and t["locationCount"] == 1
     assert t["address"]["country"] == "SE"
     assert "PK" not in t and "GSI1PK" not in t
+    assert t["dpaRequired"] is True                                  # goes live after the owner accepts the DPA
     assert len(body["locations"]) == 1 and body["locations"][0]["tenantId"] == tenant
     assert body["audit"][0]["action"] == "tenant_created"
     assert body["onboarding"]["status"] in ("RUNNING", "SUCCEEDED")
