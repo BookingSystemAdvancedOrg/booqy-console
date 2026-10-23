@@ -635,3 +635,60 @@ def test_legacy_stripe_subscription_is_moved_to_arrears(finance, stripe, aws, te
     b = _profile(aws, tenant)["billing"]
     assert "subscriptionId" not in b and b["legacySubscriptionId"] == "sub_legacy" and b["startsAt"] == "2026-09-10"
     assert len(out["invoices"]) == 1 and out["invoices"][0]["activeDays"] == 15
+
+
+# ------------------------------------------------------------ leaving and coming back
+def test_restart_in_the_same_period_bills_both_stretches_on_one_invoice(finance, stripe, aws, tenant):
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
+    _set_billing(aws, tenant, endsAt="2026-09-10", offboardAtEnd=True)     # left on 10 Sep
+    _day_row(finance, tenant, "2026-09-05", smsParts=10)                    # theirs
+    _day_row(finance, tenant, "2026-09-12", smsParts=500)                   # between the agreements: not theirs
+    _day_row(finance, tenant, "2026-09-20", smsParts=20)                    # theirs again
+    # back from 15 Sep: the ended stretch is kept for the next invoice
+    status, body = call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+                        body={"startDate": "2026-09-15"})
+    assert status == 201, body
+    b = body["billing"]
+    assert b["startsAt"] == "2026-09-15" and b["endsAt"] is None and b["offboardAtEnd"] is False
+    assert b["previous"] == [{"startsAt": "2026-09-01", "endsAt": "2026-09-10"}]
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    made = out["invoices"][0]
+    # 1-10 Sep and 15-24 Sep: 20 of 31 days, SMS from both stretches only
+    assert made["activeDays"] == 20 and made["feeSek"] == Decimal("638.71") and made["smsParts"] == 30
+    assert made["final"] is False and len(out["invoices"]) == 1
+    b = _profile(aws, tenant)["billing"]
+    assert b["status"] == "active" and "previous" not in b and b["lastInvoicedPeriodEnd"] == "2026-09-24"
+    later = run_invoicing("invoicing", dry_run=False, today=date(2026, 10, 25))
+    assert later["invoices"][0]["feeSek"] == Decimal("990.00") and later["invoices"][0]["activeDays"] == 30
+
+
+def test_restart_rules(finance, stripe, aws, tenant):
+    from datetime import date
+    from app.billing import run_invoicing
+    post = "POST /platform/tenants/{tenantId}/billing/subscription"
+    _activate(aws, tenant)
+    call(post, {"tenantId": tenant}, body={"startDate": "2026-08-01"})
+    # still running, or cancelled but not ended yet: not a restart
+    status, body = call(post, {"tenantId": tenant}, body={})
+    assert status == 409 and body["error"] == "already_subscribed"
+    _set_billing(aws, tenant, endsAt="2099-01-24")
+    status, body = call(post, {"tenantId": tenant}, body={})
+    assert status == 409 and body["error"] == "already_subscribed" and "Keep the agreement" in body["message"]
+    # ended on 3 Sep: a new start must come after that
+    _set_billing(aws, tenant, endsAt="2026-09-03")
+    status, body = call(post, {"tenantId": tenant}, body={"startDate": "2026-09-03"})
+    assert status == 409 and body["error"] == "already_subscribed"
+    # the last invoice made: a start inside an invoiced period is refused
+    run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    b = _profile(aws, tenant)["billing"]
+    assert b["status"] == "ended" and b["lastInvoicedPeriodEnd"] == "2026-09-24"
+    status, body = call(post, {"tenantId": tenant}, body={"startDate": "2026-09-20"})
+    assert status == 409 and body["error"] == "already_invoiced" and body["earliestStart"] == "2026-09-25"
+    status, body = call(post, {"tenantId": tenant}, body={"startDate": "2026-10-01"})
+    assert status == 201 and body["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24" and body["billing"]["previous"] == []
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 10, 25))
+    # 1-24 Oct of 25 Sep to 24 Oct
+    assert [(i["activeDays"], i["feeSek"]) for i in out["invoices"]] == [(24, Decimal("792.00"))]

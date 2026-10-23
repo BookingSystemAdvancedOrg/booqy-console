@@ -27,8 +27,10 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   const b = data.billing;
   const running = b.subscribed;
+  // Ended (its last day has passed) but still waiting for its last invoice: a new agreement can start.
+  const ended = running && !!b.endsAt && b.endsAt < isoDay(new Date());
   const isTrial = b.terms === "trial";
-  const stamp = b.pastDueSince && running ? "past_due" : b.status;
+  const stamp = b.pastDueSince && running ? "past_due" : ended ? "ended" : b.status;
 
   async function doAction(action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "set_sms_price",
                           options: { offboardAtEnd?: boolean; smsPriceSek?: number | null } = {}) {
@@ -56,9 +58,11 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
         {b.pastDueSince && <Notice kind="error">Past due since {fmtDate(b.pastDueSince)}{b.autoSuspended ? "; the customer was suspended automatically" : ""}.</Notice>}
         {running && b.endsAt && (
           <Notice kind="warn">
-            Cancelled: the agreement ends on {fmtDay(b.endsAt)}; the days used are on the invoice after that.
+            {ended
+              ? <>The agreement ended on {fmtDay(b.endsAt)}; the days used are on the next invoice. If the customer comes back, start a new agreement from {fmtDay(addDays(b.endsAt, 1))} or later.</>
+              : <>Cancelled: the agreement ends on {fmtDay(b.endsAt)}; the days used are on the invoice after that.</>}
             {b.offboardAtEnd ? " The customer is offboarded automatically once that invoice is made." : " The customer keeps their access until you offboard them."}
-            <button className="link" disabled={act.busy} onClick={() => doAction("keep")}>Keep the agreement</button>
+            {!ended && <button className="link" disabled={act.busy} onClick={() => doAction("keep")}>Keep the agreement</button>}
           </Notice>
         )}
         {b.pendingPeriods > 0 && (
@@ -105,6 +109,9 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
             : `Subscription, ${b.noticeMonths} months' notice${b.termsSince ? ` (since ${fmtDay(b.termsSince)})` : ""}`} />
           <Row label="Runs from" value={b.startsAt ? fmtDay(b.startsAt) : undefined} />
           <Row label="Ends" value={b.endsAt ? fmtDay(b.endsAt) : undefined} />
+          {b.previous && b.previous.length > 0 && (
+            <Row label="Earlier agreement" value={`${b.previous.map((p) => `${fmtDay(p.startsAt)} to ${fmtDay(p.endsAt)}`).join(", ")}, on the next invoice`} />
+          )}
           <Row label="Collection" value={b.collectionMethod === "charge_automatically" ? "Card on file, charged on the 25th" : running ? `Invoice by email, due ${b.daysUntilDue} days after the 25th` : undefined} />
           <Row label="Last invoiced period" value={b.lastInvoicedPeriodEnd ? `to ${fmtDay(b.lastInvoicedPeriodEnd)}` : running ? "nothing yet" : undefined} />
           <Row label="Stripe customer" value={b.customerId} mono />
@@ -141,9 +148,9 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           </Notice>
         )}
         <div className="row">
-          {!running && (
+          {(!running || ended) && (
             <button className="btn btn--primary" disabled={!["active", "provisioning"].includes(tenant.status) || b.plan.priceSek == null} onClick={() => setStart(true)}>
-              Start agreement
+              {ended || b.status === "ended" ? "Start a new agreement" : "Start agreement"}
             </button>
           )}
           {running && b.hasCard && b.collectionMethod !== "charge_automatically" && (
@@ -197,9 +204,14 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
   const [method, setMethod] = useState<"send_invoice" | "charge_automatically">("send_invoice");
   const [terms, setTerms] = useState<"trial" | "subscription">(billing.terms ?? "trial");
   const [price, setPrice] = useState(billing.monthlySek != null ? String(billing.monthlySek) : "");
-  const [startDate, setStartDate] = useState(isoDay(new Date()));
+  // Never inside a period that is already invoiced, nor on or before the day an ended agreement ended.
+  const earliest = [billing.lastInvoicedPeriodEnd, billing.endsAt].filter((d): d is string => !!d)
+    .map((d) => addDays(d.slice(0, 10), 1)).sort().pop();
+  const today = isoDay(new Date());
+  const [startDate, setStartDate] = useState(earliest && earliest > today ? earliest : today);
   const a = useAction();
   const { start, end } = startDate ? periodOf(startDate) : { start: "", end: "" };
+  const comingBack = !!billing.endsAt && billing.status !== "ended";
   async function submit(e: FormEvent) {
     e.preventDefault();
     const body: { collectionMethod: typeof method; startDate?: string; terms: typeof terms; priceSek?: number } = { collectionMethod: method, terms };
@@ -224,8 +236,11 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
           </label>
           <label className="field">
             <span className="field__label">Runs from</span>
-            <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <span className="field__hint">{start ? `First invoice on ${fmtDay(addDays(end, 1))} for ${periodText(start, end)}, pro rata from this date.` : "Today by default."}</span>
+            <input className="input" type="date" value={startDate} min={earliest} onChange={(e) => setStartDate(e.target.value)} />
+            <span className="field__hint">
+              {start ? `First invoice on ${fmtDay(addDays(end, 1))} for ${periodText(start, end)}, pro rata from this date.` : "Today by default."}
+              {comingBack && billing.endsAt ? ` The earlier agreement (to ${fmtDay(billing.endsAt)}) goes on the same invoice, so the customer pays for both stretches and not the days between.` : ""}
+            </span>
           </label>
         </div>
         <div className="choices">

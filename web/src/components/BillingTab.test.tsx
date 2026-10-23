@@ -109,6 +109,22 @@ describe("BillingTab", () => {
     await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "keep", {}));
   });
 
+  it("starts a new agreement after one has ended, from the day after it ended", async () => {
+    const user = userEvent.setup();
+    const endedOn = addDays(today, -5);
+    mocks.billing.mockResolvedValue(running({ status: "ending", endsAt: endedOn,
+                                              previous: [{ startsAt: "2026-06-01", endsAt: "2026-06-10" }] }));
+    mocks.startSubscription.mockResolvedValue({ billing: running().billing });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText(/The agreement ended on/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Keep the agreement" })).not.toBeInTheDocument();
+    expect(screen.getByText(/on the next invoice$/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start a new agreement" }));
+    expect(screen.getByText(/goes on the same invoice/)).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Start agreement" }).at(-1)!);
+    await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", expect.objectContaining({ startDate: today })));
+  });
+
   it("changes the SMS price", async () => {
     const user = userEvent.setup();
     mocks.billing.mockResolvedValue(running());

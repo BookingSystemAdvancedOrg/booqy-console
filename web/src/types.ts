@@ -441,6 +441,8 @@ export interface Billing {
   nextInvoice: (InvoicePlan & { date: string; dueDate: string; smsSoFar: boolean }) | null;
   /** Complete periods not invoiced yet (a missed run). */
   pendingPeriods: number;
+  /** Earlier agreements that ended but are still on the next invoice (left and came back). */
+  previous?: { startsAt: string; endsAt: string }[];
 }
 
 export interface Invoice {

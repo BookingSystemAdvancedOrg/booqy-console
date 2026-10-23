@@ -7,7 +7,10 @@ with the current period and becomes a subscription after
 BILLING_TRIAL_MONTHS; subscription = BILLING_NOTICE_MONTHS notice),
 priceSek (own monthly price, else the plan's), smsPriceSek (own price per
 SMS part, else BILLING_SMS_PRICE_SEK), collectionMethod,
-lastInvoicedPeriodEnd, offboardAtEnd.
+lastInvoicedPeriodEnd, offboardAtEnd, previous (earlier agreements,
+[{startsAt, endsAt}], that ended but are not invoiced in full yet: a
+customer who leaves and comes back in the same period pays for both
+stretches on the same invoice).
 
 Billing periods run from the 25th to the 24th. On the 25th (financeTask
 "invoice", EventBridge Scheduler) every agreement that ran in the period
@@ -267,9 +270,27 @@ def active_days(starts_at: date | None, ends_at: date | None, start: date, end: 
     return max(0, (b - a).days + 1)
 
 
+def stints(billing: dict) -> list[tuple[date, date | None]]:
+    """The stretches to invoice: earlier agreements still waiting for
+    their last invoice, then the current one (open-ended if no end)."""
+    out = []
+    for s in billing.get("previous") or []:
+        a, b = _date(s.get("startsAt")), _date(s.get("endsAt"))
+        if a and b:
+            out.append((a, b))
+    starts_at = _date(billing.get("startsAt"))
+    if starts_at:
+        out.append((starts_at, _date(billing.get("endsAt"))))
+    return out
+
+
 def fee_for(price_sek: int, starts_at: date | None, ends_at: date | None, start: date, end: date) -> Decimal:
     """The monthly price for the period, pro rata by days for a part period."""
-    days, active = period_days(start, end), active_days(starts_at, ends_at, start, end)
+    return prorate(price_sek, active_days(starts_at, ends_at, start, end), period_days(start, end))
+
+
+def prorate(price_sek: int, active: int, days: int) -> Decimal:
+    """The monthly price for `active` of the period's `days`."""
     if active <= 0:
         return Decimal("0.00")
     if active >= days:
@@ -423,14 +444,23 @@ def invoice_plan(profile: dict, start: date, end: date, plan: dict | None = None
     """What one period's invoice would carry for the customer."""
     billing = _billing(profile)
     plan = plan if plan is not None else plan_of(profile)
-    starts_at, ends_at = _date(billing.get("startsAt")), _date(billing.get("endsAt"))
+    ends_at = _date(billing.get("endsAt"))
     price = monthly_price(profile, plan)
-    days, active = period_days(start, end), active_days(starts_at, ends_at, start, end)
-    fee = fee_for(price, starts_at, ends_at, start, end)
-    first = max(start, starts_at) if starts_at else start
-    last = min(end, ends_at) if ends_at else end
-    sms = sms_in_period(profile["tenantId"], first, last, locations) if active > 0 else \
-        {"parts": 0, "messages": 0, "byType": {}, "byLocation": {}}
+    days, active = period_days(start, end), 0
+    sms = {"parts": 0, "messages": 0, "byType": {}, "byLocation": {}}
+    for a, b in stints(billing):
+        n = active_days(a, b, start, end)
+        if n <= 0:
+            continue
+        active += n
+        part = sms_in_period(profile["tenantId"], max(start, a), min(end, b) if b else end, locations)
+        sms["parts"] += part["parts"]
+        sms["messages"] += part["messages"]
+        for key in ("byType", "byLocation"):
+            for k, v in part[key].items():
+                sms[key][k] = sms[key].get(k, 0) + v
+    active = min(active, days)
+    fee = prorate(price, active, days)
     unit = sms_price(profile)
     sms_sek = (Decimal(sms["parts"]) * unit).quantize(CENTS, rounding=ROUND_HALF_UP)
     period = period_text(start, end)
@@ -453,12 +483,13 @@ def invoice_plan(profile: dict, start: date, end: date, plan: dict | None = None
 def pending_periods(billing: dict, today: date) -> list[tuple[date, date]]:
     """Complete periods (ended before today) the agreement ran in and that
     are not invoiced yet."""
-    starts_at = _date(billing.get("startsAt"))
-    if not starts_at or billing.get("status") not in ("active", "ended"):
+    ranges = stints(billing)
+    if not _date(billing.get("startsAt")) or billing.get("status") not in ("active", "ended"):
         return []
+    first = min(a for a, _b in ranges)
     ends_at = _date(billing.get("endsAt"))
     done = _date(billing.get("lastInvoicedPeriodEnd"))
-    start, end = period_of(max(starts_at, done + timedelta(days=1)) if done else starts_at)
+    start, end = period_of(max(first, done + timedelta(days=1)) if done else first)
     out = []
     while end < today:
         if ends_at and start > ends_at:
@@ -497,8 +528,9 @@ def _view(profile: dict, today: date | None = None) -> dict:
         "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek")},
         "legacySubscriptionId": billing.get("legacySubscriptionId"), "pendingSubscriptionId": billing.get("subscriptionId"),
         "nextInvoice": None, "pendingPeriods": len(pending_periods(billing, today)),
+        "previous": [{"startsAt": s.get("startsAt"), "endsAt": s.get("endsAt")} for s in billing.get("previous") or []],
     }
-    if ph in ("active", "ending"):
+    if ph in ("active", "ending") or (ph == "scheduled" and view["previous"]):
         start, end = period_of(today)
         current = invoice_plan(profile, start, end, plan, _location_names(profile["tenantId"]))
         view["nextInvoice"] = {**current, "date": (end + timedelta(days=1)).isoformat(),
@@ -553,13 +585,30 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_
               price_sek: int | None = None, terms: str | None = None) -> dict:
     """Creates the Stripe customer (if needed) and the agreement. Nothing
     is invoiced now: the first invoice comes on the 25th after the first
-    period, in arrears."""
+    period, in arrears. A customer whose agreement has ended (but is not
+    invoiced in full yet) can start again from the day after it ended: the
+    ended stretch moves to `previous` and both are on the next invoice."""
     if profile.get("status") not in ("provisioning", "active"):
         raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
                        currentStatus=profile.get("status"))
     billing = _billing(profile)
-    if agreement_running(billing):
-        raise ApiError(409, "already_subscribed", "The customer already has a running agreement")
+    today = datetime.now(timezone.utc).date()
+    first_day = date.fromisoformat(start_day) if start_day else today
+    done = _date(billing.get("lastInvoicedPeriodEnd"))
+    previous = list(billing.get("previous") or [])
+    old_start, old_end = _date(billing.get("startsAt")), _date(billing.get("endsAt"))
+    if agreement_running(billing, today):
+        if not (old_end and old_end < today and old_end < first_day):
+            hint = (f" until {old_end.isoformat()}: undo the cancellation with Keep the agreement, or start a new one "
+                    f"once it has ended" if old_end else "")
+            raise ApiError(409, "already_subscribed", f"The customer already has a running agreement{hint}")
+        if old_start and (not done or old_end > done):
+            previous.append({"startsAt": max(old_start, done + timedelta(days=1)).isoformat() if done else old_start.isoformat(),
+                             "endsAt": old_end.isoformat()})
+    if done and first_day <= done:
+        nxt = (done + timedelta(days=1)).isoformat()
+        raise ApiError(409, "already_invoiced", f"The period to {done.isoformat()} is already invoiced: start on {nxt} or later",
+                       earliestStart=nxt)
     plan = plan_of(profile)
     if not plan:
         raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
@@ -574,16 +623,17 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_
         if not ((customer.get("invoice_settings") or {}).get("default_payment_method")):
             raise ApiError(409, "no_card", "No card on file yet - create a card link, let the restaurant add a card, "
                                            "then start with charge automatically (or invoice by email instead)")
-    starts = start_day or datetime.now(timezone.utc).date().isoformat()
+    starts = first_day.isoformat()
     _write_billing(tenant_id, {
         "status": "active", "startsAt": starts, "endsAt": None, "terms": terms, "termsSince": now_iso(),
         "priceSek": price_sek, "collectionMethod": method, "startedAt": now_iso(), "startedBy": actor,
-        "lastInvoicedPeriodEnd": None, "offboardAtEnd": None, "autoSuspended": None, "endedAt": None,
+        "lastInvoicedPeriodEnd": done.isoformat() if done else None, "previous": previous or None,
+        "offboardAtEnd": None, "autoSuspended": None, "endedAt": None,
         "cancelRequestedAt": None, "cancelRequestedBy": None,
     })
     write_audit(tenant_id, "subscription_started", actor,
                 {"startsAt": starts, "planId": plan.get("planId"), "collectionMethod": method, "terms": terms,
-                 "priceSek": price_sek, "inArrears": True})
+                 "priceSek": price_sek, "inArrears": True, "previous": previous or None})
     return _view(get_profile(tenant_id))
 
 
@@ -720,6 +770,13 @@ def _already_invoiced(tenant_id: str, end: date) -> bool:
     return any((r.get("periodEnd") or "")[:10] == end.isoformat() and r.get("status") != "void" for r in rows)
 
 
+def _invoiced_to(billing: dict, end: date) -> dict:
+    """The fields after the period to `end` is invoiced: earlier
+    agreements that ended in it (or before) are done."""
+    left = [s for s in billing.get("previous") or [] if (_date(s.get("endsAt")) or end) > end]
+    return {"lastInvoicedPeriodEnd": end.isoformat(), "previous": left or None}
+
+
 def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: dict, actor: str, locations: dict) -> dict:
     """One Stripe invoice for the period: the fee line, the SMS line, any
     pending late fee or interest items, emailed or charged by Stripe."""
@@ -728,12 +785,12 @@ def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: d
     plan_ = invoice_plan(profile, start, end, plan, locations)
     result = {"tenantId": tenant_id, "name": profile.get("name"), **{k: v for k, v in plan_.items() if k not in ("smsByType",)}}
     if plan_["nothingToInvoice"]:
-        _write_billing(tenant_id, {"lastInvoicedPeriodEnd": end.isoformat(),
+        _write_billing(tenant_id, {**_invoiced_to(billing, end),
                                    **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
         result["invoiceId"] = None
         return result
     if _already_invoiced(tenant_id, end):
-        _write_billing(tenant_id, {"lastInvoicedPeriodEnd": end.isoformat()})
+        _write_billing(tenant_id, _invoiced_to(billing, end))
         result["invoiceId"] = "exists"
         return result
     tax = env("BILLING_TAX_RATE_ID", "")
@@ -774,7 +831,7 @@ def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: d
     row = _invoice_row(tenant_id, invoice)
     _mark(row, periodStart=start.isoformat(), periodEnd=end.isoformat(), feeSek=plan_["feeSek"], smsParts=plan_["smsParts"],
           smsSek=plan_["smsSek"], billedDays=plan_["activeDays"], collectionMethod=method)
-    _write_billing(tenant_id, {"lastInvoicedPeriodEnd": end.isoformat(),
+    _write_billing(tenant_id, {**_invoiced_to(billing, end),
                                **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
     write_audit(tenant_id, "invoice_created", actor, {"invoiceId": invoice["id"], "number": invoice.get("number"),
                                                       "period": plan_["period"], "feeSek": plan_["feeSek"],
