@@ -368,7 +368,7 @@ def test_locations_meet_the_admin_app_contract(aws, tenant):
     (loc,) = call("GET /platform/tenants/{tenantId}/locations", p)[1]["locations"]
     assert loc["timezone"] == "Europe/Stockholm"
     assert loc["businessHours"] == {d: [] for d in v.WEEKDAYS}
-    assert loc["bookingDurationHours"] == 2 and loc["gracePeriodHours"] == 0
+    assert loc["bookingDurationHours"] == 2 and loc["gracePeriodHours"] == 0.25
     assert loc["phoneNumber"] == "+46812345"
 
     status, body = call("PATCH /platform/tenants/{tenantId}/locations/{locationId}",
