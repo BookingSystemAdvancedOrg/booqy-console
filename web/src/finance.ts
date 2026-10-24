@@ -254,3 +254,39 @@ export function endDateFor(terms: "trial" | "subscription", noticeMonths: number
   for (let i = 0; i < noticeMonths; i++) end = nextPeriod(end).end;
   return end;
 }
+
+/* --- CSV export (same format as the restaurant admin's Statistik export) --- */
+
+/** Semicolon separated with decimal commas and a BOM, which Swedish Excel opens directly. */
+const csvNumber = (v: number | null | undefined, digits = 2) =>
+  v == null || !Number.isFinite(Number(v)) ? "" : Number(v).toLocaleString("sv-SE", { maximumFractionDigits: digits, useGrouping: false });
+const csvEscape = (c: string) => (/[;"\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
+const toCsvText = (rows: string[][]) => "﻿" + rows.map((r) => r.map(csvEscape).join(";")).join("\r\n") + "\r\n";
+
+/** One row per customer for the chosen period, amounts in SEK excluding VAT. */
+export function customersCsv(rows: FinanceTenantRow[]): string {
+  const head = ["Customer", "Legal name", "Org number", "Status", "Billing", "MRR SEK", "Revenue SEK", "Collected SEK", "Credited SEK",
+    "Outstanding SEK", "Cost SEK", "Cost baseline SEK", "Cost requests SEK", "Cost email SEK", "Cost SMS SEK", "Margin SEK", "Margin %",
+    "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS revenue SEK", "SMS cost SEK", "SMS margin SEK",
+    "Cost per booking SEK", "Cost per order SEK", "Active days", "Invoices"];
+  const body = rows.map((t) => [t.name, t.legalName ?? "", t.orgNumber ?? "", t.status, t.billingStatus, csvNumber(t.mrrSek), csvNumber(t.revenueSek),
+    csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.outstandingSek), csvNumber(t.costSek), csvNumber(t.costSplitSek?.baseline),
+    csvNumber(t.costSplitSek?.requests), csvNumber(t.costSplitSek?.email), csvNumber(t.costSplitSek?.sms), csvNumber(t.marginSek),
+    csvNumber(t.marginPct, 1), csvNumber(t.bookings, 0), csvNumber(t.orders, 0), csvNumber(t.requests, 0), csvNumber(t.emails, 0),
+    csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsRevenueSek), csvNumber(t.smsCostSek),
+    csvNumber(t.smsMarginSek), csvNumber(t.costPerBookingSek), csvNumber(t.costPerOrderSek), csvNumber(t.activeDays, 0), csvNumber(t.invoiceCount, 0)]);
+  return toCsvText([head, ...body]);
+}
+
+/** One row per day for the chosen period (the chart data). */
+export function dailyCsv(series: FinancePoint[]): string {
+  const head = ["Day", "Invoiced SEK", "Paid SEK", "Cost SEK", "MRR SEK", "Bookings", "Orders", "Requests", "Active customers", "SMS parts", "SMS revenue SEK"];
+  const body = series.map((p) => [p.day, csvNumber(p.invoicedSek), csvNumber(p.paidSek), csvNumber(p.costSek), csvNumber(p.mrrSek),
+    csvNumber(p.bookings, 0), csvNumber(p.orders, 0), csvNumber(p.requests, 0), csvNumber(p.activeTenants, 0), csvNumber(p.smsParts, 0),
+    csvNumber(p.smsRevenueSek)]);
+  return toCsvText([head, ...body]);
+}
+
+export function csvName(kind: "customers" | "daily", period: { from: string; to: string }): string {
+  return `booqy-finance-${kind}-${period.from}-${period.to}.csv`;
+}

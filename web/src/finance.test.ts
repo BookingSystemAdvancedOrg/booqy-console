@@ -130,3 +130,26 @@ describe("billing periods from the 25th to the 24th", () => {
     expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-24");
   });
 });
+
+describe("CSV export", () => {
+  it("writes one row per customer with semicolons, decimal commas and quoting", async () => {
+    const { customersCsv, dailyCsv, csvName } = await import("./finance");
+    const row = {
+      tenantId: "t1", name: "Roma; Södermalm", slug: "roma", legalName: 'Roma "AB"', orgNumber: "556000-0001", status: "active",
+      billingStatus: "active", mrrSek: 990, revenueSek: 1234.5, collectedSek: 1000, creditedSek: 0, outstandingSek: 234.5, costSek: 80.25,
+      costSplitSek: { baseline: 50, requests: 10.25, email: 0, sms: 20 }, marginSek: 1154.25, marginPct: 93.51, bookings: 12, orders: 3,
+      requests: 900, emails: 15, sms: 10, marketingEmails: 0, smsParts: 12, smsRevenueSek: 8.4, smsCostSek: 5, smsMarginSek: 3.4,
+      costPerBookingSek: 6.69, costPerOrderSek: null, activeDays: 30, invoiceCount: 1,
+    } as unknown as FinanceTenantRow;
+    const csv = customersCsv([row]);
+    expect(csv.startsWith("﻿Customer;Legal name;")).toBe(true);
+    const line = csv.split("\r\n")[1];
+    expect(line).toContain('"Roma; Södermalm";"Roma ""AB""";556000-0001;active;active;990;1234,5;');
+    expect(line).toContain(";93,5;12;3;");
+    expect(csv.endsWith("\r\n")).toBe(true);
+    const day = { day: "2026-10-01", invoicedSek: 0, paidSek: 0, costSek: 3.456, mrrSek: 990, bookings: 1, orders: 0, requests: 5,
+                  activeTenants: 1 } as FinancePoint;
+    expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,46;990;1;0;5;1;;");
+    expect(csvName("daily", { from: "2026-09-25", to: "2026-10-24" })).toBe("booqy-finance-daily-2026-09-25-2026-10-24.csv");
+  });
+});

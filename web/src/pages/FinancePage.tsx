@@ -6,10 +6,7 @@ import { CountUp, Delta, deltaPct } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
-import {
-  SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor,
-  insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom,
-} from "../finance";
+import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 
 const BILLING_TEXT: Record<string, string> = {
@@ -77,6 +74,16 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           </p>
         </div>
         <div className="row">
+          <button className="btn btn--ghost" disabled={!data || data.tenants.length === 0}
+                  title="One row per customer for the chosen period (SEK ex VAT)"
+                  onClick={() => data && downloadCsv(csvName("customers", data.period), customersCsv(rows))}>
+            Export customers (CSV)
+          </button>
+          <button className="btn btn--ghost" disabled={!data || data.series.length === 0}
+                  title="One row per day for the chosen period (the chart data)"
+                  onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data.series))}>
+            Export daily (CSV)
+          </button>
           <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
           <button className="btn btn--ghost" disabled={sync.busy}
                   onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }}>
@@ -417,4 +424,13 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
       </form>
     </Modal>
   );
+}
+
+function downloadCsv(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
