@@ -57,6 +57,9 @@
   --ok: #2c6a3f;
   --warn: #8a5a00;
   --danger: var(--ink-red);
+  /* how a figure is doing (src/trend.ts): better or worse than the comparison, as in admin */
+  --trend-good: var(--ok);
+  --trend-bad: var(--ink-red);
 
   /* the few colours that are not paper, print or red */
   --paper-focus: #ffffff;
@@ -111,6 +114,9 @@
   --line-soft: #3f3834;
   --ok: #7cc695;
   --warn: #e0b35a;
+  /* lighter than ok and red, the same as admin's dark mode: at least 5:1 on the sooted paper */
+  --trend-good: #a3dcb4;
+  --trend-bad: #f6b0b5;
   --hang: 0 14px 18px rgb(0 0 0 / 0.55), 0 2px 3px rgb(0 0 0 / 0.4);
   --paper-focus: #3a3431;
   --print-hover: #ffffff;
@@ -156,6 +162,7 @@ a:hover { text-decoration-thickness: 2px; }
 .mono, code { font-family: var(--mono); font-stretch: 87.5%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .strong { font-weight: 650; text-decoration: none; }
 .ok { color: var(--ok); font-weight: 650; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .error-text { color: var(--danger); }
 .right { text-align: right; white-space: nowrap; }
 .center { min-height: 60vh; display: grid; place-content: center; gap: 12px; text-align: center; }
@@ -629,13 +636,30 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .kpi__facts dt { text-transform: uppercase; letter-spacing: 0.06em; color: var(--print-2); }
 .kpi__facts dd { margin: 0; color: var(--print); font-variant-numeric: tabular-nums; }
 .kpi__delta { margin-top: 2px; }
-.delta { display: inline-flex; flex-wrap: wrap; gap: 2px 5px; align-items: baseline; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: 3px; border: 1.5px solid currentColor; max-width: 100%; }
-.delta--good { color: var(--ok); }
-.delta--bad { color: var(--ink-red); }
-.delta--flat { color: var(--print-2); }
+.delta { display: inline-flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: 3px; border: 1.5px solid currentColor; max-width: 100%; }
+.delta--good { color: var(--trend-good); }
+.delta--bad { color: var(--trend-bad); }
+.delta--neutral { color: var(--print-2); }
+.trend-arrow { flex: none; }
 .delta--none { color: var(--print-2); border-style: dashed; font-weight: 500; text-transform: none; }
 .delta__label { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--print-2); flex-basis: 100%; }
 .kpi--hero .delta__label { flex-basis: auto; }
+
+/* Green or red by how the figure is doing (src/trend.ts), the same as admin's
+   shared/trend.css. While it first counts up (CountUp sets --count) the
+   figure starts in the normal print and takes its colour as it grows. */
+.count-num { font-variant-numeric: tabular-nums; }
+.trend-value--good { color: var(--trend-good); }
+.trend-value--bad { color: var(--trend-bad); }
+.trend-value--good .count-num { color: color-mix(in srgb, var(--trend-good) calc(var(--count, 1) * 100%), var(--print)); }
+.trend-value--bad .count-num { color: color-mix(in srgb, var(--trend-bad) calc(var(--count, 1) * 100%), var(--print)); }
+/* A green figure lights up once as it lands (useTrendPop). */
+.trend-pop { animation: trend-pop 520ms var(--ease) both; }
+@keyframes trend-pop {
+  0% { text-shadow: 0 0 0 transparent; }
+  35% { text-shadow: 0 0 16px color-mix(in srgb, var(--trend-good) 55%, transparent); }
+  100% { text-shadow: 0 0 0 transparent; }
+}
 
 .kpi--rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; padding: 18px 22px 24px; align-content: start; }
 .kpi--rings::before { grid-column: 1 / -1; margin: -18px -22px 2px; }
@@ -690,6 +714,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   .chart__dot--in { opacity: 1; }
   .chart__area--in { opacity: 0.08; }
   .ring__seg { transition: none; }
+  .trend-pop { animation: none; }
 }
 
 /* --- agreement: the next invoice as a till slip ------------------------------- */

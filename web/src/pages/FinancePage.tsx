@@ -2,11 +2,13 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { BarLineChart, HBarChart, LineChart } from "../components/charts";
-import { CountUp, Delta, deltaPct } from "../components/motion";
+import { CountUp, Delta, deltaPct, useTrendPop } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
+import { toneClass, trendOf } from "../trend";
+import type { Trend, TrendTone } from "../trend";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 
 const BILLING_TEXT: Record<string, string> = {
@@ -59,6 +61,23 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const wholeBill = k?.costScope === "platform";
   const mrrStart = data?.series.length ? Number(data.series[0].mrrSek) : null;
   const mrrEnd = data?.series.length ? Number(data.series[data.series.length - 1].mrrSek) : null;
+  // How each figure is doing against the period before (or, for MRR, the start of the period): green, red or neutral.
+  const prev = "previous period";
+  const trends = k && {
+    margin: trendOf(k.marginSek, before?.marginSek, "margin", prev),
+    revenue: trendOf(k.revenueSek, before?.revenueSek, "revenue", prev),
+    mrr: trendOf(mrrEnd, mrrStart, "mrr", "the start of the period"),
+    cost: trendOf(k.costSek, before?.costSek, "cost", prev),
+    customers: trendOf(k.customers, before?.customers, "customers", prev),
+    arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
+    costPerBooking: trendOf(k.costPerBookingSek, before?.costPerBookingSek, "unitCost", prev),
+    costPerOrder: trendOf(k.costPerOrderSek, before?.costPerOrderSek, "unitCost", prev),
+    sms: trendOf(k.smsRevenueSek, before?.smsRevenueSek, "sms", prev),
+  };
+  // A loss is red whatever the period before was; so is SMS sold below its AWS cost.
+  const marginTone: TrendTone = k && k.marginSek < 0 ? "bad" : trends?.margin.tone ?? "neutral";
+  const smsTone: TrendTone = k && k.smsMarginSek < 0 && k.smsCostSek > 0 ? "bad" : trends?.sms.tone ?? "neutral";
+  const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const noFigures = !!data && !empty && data.series.length === 0;
 
@@ -191,7 +210,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </Notice>
       )}
 
-      {loading && !data ? <Printing label="Adding up" /> : data && k && (
+      {loading && !data ? <Printing label="Adding up" /> : data && k && trends && (
         <>
           {empty && (
             <Card title="Nothing to add up yet">
@@ -210,18 +229,18 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           )}
 
           <section className="hero" aria-label="The period at a glance">
-            <div className={`kpi kpi--hero${k.marginSek < 0 ? " kpi--bad" : " kpi--good"}`}>
+            <div className="kpi kpi--hero">
               <span className="kpi__label">Gross margin</span>
-              <strong className="kpi__value"><CountUp value={k.marginSek} format={fmtSek} /></strong>
+              <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
               <span className="kpi__insight">
                 {k.marginPct === null ? "No revenue in the period yet." : k.marginSek < 0
                   ? `AWS cost exceeds revenue by ${fmtSek(-k.marginSek)}.`
                   : `${fmtPct(k.marginPct)} of every krona invoiced stays as profit.`}
               </span>
-              <Delta current={k.marginSek} previous={before?.marginSek} />
+              <Delta trend={trends.margin} />
               <dl className="kpi__facts">
-                <dt>Revenue</dt><dd><CountUp value={k.revenueSek} format={fmtSek} /></dd>
-                <dt>{wholeBill ? "AWS bill" : "AWS cost"}</dt><dd><CountUp value={k.costSek} format={fmtSek} /></dd>
+                <dt>Revenue</dt><dd className={toneClass(trends.revenue.tone).trim()}><CountUp value={k.revenueSek} format={fmtSek} /></dd>
+                <dt>{wholeBill ? "AWS bill" : "AWS cost"}</dt><dd className={toneClass(trends.cost.tone).trim()}><CountUp value={k.costSek} format={fmtSek} /></dd>
                 {wholeBill && (
                   <>
                     <dt>Allocated to customers</dt><dd>{fmtSek(k.allocatedCostSek ?? 0)}</dd>
@@ -253,26 +272,26 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
 
           <section className="kpis" aria-label="Key figures">
             <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtInt(k.payingCustomers)} paying customers`}
-                 delta={<Delta current={mrrEnd} previous={mrrStart} label="since the period started" />} />
+                 trend={trends.mrr} deltaLabel="since the period started" />
             <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub={`${fmtSek(k.collectedSek)} collected`}
-                 delta={<Delta current={k.revenueSek} previous={before?.revenueSek} />} />
+                 trend={trends.revenue} />
             <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
             <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
                  sub={wholeBill
                    ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
                    : `${fmtInt(k.requests)} requests`}
-                 delta={<Delta current={k.costSek} previous={before?.costSek} invert />} />
-            <Kpi label="Customers" value={<CountUp value={k.customers} format={fmtInt} precision={0.5} />}
-                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`} />
-            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" />
+                 trend={trends.cost} />
+            <Kpi label="Customers" value={<CountUp value={k.customers} format={(n) => fmtInt(Math.round(n))} />}
+                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`}
+                 trend={trends.customers} />
+            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
             <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
-                 delta={<Delta current={k.costPerBookingSek} previous={before?.costPerBookingSek} invert />} />
+                 trend={trends.costPerBooking} />
             <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
-                 delta={<Delta current={k.costPerOrderSek} previous={before?.costPerOrderSek} invert />} />
+                 trend={trends.costPerOrder} />
             <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
                  sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
-                 tone={k.smsRevenueSek > 0 || k.smsCostSek > 0 ? (k.smsMarginSek < 0 ? "bad" : "good") : undefined}
-                 delta={<Delta current={k.smsRevenueSek} previous={before?.smsRevenueSek} />} />
+                 trend={trends.sms} valueTone={smsTone} />
           </section>
 
           <div className="charts">
@@ -341,15 +360,20 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   );
 }
 
-function Kpi({ label, value, sub, tone, delta }: {
-  label: string; value: ReactNode; sub?: string; tone?: "good" | "bad" | "warn"; delta?: ReactNode;
+/** A key figure. With a `trend` the figure turns green or red by how it is
+ * doing (src/trend.ts) and the change stands under it; `valueTone` overrides
+ * the colour when something else decides it (SMS sold at a loss). */
+function Kpi({ label, value, sub, tone, trend, deltaLabel, valueTone }: {
+  label: string; value: ReactNode; sub?: string; tone?: "warn"; trend?: Trend; deltaLabel?: string; valueTone?: TrendTone;
 }) {
+  const shade: TrendTone = valueTone ?? trend?.tone ?? "neutral";
+  const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
       <span className="kpi__label">{label}</span>
-      <strong className="kpi__value">{value}</strong>
+      <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
       {sub && <span className="kpi__sub">{sub}</span>}
-      {delta && <span className="kpi__delta">{delta}</span>}
+      {trend && <span className="kpi__delta"><Delta trend={trend} label={deltaLabel} /></span>}
     </div>
   );
 }
