@@ -79,6 +79,15 @@ describe("FinancePage", () => {
     expect(screen.getByText("Allocated to customers")).toBeInTheDocument();
   });
 
+  it("puts MRR, paying customers and cash first, with the past due count", async () => {
+    renderPage();
+    const lead = await screen.findByRole("region", { name: "Recurring revenue and cash" });
+    const labels = Array.from(lead.querySelectorAll(".kpi__label"), (el) => el.textContent);
+    expect(labels).toEqual(["MRR", "Paying customers", "Collected", "Outstanding"]);
+    expect(within(lead).getByText(/customer past due$/)).toBeInTheDocument();
+    expect(within(lead).getByText(/of what is invoiced$/)).toBeInTheDocument();
+  });
+
   it("shows the key figures, the charts and the customers", async () => {
     renderPage();
     expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR

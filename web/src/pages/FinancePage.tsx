@@ -68,7 +68,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     revenue: trendOf(k.revenueSek, before?.revenueSek, "revenue", prev),
     mrr: trendOf(mrrEnd, mrrStart, "mrr", "the start of the period"),
     cost: trendOf(k.costSek, before?.costSek, "cost", prev),
-    customers: trendOf(k.customers, before?.customers, "customers", prev),
+    customers: trendOf(k.payingCustomers, before?.payingCustomers, "customers", prev),
     arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
     costPerBooking: trendOf(k.costPerBookingSek, before?.costPerBookingSek, "unitCost", prev),
     costPerOrder: trendOf(k.costPerOrderSek, before?.costPerOrderSek, "unitCost", prev),
@@ -79,6 +79,9 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const smsTone: TrendTone = k && k.smsMarginSek < 0 && k.smsCostSek > 0 ? "bad" : trends?.sms.tone ?? "neutral";
   const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
+  const pastDue = data?.attention.pastDue.length ?? 0;
+  const invoiced = k ? k.collectedSek + k.outstandingSek : 0;
+  const collectedPct = k && invoiced > 0 ? (k.collectedSek / invoiced) * 100 : null;
   const noFigures = !!data && !empty && data.series.length === 0;
 
   return (
@@ -184,31 +187,6 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           restaurant's, since there is one subscription per restaurant.
         </Notice>
       )}
-      {data?.job?.warnings?.length ? (
-        <Notice kind="warn">
-          <strong>The nightly job reported problems:</strong>
-          <ul className="plain-list">{data.job.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </Notice>
-      ) : null}
-      {data && (data.attention.pastDue.length > 0 || data.attention.noSubscription.length > 0) && (
-        <Notice kind="info">
-          <strong>Needs attention.</strong>
-          <ul className="plain-list">
-            {data.attention.pastDue.map((p) => (
-              <li key={p.tenantId}>
-                <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is past due since {fmtDay(p.since)}
-                {p.status === "suspended" ? " (suspended)" : ""}.
-              </li>
-            ))}
-            {data.attention.noSubscription.map((p) => (
-              <li key={p.tenantId}>
-                <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is active without a subscription
-                {p.createdAt ? ` (customer since ${fmtDay(p.createdAt)})` : ""}.
-              </li>
-            ))}
-          </ul>
-        </Notice>
-      )}
 
       {loading && !data ? <Printing label="Adding up" /> : data && k && trends && (
         <>
@@ -228,6 +206,21 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             </Notice>
           )}
 
+          {/* 1. Recurring revenue, customers and cash: what the founder checks first (docs/DASHBOARD.md). */}
+          <section className="kpis kpis--lead" aria-label="Recurring revenue and cash">
+            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtSek(k.mrrSek * 12)} a year at this rate`}
+                 trend={trends.mrr} deltaLabel="since the period started" />
+            <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
+                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`}
+                 trend={trends.customers} />
+            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
+                 sub={collectedPct === null ? "nothing invoiced yet" : `${fmtPct(collectedPct)} of what is invoiced`} />
+            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
+                 sub={pastDue > 0 ? `${fmtInt(pastDue)} ${pastDue === 1 ? "customer" : "customers"} past due` : "open invoices, ex VAT"}
+                 tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
+          </section>
+
+          {/* 2. Is it profitable: gross margin, AWS cost against revenue. */}
           <section className="hero" aria-label="The period at a glance">
             <div className="kpi kpi--hero">
               <span className="kpi__label">Gross margin</span>
@@ -270,20 +263,42 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             </div>
           </section>
 
-          <section className="kpis" aria-label="Key figures">
-            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtInt(k.payingCustomers)} paying customers`}
-                 trend={trends.mrr} deltaLabel="since the period started" />
-            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub={`${fmtSek(k.collectedSek)} collected`}
+          {/* 3. What needs action: unpaid customers, customers without a subscription, the nightly job. */}
+          {(data.attention.pastDue.length > 0 || data.attention.noSubscription.length > 0) && (
+            <Notice kind="info">
+              <strong>Needs attention.</strong>
+              <ul className="plain-list">
+                {data.attention.pastDue.map((p) => (
+                  <li key={p.tenantId}>
+                    <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is past due since {fmtDay(p.since)}
+                    {p.status === "suspended" ? " (suspended)" : ""}.
+                  </li>
+                ))}
+                {data.attention.noSubscription.map((p) => (
+                  <li key={p.tenantId}>
+                    <Link to={`/tenants/${p.tenantId}?tab=billing`}>{p.name}</Link> is active without a subscription
+                    {p.createdAt ? ` (customer since ${fmtDay(p.createdAt)})` : ""}.
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          )}
+          {data.job?.warnings?.length ? (
+            <Notice kind="warn">
+              <strong>The nightly job reported problems:</strong>
+              <ul className="plain-list">{data.job.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            </Notice>
+          ) : null}
+
+          {/* 4. Revenue and unit economics, then the charts and the per-customer detail. */}
+          <section className="kpis kpis--units" aria-label="Revenue and unit economics">
+            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub="invoiced in the period"
                  trend={trends.revenue} />
-            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />} sub="open invoices, ex VAT" tone={k.outstandingSek > 0 ? "warn" : undefined} />
             <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
                  sub={wholeBill
                    ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
                    : `${fmtInt(k.requests)} requests`}
                  trend={trends.cost} />
-            <Kpi label="Customers" value={<CountUp value={k.customers} format={(n) => fmtInt(Math.round(n))} />}
-                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`}
-                 trend={trends.customers} />
             <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
             <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
                  trend={trends.costPerBooking} />
@@ -295,6 +310,14 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           </section>
 
           <div className="charts">
+            <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
+              <p className="insight">
+                {mrrEnd !== null && mrrStart !== null
+                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
+                  : "Monthly recurring revenue, as it stood each day."}
+              </p>
+              <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
+            </Card>
             <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
               <p className="insight">
                 {k.revenueSek > 0
@@ -303,14 +326,6 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               </p>
               <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
                             barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
-            </Card>
-            <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
-              <p className="insight">
-                {mrrEnd !== null && mrrStart !== null
-                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
-                  : "Monthly recurring revenue, as it stood each day."}
-              </p>
-              <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
           </div>
 

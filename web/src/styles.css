@@ -562,6 +562,14 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .kpi--good .kpi__value { color: var(--ok); }
 .kpi--bad .kpi__value { color: var(--ink-red); }
 .kpi--warn .kpi__value { color: var(--warn); }
+/* Finance: the four figures the founder checks first (MRR, paying customers, collected, outstanding) stand larger. */
+.kpis--lead { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Revenue and unit economics: six tiles as two even rows of three, no orphan. */
+.kpis--units { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpis--lead .kpi, .kpis--units .kpi { align-content: start; }
+.kpis--lead .kpi { padding: 18px 20px 22px; gap: 6px; }
+.kpis--lead .kpi::before { margin: -18px -20px 10px; }
+.kpis--lead .kpi__value { font-size: 34px; }
 
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 22px; margin-bottom: 22px; }
 .charts > .card { margin-bottom: 0; }
@@ -614,6 +622,10 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   .kpis { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .kpi__value { font-size: 22px; }
   .charts { grid-template-columns: 1fr; }
+  .kpis--lead, .kpis--units { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis--lead .kpi { padding: 14px 14px 18px; }
+  .kpis--lead .kpi::before { margin: -14px -14px 8px; }
+  .kpis--lead .kpi__value { font-size: 26px; }
 }
 /* a ticket in a stack must shrink to the screen, however wide its table is */
 .stack > .card, .cols > .card, .charts > .card { min-width: 0; }
