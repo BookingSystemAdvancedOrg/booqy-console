@@ -203,7 +203,7 @@ APP_LOCATION_DEFAULTS = {
     "timezone": "Europe/Stockholm",
     "businessHours": {day: [] for day in WEEKDAYS},
     "bookingDurationHours": 2,
-    "gracePeriodHours": 0,
+    "gracePeriodHours": Decimal("0.25"),  # 15 min, the shortest the admin offers
 }
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 

@@ -200,6 +200,9 @@ def create_tenant(req) -> tuple[int, dict]:
         "planId": plan_id, "entitlements": entitlements, "locationCount": len(locations),
         "ownerEmail": owner_email, "ownerName": owner_name, "ownerPhone": owner_phone,
         "onboardingRuns": 1, "billing": billing,
+        # New restaurants go live only after the owner accepts the DPA in
+        # admin (application shared/dpa.py); older tenants never get this.
+        "dpaRequired": True,
         "createdAt": now, "createdBy": req.actor, "updatedAt": now, "updatedBy": req.actor,
         **{k: val for k, val in fields.items() if val is not None},
     }

@@ -1,7 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
-  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -123,9 +123,11 @@ export const api = {
   startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
                                           terms?: "trial" | "subscription"; priceSek?: number }) =>
     request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
-  updateSubscription: (id: string, action: "pause" | "resume" | "cancel" | "cancel_now" | "keep" | "convert" | "sync_price" | "use_card",
-                       options: { offboardAtEnd?: boolean } = {}) =>
+  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "set_sms_price",
+                       options: { offboardAtEnd?: boolean; smsPriceSek?: number | null } = {}) =>
     request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
+  invoiceNow: (id: string) => request<InvoicingRun>("POST", `${t(id)}/billing/invoice`, {}),
+  financeInvoicing: (dryRun: boolean) => request<InvoicingRun>("POST", "/platform/finance/invoicing", { dryRun }),
   cardLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/billing/card-link`, {}),
   financeOverview: (params: { from: string; to: string; includeInactive?: boolean; tenantId?: string | null; locationId?: string | null }) => {
     const q = new URLSearchParams({ from: params.from, to: params.to });
@@ -158,6 +160,7 @@ export const api = {
   registerReader: (id: string, locationId: string, registrationCode: string, label: string) =>
     request<{ reader: TerminalReader }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers`,
                                         { registrationCode, label }),
+  allReaders: () => request<ReaderFleet>("GET", "/platform/terminal/readers"),
   removeReader: (id: string, locationId: string, readerId: string) =>
     request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers/${encodeURIComponent(readerId)}`),
 

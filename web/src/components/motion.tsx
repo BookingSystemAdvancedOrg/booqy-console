@@ -1,8 +1,9 @@
-/** Motion for the Finance page: numbers that count up on a damped spring,
- * and the change against the previous period. With "reduce motion" on,
+/** Motion for the Finance page: numbers that count up and turn green or red
+ * by how they are doing (src/trend.ts), the change against the previous
+ * period, and a damped spring for the rings. With "reduce motion" on,
  * everything shows its final value at once. */
-import { useEffect, useRef, useState } from "react";
-import { fmtPct } from "../finance";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Trend, TrendTone } from "../trend";
 
 export function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -60,31 +61,128 @@ export function useSpring(target: number, { stiffness = 170, damping = 26, from 
   return value;
 }
 
-/** A figure that counts up to its value. */
-export function CountUp({ value, format, precision }: { value: number | null | undefined; format: (n: number) => string; precision?: number }) {
-  const target = value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value);
-  const shown = useSpring(target ?? 0, { precision: precision ?? (Math.abs(target ?? 0) < 100 ? 0.01 : 0.5) });
-  if (target === null) return <>-</>;
-  return <>{format(shown)}</>;
+const COUNT_MS = 1100;
+
+/** Rushes off and slows exponentially towards the end (the same curve as admin's count-up). */
+export function easeOutExpo(t: number): number {
+  const u = Math.min(1, Math.max(0, t));
+  return u >= 1 ? 1 : 1 - 2 ** (-10 * u);
 }
 
-/** Change against the previous period, as a stamp: up or down and by how
- * much. `invert` when lower is better (cost). */
-export function Delta({ current, previous, invert = false, label = "vs previous period" }: {
-  current: number | null | undefined; previous: number | null | undefined; invert?: boolean; label?: string;
-}) {
-  if (current === null || current === undefined || previous === null || previous === undefined) {
-    return <span className="delta delta--none">no comparison yet</span>;
-  }
-  const pct = deltaPct(Number(current), Number(previous));
-  if (pct === null) return <span className="delta delta--none">nothing in the previous period</span>;
-  const flat = Math.abs(pct) < 0.05;
-  const better = invert ? pct < 0 : pct > 0;
-  const tone = flat ? "flat" : better ? "good" : "bad";
-  const arrow = flat ? "=" : pct > 0 ? "▲" : "▼";
+/** How far the colour has grown, 0 to 1, soft at both ends. It follows the
+ * time, not the value: the value rushes almost to the end at once, and the
+ * colour would only blink instead of growing with the figure. */
+function growth(u: number): string {
+  const t = Math.min(1, Math.max(0, u));
+  return ((1 - Math.cos(Math.PI * t)) / 2).toFixed(3);
+}
+
+/** A figure that counts up to its value, exponentially slowing as it gets
+ * close, and counts again from where it stood when the value changes. While
+ * it first counts up it sets `--count` (0 to 1) on itself, so a green or red
+ * figure (.trend-value--good/--bad) starts in the normal print and takes its
+ * colour as it grows. With "reduce motion" the final value shows at once. */
+export function CountUp({ value, format }: { value: number | null | undefined; format: (n: number) => string }) {
+  const target = value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value);
+  const text = target === null ? "-" : format(target);
+  const ref = useRef<HTMLSpanElement>(null);
+  const formatRef = useRef(format);
+  formatRef.current = format;
+  const shown = useRef<number | null>(null);
+  const grown = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const from = shown.current ?? 0;
+    if (target === null || from === target || prefersReducedMotion() || typeof requestAnimationFrame !== "function") {
+      el.textContent = text;
+      shown.current = target;
+      grown.current = true;
+      return;
+    }
+    // The colour grows only the first time; later counts keep it.
+    const colour = !grown.current;
+    grown.current = true;
+    const fmt = formatRef.current;
+    const start = performance.now();
+    let raf = 0;
+    let finished = false;
+    let current = from;
+    const frame = (now: number) => {
+      const u = (now - start) / COUNT_MS;
+      const p = easeOutExpo(u);
+      if (p >= 1) {
+        el.textContent = text;
+        el.style.removeProperty("--count");
+        shown.current = target;
+        finished = true;
+        return;
+      }
+      current = from + (target - from) * p;
+      el.textContent = fmt(current);
+      if (colour) el.style.setProperty("--count", growth(u));
+      raf = requestAnimationFrame(frame);
+    };
+    el.textContent = fmt(from);
+    if (colour) el.style.setProperty("--count", growth(0));
+    raf = requestAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.style.removeProperty("--count");
+      // Stopped before the end (StrictMode runs effects twice, or the value changed): go on from where it was.
+      if (!finished) {
+        shown.current = current;
+        if (colour) grown.current = false;
+      }
+    };
+  }, [target, text]);
+
+  // Every digit has the same width, so the row does not jump while it counts.
+  return <span ref={ref} className="count-num">{text}</span>;
+}
+
+/** A green figure lights up once as it lands, after the count-up, as a small
+ * reward. Never with "reduce motion"; red gets no motion at all. Put the ref
+ * on the element with the figure. */
+export function useTrendPop<T extends HTMLElement>(tone: TrendTone, delayMs = 700) {
+  const ref = useRef<T>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || done.current || tone !== "good") return;
+    done.current = true;
+    if (prefersReducedMotion()) return;
+    el.style.animationDelay = `${delayMs}ms`;
+    el.classList.add("trend-pop");
+    const end = () => el.classList.remove("trend-pop");
+    el.addEventListener("animationend", end, { once: true });
+    return () => el.removeEventListener("animationend", end);
+  }, [tone, delayMs]);
+  return ref;
+}
+
+/** The same arrows as admin's trend-up and trend-down icons. */
+function TrendArrow({ direction }: { direction: "up" | "down" }) {
   return (
-    <span className={`delta delta--${tone}`} title={`${fmtPct(Math.abs(pct))} ${label}`}>
-      <span aria-hidden>{arrow}</span> {fmtPct(Math.abs(pct))} <span className="delta__label">{label}</span>
+    <svg className="trend-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "up" ? "M3.5 17.5l6-6 4 4 7-7.5M15 8h5.5v5.5" : "M3.5 6.5l6 6 4-4 7 7.5M15 16h5.5v-5.5"} />
+    </svg>
+  );
+}
+
+/** The change against the comparison, as a stamp: an arrow, "+12 %" and the
+ * label; for screen readers the whole sentence. Green or red by the trend's
+ * tone, the normal print when it is noise. */
+export function Delta({ trend, label = "vs previous period" }: { trend: Trend; label?: string }) {
+  if (!trend.text) return <span className="delta delta--none">no comparison yet</span>;
+  const arrow = trend.direction === "down" ? "down" : trend.direction === "up" && trend.tone !== "neutral" ? "up" : null;
+  return (
+    <span className={`delta delta--${trend.tone}`} title={trend.spoken}>
+      {arrow && <TrendArrow direction={arrow} />}
+      <span aria-hidden="true">{trend.text}</span> <span className="delta__label" aria-hidden="true">{label}</span>
+      <span className="sr-only">{trend.spoken}</span>
     </span>
   );
 }
