@@ -141,7 +141,7 @@ function EditAddress({ tenant, location, current, displayName, onDone, onCancel 
   );
 }
 
-const DEVICE: Record<string, string> = {
+export const DEVICE: Record<string, string> = {
   stripe_s700: "Stripe Reader S700", stripe_s710: "Stripe Reader S710", bbpos_wisepos_e: "BBPOS WisePOS E",
   bbpos_wisepad3: "BBPOS WisePad 3", simulated_wisepos_e: "Simulated WisePOS E (test)",
   mobile_phone_reader: "Tap to Pay (phone)",

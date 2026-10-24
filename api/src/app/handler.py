@@ -48,6 +48,7 @@ ROUTES = {
     "PATCH /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.update_terminal,
     "POST /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers": terminal.register_reader,
     "DELETE /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers/{readerId}": terminal.remove_reader,
+    "GET /platform/terminal/readers": terminal.list_all_readers,
     "GET /platform/operators": operators.list_operators,
     "POST /platform/operators": operators.create_operator,
     "PATCH /platform/operators/{username}": operators.update_operator,

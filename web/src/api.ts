@@ -1,7 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type {
   BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -160,6 +160,7 @@ export const api = {
   registerReader: (id: string, locationId: string, registrationCode: string, label: string) =>
     request<{ reader: TerminalReader }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers`,
                                         { registrationCode, label }),
+  allReaders: () => request<ReaderFleet>("GET", "/platform/terminal/readers"),
   removeReader: (id: string, locationId: string, readerId: string) =>
     request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers/${encodeURIComponent(readerId)}`),
 

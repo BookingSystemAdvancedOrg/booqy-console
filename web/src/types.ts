@@ -119,6 +119,33 @@ export interface TerminalReader {
   last_seen_at?: number;
 }
 
+/** A reader with the customer and location it belongs to (GET /platform/terminal/readers). */
+export interface FleetReader extends TerminalReader {
+  accountId: string;
+  tenantId: string;
+  tenantName?: string | null;
+  /** null: on the restaurant's account, but at a Terminal Location no Booqy location has. */
+  locationId: string | null;
+  locationName?: string | null;
+}
+
+export interface FleetLocation {
+  tenantId: string;
+  tenantName?: string | null;
+  tenantStatus?: string;
+  locationId: string;
+  locationName?: string | null;
+  terminalLocationId: string;
+  accountId: string;
+  readerCount: number;
+}
+
+export interface ReaderFleet {
+  readers: FleetReader[];
+  locations: FleetLocation[];
+  errors: { accountId: string; tenantId: string; tenantName?: string | null; message: string }[];
+}
+
 export interface TerminalState {
   enabled: boolean;
   inPlan: boolean;

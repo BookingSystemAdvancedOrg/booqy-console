@@ -21,9 +21,11 @@ docs/handoff/TERMINAL.md."""
 
 import re
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 from . import validation as v
-from .core import ApiError, client, from_ddb, location_table, log, not_found, now_iso, to_ddb_value, write_audit
+from .core import (ApiError, client, from_ddb, location_table, log, not_found, now_iso, query_all, tenant_table,
+                   to_ddb_value, write_audit)
 from .locations import lkey
 from .stripe_connect import stripe_request
 from .tenants import get_profile
@@ -223,3 +225,73 @@ def cleanup_location(location: dict) -> None:
                        account=term["accountId"])
     except Exception:  # noqa: BLE001 - logged; the operator can remove leftovers in Stripe
         log.exception("terminal cleanup failed for %s", term.get("locationId"))
+
+
+# ---------------------------------------------------------------- all readers
+def _account_readers(account: str) -> list[dict]:
+    """Every reader on one restaurant account (all its Terminal Locations)."""
+    out, params = [], {"limit": 100}
+    while True:
+        page = stripe_request("GET", "/terminal/readers", params, account=account)
+        data = page.get("data", [])
+        out.extend(data)
+        if not page.get("has_more") or not data:
+            return out
+        params = {"limit": 100, "starting_after": data[-1]["id"]}
+
+
+def list_all_readers(req) -> tuple[int, dict]:
+    """Card readers across every customer, each with its tenant and
+    location: one Stripe call per restaurant account (in parallel), matched
+    to Booqy locations by Terminal Location. A reader on a restaurant's
+    account whose Terminal Location no Booqy location has shows with
+    location null (left behind; remove it in Stripe). A Stripe failure for
+    one account is reported in `errors` and never hides the others."""
+    tenants = query_all(TableName=tenant_table(), IndexName="GSI1",
+                        KeyConditionExpression="GSI1PK = :t", ExpressionAttributeValues={":t": {"S": "TENANT"}})
+    names = {t["tenantId"]: t.get("name") for t in tenants}
+    by_terminal, accounts = {}, {}
+    for t in tenants:
+        for loc in query_all(TableName=location_table(), KeyConditionExpression="PK = :pk",
+                             ExpressionAttributeValues={":pk": {"S": f"TENANT#{t['tenantId']}"}}):
+            term = loc.get("terminal") or {}
+            if not term.get("locationId") or not term.get("accountId"):
+                continue
+            entry = {"tenantId": t["tenantId"], "tenantName": t.get("name"), "tenantStatus": t.get("status"),
+                     "locationId": loc.get("locationId"), "locationName": loc.get("name"),
+                     "terminalLocationId": term["locationId"], "accountId": term["accountId"], "readerCount": 0}
+            by_terminal[term["locationId"]] = entry
+            accounts.setdefault(term["accountId"], t["tenantId"])
+
+    results, errors = {}, []
+
+    def fetch(acct):
+        try:
+            results[acct] = _account_readers(acct)
+        except Exception as e:  # noqa: BLE001 - one account's failure is reported, not fatal
+            log.warning("reader list failed for %s: %s", acct, e)
+            errors.append({"accountId": acct, "tenantId": accounts[acct], "tenantName": names.get(accounts[acct]),
+                           "message": getattr(e, "message", None) or "Stripe didn't answer"})
+
+    pending = list(accounts)
+    if pending:
+        fetch(pending[0])  # first one alone: reads (and caches) the platform key before the threads start
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(fetch, pending[1:]))
+
+    readers = []
+    for acct, data in results.items():
+        for r in data:
+            entry = by_terminal.get(r.get("location"))
+            if entry:
+                entry["readerCount"] += 1
+            readers.append({**_reader(r), "accountId": acct,
+                            "tenantId": entry["tenantId"] if entry else accounts[acct],
+                            "tenantName": entry["tenantName"] if entry else names.get(accounts[acct]),
+                            "locationId": entry["locationId"] if entry else None,
+                            "locationName": entry["locationName"] if entry else None})
+    readers.sort(key=lambda r: ((r["tenantName"] or "").lower(), (r["locationName"] or "~").lower(),
+                                (r["label"] or "").lower()))
+    locations = sorted(by_terminal.values(), key=lambda e: ((e["tenantName"] or "").lower(),
+                                                           (e["locationName"] or "").lower()))
+    return 200, {"readers": readers, "locations": locations, "errors": errors}

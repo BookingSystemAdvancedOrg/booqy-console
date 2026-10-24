@@ -729,3 +729,15 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .chart-tip-surface:focus { outline: none; }
 .chart-tip-surface:focus-visible { outline: 2px solid var(--ink-red); outline-offset: 3px; border-radius: 2px; }
 @media (prefers-reduced-motion: reduce) { .chart-tip { transition: none; } }
+
+/* Card readers: on a phone each row is a block (reader, status, customer and location, last seen). */
+.stack-label { display: none; }
+@media (max-width: 600px) {
+  .table--stack thead { display: none; }
+  .table--stack tr { display: block; padding: 14px 18px; border-bottom: 1.5px dashed var(--paper-line); }
+  .table--stack tr:last-child { border-bottom: 0; }
+  .table-wrap .table--stack td, .table-wrap .table--stack td:first-child, .table-wrap .table--stack td:last-child {
+    display: block; padding: 3px 0; border: 0; white-space: normal;
+  }
+  .table--stack .stack-label { display: inline; color: var(--muted); }
+}
