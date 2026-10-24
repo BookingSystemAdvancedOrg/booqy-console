@@ -1,4 +1,5 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
+import type { WebsiteOverview } from "./website";
 import type {
   BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
@@ -147,6 +148,8 @@ export const api = {
   },
   remindInvoice: (id: string, invoiceId: string) =>
     request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
+  website: (params: { from: string; to: string }) =>
+    request<WebsiteOverview>("GET", `/platform/website?${new URLSearchParams(params)}`),
   financeStripeSync: () =>
     request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
       "POST", "/platform/finance/stripe-sync", {}),

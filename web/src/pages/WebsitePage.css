@@ -1,0 +1,41 @@
+/* Website page (booqy.se statistics). Tokens only: the light and dark themes come from styles.css. */
+.web-toolbar { align-items: flex-end; }
+.web-compare { font: 500 12px/1.4 var(--mono); color: var(--fg-2); }
+
+.web-live { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1.5px dashed var(--fg-line); border-radius: 3px; font: 600 13px/1 var(--mono); color: var(--fg); }
+.web-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--trend-good); box-shadow: 0 0 0 0 var(--trend-good); animation: web-pulse 2s ease-out infinite; }
+@keyframes web-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--trend-good) 60%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
+
+.web-scroll { overflow-x: auto; margin: 0 -4px; }
+.web-table th, .web-table td { padding: 9px 8px; }
+.web-table th { padding-top: 10px; }
+.web-table .num { text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+.web-key { min-width: 110px; max-width: 260px; overflow-wrap: break-word; }
+.web-good { color: var(--trend-good); font-weight: 700; }
+.web-delta { font: 600 11px/1.3 var(--mono); color: var(--print-2); margin-top: 2px; }
+.web-none { color: var(--print-2); font-size: 14px; margin: 4px 0; }
+.web-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 8px 22px; margin-top: 14px; }
+.card__body > .web-pair:first-child { margin-top: 0; }
+
+.web-tabs { margin-bottom: 10px; }
+.card .web-tabs .chip--on { background: var(--print); border-color: var(--print); color: var(--paper); }
+
+.web-bar { position: relative; display: inline-block; height: 18px; vertical-align: middle; background: var(--paper-2); border-radius: 2px; overflow: hidden; }
+.web-bar__fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--print) 22%, transparent); }
+.web-bar__text { position: relative; display: block; padding: 0 5px; font: 600 11.5px/18px var(--mono); text-align: right; }
+
+.web-hours__bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; align-items: end; height: 140px; border-bottom: 1.5px solid var(--print); }
+.web-hours__col { display: flex; align-items: flex-end; height: 100%; }
+.web-hours__bar { width: 100%; min-height: 1px; background: var(--print); border-radius: 1px 1px 0 0; }
+.web-hours__col:hover .web-hours__bar { background: var(--ink-red); }
+.web-hours__axis { display: flex; justify-content: space-between; margin-top: 6px; font: 500 11px/1 var(--mono); color: var(--print-2); }
+.web-hours { margin: 0; }
+
+.web-bar { width: 64px; }
+@media (max-width: 600px) {
+  .web-col-share { display: none; }
+  .web-table th, .web-table td { padding: 9px 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .web-live i { animation: none; }
+}

@@ -35,6 +35,11 @@ function niceMax(max: number): number {
   return step * pow;
 }
 
+/** Axis label for counts (visits): "1,2 tn" would be wrong, "1 200" is not. */
+export function countTick(v: number): string {
+  return Math.abs(v) >= 10_000 ? `${(v / 1000).toLocaleString("sv-SE", { maximumFractionDigits: 0 })} k` : v.toLocaleString("sv-SE");
+}
+
 function tickLabel(v: number): string {
   if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toLocaleString("sv-SE", { maximumFractionDigits: 1 })} mkr`;
   if (Math.abs(v) >= 1000) return `${(v / 1000).toLocaleString("sv-SE", { maximumFractionDigits: 1 })} tkr`;
@@ -44,8 +49,11 @@ function tickLabel(v: number): string {
 export interface BarLinePoint { key: string; bar: number; line: number; }
 
 /** Bars (revenue) with a line (cost) over the same buckets. */
-export function BarLineChart({ points, barLabel, lineLabel, ariaLabel }: {
+export function BarLineChart({ points, barLabel, lineLabel, ariaLabel, format = fmtSek, tick = tickLabel }: {
   points: BarLinePoint[]; barLabel: string; lineLabel: string; ariaLabel: string;
+  /** How a value reads in the tooltip and on the axis (SEK by default). */
+  format?: (n: number) => string;
+  tick?: (n: number) => string;
 }) {
   const id = useId();
   const [ref, W] = useWidth();
@@ -72,7 +80,7 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel }: {
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="chart__grid" />
-            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" className="chart__tick">{tickLabel(t)}</text>
+            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" className="chart__tick">{tick(t)}</text>
           </g>
         ))}
         {points.map((p, i) => (
@@ -90,8 +98,8 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel }: {
       </svg>
       <ChartTip tip={tip} at={ap ? { x: x(a!), y: Math.min(y(ap.bar), y(ap.line)) } : null}
                 content={ap ? { heading: shortDay(ap.key), rows: [
-                  { label: barLabel, value: fmtSek(ap.bar), tone: "ink" },
-                  { label: lineLabel, value: fmtSek(ap.line), tone: "red", line: true },
+                  { label: barLabel, value: format(ap.bar), tone: "ink" },
+                  { label: lineLabel, value: format(ap.line), tone: "red", line: true },
                 ] } : null} />
       <figcaption className="legend">
         <span><i className="legend__bar" />{barLabel}</span>
@@ -150,10 +158,12 @@ export function LineChart({ points, label, ariaLabel }: { points: { key: string;
 }
 
 /** Horizontal bars, one per customer, negative values to the left. */
-export function HBarChart({ rows, ariaLabel, valueLabel }: {
+export function HBarChart({ rows, ariaLabel, valueLabel, format = fmtSek }: {
   rows: { key: string; label: string; value: number; href?: string }[]; ariaLabel: string;
   /** What the value is, in the tooltip ("Margin"). */
   valueLabel: string;
+  /** How a value reads (SEK by default). */
+  format?: (n: number) => string;
 }) {
   const id = useId();
   const [ref, W] = useWidth();
@@ -185,14 +195,14 @@ export function HBarChart({ rows, ariaLabel, valueLabel }: {
               <rect x={x} y={y + 4} width={Math.max(1, w)} height={rowH - 10}
                     className={`chart__bar chart__bar--row${r.value < 0 ? " chart__bar--neg" : ""}`}
                     style={{ "--i": i, transformOrigin: r.value < 0 ? "right" : "left" } as CSSProperties} />
-              <text x={r.value < 0 ? x - 6 : x + w + 6} y={y + 17} textAnchor={r.value < 0 ? "end" : "start"} className="chart__value">{fmtSek(r.value)}</text>
+              <text x={r.value < 0 ? x - 6 : x + w + 6} y={y + 17} textAnchor={r.value < 0 ? "end" : "start"} className="chart__value">{format(r.value)}</text>
             </g>
           );
         })}
         {rows.map((r, i) => <rect key={r.key} x={0} y={4 + i * rowH} width={W} height={rowH} className="chart-hit" {...tip.hit(i)} />)}
       </svg>
       <ChartTip tip={tip} at={ar ? { x: zero + (ar.value < 0 ? -1 : 1) * (Math.abs(ar.value) * scale) / 2, y: 4 + a! * rowH + 4 } : null}
-                content={ar ? { heading: ar.label, rows: [{ label: valueLabel, value: fmtSek(ar.value), tone: ar.value < 0 ? "red" : "ink" }] } : null} />
+                content={ar ? { heading: ar.label, rows: [{ label: valueLabel, value: format(ar.value), tone: ar.value < 0 ? "red" : "ink" }] } : null} />
     </figure>
   );
 }

@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 
 from . import (billing, domains, finance, locations, mail, operators, outbox, stripe_connect, tenants, terminal,
-               users, zones)
+               users, website, zones)
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -77,6 +77,8 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/billing/invoice": billing.invoice_now,
     "GET /platform/finance/invoices": finance.invoices,
     "POST /platform/finance/invoicing": billing.invoicing,
+    # Website page: booqy.se's cookieless statistics
+    "GET /platform/website": website.overview,
 }
 
 OPERATOR_GROUP = "platform_admin"

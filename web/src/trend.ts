@@ -19,7 +19,12 @@ export type TrendMetric =
   | "unitCost"
   | "sms"
   | "customers"
-  | "arpu";
+  | "arpu"
+  | "visits"
+  | "conversions"
+  | "rate"
+  | "bounce"
+  | "seconds";
 
 interface MetricRule {
   /** Which way the figure should go to be good. */
@@ -41,6 +46,12 @@ const RULES: Record<TrendMetric, MetricRule> = {
   sms: { better: "up", minPct: 2, minAbs: 10, show: "pct" },
   customers: { better: "up", minPct: 0, minAbs: 1, show: "abs" },
   arpu: { better: "up", minPct: 2, minAbs: 5, show: "pct" },
+  // Website page: visitors, visits, page views; demo bookings; conversion rate and bounce rate in percent points.
+  visits: { better: "up", minPct: 3, minAbs: 5, show: "pct" },
+  conversions: { better: "up", minPct: 0, minAbs: 1, show: "abs" },
+  rate: { better: "up", minPct: 3, minAbs: 0.2, show: "pct" },
+  bounce: { better: "down", minPct: 3, minAbs: 1, show: "pct" },
+  seconds: { better: "up", minPct: 5, minAbs: 3, show: "pct" },
 };
 
 export interface Trend {
