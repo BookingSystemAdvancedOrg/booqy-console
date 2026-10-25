@@ -6,6 +6,10 @@ Reads the finance table (infrastructure storage/dynamodb/finance):
                                      that day, MRR snapshot (finance-rollup +
                                      the senders + the Stripe webhook)
     TENANT#<id> / INVOICE#...        the invoice ledger (outstanding amounts)
+    PLATFORM / DAY#<yyyy-mm-dd>      the whole AWS bill that day (costSek,
+                                     costSplitSek, unallocatedSek)
+    PLATFORM / COST#<yyyy-mm-dd>     the Cost Explorer pull (the newest one
+                                     is the date the AWS cost is known to)
     PLATFORM / JOB#latest            when the figures were last computed
 
 Every number is a sum of day rows, so week, month, quarter, year and any
@@ -14,6 +18,12 @@ custom range are the same code path. Amounts are SEK excluding VAT.
 By default only ACTIVE customers count (includeInactive=1 adds suspended,
 offboarding, offboarded and purged customers, whose rows are kept forever).
 `tenantId` scopes everything to one customer.
+
+AWS cost: without a customer filter the KPIs use the platform's WHOLE AWS
+bill (PLATFORM day rows), so days with no active customer and the share of
+customers left out by the filter still count against the margin; the part
+allocated to the customers shown is reported next to it. With a customer
+filter, cost is that customer's allocated share.
 """
 
 import json
@@ -26,6 +36,7 @@ from .tenants import get_profile
 MAX_RANGE_DAYS = 400
 ACTIVE_DEFAULT = ("active",)
 SUM_FIELDS = ("requests", "bookings", "orders", "emails", "sms", "marketingEmails",
+              "smsParts", "smsBooking", "smsReminder", "smsOrder", "smsCatering", "smsRevenueSek",
               "costSek", "invoicedSek", "paidSek", "creditedSek")
 CENTS = Decimal("0.01")
 
@@ -80,6 +91,21 @@ def _days(tenant_id: str, first: str, last: str, location_id: str | None = None)
                                                 ":b": {"S": f"{prefix}{last}"}})
 
 
+def _platform_days(first: str, last: str) -> list[dict]:
+    return query_all(TableName=_finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
+                     ExpressionAttributeValues={":pk": {"S": "PLATFORM"}, ":a": {"S": f"DAY#{first}"},
+                                                ":b": {"S": f"DAY#{last}"}})
+
+
+def _cost_as_of() -> str | None:
+    """The newest day Cost Explorer's cost is stored for (it lags about a day)."""
+    items = client("dynamodb").query(
+        TableName=_finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :c)",
+        ExpressionAttributeValues={":pk": {"S": "PLATFORM"}, ":c": {"S": "COST#"}},
+        ScanIndexForward=False, Limit=1, ProjectionExpression="SK").get("Items", [])
+    return items[0]["SK"]["S"][5:] if items else None
+
+
 def _locations(tenant_id: str) -> list[dict]:
     rows = query_all(TableName=location_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :l)",
                      ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":l": {"S": "LOCATION#"}})
@@ -111,24 +137,40 @@ def _job() -> dict | None:
             "done": item.get("done"), "warnings": item.get("warnings") or []}
 
 
-def _mrr(profile: dict) -> Decimal:
+_plan_prices: dict | None = None
+
+
+def _plans() -> dict:
+    """{planId: priceSek}, read once per request."""
+    rows = query_all(TableName=tenant_table(), IndexName="GSI1", KeyConditionExpression="GSI1PK = :p",
+                     ExpressionAttributeValues={":p": {"S": "PLAN"}})
+    return {r["planId"]: Decimal(r.get("priceSek") or 0) for r in rows if r.get("planId")}
+
+
+def _mrr(profile: dict, plans: dict | None = None) -> Decimal:
+    """The monthly price of a running agreement (own price or the plan's)."""
+    from .billing import agreement_running          # billing imports tenants, not this module
     billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
-    if billing.get("status") in ("active", "past_due") and not billing.get("pauseCollection"):
-        return _q(billing.get("mrrSek"))
-    return Decimal(0)
+    if not agreement_running(billing):
+        return Decimal(0)
+    if billing.get("priceSek") is not None:
+        return _q(billing["priceSek"])
+    return _q((plans if plans is not None else _plans()).get(profile.get("planId") or "", Decimal(0)))
 
 
 def _billing_status(profile: dict) -> str:
+    """none | scheduled | active | ending | ended, or past_due while an
+    invoice is overdue."""
+    from .billing import phase
     billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
-    status = billing.get("status")
-    if not billing.get("subscriptionId") or status in ("canceled", "incomplete_expired"):
-        return "none"
-    if billing.get("pauseCollection"):
-        return "paused"
-    return status or "none"
+    ph = phase(billing)
+    if ph in ("active", "ending") and billing.get("pastDueSince"):
+        return "past_due"
+    return ph
 
 
-def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_id: str | None = None) -> dict:
+def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_id: str | None = None,
+                   plans: dict | None = None) -> dict:
     """One customer's sums over the range. With a location: that location's
     usage and allocated cost (its LOC rows); revenue stays the customer's."""
     tenant_id = profile["tenantId"]
@@ -160,9 +202,13 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         point["bookings"] += int(row.get("bookings") or 0)
         point["orders"] += int(row.get("orders") or 0)
         point["requests"] += int(row.get("requests") or 0)
+        point["smsParts"] = point.get("smsParts", 0) + int(row.get("smsParts") or 0)
+        point["smsRevenueSek"] = point.get("smsRevenueSek", Decimal(0)) + Decimal(row.get("smsRevenueSek") or 0)
         if row.get("active"):
             point["activeTenants"] += 1
     invoices = _invoices(tenant_id)
+    sms_cost = _q(split["sms"])
+    sms_revenue = _q(sums["smsRevenueSek"])
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
     cost = _q(sums["costSek"])
     margin = _q(revenue - cost)
@@ -172,12 +218,16 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "status": profile.get("status"), "planId": profile.get("planId"),
         "billingStatus": _billing_status(profile),
         "pastDueSince": (profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None,
-        "mrrSek": _mrr(profile), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"]),
+        "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"]),
         "creditedSek": _q(sums["creditedSek"]), "outstandingSek": _outstanding(invoices),
         "costSek": cost, "costSplitSek": {k: _q(val) for k, val in split.items()},
         "marginSek": margin, "marginPct": _pct(margin, revenue),
         "bookings": int(sums["bookings"]), "orders": int(sums["orders"]), "requests": int(sums["requests"]),
         "emails": int(sums["emails"]), "sms": int(sums["sms"]), "marketingEmails": int(sums["marketingEmails"]),
+        "smsParts": int(sums["smsParts"]), "smsRevenueSek": sms_revenue, "smsCostSek": sms_cost,
+        "smsMarginSek": _q(sms_revenue - sms_cost),
+        "smsByType": {"booking": int(sums["smsBooking"]), "reminder": int(sums["smsReminder"]),
+                      "order": int(sums["smsOrder"]), "catering": int(sums["smsCatering"])},
         "costPerBookingSek": _ratio(cost, sums["bookings"]), "costPerOrderSek": _ratio(cost, sums["orders"]),
         "activeDays": active_days, "invoiceCount": len(invoices),
         "createdAt": profile.get("createdAt"), "offboardedAt": profile.get("offboardedAt"),
@@ -197,13 +247,31 @@ def overview(req) -> tuple[int, dict]:
     counted = [p for p in profiles if (only and p["tenantId"] == only)
                or (not only and (include_inactive or p.get("status") in ACTIVE_DEFAULT))]
     series: dict = {}
-    tenants = [_tenant_totals(p, first, last, series, location_id) for p in counted]
+    plans = _plans()
+    tenants = [_tenant_totals(p, first, last, series, location_id, plans) for p in counted]
     tenants.sort(key=lambda t: (t["marginSek"], t["name"] or ""), reverse=True)
 
     revenue = _q(sum((t["revenueSek"] for t in tenants), Decimal(0)))
     collected = _q(sum((t["collectedSek"] for t in tenants), Decimal(0)))
     outstanding = _q(sum((t["outstandingSek"] for t in tenants), Decimal(0)))
-    cost = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
+    allocated = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
+    cost, cost_split, cost_scope = allocated, None, "allocated"
+    platform_rows = [] if only else _platform_days(first, last)
+    if platform_rows:   # none before the rollup's first run: fall back to the allocated sum
+        bill = {"baseline": Decimal(0), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}
+        total = Decimal(0)
+        for row in platform_rows:
+            day = row["SK"][4:]
+            day_cost = Decimal(row.get("costSek") or 0)
+            total += day_cost
+            for k in bill:
+                bill[k] += Decimal((row.get("costSplitSek") or {}).get(k) or 0)
+            point = series.setdefault(day, {"day": day, "invoicedSek": Decimal(0), "paidSek": Decimal(0),
+                                            "costSek": Decimal(0), "mrrSek": Decimal(0), "bookings": 0, "orders": 0,
+                                            "requests": 0, "activeTenants": 0})
+            point["allocatedCostSek"] = point["costSek"]
+            point["costSek"] = day_cost
+        cost, cost_split, cost_scope = _q(total), {k: _q(v) for k, v in bill.items()}, "platform"
     bookings = sum(t["bookings"] for t in tenants)
     orders = sum(t["orders"] for t in tenants)
     margin = _q(revenue - cost)
@@ -222,7 +290,7 @@ def overview(req) -> tuple[int, dict]:
                     for p in profiles if isinstance(p.get("billing"), dict) and p["billing"].get("pastDueSince")
                     and p.get("status") in ("active", "suspended")],
         "noSubscription": [{"tenantId": p["tenantId"], "name": p.get("name"), "createdAt": p.get("createdAt")}
-                           for p in profiles if p.get("status") == "active" and _billing_status(p) == "none"],
+                           for p in profiles if p.get("status") == "active" and _billing_status(p) in ("none", "ended")],
         "noPrice": [],
     }
     job = _job()
@@ -234,6 +302,9 @@ def overview(req) -> tuple[int, dict]:
         "kpis": {
             "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "outstandingSek": outstanding,
             "costSek": cost, "marginSek": margin, "marginPct": _pct(margin, revenue),
+            "costScope": cost_scope, "allocatedCostSek": allocated,
+            "unallocatedSek": max(_q(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
+            "costSplitSek": cost_split,
             "customers": len(tenants), "activeCustomers": active_now, "payingCustomers": paying,
             "newCustomers": new_customers, "churnedCustomers": churned,
             "churnPct": _pct(churned, customers_at_start) if customers_at_start else None,
@@ -241,12 +312,19 @@ def overview(req) -> tuple[int, dict]:
             "costPerBookingSek": _ratio(cost, bookings), "costPerOrderSek": _ratio(cost, orders),
             "requests": sum(t["requests"] for t in tenants), "emails": sum(t["emails"] for t in tenants),
             "sms": sum(t["sms"] for t in tenants),
+            # SMS: what the restaurants are charged for the parts against the SMS share of the AWS bill
+            "smsParts": sum(t["smsParts"] for t in tenants),
+            "smsRevenueSek": _q(sum((t["smsRevenueSek"] for t in tenants), Decimal(0))),
+            "smsCostSek": _q(cost_split["sms"]) if cost_split else _q(sum((t["smsCostSek"] for t in tenants), Decimal(0))),
+            "smsMarginSek": _q(sum((t["smsRevenueSek"] for t in tenants), Decimal(0))
+                               - (cost_split["sms"] if cost_split else sum((t["smsCostSek"] for t in tenants), Decimal(0)))),
         },
         "series": [series[d] for d in sorted(series)],
         "tenants": tenants,
         "attention": attention,
         "job": job,
         "asOf": (job or {}).get("finishedAt"),
+        "costAsOf": _cost_as_of(),
     }
 
 
@@ -327,7 +405,32 @@ def rebuild(req) -> tuple[int, dict]:
 
 
 def stripe_sync(req) -> tuple[int, dict]:
-    """Re-reads subscriptions and invoices from Stripe into the ledger."""
-    from .billing import sync_from_stripe
-    summary = sync_from_stripe(req.actor)
+    """Re-reads every customer's invoices from Stripe into the ledger (for
+    webhook deliveries that were missed)."""
+    from .billing import record_invoice, stripe_request
+    summary = {"tenants": 0, "invoices": 0, "booked": 0, "errors": []}
+    for profile in _all_profiles():
+        billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
+        customer_id = billing.get("customerId")
+        if not customer_id:
+            continue
+        summary["tenants"] += 1
+        try:
+            after = None
+            while True:
+                params = {"customer": customer_id, "limit": 100}
+                if after:
+                    params["starting_after"] = after
+                page = stripe_request("GET", "/invoices", params)
+                for invoice in page.get("data") or []:
+                    if invoice.get("status") == "draft":
+                        continue
+                    summary["invoices"] += 1
+                    summary["booked"] += len(record_invoice(profile["tenantId"], invoice))
+                    after = invoice["id"]
+                if not page.get("has_more") or not after:
+                    break
+        except ApiError as e:
+            summary["errors"].append(f"{profile.get('name')}: {e.message}"[:300])
+    log.info(json.dumps({"stripeSync": summary, "actor": req.actor}, default=str))
     return 200, {"sync": summary}

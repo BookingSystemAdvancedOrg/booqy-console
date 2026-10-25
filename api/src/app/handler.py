@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 
 from . import (billing, domains, finance, locations, mail, operators, outbox, stripe_connect, tenants, terminal,
-               users, zones)
+               users, website, zones)
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -48,6 +48,7 @@ ROUTES = {
     "PATCH /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.update_terminal,
     "POST /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers": terminal.register_reader,
     "DELETE /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers/{readerId}": terminal.remove_reader,
+    "GET /platform/terminal/readers": terminal.list_all_readers,
     "GET /platform/operators": operators.list_operators,
     "POST /platform/operators": operators.create_operator,
     "PATCH /platform/operators/{username}": operators.update_operator,
@@ -73,7 +74,11 @@ ROUTES = {
     "PATCH /platform/tenants/{tenantId}/billing/subscription": billing.update_subscription,
     "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
     "POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind": billing.remind_invoice,
+    "POST /platform/tenants/{tenantId}/billing/invoice": billing.invoice_now,
     "GET /platform/finance/invoices": finance.invoices,
+    "POST /platform/finance/invoicing": billing.invoicing,
+    # Website page: booqy.se's cookieless statistics
+    "GET /platform/website": website.overview,
 }
 
 OPERATOR_GROUP = "platform_admin"
@@ -114,8 +119,9 @@ def handler(event, context):
         log.info(json.dumps({"mailTask": event.get("mailTask"), "newsletterId": event.get("newsletterId"),
                              "result": result.get("status")}))
         return result
-    # The daily dunning schedule (EventBridge Scheduler, {"financeTask":
-    # "dunning"}); only the scheduler role may invoke the function this way.
+    # The daily dunning schedule ({"financeTask": "dunning"}) and the monthly
+    # invoicing on the 25th ({"financeTask": "invoice"}), both EventBridge
+    # Scheduler; only the scheduler role may invoke the function this way.
     if "financeTask" in event and "routeKey" not in event:
         result = billing.finance_task(event, context)
         log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))

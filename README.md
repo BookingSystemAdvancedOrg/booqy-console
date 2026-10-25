@@ -55,9 +55,9 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 |---|---|
 | `GET /platform/plans` | plan catalog |
 | `GET /platform/tenants` | all customers |
-| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the subscription right away |
+| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`) |
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
-| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running subscription moves to the new price from the next invoice |
+| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
 | `POST .../offboard` | "delete": `{confirmSlug}`; users disabled, domains detached, data kept |
 | `POST .../onboarding/retry` | re-run setup (failed → retry; active → fill in what was added since, e.g. VAT rates) |
@@ -79,18 +79,24 @@ see `api/src/app/zones.py`. EventBridge Scheduler invokes it daily with
 re-sends the email), the statutory late fee after the grace period and
 interest for the days late when paid, all as Stripe invoice items;
 customers past due longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended
-(as with Suspend) and resumed when they pay - `api/src/app/billing.py`.
+(as with Suspend) and resumed when they pay. On the 25th it runs with
+`{"financeTask": "invoice"}`: one Stripe invoice per customer for the
+period from the 25th to the 24th that just ended, the monthly price (pro
+rata by days) plus one line for the SMS parts sent at
+`BILLING_SMS_PRICE_SEK` or the customer's own price - `api/src/app/billing.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
-| `GET .../billing` | the customer's subscription (Stripe Billing on the platform account: status, plan price, MRR, period, past due) and invoices |
-| `POST .../billing/subscription` | start it: `{collectionMethod: send_invoice \| charge_automatically, startDate?, terms: trial \| subscription, priceSek?}` (a future date = first invoice then; priceSek = the customer's own monthly price ex VAT) |
-| `PATCH .../billing/subscription` | `{action: pause \| resume \| cancel \| cancel_now \| keep \| convert \| sync_price \| use_card, offboardAtEnd?}`: cancel ends a try-out with the paid month and a subscription after the notice period (offboarded automatically when it ends unless `offboardAtEnd: false`); keep undoes it; convert makes a try-out a subscription; sync_price applies the plan's or the customer's own price from the next invoice |
+| `GET .../billing` | the customer's agreement (status and phase, terms, start and end, monthly and SMS price, collection, last invoiced period, past due), a preview of the next invoice (fee and SMS so far) and the invoices with their period, fee and SMS split |
+| `POST .../billing/subscription` | start the agreement: `{collectionMethod: send_invoice \| charge_automatically, startDate?, terms: trial \| subscription, priceSek?}` (the days from `startDate` are invoiced on the next 25th; priceSek = the customer's own monthly price ex VAT) |
+| `PATCH .../billing/subscription` | `{action: cancel \| cancel_now \| keep \| convert \| use_card \| set_sms_price, offboardAtEnd?, smsPriceSek?}`: cancel ends a try-out with the current period and a subscription after the notice period (offboarded automatically once the final invoice exists unless `offboardAtEnd: false`); cancel_now ends it today; keep undoes it; convert makes a try-out a subscription; use_card charges the card on file from the next invoice; set_sms_price sets the customer's own price per SMS part (null = the default) |
+| `POST .../billing/invoice` | invoice this customer's complete, not yet invoiced periods now |
 | `POST .../billing/card-link` | Stripe Checkout (setup mode) link where the restaurant adds a card |
 | `POST .../billing/invoices/{invoiceId}/remind` | Stripe re-sends the invoice email now (open invoices) |
 | `GET /platform/finance/invoices?from&to&status` | the Payments view: every invoice of the period with days late, reminders, fees; status all, paid, open, overdue |
-| `GET /platform/finance/overview?from&to&includeInactive&tenantId&locationId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
+| `POST /platform/finance/invoicing` | `{dryRun}`: the monthly run by hand; dryRun = the preview (customer, period, fee, SMS parts and amount) without creating anything |
+| `GET /platform/finance/overview?from&to&includeInactive&tenantId&locationId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order, SMS parts, SMS revenue and cost), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
 | `GET /platform/finance/tenants/{id}?from&to` | one customer's figures, day rows and invoices |
 | `POST /platform/finance/rebuild` | `{from, to}`: recompute a range (invokes finance-rollup, max 92 days) |
-| `POST /platform/finance/stripe-sync` | re-read every subscription and invoice from Stripe into the ledger |
+| `POST /platform/finance/stripe-sync` | re-read every customer's invoices from Stripe into the ledger |
 | `GET /platform/outbox[?after=<id>]`, `GET /platform/outbox/{messageId}` | dev mail outbox: what the platform would have emailed (and a copy of each SMS), newest first; `{"enabled": false}` when off (always in production) |
 
 Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
@@ -99,21 +105,26 @@ Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 
 **Finance** in the top bar: MRR, revenue (invoiced ex VAT), collected and
 outstanding, AWS cost, gross margin, customers (new, churned), ARPU, cost
-per booking and per order, charts (revenue vs cost, MRR trend, best and
+per booking and per order, SMS (parts charged, what they bring in and
+the SNS cost behind them), charts (revenue vs cost, MRR trend, best and
 weakest margin) and a sortable table per customer. Presets week, month,
 quarter, year, last 30 days or a custom range; a customer filter (name,
 org. number or slug); "Include inactive customers" adds suspended,
 offboarded and purged ones. **Rebuild** recomputes a date range,
-**Import from Stripe** re-reads subscriptions and invoices. The figures
+**Import from Stripe** re-reads the invoices. The figures
 come from the `finance` table, written nightly by `finance-rollup`
 (Cost Explorer + usage per customer, application repo) and by the
 Stripe webhook; see the infrastructure repo's `docs/FINANCE.md`.
 
 **Payments** (a tab on the Finance page) shows who has paid for a month:
 one row per invoice with days late, reminders sent, fees and a Send
-reminder button. The customer page's **Billing** tab starts, pauses,
-cancels and updates the subscription, creates card links and lists the
-invoices.
+reminder button, and **Run invoicing**: a preview of every invoice the
+monthly run would create now (period, fee, SMS parts, amount), then the
+run. The customer page's **Billing** tab starts, cancels and converts
+the agreement, sets the customer's SMS price, shows the next invoice as it
+builds up (monthly price and SMS parts per location so far), invoices
+pending periods, creates card links and lists the invoices with their
+fee and SMS split.
 
 ## Local development
 

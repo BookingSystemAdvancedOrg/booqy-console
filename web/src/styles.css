@@ -57,6 +57,9 @@
   --ok: #2c6a3f;
   --warn: #8a5a00;
   --danger: var(--ink-red);
+  /* how a figure is doing (src/trend.ts): better or worse than the comparison, as in admin */
+  --trend-good: var(--ok);
+  --trend-bad: var(--ink-red);
 
   /* the few colours that are not paper, print or red */
   --paper-focus: #ffffff;
@@ -111,6 +114,9 @@
   --line-soft: #3f3834;
   --ok: #7cc695;
   --warn: #e0b35a;
+  /* lighter than ok and red, the same as admin's dark mode: at least 5:1 on the sooted paper */
+  --trend-good: #a3dcb4;
+  --trend-bad: #f6b0b5;
   --hang: 0 14px 18px rgb(0 0 0 / 0.55), 0 2px 3px rgb(0 0 0 / 0.4);
   --paper-focus: #3a3431;
   --print-hover: #ffffff;
@@ -156,6 +162,7 @@ a:hover { text-decoration-thickness: 2px; }
 .mono, code { font-family: var(--mono); font-stretch: 87.5%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .strong { font-weight: 650; text-decoration: none; }
 .ok { color: var(--ok); font-weight: 650; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .error-text { color: var(--danger); }
 .right { text-align: right; white-space: nowrap; }
 .center { min-height: 60vh; display: grid; place-content: center; gap: 12px; text-align: center; }
@@ -299,6 +306,8 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 
 /* --- tables and lists: printed rows ------------------------------------------------ */
 .table-wrap { overflow-x: auto; margin-bottom: 22px; }
+.table-wrap--inner { margin-bottom: 14px; }
+.table-wrap--inner .table td, .table-wrap--inner .table th { white-space: nowrap; }   /* scroll sideways instead of wrapping each cell */
 .table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .table th { text-align: left; font: 760 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--print); padding: 16px 14px 12px; border-bottom: 1.5px solid var(--print); white-space: nowrap; }
 .table td { padding: 12px 14px; border-bottom: 1.5px dashed var(--paper-line); vertical-align: top; }
@@ -373,6 +382,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .modal__panel { background: var(--paper); padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; animation: drop 480ms var(--ease) both;
   -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
           mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat; }
+.modal__panel--wide { width: min(980px, 100%); }
 .modal__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1.5px dashed var(--paper-line); }
 .modal__head h3 { font: 760 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -525,6 +535,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .range__field { display: grid; gap: 4px; }
 .range__field span { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ox-2); }
 .range__field .input { width: 150px; }
+.range__field--period .input { width: 250px; }
 .paper .range__field span, .modal .range__field span { color: var(--print-2); }
 .switch { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; font-size: 14px; color: var(--on-ox); cursor: pointer; }
 .switch input { width: 18px; height: 18px; accent-color: var(--paper); }
@@ -551,6 +562,14 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .kpi--good .kpi__value { color: var(--ok); }
 .kpi--bad .kpi__value { color: var(--ink-red); }
 .kpi--warn .kpi__value { color: var(--warn); }
+/* Finance: the four figures the founder checks first (MRR, paying customers, collected, outstanding) stand larger. */
+.kpis--lead { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Revenue and unit economics: six tiles as two even rows of three, no orphan. */
+.kpis--units { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpis--lead .kpi, .kpis--units .kpi { align-content: start; }
+.kpis--lead .kpi { padding: 18px 20px 22px; gap: 6px; }
+.kpis--lead .kpi::before { margin: -18px -20px 10px; }
+.kpis--lead .kpi__value { font-size: 34px; }
 
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 22px; margin-bottom: 22px; }
 .charts > .card { margin-bottom: 0; }
@@ -603,6 +622,10 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   .kpis { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .kpi__value { font-size: 22px; }
   .charts { grid-template-columns: 1fr; }
+  .kpis--lead, .kpis--units { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis--lead .kpi { padding: 14px 14px 18px; }
+  .kpis--lead .kpi::before { margin: -14px -14px 8px; }
+  .kpis--lead .kpi__value { font-size: 26px; }
 }
 /* a ticket in a stack must shrink to the screen, however wide its table is */
 .stack > .card, .cols > .card, .charts > .card { min-width: 0; }
@@ -625,13 +648,30 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .kpi__facts dt { text-transform: uppercase; letter-spacing: 0.06em; color: var(--print-2); }
 .kpi__facts dd { margin: 0; color: var(--print); font-variant-numeric: tabular-nums; }
 .kpi__delta { margin-top: 2px; }
-.delta { display: inline-flex; flex-wrap: wrap; gap: 2px 5px; align-items: baseline; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: 3px; border: 1.5px solid currentColor; max-width: 100%; }
-.delta--good { color: var(--ok); }
-.delta--bad { color: var(--ink-red); }
-.delta--flat { color: var(--print-2); }
+.delta { display: inline-flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: 3px; border: 1.5px solid currentColor; max-width: 100%; }
+.delta--good { color: var(--trend-good); }
+.delta--bad { color: var(--trend-bad); }
+.delta--neutral { color: var(--print-2); }
+.trend-arrow { flex: none; }
 .delta--none { color: var(--print-2); border-style: dashed; font-weight: 500; text-transform: none; }
 .delta__label { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--print-2); flex-basis: 100%; }
 .kpi--hero .delta__label { flex-basis: auto; }
+
+/* Green or red by how the figure is doing (src/trend.ts), the same as admin's
+   shared/trend.css. While it first counts up (CountUp sets --count) the
+   figure starts in the normal print and takes its colour as it grows. */
+.count-num { font-variant-numeric: tabular-nums; }
+.trend-value--good { color: var(--trend-good); }
+.trend-value--bad { color: var(--trend-bad); }
+.trend-value--good .count-num { color: color-mix(in srgb, var(--trend-good) calc(var(--count, 1) * 100%), var(--print)); }
+.trend-value--bad .count-num { color: color-mix(in srgb, var(--trend-bad) calc(var(--count, 1) * 100%), var(--print)); }
+/* A green figure lights up once as it lands (useTrendPop). */
+.trend-pop { animation: trend-pop 520ms var(--ease) both; }
+@keyframes trend-pop {
+  0% { text-shadow: 0 0 0 transparent; }
+  35% { text-shadow: 0 0 16px color-mix(in srgb, var(--trend-good) 55%, transparent); }
+  100% { text-shadow: 0 0 0 transparent; }
+}
 
 .kpi--rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; padding: 18px 22px 24px; align-content: start; }
 .kpi--rings::before { grid-column: 1 / -1; margin: -18px -22px 2px; }
@@ -686,4 +726,55 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   .chart__dot--in { opacity: 1; }
   .chart__area--in { opacity: 0.08; }
   .ring__seg { transition: none; }
+  .trend-pop { animation: none; }
+}
+
+/* --- agreement: the next invoice as a till slip ------------------------------- */
+.next-invoice { margin: 16px 0 6px; padding: 12px 14px 10px; background: var(--paper-2); border-radius: 3px; border: 1.5px dashed var(--paper-line); }
+.next-invoice__head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 6px; }
+.next-invoice__lines { width: 100%; border-collapse: collapse; font: 420 13px/1.5 var(--mono); font-stretch: 87.5%; }
+.next-invoice__lines td { padding: 4px 0; border-bottom: 1.5px dashed var(--paper-line); vertical-align: top; }
+.next-invoice__lines td.num { text-align: right; white-space: nowrap; padding-left: 14px; }
+.next-invoice__total td { border-bottom: 0; font-weight: 760; padding-top: 6px; }
+.inline-edit { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline-edit .input { width: 110px; min-height: 32px; padding: 4px 8px; }
+.payments-actions { justify-content: space-between; align-items: center; margin: 0 0 14px; }
+.payments-actions p { max-width: 60ch; }
+.status--billing-ending { color: var(--warn); }
+.status--billing-ended { color: var(--print-2); }
+.status--billing-scheduled { color: var(--warn); }
+
+/* Chart tooltip (components/ChartTip.tsx): a small paper slip, tokens so dark mode follows. */
+.chart, .ring { position: relative; }
+.chart-tip { position: absolute; left: 0; top: 0; z-index: 5; display: grid; gap: 3px; min-width: 120px; max-width: min(260px, 100%); padding: 8px 10px; border-radius: var(--radius); background: var(--paper); color: var(--print); box-shadow: inset 0 0 0 1px var(--paper-line), 0 10px 24px -10px rgb(0 0 0 / 0.4); font: 500 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; pointer-events: none; visibility: hidden; opacity: 0; transform: translateY(2px); transition: opacity 120ms var(--ease), transform 120ms var(--ease); text-align: left; }
+.chart-tip[data-open="true"] { visibility: visible; opacity: 1; transform: none; }
+.chart-tip--below { transform: translateY(-2px); }
+.chart-tip__heading { font: 700 12px/1.3 var(--sans); }
+.chart-tip__row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chart-tip__label { color: var(--print-2); }
+.chart-tip__value { margin-left: auto; font-weight: 700; }
+.chart-tip__note { color: var(--print-2); font-size: 11px; }
+.chart-tip__swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; display: inline-block; background: var(--print); }
+.chart-tip__swatch--red { background: var(--ink-red); } .chart-tip__swatch--warn { background: #d9961f; }
+.chart-tip__swatch--ok { background: var(--ok); } .chart-tip__swatch--steel { background: var(--steel-lo); }
+.chart-tip__swatch--line { width: 12px; height: 2px; }
+.chart-hit { fill: transparent; pointer-events: all; }
+.chart-band { fill: var(--print); opacity: 0.07; pointer-events: none; }
+.chart__dot--on { r: 4.5px; }
+.ring__seg--on { stroke-width: 18; }
+.chart-tip-surface { touch-action: pan-y; }
+.chart-tip-surface:focus { outline: none; }
+.chart-tip-surface:focus-visible { outline: 2px solid var(--ink-red); outline-offset: 3px; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) { .chart-tip { transition: none; } }
+
+/* Card readers: on a phone each row is a block (reader, status, customer and location, last seen). */
+.stack-label { display: none; }
+@media (max-width: 600px) {
+  .table--stack thead { display: none; }
+  .table--stack tr { display: block; padding: 14px 18px; border-bottom: 1.5px dashed var(--paper-line); }
+  .table--stack tr:last-child { border-bottom: 0; }
+  .table-wrap .table--stack td, .table-wrap .table--stack td:first-child, .table-wrap .table--stack td:last-child {
+    display: block; padding: 3px 0; border: 0; white-space: normal;
+  }
+  .table--stack .stack-label { display: inline; color: var(--muted); }
 }

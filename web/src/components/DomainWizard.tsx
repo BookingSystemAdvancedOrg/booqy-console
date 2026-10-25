@@ -284,7 +284,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
       {result !== undefined ? (
         <>
           <Notice kind="ok">Transfer started. The site and email keep working - the name servers don't change.
-            The old registrar usually releases the domain within 5–7 days (approving their email speeds it up).</Notice>
+            The old registrar usually releases the domain within 5-7 days (approving their email speeds it up).</Notice>
           {result && <SupportCaseBox domain={domain} tenantId={tenant.tenantId} supportCase={result} />}
         </>
       ) : (

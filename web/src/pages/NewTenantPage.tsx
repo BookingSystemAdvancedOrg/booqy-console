@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { addDays, fmtDay, isoDay, periodOf, periodText } from "../finance";
 import { Card, ErrorNotice, Field, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
@@ -28,7 +29,7 @@ const LABELS: Record<string, string> = {
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
   "overrides.maxLocations": "Locations allowed", locations: "Locations", notes: "Notes",
-  "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "First invoice date",
+  "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "Agreement start date",
   "billing.collectionMethod": "Invoicing",
 };
 const LOCATION_LABELS: Record<string, string> = { name: "name", address: "address", phone: "phone", email: "email" };
@@ -92,6 +93,9 @@ export default function NewTenantPage() {
   const maxLocations = f.maxLocations ? Number(f.maxLocations) : plan?.maxLocations ?? 1;
   const shownPrice = priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
+  // Billing counts from the start date; the first invoice is the 25th after that period (in arrears).
+  const firstPeriod = periodOf(startDate || isoDay(new Date()));
+  const firstInvoiceText = `First invoice on ${fmtDay(addDays(firstPeriod.end, 1))}, for ${periodText(firstPeriod.start, firstPeriod.end)}, pro rata from ${startDate ? fmtDay(startDate) : "today"}.`;
 
   const errorsFor = (prefix: string) =>
     Object.fromEntries(Object.entries(fields).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k.slice(prefix.length), v]));
@@ -237,30 +241,32 @@ export default function NewTenantPage() {
 
       <Card title="4b · Invoicing">
         <p className="muted small">
-          Invoiced monthly through Stripe (price plus 25 % VAT, invoice by email, 30 days to pay). A try-out customer can
-          leave at the end of any paid month and becomes a subscription by itself after 6 months, or when you convert them;
-          a subscription customer leaves 3 months after the current month ends.
+          Invoiced in arrears through Stripe: on the 25th, one invoice for the period from the 25th to the 24th that has just
+          ended, with the monthly price (pro rata by days for a part period) and the SMS parts sent, plus 25 % VAT, emailed
+          with 30 days to pay. A try-out customer can leave with any period and becomes a subscription by itself after
+          6 months, or when you convert them; a subscription customer has 3 months' notice.
         </p>
         <div className="choices">
           <label className={`choice${terms === "trial" ? " choice--on" : ""}`}>
             <input id="f-billing.terms" type="radio" name="terms" checked={terms === "trial"} onChange={() => setTerms("trial")} />
             <strong>Try-out period</strong>
-            <span className="muted small">Pays monthly, can stop at the end of any paid month. Becomes a subscription after 6 months.</span>
+            <span className="muted small">Can leave with any period. Becomes a subscription after 6 months.</span>
           </label>
           <label className={`choice${terms === "subscription" ? " choice--on" : ""}`}>
             <input type="radio" name="terms" checked={terms === "subscription"} onChange={() => setTerms("subscription")} />
             <strong>Subscription</strong>
-            <span className="muted small">Pays monthly with 3 months' notice.</span>
+            <span className="muted small">3 months' notice.</span>
           </label>
         </div>
         {fields["billing.terms"] && <p className="field__msg">{fields["billing.terms"]}</p>}
         <label className="check">
           <input type="checkbox" checked={startInvoicing} onChange={(e) => setStartInvoicing(e.target.checked)} />
-          Start invoicing when the customer is created
+          Start the agreement when the customer is created
         </label>
         {startInvoicing && (
           <div className="grid">
-            <Field label="First invoice date (optional)" error={fields["billing.startDate"]} hint="Empty = the first invoice today; a later date delays it, nothing is charged before">
+            <Field label="Agreement starts (optional)" error={fields["billing.startDate"]}
+                   hint={`Empty = today. Nothing is charged now. ${firstInvoiceText}`}>
               <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </Field>
           </div>
@@ -315,7 +321,7 @@ export default function NewTenantPage() {
             <div className="small muted">
               On submit: tenant + locations are saved → owner invited by email → Stripe connected account created
               {PLATFORM_DOMAIN ? ` → ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""} → status becomes Active (about a minute).
-              {startInvoicing ? ` Invoicing starts${startDate ? ` on ${startDate}` : " today"} at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT (${terms === "trial" ? "try-out" : "subscription"}).` : ""}
+              {startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT (${terms === "trial" ? "try-out" : "subscription"}). ${firstInvoiceText}` : ""}
             </div>
           )}
         </div>

@@ -1,60 +1,44 @@
-"""The customers' subscriptions: Stripe Billing on the PLATFORM account.
+"""The customers' agreements and their monthly invoices, in arrears.
 
-One Stripe Customer per restaurant company, one Subscription on the plan's
-monthly price (the PLAN# row's stripePriceId, created by Terraform from
-var.plans) with Swedish VAT (BILLING_TAX_RATE_ID). Invoices are emailed by
-Stripe; payment is by card on the hosted invoice page, automatically with
-a card on file, or by bankgiro to your own account with the invoice marked
-paid in Stripe. The restaurant's Connect account (guest payments) is a
-different thing and untouched here.
+One Stripe Customer per restaurant company on the PLATFORM account; no
+Stripe subscriptions. The agreement lives on PROFILE.billing: status
+(active, ended), startsAt, endsAt, terms (trial = try-out period: leaves
+with the current period and becomes a subscription after
+BILLING_TRIAL_MONTHS; subscription = BILLING_NOTICE_MONTHS notice),
+priceSek (own monthly price, else the plan's), smsPriceSek (own price per
+SMS part, else BILLING_SMS_PRICE_SEK), collectionMethod,
+lastInvoicedPeriodEnd, offboardAtEnd, previous (earlier agreements,
+[{startsAt, endsAt}], that ended but are not invoiced in full yet: a
+customer who leaves and comes back in the same period pays for both
+stretches on the same invoice).
 
-What this module writes:
-    tenant table   TENANT#<id> PROFILE.billing   customerId, subscriptionId,
-                   status, priceId, planId, mrrSek, collectionMethod,
-                   currentPeriodStart/End, pauseCollection, startedAt/By,
-                   pastDueSince, autoSuspended
-                   STRIPE_CUSTOMER#<cus> TENANT   tenantId (one transaction
-                   with the first billing write)
-    finance table  TENANT#<id> INVOICE#<day>#<in_...>  mirror of the rows
-                   platform-stripe-webhook writes (application repo,
-                   shared/billing.py) - the Stripe import here uses the same
-                   layout and booking flags, so both can write safely.
-
-From the first write on, platform-stripe-webhook keeps PROFILE.billing and
-the ledger current. The daily dunning task (financeTask, EventBridge
-Scheduler) then works the unpaid invoices, all through Stripe:
-  * reminders: from the day after the due date and every
-    BILLING_REMINDER_INTERVAL_DAYS days, Stripe re-sends the invoice email
-    (POST /invoices/{id}/send; remindersSent / lastReminderAt on the row);
-  * late fee: BILLING_LATE_FEE_AFTER_DAYS days after the due date, one
-    VAT-free invoice item of BILLING_LATE_FEE_SEK on the customer
-    (förseningsavgift), billed on their next invoice;
-  * interest: when a late invoice is paid, one VAT-free invoice item for
-    the overdue amount at BILLING_REFERENCE_RATE_PCT +
-    BILLING_INTEREST_MARGIN_PCT per year for the days late
-    (dröjsmålsränta); a customer without a running subscription gets a
-    one-off invoice for the items instead;
-  * suspension: customers past due longer than BILLING_SUSPEND_AFTER_DAYS
-    are suspended and resumed once they paid.
+Billing periods run from the 25th to the 24th. On the 25th (financeTask
+"invoice", EventBridge Scheduler) every agreement that ran in the period
+just ended gets one Stripe invoice: the monthly price (pro rata by days
+for a part period), one SMS line (parts x price, with the per-location
+split in the description), plus any pending late fee or interest items;
+25 % VAT on every line. Emailed invoices are due BILLING_DAYS_UNTIL_DUE
+days later; a card on file is charged at once. The webhook writes the
+ledger row and the revenue; reminders, late fee, interest and suspension
+(dunning_task) act on the invoices. The ledger rows mirror those
+platform-stripe-webhook writes (application shared/billing.py), with the
+same booking flags, so both can write safely.
 """
 
 import json
-import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from . import validation as v
-from .core import (ApiError, client, env, log, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
-                   write_audit)
+from .core import (ApiError, client, env, location_table, log, now_iso, query_all, tenant_table, to_ddb,
+                   to_ddb_value, write_audit)
 from .stripe_connect import stripe_request
 from .tenants import ensure_billing_map, get_plan, get_profile, offboard_tenant, resume_tenant, suspend_tenant, tkey
 
 COLLECTION_METHODS = ("send_invoice", "charge_automatically")
 TERMS = ("trial", "subscription")
-OPEN_STATUSES = ("active", "trialing", "past_due", "unpaid", "incomplete")
-PAST_DUE_STATUSES = ("past_due", "unpaid")
 SUBSCRIPTION_FIELDS = ("subscriptionId", "status", "priceId", "planId", "mrrSek", "collectionMethod",
                        "currentPeriodStart", "currentPeriodEnd", "cancelAt", "canceledAt", "pauseCollection",
                        "trialEnd")
@@ -86,73 +70,6 @@ def _id(value):
 def _billing(profile: dict) -> dict:
     raw = profile.get("billing")
     return dict(raw) if isinstance(raw, dict) else {}
-
-
-# ------------------------------------------------------------- Stripe -> rows
-def monthly_sek(subscription: dict) -> Decimal:
-    total = Decimal(0)
-    for item in ((subscription.get("items") or {}).get("data") or []):
-        price = item.get("price") or {}
-        recurring = price.get("recurring") or {}
-        amount = sek(price.get("unit_amount")) * Decimal(int(item.get("quantity") or 1))
-        interval, count = recurring.get("interval"), int(recurring.get("interval_count") or 1)
-        if interval == "year":
-            amount = amount / Decimal(12 * count)
-        elif interval == "month":
-            amount = amount / Decimal(count)
-        total += amount
-    return total.quantize(CENTS, rounding=ROUND_HALF_UP)
-
-
-def subscription_state(subscription: dict, *, deleted: bool = False) -> dict:
-    items = ((subscription.get("items") or {}).get("data") or [])
-    first = items[0] if items else {}
-    price = first.get("price") or {}
-    metadata = price.get("metadata") or {}
-    return {
-        "subscriptionId": _id(subscription.get("id")),
-        "status": "canceled" if deleted else (subscription.get("status") or "unknown"),
-        "priceId": _id(price.get("id")),
-        "planId": metadata.get("planId") or (subscription.get("metadata") or {}).get("planId") or price.get("lookup_key") or None,
-        "mrrSek": Decimal(0) if deleted else monthly_sek(subscription),
-        "collectionMethod": subscription.get("collection_method") or None,
-        "currentPeriodStart": _iso(first.get("current_period_start") or subscription.get("current_period_start")),
-        "currentPeriodEnd": _iso(first.get("current_period_end") or subscription.get("current_period_end")),
-        "cancelAt": _iso(subscription.get("cancel_at")),
-        "canceledAt": _iso(subscription.get("canceled_at")),
-        "pauseCollection": bool(subscription.get("pause_collection")) and not deleted,
-        "trialEnd": _iso(subscription.get("trial_end")),
-    }
-
-
-def store_subscription(tenant_id: str, customer_id: str, state: dict, *, extra: dict | None = None) -> bool:
-    """Writes the state on PROFILE.billing (the console's own writes carry no
-    Stripe event time, so they never block a later webhook)."""
-    names = {"#b": "billing", "#c": "customerId", "#u": "updatedAt"}
-    values = {":cus": {"S": customer_id}, ":now": {"S": now_iso()}}
-    sets, removes = ["#b.#u = :now"], []
-    fields = {**state, **(extra or {})}
-    for i, (key, value) in enumerate(fields.items()):
-        names[f"#f{i}"] = key
-        if value is None:
-            removes.append(f"#b.#f{i}")
-        else:
-            values[f":v{i}"] = to_ddb_value(value)
-            sets.append(f"#b.#f{i} = :v{i}")
-    if state.get("status") in PAST_DUE_STATUSES:
-        names["#p"] = "pastDueSince"
-        sets.append("#b.#p = if_not_exists(#b.#p, :now)")
-    elif state.get("status") in ("active", "trialing", "canceled"):
-        names["#p"] = "pastDueSince"
-        removes.append("#b.#p")
-    expression = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
-    try:
-        client("dynamodb").update_item(
-            TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
-            ConditionExpression="#b.#c = :cus", ExpressionAttributeNames=names, ExpressionAttributeValues=values)
-    except client("dynamodb").exceptions.ConditionalCheckFailedException:
-        return False
-    return True
 
 
 # ------------------------------------------------------------- the customer
@@ -321,39 +238,64 @@ def list_invoices(tenant_id: str, limit: int = 60) -> list[dict]:
     return out
 
 
-# ------------------------------------------------------------- the routes
-def _plan_price(profile: dict) -> tuple[dict, str]:
-    plan = get_plan(profile.get("planId") or "")
-    if not plan:
-        raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
-    price_id = plan.get("stripePriceId")
-    if not price_id:
-        raise ApiError(409, "plan_without_price",
-                       f"The plan {plan.get('name')} has no Stripe price yet - set price_sek in the infrastructure "
-                       "tfvars and apply")
-    return plan, price_id
+# ------------------------------------------------------------- periods: the 25th to the 24th
+SV_MONTHS = ("jan", "feb", "mars", "apr", "maj", "juni", "juli", "aug", "sep", "okt", "nov", "dec")
 
 
-def effective_price(profile: dict, plan: dict) -> int | None:
-    """The customer's own monthly price (ex VAT) when one is set, else None
-    (= the plan's price)."""
-    price = _billing(profile).get("priceSek")
-    if price is None or int(price) == int(plan.get("priceSek") or -1):
-        return None
-    return int(price)
+def period_of(day: date) -> tuple[date, date]:
+    """The billing period a day falls in: from the 25th to the 24th."""
+    start = day.replace(day=25) if day.day >= 25 else (day.replace(day=1) - timedelta(days=1)).replace(day=25)
+    end = (start + timedelta(days=31)).replace(day=24)
+    return start, end
 
 
-def _item_params(plan: dict, price_id: str, price_sek: int | None, prefix: str = "items[0]") -> dict:
-    """Stripe subscription item: the plan's price, or the customer's own
-    amount as a price on the plan's product."""
-    if price_sek is None:
-        return {f"{prefix}[price]": price_id}
-    product = plan.get("stripeProductId")
-    if not product:
-        raise ApiError(409, "plan_without_price", f"The plan {plan.get('name')} has no Stripe product yet - apply the infrastructure")
-    return {f"{prefix}[price_data][currency]": "sek", f"{prefix}[price_data][product]": product,
-            f"{prefix}[price_data][unit_amount]": int(price_sek) * 100, f"{prefix}[price_data][tax_behavior]": "exclusive",
-            f"{prefix}[price_data][recurring][interval]": "month"}
+def next_period(end: date) -> tuple[date, date]:
+    return period_of(end + timedelta(days=1))
+
+
+def period_days(start: date, end: date) -> int:
+    return (end - start).days + 1
+
+
+def period_text(start: date, end: date) -> str:
+    return f"{start.day} {SV_MONTHS[start.month - 1]} till {end.day} {SV_MONTHS[end.month - 1]} {end.year}"
+
+
+def active_days(starts_at: date | None, ends_at: date | None, start: date, end: date) -> int:
+    """Days of the period the agreement ran: from its start to its end."""
+    if starts_at is None:
+        return 0
+    a = max(start, starts_at)
+    b = min(end, ends_at) if ends_at else end
+    return max(0, (b - a).days + 1)
+
+
+def stints(billing: dict) -> list[tuple[date, date | None]]:
+    """The stretches to invoice: earlier agreements still waiting for
+    their last invoice, then the current one (open-ended if no end)."""
+    out = []
+    for s in billing.get("previous") or []:
+        a, b = _date(s.get("startsAt")), _date(s.get("endsAt"))
+        if a and b:
+            out.append((a, b))
+    starts_at = _date(billing.get("startsAt"))
+    if starts_at:
+        out.append((starts_at, _date(billing.get("endsAt"))))
+    return out
+
+
+def fee_for(price_sek: int, starts_at: date | None, ends_at: date | None, start: date, end: date) -> Decimal:
+    """The monthly price for the period, pro rata by days for a part period."""
+    return prorate(price_sek, active_days(starts_at, ends_at, start, end), period_days(start, end))
+
+
+def prorate(price_sek: int, active: int, days: int) -> Decimal:
+    """The monthly price for `active` of the period's `days`."""
+    if active <= 0:
+        return Decimal("0.00")
+    if active >= days:
+        return Decimal(int(price_sek)).quantize(CENTS)
+    return (Decimal(int(price_sek)) * Decimal(active) / Decimal(days)).quantize(CENTS, rounding=ROUND_HALF_UP)
 
 
 def _add_months(when: datetime, months: int) -> datetime:
@@ -364,51 +306,237 @@ def _add_months(when: datetime, months: int) -> datetime:
     return when.replace(year=year, month=month, day=min(when.day, last))
 
 
-def end_date(billing: dict, now: datetime) -> datetime:
-    """When a cancellation takes effect: a try-out ends with the paid month,
-    a subscription BILLING_NOTICE_MONTHS after the current month ends."""
-    period_end = _parse(billing.get("currentPeriodEnd")) or _add_months(now, 1)
-    if period_end < now:
-        period_end = _add_months(now, 1)
-    if billing.get("terms") == "trial":
-        return period_end
-    return _add_months(period_end, int(_env_num("BILLING_NOTICE_MONTHS", "3")))
+def _date(iso) -> date | None:
+    if not iso:
+        return None
+    try:
+        return date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return None
 
 
-def _view(profile: dict) -> dict:
+# ------------------------------------------------------------- the agreement on PROFILE.billing
+def _write_billing(tenant_id: str, fields: dict) -> None:
+    """SET the given billing.<field>s (None = REMOVE)."""
+    ensure_billing_map(tenant_id)
+    names, values, sets, removes = {"#b": "billing"}, {}, [], []
+    for i, (key, value) in enumerate(fields.items()):
+        names[f"#f{i}"] = key
+        if value is None:
+            removes.append(f"#b.#f{i}")
+        else:
+            values[f":v{i}"] = to_ddb_value(value)
+            sets.append(f"#b.#f{i} = :v{i}")
+    values[":now"] = {"S": now_iso()}
+    sets.append("#b.updatedAt = :now")
+    expression = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
+    client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
+                                   ConditionExpression="attribute_exists(PK)",
+                                   ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+
+
+def plan_of(profile: dict) -> dict:
+    return get_plan(profile.get("planId") or "") or {}
+
+
+def monthly_price(profile: dict, plan: dict | None = None) -> int:
+    """What the customer pays per period, ex VAT: their own price or the plan's."""
     billing = _billing(profile)
-    plan = get_plan(profile.get("planId") or "") or {}
+    if billing.get("priceSek") is not None:
+        return int(billing["priceSek"])
+    plan = plan if plan is not None else plan_of(profile)
+    return int(plan.get("priceSek") or 0)
+
+
+def sms_price(profile: dict) -> Decimal:
+    billing = _billing(profile)
+    if billing.get("smsPriceSek") is not None:
+        return Decimal(billing["smsPriceSek"]).quantize(CENTS)
+    return _env_num("BILLING_SMS_PRICE_SEK", "0.70").quantize(CENTS)
+
+
+def phase(billing: dict, today: date | None = None) -> str:
+    """none | scheduled (starts later) | active | ending (an end date is
+    set) | ended."""
+    today = today or datetime.now(timezone.utc).date()
     status = billing.get("status")
+    if status == "ended":
+        return "ended"
+    if status != "active":
+        return "none"
+    starts_at, ends_at = _date(billing.get("startsAt")), _date(billing.get("endsAt"))
+    if starts_at and starts_at > today:
+        return "scheduled"
+    if ends_at:
+        return "ending"
+    return "active"
+
+
+def agreement_running(billing: dict, today: date | None = None) -> bool:
+    return phase(billing, today) in ("scheduled", "active", "ending")
+
+
+def migrate_legacy(tenant_id: str, profile: dict, actor: str) -> dict | None:
+    """A Stripe subscription from the first version (billed in advance):
+    cancelled without a final invoice, its open advance invoice voided, and
+    the agreement continues in arrears from the same start date."""
+    billing = _billing(profile)
+    sub_id = billing.get("subscriptionId")
+    if not sub_id:
+        return None
+    customer_id = billing.get("customerId")
+    voided = []
+    if billing.get("status") not in ("canceled", "incomplete_expired"):
+        stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "false", "prorate": "false"})
+        if customer_id:
+            page = stripe_request("GET", "/invoices", {"customer": customer_id, "subscription": sub_id, "status": "open", "limit": 100})
+            for invoice in page.get("data") or []:
+                stripe_request("POST", f"/invoices/{invoice['id']}/void", {})
+                voided.append(invoice["id"])
+    started = _date(billing.get("startedAt")) or _date(billing.get("termsSince")) or datetime.now(timezone.utc).date()
+    ended = billing.get("status") in ("canceled", "incomplete_expired")
+    fields = {
+        "status": "ended" if ended else "active", "startsAt": started.isoformat(),
+        "endsAt": (_date(billing.get("canceledAt")) or started).isoformat() if ended else None,
+        "legacySubscriptionId": sub_id, "subscriptionId": None, "priceId": None, "mrrSek": None,
+        "currentPeriodStart": None, "currentPeriodEnd": None, "cancelAt": None, "canceledAt": None,
+        "pauseCollection": None, "trialEnd": None, "eventCreated": None,
+    }
+    _write_billing(tenant_id, fields)
+    write_audit(tenant_id, "billing_migrated_to_arrears", actor, {"subscriptionId": sub_id, "voidedInvoices": voided})
+    return {"subscriptionId": sub_id, "voided": voided}
+
+
+# ------------------------------------------------------------- what a period costs
+def _location_names(tenant_id: str) -> dict:
+    rows = query_all(TableName=location_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :l)",
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":l": {"S": "LOCATION#"}})
+    return {r["locationId"]: r.get("name") or r["locationId"] for r in rows if r.get("locationId")}
+
+
+def _sum_rows(tenant_id: str, prefix: str, first: date, last: date) -> dict:
+    rows = query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"},
+                                                ":a": {"S": f"{prefix}{first.isoformat()}"}, ":b": {"S": f"{prefix}{last.isoformat()}"}})
+    out = {"smsParts": 0, "sms": 0, "smsBooking": 0, "smsReminder": 0, "smsOrder": 0, "smsCatering": 0}
+    for r in rows:
+        for k in out:
+            out[k] += int(r.get(k) or 0)
+    return out
+
+
+def sms_in_period(tenant_id: str, first: date, last: date, locations: dict | None = None) -> dict:
+    """SMS parts sent between the days (inclusive), in total, by type and
+    by location."""
+    totals = _sum_rows(tenant_id, "DAY#", first, last)
+    by_location = {}
+    for location_id, name in (locations or {}).items():
+        parts = _sum_rows(tenant_id, f"LOC#{location_id}#DAY#", first, last)["smsParts"]
+        if parts:
+            by_location[name] = parts
+    return {"parts": totals["smsParts"], "messages": totals["sms"],
+            "byType": {"booking": totals["smsBooking"], "reminder": totals["smsReminder"],
+                       "order": totals["smsOrder"], "catering": totals["smsCatering"]},
+            "byLocation": by_location}
+
+
+def invoice_plan(profile: dict, start: date, end: date, plan: dict | None = None, locations: dict | None = None) -> dict:
+    """What one period's invoice would carry for the customer."""
+    billing = _billing(profile)
+    plan = plan if plan is not None else plan_of(profile)
+    ends_at = _date(billing.get("endsAt"))
+    price = monthly_price(profile, plan)
+    days, active = period_days(start, end), 0
+    sms = {"parts": 0, "messages": 0, "byType": {}, "byLocation": {}}
+    for a, b in stints(billing):
+        n = active_days(a, b, start, end)
+        if n <= 0:
+            continue
+        active += n
+        part = sms_in_period(profile["tenantId"], max(start, a), min(end, b) if b else end, locations)
+        sms["parts"] += part["parts"]
+        sms["messages"] += part["messages"]
+        for key in ("byType", "byLocation"):
+            for k, v in part[key].items():
+                sms[key][k] = sms[key].get(k, 0) + v
+    active = min(active, days)
+    fee = prorate(price, active, days)
+    unit = sms_price(profile)
+    sms_sek = (Decimal(sms["parts"]) * unit).quantize(CENTS, rounding=ROUND_HALF_UP)
+    period = period_text(start, end)
+    fee_text = f"Booqy {plan.get('name') or profile.get('planId') or ''}, {period}".strip()
+    if 0 < active < days:
+        fee_text += f" ({active} av {days} dagar)"
+    sms_text = f"SMS {period}: {sms['parts']} delar x {unit:.2f} kr".replace(".", ",")
+    if sms["byLocation"]:
+        sms_text += " (" + ", ".join(f"{name} {n}" for name, n in sorted(sms["byLocation"].items())) + ")"
     return {
-        "customerId": billing.get("customerId"), "subscriptionId": billing.get("subscriptionId"),
-        "status": status, "planId": billing.get("planId"), "priceId": billing.get("priceId"),
-        "mrrSek": billing.get("mrrSek"), "collectionMethod": billing.get("collectionMethod"),
-        "currentPeriodStart": billing.get("currentPeriodStart"), "currentPeriodEnd": billing.get("currentPeriodEnd"),
-        "cancelAt": billing.get("cancelAt"), "canceledAt": billing.get("canceledAt"), "trialEnd": billing.get("trialEnd"),
-        "pauseCollection": bool(billing.get("pauseCollection")),
+        "periodStart": start.isoformat(), "periodEnd": end.isoformat(), "period": period,
+        "days": days, "activeDays": active, "monthlySek": price, "feeSek": fee, "feeText": fee_text,
+        "smsParts": sms["parts"], "smsMessages": sms["messages"], "smsByType": sms["byType"],
+        "smsByLocation": sms["byLocation"], "smsPriceSek": unit, "smsSek": sms_sek, "smsText": sms_text,
+        "totalSek": (fee + sms_sek).quantize(CENTS), "final": bool(ends_at and ends_at <= end),
+        "nothingToInvoice": fee == 0 and sms["parts"] == 0,
+    }
+
+
+def pending_periods(billing: dict, today: date) -> list[tuple[date, date]]:
+    """Complete periods (ended before today) the agreement ran in and that
+    are not invoiced yet."""
+    ranges = stints(billing)
+    if not _date(billing.get("startsAt")) or billing.get("status") not in ("active", "ended"):
+        return []
+    first = min(a for a, _b in ranges)
+    ends_at = _date(billing.get("endsAt"))
+    done = _date(billing.get("lastInvoicedPeriodEnd"))
+    start, end = period_of(max(first, done + timedelta(days=1)) if done else first)
+    out = []
+    while end < today:
+        if ends_at and start > ends_at:
+            break
+        out.append((start, end))
+        start, end = next_period(end)
+    return out
+
+
+# ------------------------------------------------------------- the Billing tab
+def _view(profile: dict, today: date | None = None) -> dict:
+    today = today or datetime.now(timezone.utc).date()
+    billing = _billing(profile)
+    plan = plan_of(profile)
+    ph = phase(billing, today)
+    since = _parse(billing.get("termsSince"))
+    trial_months = int(_env_num("BILLING_TRIAL_MONTHS", "6"))
+    view = {
+        "customerId": billing.get("customerId"), "status": ph, "subscribed": ph in ("scheduled", "active", "ending"),
+        "terms": billing.get("terms") or "subscription", "termsSince": billing.get("termsSince"),
+        "trialEndsAt": (_add_months(since, trial_months).isoformat() if billing.get("terms") == "trial" and since and trial_months > 0
+                        and ph in ("scheduled", "active") else None),
+        "startsAt": billing.get("startsAt"), "endsAt": billing.get("endsAt"),
+        "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
+        "monthlySek": monthly_price(profile, plan),
+        "smsPriceSek": (Decimal(billing["smsPriceSek"]).quantize(CENTS) if billing.get("smsPriceSek") is not None else None),
+        "smsPrice": sms_price(profile), "smsPriceDefaultSek": _env_num("BILLING_SMS_PRICE_SEK", "0.70").quantize(CENTS),
+        "collectionMethod": billing.get("collectionMethod") or "send_invoice",
+        "hasCard": bool(billing.get("defaultPaymentMethod")),
         "pastDueSince": billing.get("pastDueSince"), "autoSuspended": bool(billing.get("autoSuspended")),
         "lastPaidAt": billing.get("lastPaidAt"), "lastPaymentFailedAt": billing.get("lastPaymentFailedAt"),
         "startedAt": billing.get("startedAt"), "startedBy": billing.get("startedBy"),
-        "hasCard": bool(billing.get("defaultPaymentMethod")),
-        "terms": billing.get("terms") or "subscription",
-        "termsSince": billing.get("termsSince"),
-        "trialEndsAt": (_add_months(_parse(billing["termsSince"]), int(_env_num("BILLING_TRIAL_MONTHS", "6"))).isoformat()
-                        if billing.get("terms") == "trial" and _parse(billing.get("termsSince")) and _env_num("BILLING_TRIAL_MONTHS", "6") > 0
-                        else None),
-        "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
-        "monthlySek": int(billing["priceSek"]) if billing.get("priceSek") is not None else plan.get("priceSek"),
-        "noticeMonths": int(_env_num("BILLING_NOTICE_MONTHS", "3")),
-        "trialMonths": int(_env_num("BILLING_TRIAL_MONTHS", "6")),
-        "offboardAtEnd": bool(billing.get("offboardAtEnd")),
-        "endsAt": billing.get("cancelAt"),
-        "subscribed": bool(billing.get("subscriptionId")) and status in OPEN_STATUSES,
-        "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek"),
-                 "stripePriceId": plan.get("stripePriceId")},
-        "priceDiffers": bool(billing.get("subscriptionId")) and status in OPEN_STATUSES and bool(plan.get("stripePriceId"))
-        and int(billing.get("mrrSek") or 0) != int(billing["priceSek"] if billing.get("priceSek") is not None else plan.get("priceSek") or 0),
-        "daysUntilDue": int(env("BILLING_DAYS_UNTIL_DUE", "30")),
-        "suspendAfterDays": int(env("BILLING_SUSPEND_AFTER_DAYS", "14")),
+        "lastInvoicedPeriodEnd": billing.get("lastInvoicedPeriodEnd"), "offboardAtEnd": bool(billing.get("offboardAtEnd")),
+        "noticeMonths": int(_env_num("BILLING_NOTICE_MONTHS", "3")), "trialMonths": trial_months,
+        "daysUntilDue": int(env("BILLING_DAYS_UNTIL_DUE", "30")), "suspendAfterDays": int(env("BILLING_SUSPEND_AFTER_DAYS", "14")),
+        "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek")},
+        "legacySubscriptionId": billing.get("legacySubscriptionId"), "pendingSubscriptionId": billing.get("subscriptionId"),
+        "nextInvoice": None, "pendingPeriods": len(pending_periods(billing, today)),
+        "previous": [{"startsAt": s.get("startsAt"), "endsAt": s.get("endsAt")} for s in billing.get("previous") or []],
     }
+    if ph in ("active", "ending") or (ph == "scheduled" and view["previous"]):
+        start, end = period_of(today)
+        current = invoice_plan(profile, start, end, plan, _location_names(profile["tenantId"]))
+        view["nextInvoice"] = {**current, "date": (end + timedelta(days=1)).isoformat(),
+                               "smsSoFar": True, "dueDate": (end + timedelta(days=1 + view["daysUntilDue"])).isoformat()
+                               if view["collectionMethod"] == "send_invoice" else (end + timedelta(days=1)).isoformat()}
+    return view
 
 
 def get_billing(req) -> tuple[int, dict]:
@@ -426,19 +554,16 @@ def _start_day(f: v.Fields, field: str = "startDate") -> date | None:
     except ValueError:
         f.fail(field, "Use yyyy-mm-dd")
         return None
-    if day <= datetime.now(timezone.utc).date():
-        return None                     # today or earlier = start now
     if day > datetime.now(timezone.utc).date() + timedelta(days=365):
         f.fail(field, "At most a year ahead")
     return day
 
 
 def start_subscription(req) -> tuple[int, dict]:
-    """Starts the customer's subscription (Billing tab). Invoices by email by
-    default; `startDate` (yyyy-mm-dd, in the future) delays the first
-    invoice until then (a Stripe trial, nothing is charged before);
-    `priceSek` is the customer's own monthly price, `terms` trial or
-    subscription."""
+    """Starts the agreement (Billing tab): from `startDate` (today by
+    default; a past date backdates the first invoice, a future one
+    schedules it), on `terms` (trial or subscription), at `priceSek` (the
+    customer's own monthly price) and `collectionMethod`."""
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
     method = f.text("collectionMethod", max_len=30) or "send_invoice"
@@ -458,19 +583,39 @@ def start_subscription(req) -> tuple[int, dict]:
 
 def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_invoice", start_day: str | None = None,
               price_sek: int | None = None, terms: str | None = None) -> dict:
-    """Creates the Stripe customer (if needed) and the subscription on the
-    plan's product: the plan's price, or the customer's own amount."""
+    """Creates the Stripe customer (if needed) and the agreement. Nothing
+    is invoiced now: the first invoice comes on the 25th after the first
+    period, in arrears. A customer whose agreement has ended (but is not
+    invoiced in full yet) can start again from the day after it ended: the
+    ended stretch moves to `previous` and both are on the next invoice."""
     if profile.get("status") not in ("provisioning", "active"):
         raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
                        currentStatus=profile.get("status"))
     billing = _billing(profile)
-    if billing.get("subscriptionId") and billing.get("status") in OPEN_STATUSES:
-        raise ApiError(409, "already_subscribed", "The customer already has a subscription")
-    plan, price_id = _plan_price(profile)
-    if price_sek is None:
-        price_sek = effective_price(profile, plan)
-    elif int(price_sek) == int(plan.get("priceSek") or -1):
+    today = datetime.now(timezone.utc).date()
+    first_day = date.fromisoformat(start_day) if start_day else today
+    done = _date(billing.get("lastInvoicedPeriodEnd"))
+    previous = list(billing.get("previous") or [])
+    old_start, old_end = _date(billing.get("startsAt")), _date(billing.get("endsAt"))
+    if agreement_running(billing, today):
+        if not (old_end and old_end < today and old_end < first_day):
+            hint = (f" until {old_end.isoformat()}: undo the cancellation with Keep the agreement, or start a new one "
+                    f"once it has ended" if old_end else "")
+            raise ApiError(409, "already_subscribed", f"The customer already has a running agreement{hint}")
+        if old_start and (not done or old_end > done):
+            previous.append({"startsAt": max(old_start, done + timedelta(days=1)).isoformat() if done else old_start.isoformat(),
+                             "endsAt": old_end.isoformat()})
+    if done and first_day <= done:
+        nxt = (done + timedelta(days=1)).isoformat()
+        raise ApiError(409, "already_invoiced", f"The period to {done.isoformat()} is already invoiced: start on {nxt} or later",
+                       earliestStart=nxt)
+    plan = plan_of(profile)
+    if not plan:
+        raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
+    if price_sek is not None and int(price_sek) == int(plan.get("priceSek") or -1):
         price_sek = None
+    elif price_sek is None and billing.get("priceSek") is not None:
+        price_sek = int(billing["priceSek"])
     terms = terms or billing.get("terms") or "subscription"
     customer_id = ensure_customer(tenant_id, profile, actor)
     if method == "charge_automatically":
@@ -478,112 +623,97 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_
         if not ((customer.get("invoice_settings") or {}).get("default_payment_method")):
             raise ApiError(409, "no_card", "No card on file yet - create a card link, let the restaurant add a card, "
                                            "then start with charge automatically (or invoice by email instead)")
-    params = {
-        "customer": customer_id, "collection_method": method,
-        "metadata[tenantId]": tenant_id, "metadata[planId]": plan.get("planId") or "", "metadata[terms]": terms,
-        "proration_behavior": "none", **_item_params(plan, price_id, price_sek),
-    }
-    if method == "send_invoice":
-        params["days_until_due"] = int(env("BILLING_DAYS_UNTIL_DUE", "30"))
-    tax_rate = env("BILLING_TAX_RATE_ID", "")
-    if tax_rate:
-        params["default_tax_rates[0]"] = tax_rate
-    if start_day:
-        params["trial_end"] = int(datetime.combine(date.fromisoformat(start_day), datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    sub = stripe_request("POST", "/subscriptions", params,
-                         idempotency_key=f"subscription-{tenant_id}-{int(time.time() // 3600)}")
-    state = subscription_state(sub)
-    store_subscription(tenant_id, customer_id, state,
-                       extra={"startedAt": now_iso(), "startedBy": actor, "autoSuspended": None, "terms": terms,
-                              "termsSince": now_iso(), "priceSek": price_sek, "offboardAtEnd": None})
+    starts = first_day.isoformat()
+    _write_billing(tenant_id, {
+        "status": "active", "startsAt": starts, "endsAt": None, "terms": terms, "termsSince": now_iso(),
+        "priceSek": price_sek, "collectionMethod": method, "startedAt": now_iso(), "startedBy": actor,
+        "lastInvoicedPeriodEnd": done.isoformat() if done else None, "previous": previous or None,
+        "offboardAtEnd": None, "autoSuspended": None, "endedAt": None,
+        "cancelRequestedAt": None, "cancelRequestedBy": None,
+    })
     write_audit(tenant_id, "subscription_started", actor,
-                {"subscriptionId": state["subscriptionId"], "planId": plan.get("planId"), "collectionMethod": method,
-                 "terms": terms, "priceSek": price_sek, "startDate": start_day})
+                {"startsAt": starts, "planId": plan.get("planId"), "collectionMethod": method, "terms": terms,
+                 "priceSek": price_sek, "inArrears": True, "previous": previous or None})
     return _view(get_profile(tenant_id))
 
 
-def _subscription_item(subscription_id: str) -> str:
-    sub = stripe_request("GET", f"/subscriptions/{subscription_id}")
-    items = ((sub.get("items") or {}).get("data") or [])
-    if not items:
-        raise ApiError(502, "stripe_error", "Stripe: the subscription has no items")
-    return items[0]["id"]
+def end_date_for(billing: dict, today: date) -> date:
+    """When a cancellation takes effect: a try-out with the current period
+    (the 24th), a subscription BILLING_NOTICE_MONTHS periods later."""
+    start, end = period_of(today)
+    if (billing.get("terms") or "subscription") == "trial":
+        return end
+    for _ in range(int(_env_num("BILLING_NOTICE_MONTHS", "3"))):
+        start, end = next_period(end)
+    return end
 
 
 def update_subscription(req) -> tuple[int, dict]:
-    """action: pause (stop invoicing, keep the subscription), resume,
-    cancel (ends with the terms: a try-out at the end of the paid month, a
-    subscription after the notice period; `offboardAtEnd` default true),
-    cancel_now (final prorated invoice today), keep (undo a cancellation),
-    convert (try-out -> subscription), sync_price (the plan's current
-    price, or the customer's own, from the next invoice), use_card (charge
-    the card the restaurant added)."""
+    """action: cancel (ends with the terms: a try-out with the current
+    period, a subscription after the notice period; `offboardAtEnd`
+    default true), cancel_now (ends today, the days used are invoiced on
+    the next 25th), keep (undo a cancellation), convert (try-out ->
+    subscription), use_card (charge the card the restaurant added),
+    set_sms_price (`smsPriceSek`, null = the default)."""
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
     action = f.text("action", required=True, max_len=20)
     offboard_at_end = f.boolean("offboardAtEnd")
+    raw_sms_price = f.data.get("smsPriceSek")
     f.done()
     profile = get_profile(tenant_id)
     billing = _billing(profile)
-    sub_id, customer_id = billing.get("subscriptionId"), billing.get("customerId")
-    if not sub_id or billing.get("status") not in OPEN_STATUSES:
-        raise ApiError(409, "not_subscribed", "The customer has no running subscription")
+    customer_id = billing.get("customerId")
+    today = datetime.now(timezone.utc).date()
+    if action == "set_sms_price":
+        if raw_sms_price is not None and (isinstance(raw_sms_price, bool) or not isinstance(raw_sms_price, (int, float, Decimal))
+                                          or Decimal(str(raw_sms_price)) < 0 or Decimal(str(raw_sms_price)) > 100):
+            raise ApiError(400, "validation_failed", "SMS price must be 0 to 100 kr", fields={"smsPriceSek": "0 to 100"})
+        value = Decimal(str(raw_sms_price)).quantize(CENTS) if raw_sms_price is not None else None
+        _write_billing(tenant_id, {"smsPriceSek": value})
+        write_audit(tenant_id, "sms_price_set", req.actor, {"smsPriceSek": value})
+        return 200, {"billing": _view(get_profile(tenant_id))}
+    if not agreement_running(billing, today):
+        raise ApiError(409, "not_subscribed", "The customer has no running agreement")
     details: dict = {}
-    extra: dict | None = None
-    if action == "pause":
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"pause_collection[behavior]": "void"})
-    elif action == "resume":
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"pause_collection": ""})
-    elif action == "cancel":
-        ends = end_date(billing, datetime.now(timezone.utc))
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"cancel_at": int(ends.timestamp())})
-        extra = {"offboardAtEnd": offboard_at_end is not False, "cancelRequestedAt": now_iso(), "cancelRequestedBy": req.actor}
+    if action == "cancel":
+        ends = end_date_for(billing, today)
+        _write_billing(tenant_id, {"endsAt": ends.isoformat(), "offboardAtEnd": offboard_at_end is not False,
+                                   "cancelRequestedAt": now_iso(), "cancelRequestedBy": req.actor})
         details = {"endsAt": ends.isoformat(), "terms": billing.get("terms") or "subscription",
-                   "offboardAtEnd": extra["offboardAtEnd"]}
+                   "offboardAtEnd": offboard_at_end is not False}
     elif action == "cancel_now":
-        sub = stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "true", "prorate": "true"})
-        extra = {"offboardAtEnd": offboard_at_end is True}
+        _write_billing(tenant_id, {"endsAt": today.isoformat(), "offboardAtEnd": offboard_at_end is True,
+                                   "cancelRequestedAt": now_iso(), "cancelRequestedBy": req.actor})
+        details = {"endsAt": today.isoformat(), "offboardAtEnd": offboard_at_end is True}
     elif action == "keep":
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"cancel_at": ""})
-        extra = {"offboardAtEnd": None, "cancelRequestedAt": None, "cancelRequestedBy": None}
+        _write_billing(tenant_id, {"endsAt": None, "offboardAtEnd": None, "cancelRequestedAt": None, "cancelRequestedBy": None})
     elif action == "convert":
         if (billing.get("terms") or "subscription") != "trial":
             raise ApiError(409, "not_trial", "The customer is already on a subscription")
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {"metadata[terms]": "subscription"})
-        extra = {"terms": "subscription", "termsSince": now_iso(), "convertedBy": req.actor}
+        _write_billing(tenant_id, {"terms": "subscription", "termsSince": now_iso(), "convertedBy": req.actor})
         details = {"from": "trial", "to": "subscription"}
-    elif action == "sync_price":
-        plan, price_id = _plan_price(profile)
-        price_sek = effective_price(profile, plan)
-        item_id = _subscription_item(sub_id)
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {
-            "items[0][id]": item_id, **_item_params(plan, price_id, price_sek), "proration_behavior": "none",
-            "metadata[planId]": plan.get("planId") or ""})
-        details = {"planId": plan.get("planId"), "priceId": price_id, "priceSek": price_sek}
     elif action == "use_card":
+        if not customer_id:
+            raise ApiError(409, "no_card", "The restaurant has not added a card yet - send them the card link")
         methods = stripe_request("GET", "/payment_methods", {"customer": customer_id, "type": "card", "limit": 1})
         cards = methods.get("data") or []
         if not cards:
             raise ApiError(409, "no_card", "The restaurant has not added a card yet - send them the card link")
         card = cards[0]["id"]
         stripe_request("POST", f"/customers/{customer_id}", {"invoice_settings[default_payment_method]": card})
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {
-            "collection_method": "charge_automatically", "default_payment_method": card})
+        _write_billing(tenant_id, {"collectionMethod": "charge_automatically", "defaultPaymentMethod": card})
         details = {"paymentMethod": card}
     else:
         raise ApiError(400, "validation_failed", "Unknown action",
-                       fields={"action": "pause, resume, cancel, cancel_now, keep, convert, sync_price or use_card"})
-    state = subscription_state(sub, deleted=action == "cancel_now" or sub.get("status") == "canceled")
-    if action == "use_card":
-        extra = {"defaultPaymentMethod": details.get("paymentMethod")}
-    store_subscription(tenant_id, customer_id, state, extra=extra)
-    write_audit(tenant_id, f"subscription_{action}", req.actor, {"subscriptionId": sub_id, **details})
+                       fields={"action": "cancel, cancel_now, keep, convert, use_card or set_sms_price"})
+    write_audit(tenant_id, f"subscription_{action}", req.actor, details)
     return 200, {"billing": _view(get_profile(tenant_id))}
 
 
 def card_link(req) -> tuple[int, dict]:
     """A Stripe Checkout page (setup mode) where the restaurant adds a card;
-    afterwards "use_card" switches the subscription to charge it."""
+    afterwards "use_card" switches the agreement to charge it."""
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
     customer_id = ensure_customer(tenant_id, profile, req.actor)
@@ -598,93 +728,187 @@ def card_link(req) -> tuple[int, dict]:
 
 # ------------------------------------------------------------- hooks from tenants
 def after_plan_change(tenant_id: str, profile: dict, plan: dict, actor: str) -> dict | None:
-    """Moves a running subscription to the new plan's price, or the
-    customer's own amount, from the next invoice (no proration: the paid
-    month stays as it is). Best effort: a Stripe hiccup is reported, the
-    plan change stands."""
+    """A changed plan or price is simply what the next invoice carries
+    (in arrears, nothing is re-billed)."""
     billing = _billing(profile)
-    sub_id = billing.get("subscriptionId")
-    price_id = plan.get("stripePriceId")
-    if not sub_id or billing.get("status") not in OPEN_STATUSES or not price_id:
+    if not agreement_running(billing):
         return None
-    price_sek = effective_price(profile, plan)
-    current = int(billing.get("mrrSek") or 0)
-    wanted = price_sek if price_sek is not None else int(plan.get("priceSek") or 0)
-    if billing.get("priceId") == price_id and price_sek is None:
-        return None
-    if price_sek is not None and current == wanted and billing.get("priceId") != price_id and billing.get("planId") == plan.get("planId"):
-        return None
-    try:
-        item_id = _subscription_item(sub_id)
-        sub = stripe_request("POST", f"/subscriptions/{sub_id}", {
-            "items[0][id]": item_id, **_item_params(plan, price_id, price_sek), "proration_behavior": "none",
-            "metadata[planId]": plan.get("planId") or ""})
-    except ApiError as e:
-        log.warning("subscription %s not moved to %s: %s", sub_id, price_id, e.message)
-        return {"error": e.message}
-    store_subscription(tenant_id, billing["customerId"], subscription_state(sub))
-    write_audit(tenant_id, "subscription_price_synced", actor,
-                {"subscriptionId": sub_id, "priceId": price_id, "priceSek": price_sek, "from": "next invoice"})
-    return {"priceId": price_id, "priceSek": price_sek, "monthlySek": wanted, "from": "next invoice"}
+    return {"monthlySek": monthly_price(profile, plan), "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
+            "from": "next invoice"}
 
 
 def cancel_for_offboarding(tenant_id: str, profile: dict, actor: str) -> dict | None:
-    """Ends the subscription with a final prorated invoice. The Stripe
-    customer and the invoices stay (bookkeeping)."""
+    """Offboarded today: the agreement ends today and the days used are
+    invoiced on the next 25th. A legacy Stripe subscription is cancelled."""
     billing = _billing(profile)
-    sub_id = billing.get("subscriptionId")
-    if not sub_id or billing.get("status") not in OPEN_STATUSES:
-        return None
-    try:
-        sub = stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "true", "prorate": "true"})
-    except ApiError as e:
-        log.warning("subscription %s not cancelled at offboarding: %s", sub_id, e.message)
-        write_audit(tenant_id, "subscription_cancel_failed", actor, {"subscriptionId": sub_id, "error": e.message})
-        return {"error": e.message}
-    store_subscription(tenant_id, billing["customerId"], subscription_state(sub, deleted=True))
-    write_audit(tenant_id, "subscription_cancelled", actor, {"subscriptionId": sub_id, "reason": "offboarding"})
-    return {"cancelled": sub_id}
+    legacy = None
+    if billing.get("subscriptionId"):
+        try:
+            legacy = migrate_legacy(tenant_id, profile, actor)
+            billing = _billing(get_profile(tenant_id))
+        except ApiError as e:
+            log.warning("legacy subscription of %s not cancelled: %s", tenant_id, e.message)
+            legacy = {"error": e.message}
+    if not agreement_running(billing):
+        return legacy
+    today = datetime.now(timezone.utc).date().isoformat()
+    _write_billing(tenant_id, {"endsAt": today if not billing.get("endsAt") or billing["endsAt"] > today else billing["endsAt"],
+                               "offboardAtEnd": None, "cancelRequestedAt": now_iso(), "cancelRequestedBy": actor})
+    write_audit(tenant_id, "subscription_cancelled", actor, {"endsAt": today, "reason": "offboarding"})
+    return {"endsAt": today, "legacy": legacy}
 
 
-# ------------------------------------------------------------- Stripe import
+# ------------------------------------------------------------- invoicing in arrears
 def _all_profiles() -> list[dict]:
     return query_all(TableName=tenant_table(), IndexName="GSI1", KeyConditionExpression="GSI1PK = :t",
                      ExpressionAttributeValues={":t": {"S": "TENANT"}})
 
 
-def sync_from_stripe(actor: str) -> dict:
-    """Re-reads every customer's subscription and invoices from Stripe: for
-    webhook deliveries that were missed, or figures to check by hand."""
-    summary = {"tenants": 0, "subscriptions": 0, "invoices": 0, "booked": 0, "errors": []}
+def _already_invoiced(tenant_id: str, end: date) -> bool:
+    rows = query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
+    return any((r.get("periodEnd") or "")[:10] == end.isoformat() and r.get("status") != "void" for r in rows)
+
+
+def _invoiced_to(billing: dict, end: date) -> dict:
+    """The fields after the period to `end` is invoiced: earlier
+    agreements that ended in it (or before) are done."""
+    left = [s for s in billing.get("previous") or [] if (_date(s.get("endsAt")) or end) > end]
+    return {"lastInvoicedPeriodEnd": end.isoformat(), "previous": left or None}
+
+
+def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: dict, actor: str, locations: dict) -> dict:
+    """One Stripe invoice for the period: the fee line, the SMS line, any
+    pending late fee or interest items, emailed or charged by Stripe."""
+    billing = _billing(profile)
+    customer_id = billing.get("customerId") or ensure_customer(tenant_id, profile, actor)
+    plan_ = invoice_plan(profile, start, end, plan, locations)
+    result = {"tenantId": tenant_id, "name": profile.get("name"), **{k: v for k, v in plan_.items() if k not in ("smsByType",)}}
+    if plan_["nothingToInvoice"]:
+        _write_billing(tenant_id, {**_invoiced_to(billing, end),
+                                   **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
+        result["invoiceId"] = None
+        return result
+    if _already_invoiced(tenant_id, end):
+        _write_billing(tenant_id, _invoiced_to(billing, end))
+        result["invoiceId"] = "exists"
+        return result
+    tax = env("BILLING_TAX_RATE_ID", "")
+    common = {"customer": customer_id, "currency": "sek",
+              "period[start]": int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+              "period[end]": int(datetime.combine(end, datetime.max.time().replace(microsecond=0), tzinfo=timezone.utc).timestamp()),
+              "metadata[tenantId]": tenant_id, "metadata[periodEnd]": end.isoformat()}
+    if tax:
+        common["tax_rates[0]"] = tax
+    if plan_["feeSek"] > 0:
+        stripe_request("POST", "/invoiceitems", {**common, "amount": int((plan_["feeSek"] * 100).to_integral_value(rounding=ROUND_HALF_UP)),
+                                                 "description": plan_["feeText"], "metadata[kind]": "fee"},
+                       idempotency_key=f"fee-{tenant_id}-{end.isoformat()}")
+    if plan_["smsParts"] > 0:
+        stripe_request("POST", "/invoiceitems", {**common, "quantity": int(plan_["smsParts"]),
+                                                 "unit_amount_decimal": f"{plan_['smsPriceSek'] * 100:.2f}".rstrip("0").rstrip("."),
+                                                 "description": plan_["smsText"], "metadata[kind]": "sms"},
+                       idempotency_key=f"sms-{tenant_id}-{end.isoformat()}")
+    method = billing.get("collectionMethod") or "send_invoice"
+    params = {"customer": customer_id, "collection_method": method, "auto_advance": "true",
+              "pending_invoice_items_behavior": "include", "description": f"Booqy, {plan_['period']}",
+              "metadata[tenantId]": tenant_id, "metadata[periodStart]": start.isoformat(),
+              "metadata[periodEnd]": end.isoformat(), "metadata[kind]": "period"}
+    if method == "send_invoice":
+        params["days_until_due"] = int(env("BILLING_DAYS_UNTIL_DUE", "30"))
+    invoice = stripe_request("POST", "/invoices", params, idempotency_key=f"inv-{tenant_id}-{end.isoformat()}")
+    invoice = stripe_request("POST", f"/invoices/{invoice['id']}/finalize", {})
+    delivery = "sent"
+    try:
+        if method == "send_invoice":
+            stripe_request("POST", f"/invoices/{invoice['id']}/send", {})
+        else:
+            invoice = stripe_request("POST", f"/invoices/{invoice['id']}/pay", {})
+            delivery = "charged"
+    except ApiError as e:
+        delivery = f"not {'sent' if method == 'send_invoice' else 'charged'}: {e.message}"
+    record_invoice(tenant_id, invoice)
+    row = _invoice_row(tenant_id, invoice)
+    _mark(row, periodStart=start.isoformat(), periodEnd=end.isoformat(), feeSek=plan_["feeSek"], smsParts=plan_["smsParts"],
+          smsSek=plan_["smsSek"], billedDays=plan_["activeDays"], collectionMethod=method)
+    _write_billing(tenant_id, {**_invoiced_to(billing, end),
+                               **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
+    write_audit(tenant_id, "invoice_created", actor, {"invoiceId": invoice["id"], "number": invoice.get("number"),
+                                                      "period": plan_["period"], "feeSek": plan_["feeSek"],
+                                                      "smsParts": plan_["smsParts"], "smsSek": plan_["smsSek"],
+                                                      "totalSek": plan_["totalSek"], "delivery": delivery})
+    result.update({"invoiceId": invoice["id"], "number": invoice.get("number"), "delivery": delivery,
+                   "hostedInvoiceUrl": invoice.get("hosted_invoice_url")})
+    return result
+
+
+def run_invoicing(actor: str, *, dry_run: bool = False, only: str | None = None, today: date | None = None) -> dict:
+    """Every complete, uninvoiced period of every agreement (or one
+    customer's). dry_run = the preview."""
+    today = today or datetime.now(timezone.utc).date()
+    summary = {"dryRun": dry_run, "today": today.isoformat(), "invoices": [], "skipped": [], "errors": [], "migrated": []}
     for profile in _all_profiles():
-        billing = _billing(profile)
-        customer_id, tenant_id = billing.get("customerId"), profile["tenantId"]
-        if not customer_id:
+        tenant_id = profile["tenantId"]
+        if only and tenant_id != only:
             continue
-        summary["tenants"] += 1
         try:
-            if billing.get("subscriptionId"):
-                sub = stripe_request("GET", f"/subscriptions/{billing['subscriptionId']}")
-                store_subscription(tenant_id, customer_id, subscription_state(sub))
-                summary["subscriptions"] += 1
-            after = None
-            while True:
-                params = {"customer": customer_id, "limit": 100}
-                if after:
-                    params["starting_after"] = after
-                page = stripe_request("GET", "/invoices", params)
-                for invoice in page.get("data") or []:
-                    if invoice.get("status") == "draft":
-                        continue
-                    summary["invoices"] += 1
-                    summary["booked"] += len(record_invoice(tenant_id, invoice))
-                    after = invoice["id"]
-                if not page.get("has_more") or not after:
-                    break
+            if _billing(profile).get("subscriptionId") and not dry_run:
+                migrated = migrate_legacy(tenant_id, profile, actor)
+                if migrated:
+                    summary["migrated"].append({"tenantId": tenant_id, "name": profile.get("name"), **migrated})
+                    profile = get_profile(tenant_id)
+            billing = _billing(profile)
+            periods = pending_periods(billing, today)
+            if not periods:
+                continue
+            plan = plan_of(profile)
+            locations = _location_names(tenant_id)
+            for start, end in periods:
+                if dry_run:
+                    plan_ = invoice_plan(profile, start, end, plan, locations)
+                    summary["invoices"].append({"tenantId": tenant_id, "name": profile.get("name"), "invoiceId": None,
+                                                **{k: v for k, v in plan_.items() if k != "smsByType"}})
+                    continue
+                result = build_invoice(tenant_id, profile, start, end, plan, actor, locations)
+                (summary["skipped"] if result.get("invoiceId") in (None, "exists") else summary["invoices"]).append(result)
+                profile = get_profile(tenant_id)
         except (ApiError, ClientError, BotoCoreError) as e:
-            summary["errors"].append(f"{profile.get('name')}: {getattr(e, 'message', None) or e}"[:300])
-    log.info(json.dumps({"stripeSync": summary, "actor": actor}, default=str))
+            summary["errors"].append({"tenantId": tenant_id, "name": profile.get("name"),
+                                      "error": (getattr(e, "message", None) or str(e))[:300]})
+    summary["totalSek"] = sum((Decimal(i.get("totalSek") or 0) for i in summary["invoices"]), Decimal(0))
+    if not dry_run and (summary["invoices"] or summary["errors"] or summary["migrated"]):
+        lines = [f"Invoicing ({env('ENVIRONMENT', 'dev')}) on {today.isoformat()}: {len(summary['invoices'])} invoice(s), "
+                 f"{summary['totalSek']} kr ex VAT.", ""]
+        lines += [f"{i['name']}: {i['period']}, {i['feeSek']} kr + SMS {i['smsParts']} x {i['smsPriceSek']} = {i['smsSek']} kr, "
+                  f"{i.get('delivery')}" for i in summary["invoices"]]
+        lines += [f"FAILED {e['name']}: {e['error']}" for e in summary["errors"]]
+        lines += [f"Moved to arrears: {m['name']}" for m in summary["migrated"]]
+        topic = env("ALERT_TOPIC_ARN", "")
+        if topic:
+            try:
+                client("sns").publish(TopicArn=topic, Subject=f"[{env('ENVIRONMENT', 'dev')}] Booqy invoicing: "
+                                      f"{len(summary['invoices'])} invoices, {len(summary['errors'])} failed",
+                                      Message="\n".join(lines))
+            except (ClientError, BotoCoreError):
+                log.warning("invoicing summary not published", exc_info=True)
+    log.info(json.dumps({"invoicing": {k: v for k, v in summary.items() if k != "invoices"},
+                         "count": len(summary["invoices"])}, default=str))
     return summary
+
+
+def invoicing(req) -> tuple[int, dict]:
+    """POST /platform/finance/invoicing {dryRun}: the preview, or the run."""
+    f = v.Fields(req.body)
+    dry_run = f.boolean("dryRun")
+    f.done()
+    return 200, run_invoicing(req.actor, dry_run=dry_run is not False)
+
+
+def invoice_now(req) -> tuple[int, dict]:
+    """POST .../billing/invoice: every pending period of one customer."""
+    tenant_id = req.path["tenantId"]
+    get_profile(tenant_id)
+    return 200, run_invoicing(req.actor, dry_run=False, only=tenant_id)
 
 
 # ------------------------------------------------------------- reminders, fees, interest
@@ -824,7 +1048,7 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
             write_audit(tenant_id, "interest_added", actor, {"invoiceId": row["invoiceId"], "number": number,
                                                              "interestSek": amount, "days": late})
             out["interest"].append(f"{name} {number} ({amount} kr for {late} days)")
-    if added_items and billing.get("status") not in OPEN_STATUSES:
+    if added_items and not agreement_running(billing):
         out["oneOff"] = _bill_pending_items(customer_id, tenant_id)
         write_audit(tenant_id, "late_fees_invoiced", actor, {"invoiceId": out["oneOff"]})
     return out
@@ -875,21 +1099,21 @@ def dunning_task(event: dict, context) -> dict:
             failed.append(f"{name} invoices: {getattr(e, 'message', None) or e}"[:300])
         try:
             # A try-out that has run its course becomes a subscription.
+            if billing.get("subscriptionId"):
+                migrate_legacy(tenant_id, profile, actor)
+                profile = get_profile(tenant_id)
+                billing = _billing(profile)
             since = _parse(billing.get("termsSince"))
-            if (billing.get("terms") == "trial" and trial_months > 0 and since and billing.get("subscriptionId")
-                    and billing.get("status") in OPEN_STATUSES and not billing.get("cancelAt")
-                    and now >= _add_months(since, trial_months)):
-                stripe_request("POST", f"/subscriptions/{billing['subscriptionId']}", {"metadata[terms]": "subscription"})
-                store_subscription(tenant_id, billing["customerId"], {},
-                                   extra={"terms": "subscription", "termsSince": now_iso(), "convertedBy": actor})
+            if (billing.get("terms") == "trial" and trial_months > 0 and since and agreement_running(billing)
+                    and not billing.get("endsAt") and now >= _add_months(since, trial_months)):
+                _write_billing(tenant_id, {"terms": "subscription", "termsSince": now_iso(), "convertedBy": actor})
                 write_audit(tenant_id, "subscription_converted", actor, {"from": "trial", "after_months": trial_months})
                 converted.append(f"{name} (try-out since {since.date().isoformat()})")
-            # A cancelled subscription that has ended: the customer is offboarded.
-            if (billing.get("offboardAtEnd") and billing.get("status") == "canceled"
+            # An agreement that has ended and had its final invoice: the customer is offboarded.
+            if (billing.get("offboardAtEnd") and billing.get("status") == "ended"
                     and profile.get("status") in ("active", "suspended")):
-                offboard_tenant(tenant_id, profile, actor, reason="subscription ended")
-                client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
-                                               UpdateExpression="REMOVE billing.offboardAtEnd")
+                offboard_tenant(tenant_id, profile, actor, reason="agreement ended")
+                _write_billing(tenant_id, {"offboardAtEnd": None})
                 offboarded.append(name)
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name} terms: {getattr(e, 'message', None) or e}"[:300])
@@ -901,7 +1125,7 @@ def dunning_task(event: dict, context) -> dict:
                                                ExpressionAttributeValues={":t": {"BOOL": True}})
                 suspended.append(f"{name} ({days} days past due)")
             elif profile.get("status") == "suspended" and billing.get("autoSuspended") and days is None \
-                    and billing.get("status") in ("active", "trialing"):
+                    and agreement_running(billing):
                 resume_tenant(tenant_id, actor)
                 client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
                                                UpdateExpression="REMOVE billing.autoSuspended")
@@ -931,4 +1155,6 @@ def dunning_task(event: dict, context) -> dict:
 def finance_task(event: dict, context) -> dict:
     if event.get("financeTask") == "dunning":
         return dunning_task(event, context)
+    if event.get("financeTask") == "invoice":
+        return {"status": "done", **run_invoicing("invoicing", dry_run=False)}
     return {"status": "unknown_task"}
