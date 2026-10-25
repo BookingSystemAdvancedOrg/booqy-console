@@ -54,7 +54,7 @@ function Shell() {
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
           <ThemeToggle />
-          <button className="btn btn--ghost" onClick={() => setConfirmSignOut(true)}>Sign out</button>
+          <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
       </header>
       {confirmSignOut && (
