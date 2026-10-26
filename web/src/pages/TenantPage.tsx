@@ -7,6 +7,7 @@ import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
+import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 
@@ -118,8 +119,11 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
 
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (orgNumberProblem(f.orgNumber)) return;
+    // The VAT number always follows the org. number (SE + 10 digits + 01).
+    const values: Record<string, string> = { ...f, vatNumber: f.orgNumber ? vatFromOrgNumber(f.orgNumber) : "" };
     const patch: Record<string, unknown> = {};
-    for (const [k] of PROFILE_FIELDS) if ((f[k] ?? "") !== ((t[k] as string) ?? "")) patch[k] = f[k] || null;
+    for (const [k] of PROFILE_FIELDS) if ((values[k] ?? "") !== ((t[k] as string) ?? "")) patch[k] = values[k] || null;
     if (f.notes !== (t.notes ?? "")) patch.notes = f.notes || null;
     const addr = { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city };
     // Compared as digits: a stored "123 45" and the form's "12345" are the same code.
@@ -143,9 +147,16 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
             <ErrorNotice error={a.error} />
             <div className="grid">
               {PROFILE_FIELDS.map(([k, label, hint]) => (
-                <Field key={k} label={label} hint={hint} error={a.fields[k]} required={k === "name"}>
+                <Field key={k} label={label} required={k === "name"}
+                       hint={k === "orgNumber" ? "10 digits, the dash is added for you" : k === "vatNumber" ? "SE + org. number + 01, filled in from the org. number" : hint}
+                       error={a.fields[k] ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
                   {k === "contactPhone" ? (
                     <PhoneInput className="input" value={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
+                  ) : k === "orgNumber" ? (
+                    <input className="input mono" inputMode="numeric" maxLength={11} placeholder="556677-8899" value={f[k]}
+                           onChange={(e) => setF({ ...f, orgNumber: formatOrgNumber(e.target.value) })} />
+                  ) : k === "vatNumber" ? (
+                    <input className="input mono" value={vatPreview(f.orgNumber)} readOnly tabIndex={-1} placeholder="SE··········01" />
                   ) : (
                     <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
                   )}

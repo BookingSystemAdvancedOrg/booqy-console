@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { addDays, fmtDay, isoDay, periodOf, periodText } from "../finance";
 import { Card, ErrorNotice, Field, compact, useAction, useLoad } from "../components/ui";
-import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber } from "../orgNumber";
+import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
 import type { LocationInput } from "../types";
@@ -163,7 +163,7 @@ export default function NewTenantPage() {
                    onChange={set("orgNumber")} placeholder="556677-8899" />
           </Field>
           <Field label="VAT number" error={fields.vatNumber} hint="SE + org. number + 01, filled in from the org. number">
-            <input id="f-vatNumber" className="input mono" value={vatNumber} readOnly tabIndex={-1}
+            <input id="f-vatNumber" className="input mono" value={vatPreview(f.orgNumber)} readOnly tabIndex={-1}
                    placeholder="SE··········01" aria-describedby="f-orgNumber" />
           </Field>
           <Field label="Street address" error={fields["address.street"]}>

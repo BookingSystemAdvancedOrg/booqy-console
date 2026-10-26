@@ -30,3 +30,10 @@ export function vatFromOrgNumber(value: string): string {
   const d = digitsOf(value);
   return d.length === 10 ? `SE${d}01` : "";
 }
+
+/** What the VAT field shows while typing: SE + the digits so far, + 01 once
+ * all 10 are in. Only vatFromOrgNumber is ever saved. */
+export function vatPreview(value: string): string {
+  const d = digitsOf(value);
+  return d ? `SE${d}${d.length === 10 ? "01" : ""}` : "";
+}
