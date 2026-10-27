@@ -385,3 +385,32 @@ def test_e164():
     assert e164("0046701234567") == "+46701234567"
     assert e164("070-123 45 67") == "+46701234567"
     assert e164("12") is None and e164(None) is None
+
+
+def _owner_of(aws, email, tenant_id):
+    aws["idp"].admin_create_user(UserPoolId=aws["pool"], Username=email, MessageAction="SUPPRESS",
+                                 UserAttributes=[{"Name": "email", "Value": email},
+                                                 {"Name": "custom:tenant_id", "Value": tenant_id}])
+
+
+def test_a_taken_owner_email_is_a_field_error_at_create(aws, tenant):
+    _owner_of(aws, "owner@roma.se", tenant)
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two"})
+    assert status == 400 and body["fields"]["ownerEmail"].startswith("Already signs in to Pizzeria Roma")
+    assert "owner+roma2@roma.se" in body["fields"]["ownerEmail"]
+    # Nothing was written: the slug is still free.
+    assert call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two", "ownerEmail": "new@roma.se"})[0] == 202
+
+
+def test_owner_fields_are_editable_only_after_a_failed_setup(aws, tenant):
+    p = {"tenantId": tenant}
+    status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "other@roma.se"})
+    assert status == 409 and body["fields"] == {"ownerEmail": "Change it on the Users tab"}
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET #s = :f", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":f": {"S": "provisioning_failed"}})
+    _owner_of(aws, "taken@roma.se", "t-someone-else")
+    status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "taken@roma.se"})
+    assert status == 400 and "ownerEmail" in body["fields"]
+    status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "New@Roma.se", "ownerName": "Anna"})
+    assert status == 200 and body["tenant"]["ownerEmail"] == "new@roma.se" and body["tenant"]["ownerName"] == "Anna"

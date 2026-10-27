@@ -1,8 +1,8 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { addDays, fmtDay, isoDay, periodOf, periodText } from "../finance";
-import { Card, ErrorNotice, Field, compact, useAction, useLoad } from "../components/ui";
+import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
@@ -40,13 +40,29 @@ function labelFor(key: string): string {
   return LABELS[key] ?? key;
 }
 
+function jump(key: string) {
+  const el = document.getElementById(`f-${key}`) ?? document.getElementById(`f-${key.split(".")[0]}`);
+  el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  el?.focus({ preventScroll: true });
+}
+
+/** A failed onboarding run (tenant.lastError, "Error: Cause") as the form
+ * field to fix, when there is one. */
+export function setupFailure(lastError: string | undefined): { fields: Record<string, string>; message: string } {
+  const text = lastError ?? "Setup failed";
+  if (text.startsWith("OwnerEmailInUse")) {
+    return { fields: { ownerEmail: "Already the owner of another customer - use another address" }, message: text };
+  }
+  return { fields: {}, message: text.replace(/^[A-Za-z.]+: /, "") };
+}
+
+// Long enough for the slowest onboarding (Stripe); after that the customer
+// page takes over, and keeps showing the progress.
+const SETUP_POLL_MS = 2500;
+const SETUP_MAX_MS = 180_000;
+
 /** Field errors listed by label; each one jumps to its input. */
 function FieldErrors({ fields }: { fields: Record<string, string> }) {
-  const jump = (key: string) => {
-    const el = document.getElementById(`f-${key}`) ?? document.getElementById(`f-${key.split(".")[0]}`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    el?.focus({ preventScroll: true });
-  };
   return (
     <ul className="field-errors">
       {Object.entries(fields).map(([key, msg]) => (
@@ -61,7 +77,14 @@ function FieldErrors({ fields }: { fields: Record<string, string> }) {
 export default function NewTenantPage() {
   const navigate = useNavigate();
   const plans = useLoad(() => api.plans());
-  const { busy, error, fields, run } = useAction();
+  const { busy, error, fields: apiFields, run } = useAction();
+  // After Create: the tenant being set up, and what its onboarding said when it failed.
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"form" | "setup" | "failed">("form");
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupFields, setSetupFields] = useState<Record<string, string>>({});
+  const fields = useMemo(() => ({ ...setupFields, ...apiFields }), [setupFields, apiFields]);
+  const saved = phase === "failed";      // plan, invoicing and locations were saved with the customer
 
   const [f, setF] = useState({
     name: "", slug: "", legalName: "", orgNumber: "",
@@ -133,8 +156,69 @@ export default function NewTenantPage() {
         startDate: startInvoicing && startDate ? startDate : undefined,
       }),
     };
+    if (saved && tenantId) {
+      // Fix and run setup again: the profile and owner fields, then a new onboarding run.
+      const patch = {
+        ...compact({
+          name: f.name, legalName: f.legalName, orgNumber: f.orgNumber, vatNumber, contactEmail: f.contactEmail,
+          contactPhone: f.contactPhone, billingEmail: f.billingEmail, senderName: f.senderName,
+          replyToEmail: f.replyToEmail, notes: f.notes, ownerName: f.ownerName, ownerEmail: f.ownerEmail,
+          ownerPhone: f.ownerPhone,
+        }),
+        ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
+      };
+      const ok = await run(async () => { await api.updateTenant(tenantId, patch); return api.retryOnboarding(tenantId); });
+      if (ok) { setSetupFields({}); setSetupError(null); setPhase("setup"); }
+      return;
+    }
     const res = await run(() => api.createTenant(body as never));
-    if (res) navigate(`/tenants/${res.tenantId}?created=1`);
+    if (res) { setTenantId(res.tenantId); setPhase("setup"); }
+  }
+
+  // While onboarding runs: the printing receipt, then the customer page on
+  // success, or back to the form with the field to fix on failure.
+  useEffect(() => {
+    if (phase !== "setup" || !tenantId) return;
+    const started = Date.now();
+    const id = window.setInterval(async () => {
+      try {
+        const { tenant } = await api.tenant(tenantId);
+        if (tenant.status === "provisioning_failed") {
+          const failure = setupFailure(tenant.lastError);
+          setSetupFields(failure.fields);
+          setSetupError(Object.keys(failure.fields).length ? null : failure.message);
+          setPhase("failed");
+        } else if (tenant.status !== "provisioning" || Date.now() - started > SETUP_MAX_MS) {
+          navigate(`/tenants/${tenantId}${tenant.status === "provisioning" ? "?created=1" : ""}`);
+        }
+      } catch {
+        // a blip: the next tick tries again
+      }
+    }, SETUP_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [phase, tenantId, navigate]);
+
+  // Errors take you to the first field to fix.
+  const firstError = Object.keys(fields)[0];
+  useEffect(() => {
+    if (firstError) window.setTimeout(() => jump(firstError), 50);
+  }, [firstError, phase]);
+
+  if (phase === "setup") {
+    return (
+      <div className="form-page">
+        <div className="page-head">
+          <div>
+            <h1>{f.name}</h1>
+            <p className="muted">Setting up: inviting {f.ownerEmail}, opening the Stripe account{PLATFORM_DOMAIN ? ` and ${f.slug}.${PLATFORM_DOMAIN}` : ""}. About a minute.</p>
+          </div>
+        </div>
+        <Card title="Setting up the customer">
+          <Printing label={`Setting up ${f.name}`} />
+          <p className="small muted">You can leave this page: the customer is saved and setup carries on. If something needs fixing, you'll be taken to it here.</p>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -153,7 +237,7 @@ export default function NewTenantPage() {
           </Field>
           <Field label="Slug" required error={fields.slug}
                  hint={PLATFORM_DOMAIN ? `Website: ${f.slug || "slug"}.${PLATFORM_DOMAIN}` : "Lowercase id, used in the site address. Can't be changed later."}>
-            <input id="f-slug" className="input mono" value={f.slug} onChange={(e) => { setSlugTouched(true); set("slug")(e); }} />
+            <input id="f-slug" className="input mono" disabled={saved} value={f.slug} onChange={(e) => { setSlugTouched(true); set("slug")(e); }} />
           </Field>
           <Field label="Legal name" error={fields.legalName}>
             <input id="f-legalName" className="input" value={f.legalName} onChange={set("legalName")} placeholder="Roma Restaurang AB" />
@@ -213,6 +297,8 @@ export default function NewTenantPage() {
         </div>
       </Card>
 
+      {saved && <Notice kind="info">Plan, invoicing and locations were saved with the customer: change them on the customer page later.</Notice>}
+      <fieldset className="fieldset-plain" disabled={saved}>
       <Card title="4 · Plan">
         <ErrorNotice error={plans.error} />
         <div className="plans">
@@ -297,6 +383,8 @@ export default function NewTenantPage() {
         {locations.length === 0 && <p className="muted small">No locations yet - the owner (or you) can add them later.</p>}
       </Card>
 
+      </fieldset>
+
       <Card title="6 · Internal notes">
         <Field label="Notes (only visible here)" error={fields.notes} wide>
           <textarea id="f-notes" className="input" rows={3} value={f.notes} onChange={set("notes")} placeholder="Contract, contact person, agreed price…" />
@@ -307,8 +395,12 @@ export default function NewTenantPage() {
         <div className="submit-bar__info">
           {Object.keys(fields).length > 0 ? (
             <div className="notice notice--error" role="alert">
-              <strong>Not created - {Object.keys(fields).length === 1 ? "1 field needs" : `${Object.keys(fields).length} fields need`} fixing:</strong>
+              <strong>{saved ? "Setup stopped" : "Not created"} - {Object.keys(fields).length === 1 ? "1 field needs" : `${Object.keys(fields).length} fields need`} fixing:</strong>
               <FieldErrors fields={fields} />
+            </div>
+          ) : saved && setupError ? (
+            <div className="notice notice--error" role="alert">
+              <strong>Setup stopped:</strong> {setupError} Fix it if it's in the form, then <strong>Save and retry</strong>.
             </div>
           ) : error ? (
             <ErrorNotice error={error} />
@@ -325,7 +417,9 @@ export default function NewTenantPage() {
             </div>
           )}
         </div>
-        <button className="btn btn--primary" disabled={!canSubmit || busy}>{busy ? "Creating…" : "Create customer"}</button>
+        <button className="btn btn--primary" disabled={!canSubmit || busy}>
+          {saved ? (busy ? "Saving…" : "Save and retry") : busy ? "Creating…" : "Create customer"}
+        </button>
       </div>
     </form>
   );

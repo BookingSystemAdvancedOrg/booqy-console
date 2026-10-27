@@ -11,6 +11,7 @@ import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from 
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
+import { setupFailure } from "./NewTenantPage";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -22,6 +23,8 @@ export default function TenantPage() {
   const [search, setSearch] = useSearchParams();
   const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : search.get("tab") === "website" ? "Website" : "Overview");
   const { data, error, loading, reload } = useLoad(() => api.tenant(tenantId), [tenantId]);
+  // "Fix it" on the failed-setup banner: open Overview's edit form on that field.
+  const [fixField, setFixField] = useState<string | null>(null);
 
   // Poll while something is in progress (onboarding, domain workflows, offboarding).
   const busy =
@@ -58,7 +61,9 @@ export default function TenantPage() {
           <button className="link" onClick={() => setSearch({})}>Dismiss</button>
         </Notice>
       )}
-      {t.status === "provisioning_failed" && <RetryBanner tenant={t} onDone={reload} />}
+      {t.status === "provisioning_failed" && (
+        <RetryBanner tenant={t} onDone={reload} onFix={(field) => { setTab("Overview"); setFixField(field); }} />
+      )}
       <ErrorNotice error={error} />
 
       <nav className="tabs">
@@ -71,7 +76,7 @@ export default function TenantPage() {
         ))}
       </nav>
 
-      {tab === "Overview" && <Overview detail={data} onSaved={reload} />}
+      {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
       {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => setTab("Plan")} />}
       {tab === "Users" && <Users tenant={t} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
@@ -85,12 +90,15 @@ export default function TenantPage() {
   );
 }
 
-function RetryBanner({ tenant, onDone }: { tenant: Tenant; onDone: () => void }) {
+function RetryBanner({ tenant, onDone, onFix }: { tenant: Tenant; onDone: () => void; onFix: (field: string) => void }) {
   const a = useAction();
+  const failure = setupFailure(tenant.lastError);
+  const field = Object.keys(failure.fields)[0];
   return (
     <Notice kind="error">
-      <strong>Setup failed.</strong> {tenant.lastError}
+      <strong>Setup failed.</strong> {field ? failure.fields[field] : failure.message}
       <div className="row">
+        {field && <button className="btn btn--small btn--primary" onClick={() => onFix(field)}>Fix {FIX_LABEL[field] ?? field}</button>}
         <button className="btn btn--small" disabled={a.busy}
                 onClick={async () => { if (await a.run(() => api.retryOnboarding(tenant.tenantId))) onDone(); }}>
           {a.busy ? "Retrying…" : "Retry setup"}
@@ -101,6 +109,8 @@ function RetryBanner({ tenant, onDone }: { tenant: Tenant; onDone: () => void })
   );
 }
 
+const FIX_LABEL: Record<string, string> = { ownerEmail: "the owner email" };
+
 // ------------------------------------------------------------------ overview
 const PROFILE_FIELDS: [keyof Tenant, string, string?][] = [
   ["name", "Restaurant / brand name"], ["legalName", "Legal name"], ["orgNumber", "Org. number"],
@@ -108,16 +118,36 @@ const PROFILE_FIELDS: [keyof Tenant, string, string?][] = [
   ["billingEmail", "Billing email"], ["senderName", "Sender name", "Max 11 chars"], ["replyToEmail", "Reply-to email"],
 ];
 
-function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => void }) {
+// Editable only while setup has failed: the owner hasn't been invited yet.
+const OWNER_FIELDS: [keyof Tenant, string, string?][] = [
+  ["ownerName", "Owner name"], ["ownerEmail", "Owner business email", "Used to sign in"], ["ownerPhone", "Owner phone"],
+];
+
+function Overview({ detail, onSaved, fixField, onFixed }: {
+  detail: TenantDetail; onSaved: () => void; fixField: string | null; onFixed: () => void;
+}) {
   const t = detail.tenant;
   const [editing, setEditing] = useState(false);
+  const fields = t.status === "provisioning_failed" ? [...PROFILE_FIELDS, ...OWNER_FIELDS] : PROFILE_FIELDS;
+  const failure = t.status === "provisioning_failed" ? setupFailure(t.lastError).fields : {};
   const initial = () => ({
-    ...Object.fromEntries(PROFILE_FIELDS.map(([k]) => [k, (t[k] as string) ?? ""])),
+    ...Object.fromEntries(fields.map(([k]) => [k, (t[k] as string) ?? ""])),
     street: t.address?.street ?? "", postalCode: formatPostalCode(t.address?.postalCode ?? ""), city: t.address?.city ?? "",
     notes: t.notes ?? "",
   }) as Record<string, string>;
   const [f, setF] = useState(initial);
   const a = useAction();
+  useEffect(() => {
+    if (!fixField) return;
+    setF(initial());
+    setEditing(true);
+    window.setTimeout(() => {
+      const el = document.getElementById(`e-${fixField}`);
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      el?.focus({ preventScroll: true });
+    }, 50);
+    onFixed();
+  }, [fixField]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -125,14 +155,20 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
     // The VAT number always follows the org. number (SE + 10 digits + 01).
     const values: Record<string, string> = { ...f, vatNumber: f.orgNumber ? vatFromOrgNumber(f.orgNumber) : "" };
     const patch: Record<string, unknown> = {};
-    for (const [k] of PROFILE_FIELDS) if ((values[k] ?? "") !== ((t[k] as string) ?? "")) patch[k] = values[k] || null;
+    for (const [k] of fields) if ((values[k] ?? "") !== ((t[k] as string) ?? "")) patch[k] = values[k] || null;
     if (f.notes !== (t.notes ?? "")) patch.notes = f.notes || null;
     const addr = { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city };
     // Compared as digits: a stored "123 45" and the form's "12345" are the same code.
     if (JSON.stringify(addr) !== JSON.stringify({ street: t.address?.street ?? "", postalCode: postalCodeDigits(t.address?.postalCode ?? ""), city: t.address?.city ?? "" }))
       patch.address = f.street || f.postalCode || f.city ? addr : null;
-    if (Object.keys(patch).length === 0) return setEditing(false);
-    if (await a.run(() => api.updateTenant(t.tenantId, patch))) { setEditing(false); onSaved(); }
+    const failed = t.status === "provisioning_failed";
+    if (Object.keys(patch).length === 0 && !failed) return setEditing(false);
+    // After a failed setup, saving the fix runs setup again straight away.
+    const ok = await a.run(async () => {
+      if (Object.keys(patch).length) await api.updateTenant(t.tenantId, patch);
+      return failed ? api.retryOnboarding(t.tenantId) : true;
+    });
+    if (ok) { setEditing(false); onSaved(); }
   }
 
   return (
@@ -140,7 +176,7 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
       <Card title="Company" actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setEditing(true); }}>Edit</button>}>
         {!editing ? (
           <dl className="dl">
-            {PROFILE_FIELDS.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
+            {fields.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
             <Row label="Address" value={t.address && `${t.address.street}, ${formatPostalCode(t.address.postalCode)} ${t.address.city}`} />
             <Row label="Notes" value={t.notes} />
           </dl>
@@ -148,19 +184,19 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
           <form onSubmit={save} noValidate>
             <ErrorNotice error={a.error} />
             <div className="grid">
-              {PROFILE_FIELDS.map(([k, label, hint]) => (
-                <Field key={k} label={label} required={k === "name"}
+              {fields.map(([k, label, hint]) => (
+                <Field key={k} label={label} required={k === "name" || k === "ownerName" || k === "ownerEmail"}
                        hint={k === "orgNumber" ? "10 digits, the dash is added for you" : k === "vatNumber" ? "SE + org. number + 01, filled in from the org. number" : hint}
-                       error={a.fields[k] ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
-                  {k === "contactPhone" ? (
-                    <PhoneInput className="input" value={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
+                       error={a.fields[k] ?? (f[k] === ((t[k] as string) ?? "") ? failure[k] : undefined) ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
+                  {k === "contactPhone" || k === "ownerPhone" ? (
+                    <PhoneInput id={`e-${k}`} className="input" value={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
                   ) : k === "orgNumber" ? (
                     <input className="input mono" inputMode="numeric" maxLength={11} placeholder="556677-8899" value={f[k]}
                            onChange={(e) => setF({ ...f, orgNumber: formatOrgNumber(e.target.value) })} />
                   ) : k === "vatNumber" ? (
                     <input className="input mono" value={vatPreview(f.orgNumber)} readOnly tabIndex={-1} placeholder="SE··········01" />
                   ) : (
-                    <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                    <input id={`e-${k}`} className="input" type={k.endsWith("mail") || k === "ownerEmail" ? "email" : undefined} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
                   )}
                 </Field>
               ))}
@@ -170,7 +206,9 @@ function Overview({ detail, onSaved }: { detail: TenantDetail; onSaved: () => vo
               <Field label="Internal notes" wide error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
             <div className="row">
-              <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Saving…" : "Save"}</button>
+              <button className="btn btn--primary" disabled={a.busy}>
+                {a.busy ? "Saving…" : t.status === "provisioning_failed" ? "Save and retry setup" : "Save"}
+              </button>
               <button type="button" className="btn btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
             </div>
           </form>

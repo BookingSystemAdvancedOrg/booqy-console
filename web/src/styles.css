@@ -790,3 +790,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   }
   .table--stack .stack-label { display: inline; color: var(--muted); }
 }
+
+/* New customer after a failed setup: the saved sections, read-only, in the page's own flow. */
+.fieldset-plain { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
+.fieldset-plain:disabled .card { opacity: .6; }
