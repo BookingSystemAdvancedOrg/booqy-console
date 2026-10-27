@@ -111,7 +111,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
             <dt>From</dt><dd>{template.data.senderName} &lt;{template.data.from}&gt;</dd>
             <dt>Reply-to</dt><dd>{template.data.replyTo}</dd>
             <dt>To</dt>
-            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : "…"}</dd>
+            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <Printing inline label="Counting" />}</dd>
           </dl>
         )}
         <div className="stack">

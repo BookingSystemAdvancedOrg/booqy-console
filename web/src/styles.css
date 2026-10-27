@@ -794,3 +794,31 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 /* New customer after a failed setup: the saved sections, read-only, in the page's own flow. */
 .fieldset-plain { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
 .fieldset-plain:disabled .card { opacity: .6; }
+
+/* --- Busy bar (components/BusyBar.tsx) ------------------------------------
+   Every request, upload and sign-in step: wine red runs in from the left and
+   creeps towards the edge (never "done" before the answer), with a shimmer
+   moving along it; then it fills the width and fades. */
+.busy-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 0; pointer-events: none; }
+.busy-bar__fill {
+  position: absolute; top: 0; left: 0; height: 4px; width: 0; overflow: hidden; opacity: 0;
+  /* Light rose: it runs over the wine-red top bar in both themes. */
+  background: #f4a3a8; border-radius: 0 3px 3px 0; box-shadow: 0 1px 8px rgba(244, 163, 168, .45);
+}
+.busy-bar--busy .busy-bar__fill { opacity: 1; animation: busy-creep 9s cubic-bezier(.1, .8, .2, 1) forwards; }
+@keyframes busy-creep { 0% { width: 0; } 12% { width: 42%; } 40% { width: 72%; } 100% { width: 92%; } }
+.busy-bar__wave {
+  position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, .7) 45%, transparent 90%);
+  background-size: 160px 100%; background-repeat: no-repeat; animation: busy-wave 1.1s linear infinite;
+}
+@keyframes busy-wave { from { background-position: -160px 0; } to { background-position: calc(100% + 160px) 0; } }
+.busy-bar--done .busy-bar__fill { width: 100%; animation: busy-done 900ms var(--ease) forwards; }
+@keyframes busy-done { 0% { opacity: 1; } 60% { opacity: 1; } 100% { opacity: 0; } }
+/* While it runs the pointer says so, and buttons switched off while saving
+   ("Saving…") don't look dead. */
+html.is-busy { cursor: progress; }
+html.is-busy .btn:disabled { opacity: .85; }
+@media (prefers-reduced-motion: reduce) {
+  .busy-bar--busy .busy-bar__fill { animation: none; width: 70%; }
+  .busy-bar__wave { animation: none; }
+}

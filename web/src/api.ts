@@ -1,4 +1,5 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
+import { withBusy } from "./busy";
 import type { WebsiteOverview } from "./website";
 import type {
   BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
@@ -30,7 +31,12 @@ function fallbackMessage(status: number, requestId?: unknown): string {
   return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+// Every call shows the busy bar (busy.ts), so no load is ever silent.
+function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return withBusy(() => send<T>(method, path, body));
+}
+
+async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = await accessToken();
   let res: Response;
   try {
@@ -205,7 +211,11 @@ export const api = {
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */
-export async function uploadToS3(upload: { url: string; fields: Record<string, string> }, file: File): Promise<void> {
+export function uploadToS3(upload: { url: string; fields: Record<string, string> }, file: File): Promise<void> {
+  return withBusy(() => postToS3(upload, file));
+}
+
+async function postToS3(upload: { url: string; fields: Record<string, string> }, file: File): Promise<void> {
   const form = new FormData();
   for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
   form.append("file", file);                 // must be the last field
