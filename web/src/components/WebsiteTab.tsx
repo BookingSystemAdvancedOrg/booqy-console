@@ -5,10 +5,12 @@ import { Card, ErrorNotice, Field, Notice, Printing, Status, fmtDate, useAction,
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
 
-/** The restaurant's own site repo site-<slug>: created by onboarding (Retry
- * here), deployed from dev (dev account) and main (prod, behind the domain
- * gate). Everything goes through the site-repo function; no token is ever
- * shown or stored here. */
+/** The restaurant's own site repo site-<slug>: born in the PROD console's
+ * onboarding (Retry here), deployed from dev (dev account) and main (prod,
+ * behind the domain gate). The dev console only shows it (read-only) or, for
+ * a customer prod hasn't created, a dry run; test-* slugs are the exception
+ * for testing the automation. Everything goes through the site-repo function;
+ * no token is ever shown or stored here. */
 export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
   const { data, error, loading, reload } = useLoad(() => api.site(tenant.tenantId), [tenant.tenantId]);
   const creating = data?.enabled && data.status === "creating";
@@ -28,34 +30,45 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
       </Notice>
     );
   }
+  const readOnly = data.environment === "dev" && !data.repo.startsWith("site-test-");
   return (
     <div className="stack">
       <ErrorNotice error={error} />
-      <Repo site={data} tenant={tenant} onChanged={reload} />
+      <Repo site={data} tenant={tenant} readOnly={readOnly} onChanged={reload} />
       {data.repoExists && !data.archived && (
         <>
           <Local site={data} />
-          <Access site={data} tenant={tenant} />
-          <Archive site={data} tenant={tenant} onChanged={reload} />
+          {!readOnly && <Access site={data} tenant={tenant} />}
+          {!readOnly && <Archive site={data} tenant={tenant} onChanged={reload} />}
         </>
       )}
     </div>
   );
 }
 
-function Repo({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant; onChanged: () => void }) {
+function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant: Tenant; readOnly: boolean; onChanged: () => void }) {
   const retry = useAction();
   const redeploy = useAction();
   const [started, setStarted] = useState(false);
-  const canRetry = ["active", "suspended"].includes(tenant.status) && site.status !== "creating";
+  const canRetry = !readOnly && ["active", "suspended"].includes(tenant.status) && site.status !== "creating";
   const branch = site.environment === "prod" ? "main" : "dev";
   return (
     <Card title="Website repo" actions={
       <div className="row-actions">
         {site.repoUrl && <a className="btn btn--small" href={site.repoUrl} target="_blank" rel="noreferrer">Open repo</a>}
-        {site.config.previewUrl && <a className="btn btn--small" href={site.config.previewUrl} target="_blank" rel="noreferrer">Open dev preview</a>}
-        {site.config.domain && <a className="btn btn--small" href={`https://${site.config.domain}`} target="_blank" rel="noreferrer">Open site</a>}
+        {site.repoExists && site.config.previewUrl && <a className="btn btn--small" href={site.config.previewUrl} target="_blank" rel="noreferrer">Open dev preview</a>}
+        {site.repoExists && site.config.domain && <a className="btn btn--small" href={`https://${site.config.domain}`} target="_blank" rel="noreferrer">Open site</a>}
       </div>}>
+      {site.status === "simulated" && (
+        <Notice kind="info">
+          <strong>Dry run.</strong> Site repos are born in the production console, so nothing was created here. Creating
+          this customer in production (same slug) creates the repo and sets up this dev side:
+          <ul className="plain-list">{(site.plan ?? []).map((line) => <li key={line}>{line}</li>)}</ul>
+        </Notice>
+      )}
+      {readOnly && site.status !== "simulated" && (
+        <Notice kind="info">Managed from the production console. This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
+      )}
       {site.status === "failed" && <Notice kind="error"><strong>Setup failed.</strong> {site.lastError}</Notice>}
       {site.status === "creating" && <Notice kind="info">Setting up the repo, its deploy role and the first deploy… this updates by itself.</Notice>}
       {site.status === "none" && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
@@ -84,7 +97,7 @@ function Repo({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant; o
             {site.status === "ready" ? "Run setup again" : site.status === "failed" ? "Retry" : "Set up"}
           </button>
         )}
-        {site.repoExists && !site.archived && (
+        {!readOnly && site.repoExists && !site.archived && (
           <button className="btn btn--small" disabled={redeploy.busy}
                   onClick={async () => { if (await redeploy.run(() => api.redeploySite(tenant.tenantId))) setStarted(true); }}>
             Redeploy {branch}

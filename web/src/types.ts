@@ -688,7 +688,9 @@ export interface SiteStatus {
   repo: string;
   org: string;
   environment: "dev" | "prod";
-  status: "none" | "creating" | "ready" | "failed" | "archived";
+  status: "none" | "simulated" | "creating" | "ready" | "failed" | "archived";
+  /** Dev dry run: what the production console would create. */
+  plan?: string[];
   lastError?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;

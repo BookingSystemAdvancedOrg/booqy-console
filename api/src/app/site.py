@@ -10,12 +10,25 @@ runs that step again.
     POST /platform/tenants/{tenantId}/site/redeploy   deploy this environment's branch again
     POST /platform/tenants/{tenantId}/site/archive    {confirmSlug}: this environment's role and
                                                       variables go; the repo is archived, never deleted
+
+A repo is born in the PROD console. Prod's site-repo reaches dev only
+through the dev account's booqy-sites-prod-link role, which may invoke this
+function with {"siteTask": {...}} and nothing else (site_task below, dev
+only): create or adopt the restaurant's empty dev tenant by slug (its own
+onboarding then sets up the dev side of the repo), or archive that side.
 """
 
 import json
+import re
+from types import SimpleNamespace
 
-from .core import ApiError, client, env, log, write_audit
-from .tenants import get_profile
+from .core import ApiError, client, env, log, query_all, tenant_table, write_audit
+from .tenants import create_tenant, get_plan, get_profile
+
+_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
+_MIRROR_FIELDS = ("name", "slug", "ownerEmail", "ownerName", "legalName", "orgNumber", "contactEmail",
+                  "contactPhone", "address")
+LINK_ACTOR = "prod-site-repo"
 
 
 def _enabled() -> bool:
@@ -92,3 +105,53 @@ def archive(req) -> tuple[int, dict]:
     result = _invoke({"action": "archive", "tenantId": tenant_id})
     write_audit(tenant_id, "site_archived", req.actor, {"repoArchived": result.get("repoArchived")})
     return 200, result
+
+
+def _tenant_by_slug(slug: str) -> str | None:
+    item = client("dynamodb").get_item(TableName=tenant_table(), Key={"PK": {"S": f"SLUG#{slug}"}, "SK": {"S": "TENANT"}},
+                                       ConsistentRead=True).get("Item")
+    return item["tenantId"]["S"] if item else None
+
+
+def _dev_plan(plan_id: str | None) -> str:
+    if plan_id and get_plan(plan_id):
+        return plan_id
+    plans = query_all(TableName=tenant_table(), IndexName="GSI1", KeyConditionExpression="GSI1PK = :p",
+                      ExpressionAttributeValues={":p": {"S": "PLAN"}})
+    if not plans:
+        raise ApiError(409, "no_plans", "No plans in dev")
+    return sorted(p["planId"] for p in plans)[-1]
+
+
+def site_task(event: dict) -> dict:
+    """Prod -> dev (the booqy-sites-prod-link role). Never in prod."""
+    if env("ENVIRONMENT") == "prod":
+        return {"error": "refused", "message": "Site tasks only run in dev"}
+    task = event.get("siteTask") if isinstance(event.get("siteTask"), dict) else {}
+    slug = task.get("slug")
+    if not isinstance(slug, str) or not _SLUG.fullmatch(slug):
+        return {"error": "validation_failed", "message": "slug missing or invalid"}
+    tenant_id = _tenant_by_slug(slug)
+    try:
+        if task.get("action") == "archive":
+            if not tenant_id:
+                return {"status": "none"}
+            return {"tenantId": tenant_id, **_invoke({"action": "archive", "tenantId": tenant_id})}
+        if task.get("action") != "mirror":
+            return {"error": "validation_failed", "message": "unknown site task"}
+        if tenant_id:
+            # The same restaurant already has a dev tenant: keep its test data,
+            # set up the dev side of the repo now (provision is idempotent).
+            status = get_profile(tenant_id).get("status")
+            if status in ("offboarding", "offboarded", "purged"):
+                return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
+            if status in ("active", "suspended"):
+                _invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
+            write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
+            return {"tenantId": tenant_id, "status": "adopted"}
+        body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
+        body["planId"] = _dev_plan(task.get("planId"))
+        _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
+        return {"tenantId": out["tenantId"], "status": "created"}
+    except ApiError as e:
+        return {"error": e.code, "message": str(e)}

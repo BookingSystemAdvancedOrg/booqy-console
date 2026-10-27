@@ -132,6 +132,14 @@ def handler(event, context):
         result = billing.finance_task(event, context)
         log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))
         return result
+    # Prod's site-repo, through the dev account's booqy-sites-prod-link role
+    # (dev only): create or adopt the restaurant's dev tenant, or archive its
+    # dev site. That role may invoke this function and nothing else.
+    if "siteTask" in event and "routeKey" not in event:
+        result = site.site_task(event)
+        log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
+                             "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
+        return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)

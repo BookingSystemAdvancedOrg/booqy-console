@@ -12,7 +12,7 @@ import WebsiteTab from "./WebsiteTab";
 
 const tenant = { tenantId: "t1", slug: "roma", name: "Roma", status: "active" } as Tenant;
 const ready: SiteStatus = {
-  enabled: true, repo: "site-roma", org: "BookingSystemAdvancedOrg", environment: "dev", status: "ready",
+  enabled: true, repo: "site-roma", org: "BookingSystemAdvancedOrg", environment: "prod", status: "ready",
   createdAt: "2026-10-27T10:00:00Z", repoExists: true, repoUrl: "https://github.com/BookingSystemAdvancedOrg/site-roma",
   archived: false,
   deploys: {
@@ -46,7 +46,7 @@ describe("WebsiteTab", () => {
     expect(screen.queryByText(/VITE_API_BASE_URL=/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Show .env.local values" }));
     expect(screen.getByText(/VITE_API_BASE_URL=https:\/\/api.dev.example/)).toBeInTheDocument();
-    expect(screen.getByText(/VITE_DEV_TENANT_SLUG=roma/)).toBeInTheDocument();
+    expect(screen.queryByText(/VITE_DEV_TENANT_SLUG/)).toBeNull();     // prod: the domain decides
     expect(screen.getByText("pk_test_1")).toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe("WebsiteTab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Invite" }));
     expect(mocks.inviteToSite).toHaveBeenCalledWith("t1", "anna-dev");
     expect(await screen.findByText(/Invitation sent to/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Redeploy dev" }));
+    await userEvent.click(screen.getByRole("button", { name: "Redeploy main" }));
     expect(mocks.redeploySite).toHaveBeenCalledWith("t1");
   });
 
@@ -83,5 +83,29 @@ describe("WebsiteTab", () => {
     mocks.site.mockResolvedValue({ enabled: false });
     render(<WebsiteTab tenant={tenant} />);
     expect(await screen.findByText(/aren't switched on/)).toBeInTheDocument();
+  });
+
+  it("shows a prod-born repo read-only in the dev console", async () => {
+    mocks.site.mockResolvedValue({ ...ready, environment: "dev" });
+    render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByText(/Managed from the production console/)).toBeInTheDocument();
+    for (const name of ["Invite", "Redeploy dev", "Run setup again", "Archive site-roma"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Show .env.local values" }));
+    expect(screen.getByText(/VITE_DEV_TENANT_SLUG=roma/)).toBeInTheDocument();
+  });
+
+  it("shows the dev dry run, and full controls for site-test-* repos", async () => {
+    mocks.site.mockResolvedValueOnce({ ...ready, environment: "dev", status: "simulated", repoExists: undefined, deploys: undefined,
+                                       plan: ["Repo BookingSystemAdvancedOrg/site-roma from site-template"] });
+    const { unmount } = render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByText("Dry run.")).toBeInTheDocument();
+    expect(screen.getByText("Repo BookingSystemAdvancedOrg/site-roma from site-template")).toBeInTheDocument();
+    unmount();
+    mocks.site.mockResolvedValue({ ...ready, environment: "dev", repo: "site-test-roma" });
+    render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByRole("button", { name: "Invite" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Redeploy dev" })).toBeInTheDocument();
   });
 });
