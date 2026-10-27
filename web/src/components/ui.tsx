@@ -47,6 +47,12 @@ const STATUS_TEXT: Record<string, string> = {
   sending: "Sending",
   sent: "Sent",
   partly_sent: "Partly sent",
+  creating: "Setting up",
+  ready: "Ready",
+  archived: "Archived",
+  deploying: "Deploying",
+  cancelled: "Cancelled",
+  none: "None",
 };
 
 export function Status({ value }: { value: string }) {

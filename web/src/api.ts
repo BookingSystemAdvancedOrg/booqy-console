@@ -1,7 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import type { WebsiteOverview } from "./website";
 import type {
-  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SupportCase, TransferCheck, Zone,
+  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -83,6 +83,14 @@ export const api = {
   offboard: (id: string, confirmSlug: string) => request("POST", `${t(id)}/offboard`, { confirmSlug }),
   purgeNow: (id: string, confirmSlug: string) => request("POST", `${t(id)}/purge`, { confirmSlug }),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
+  // Website tab: the restaurant's own site repo (site-repo function)
+  site: (id: string) => request<SiteStatus | { enabled: false }>("GET", `${t(id)}/site`),
+  retrySite: (id: string) => request<{ status: string }>("POST", `${t(id)}/site/retry`, {}),
+  inviteToSite: (id: string, username: string) =>
+    request<{ repo: string; username: string; result: string }>("POST", `${t(id)}/site/invite`, { username }),
+  redeploySite: (id: string) => request<{ repo: string; branch: string }>("POST", `${t(id)}/site/redeploy`, {}),
+  archiveSite: (id: string, confirmSlug: string) =>
+    request<{ repo: string; repoArchived: boolean }>("POST", `${t(id)}/site/archive`, { confirmSlug }),
   users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
   createLocation: (id: string, loc: LocationInput) =>

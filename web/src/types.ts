@@ -670,3 +670,40 @@ export interface FinanceTenantDetail {
   days: Record<string, unknown>[];
   invoices: Invoice[];
 }
+
+/** One deploy run of a site repo (GitHub Actions, workflow Deploy). */
+export interface SiteDeploy {
+  status: string;
+  conclusion: string | null;
+  sha: string;
+  at: string;
+  by: string | null;
+  event: string;
+  url: string;
+}
+
+/** Website tab: the restaurant's own site repo site-<slug>. */
+export interface SiteStatus {
+  enabled: true;
+  repo: string;
+  org: string;
+  environment: "dev" | "prod";
+  status: "none" | "creating" | "ready" | "failed" | "archived";
+  lastError?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  repoExists?: boolean;
+  repoUrl?: string;
+  archived?: boolean;
+  deploys?: { dev: SiteDeploy | null; prod: SiteDeploy | null };
+  /** This environment's booqy.json section: public values only. */
+  config: {
+    tenantId: string;
+    apiBaseUrl: string;
+    menuImageBaseUrl: string;
+    stripePublishableKey: string;
+    turnstileSiteKey: string;
+    previewUrl?: string;
+    domain?: string;
+  };
+}

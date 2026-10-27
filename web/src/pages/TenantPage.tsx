@@ -10,16 +10,17 @@ import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postal
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
+import WebsiteTab from "../components/WebsiteTab";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
-const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Activity", "Danger zone"] as const;
+const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Website", "Activity", "Danger zone"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TenantPage() {
   const { tenantId = "" } = useParams();
   const [search, setSearch] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : "Overview");
+  const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : search.get("tab") === "website" ? "Website" : "Overview");
   const { data, error, loading, reload } = useLoad(() => api.tenant(tenantId), [tenantId]);
 
   // Poll while something is in progress (onboarding, domain workflows, offboarding).
@@ -77,6 +78,7 @@ export default function TenantPage() {
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} />}
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
       {tab === "Domains" && <Domains detail={data} onChanged={reload} />}
+      {tab === "Website" && <WebsiteTab tenant={t} />}
       {tab === "Activity" && <Activity detail={data} />}
       {tab === "Danger zone" && <Danger tenant={t} onChanged={reload} />}
     </>

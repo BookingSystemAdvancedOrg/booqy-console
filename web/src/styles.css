@@ -326,13 +326,17 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .timeline code { flex-basis: 100%; color: var(--print-2); word-break: break-all; }
 .tag { font: 800 10px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .08em; border: 2px solid currentColor; color: var(--print-2); padding: 2px 5px 1px; border-radius: 3px; margin-left: 8px; display: inline-block; transform: rotate(-4deg); }
 .code { background: var(--print); color: var(--paper); font-family: var(--mono); font-size: 12.5px; padding: 12px 14px; border-radius: 3px; overflow-x: auto; }
-.copy { display: flex; gap: 6px; margin-top: 8px; }
+.copy { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.key-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
 
 /* --- status: the rubber stamp ---------------------------------------------------- */
 .status { display: inline-block; font: 800 10.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .1em; padding: 3px 7px 2px; border-radius: 3px; border: 2px solid currentColor; background: transparent; color: var(--fg-2); white-space: nowrap; animation: thunk 420ms var(--ease) both; }
 .status--active, .status--live, .status--registered, .status--transferred { color: var(--ok); }
 .status--provisioning, .status--pending_dns, .status--pending_validation, .status--offboarding, .status--removing,
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
+.status--ready { color: var(--ok); }
+.status--creating, .status--deploying { color: var(--warn); }
+.status--archived, .status--none, .status--cancelled, .status--skipped { color: var(--print-2); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
 /* a stamp on the wall needs the lifted inks, not the paper ones */
