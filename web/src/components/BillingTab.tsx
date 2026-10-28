@@ -3,6 +3,7 @@ import { api } from "../api";
 import { INVOICE_STATUS_TEXT, addDays, endDateFor, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, periodOf, periodText } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, Printing, fmtDate, useAction, useLoad } from "./ui";
+import { SaveButton, useFlash } from "./save";
 
 const STATUS_TEXT: Record<string, string> = {
   none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
@@ -21,6 +22,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const [url, setUrl] = useState<string | null>(null);
   const [smsPrice, setSmsPrice] = useState<string | null>(null);
   const [run, setRun] = useState<InvoicingRun | null>(null);
+  const [started, flashStarted] = useFlash();
 
   if (loading && !data) return <Printing />;
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
@@ -45,7 +47,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
 
   return (
     <div className="stack">
-      <Card title="Agreement" actions={<span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span>}>
+      <Card title="Agreement" saved={act.done || started} savedLabel={started ? "Started" : "Saved"} actions={<span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span>}>
         <p className="muted small">
           Invoiced in arrears: on the 25th, Stripe sends one invoice for the period from the 25th to the 24th that has just
           ended, with the monthly price (pro rata by days for a part period) and one line for the SMS parts sent, plus 25 % VAT.
@@ -97,7 +99,8 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
               <span className="inline-edit">
                 <input className="input mono" type="number" min={0} max={100} step={0.01} value={smsPrice} aria-label="Price per SMS part"
                        onChange={(e) => setSmsPrice(e.target.value)} />
-                <button className="btn btn--small" disabled={act.busy} onClick={() => doAction("set_sms_price", { smsPriceSek: smsPrice === "" ? null : Number(smsPrice) })}>Save</button>
+                <SaveButton kind="plain" small type="button" label="Save" busy={act.busy} hint={false} dirty={smsPrice !== String(b.smsPrice)}
+                            onClick={() => void doAction("set_sms_price", { smsPriceSek: smsPrice === "" ? null : Number(smsPrice) })} />
                 <button className="btn btn--small btn--ghost" onClick={() => doAction("set_sms_price", { smsPriceSek: null })}>Use default ({fmtSek(b.smsPriceDefaultSek, { decimals: true })})</button>
                 <button className="link" onClick={() => setSmsPrice(null)}>Cancel</button>
               </span>
@@ -156,10 +159,8 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
             <button className="btn btn--ghost" disabled={act.busy} onClick={() => doAction("use_card")}>Charge the card</button>
           )}
           {running && isTrial && <button className="btn btn--ghost" disabled={act.busy} onClick={() => doAction("convert")}>Convert to subscription</button>}
-          <button className="btn btn--ghost" disabled={link.busy}
-                  onClick={async () => { const r = await link.run(() => api.cardLink(tenant.tenantId)); if (r) setUrl(r.url); }}>
-            {link.busy ? "Creating…" : "Create card link"}
-          </button>
+          <SaveButton kind="ghost" type="button" label="Create card link" busy={link.busy} busyLabel="Creating…" done={link.done} doneLabel="Link ready"
+                      onClick={async () => { const r = await link.run(() => api.cardLink(tenant.tenantId)); if (r) setUrl(r.url); }} />
           {running && !b.endsAt && <button className="btn btn--ghost danger" disabled={act.busy} onClick={() => setConfirmCancel(true)}>Cancel agreement</button>}
         </div>
         {!running && !["active", "provisioning"].includes(tenant.status) && <p className="muted small">An agreement can be started for an active customer.</p>}
@@ -169,7 +170,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
 
       {start && (
         <StartModal tenant={tenant} billing={b} onClose={() => setStart(false)}
-                    onDone={() => { setStart(false); void reload(); onChanged(); }} />
+                    onDone={() => { setStart(false); flashStarted(); void reload(); onChanged(); }} />
       )}
       {confirmCancel && (
         <Modal title="Cancel the agreement?" onClose={() => setConfirmCancel(false)}>
@@ -279,7 +280,7 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
 function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tenantId: string; onChanged: () => void }) {
   const remind = useAction();
   return (
-    <Card title="Invoices">
+    <Card title="Invoices" saved={remind.done} savedLabel="Reminder sent">
       {invoices.length === 0 ? (
         <p className="muted small">No invoices yet. The first one is created on the 25th after the first period (and after "Import from Stripe" on the Finance page for older ones).</p>
       ) : (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorNotice, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { OutboxMessage, OutboxSummary } from "../types";
+import { RefreshButton } from "../components/save";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -104,7 +105,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
           </p>
         </div>
         <div className="row">
-          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+          <RefreshButton reload={reload} />
         </div>
       </div>
 

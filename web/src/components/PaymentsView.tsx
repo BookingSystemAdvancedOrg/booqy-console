@@ -4,6 +4,7 @@ import { api } from "../api";
 import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
 import { ErrorNotice, Modal, Notice, Printing, Status, useAction, useLoad } from "./ui";
+import { SaveButton } from "./save";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -124,10 +125,9 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         <ErrorNotice error={preview.error ?? run.error} />
         <div className="row">
           {!result && (
-            <button className="btn btn--primary" disabled={run.busy || !preview.data || preview.data.invoices.length === 0}
-                    onClick={async () => { const r = await run.run(() => api.financeInvoicing(false)); if (r) setResult(r); }}>
-              {run.busy ? "Creating invoices…" : "Create these invoices"}
-            </button>
+            <SaveButton type="button" label="Create these invoices" busy={run.busy} busyLabel="Creating invoices…"
+                        disabled={!preview.data || preview.data.invoices.length === 0}
+                        onClick={async () => { const r = await run.run(() => api.financeInvoicing(false)); if (r) setResult(r); }} />
           )}
           <button className="btn btn--ghost" onClick={result ? onDone : onClose}>{result ? "Close" : "Cancel"}</button>
         </div>
@@ -163,10 +163,8 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
       <td className="num">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
       <td>
         {overdue && r.collectionMethod !== "charge_automatically" && (
-          <button className="btn btn--small" disabled={remind.busy}
-                  onClick={async () => { if (await remind.run(() => api.remindInvoice(r.tenantId, r.invoiceId))) onChanged(); }}>
-            {remind.busy ? "Sending…" : "Send reminder"}
-          </button>
+          <SaveButton kind="plain" small type="button" label="Send reminder" busy={remind.busy} busyLabel="Sending…" done={remind.done} doneLabel="Sent"
+                      onClick={async () => { if (await remind.run(() => api.remindInvoice(r.tenantId, r.invoiceId))) onChanged(); }} />
         )}
         <ErrorNotice error={remind.error} />
       </td>

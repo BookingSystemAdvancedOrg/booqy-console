@@ -12,6 +12,7 @@ import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } fro
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
 import { setupFailure } from "./NewTenantPage";
+import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -23,6 +24,8 @@ export default function TenantPage() {
   const [search, setSearch] = useSearchParams();
   const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : search.get("tab") === "website" ? "Website" : "Overview");
   const { data, error, loading, reload } = useLoad(() => api.tenant(tenantId), [tenantId]);
+  // Switching tabs drops what a form holds, so a dirty form asks first.
+  const goTab = (next: Tab) => { if (next === tab || confirmLeave()) setTab(next); };
   // "Fix it" on the failed-setup banner: open Overview's edit form on that field.
   const [fixField, setFixField] = useState<string | null>(null);
 
@@ -45,13 +48,13 @@ export default function TenantPage() {
 
   return (
     <>
-      <p className="crumbs"><Link to="/">Customers</Link> / {t.name}</p>
+      <p className="crumbs"><Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</Link> / {t.name}</p>
       <div className="page-head">
         <div>
           <h1>{t.name} <Status value={t.status} /></h1>
           <p className="muted mono small">{t.slug} · {t.tenantId}</p>
         </div>
-        <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+        <RefreshButton reload={reload} />
       </div>
 
       {search.get("created") && t.status === "provisioning" && (
@@ -64,18 +67,18 @@ export default function TenantPage() {
       {t.status === "offboarded" && restorable(t) && (
         <Notice kind="warn">
           Offboarded. Restorable until <strong>{fmtDate(t.purgeAt)}</strong>; after that the data and the website repo are deleted.
-          <button className="link" onClick={() => setTab("Danger zone")}>Restore or delete</button>
+          <button className="link" onClick={() => goTab("Danger zone")}>Restore or delete</button>
         </Notice>
       )}
       {t.status === "provisioning_failed" && (
-        <RetryBanner tenant={t} onDone={reload} onFix={(field) => { setTab("Overview"); setFixField(field); }} />
+        <RetryBanner tenant={t} onDone={reload} onFix={(field) => { if (confirmLeave()) { setTab("Overview"); setFixField(field); } }} />
       )}
       <ErrorNotice error={error} />
 
       <nav className="tabs">
         {TABS.map((name) => (
           <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Danger zone" ? " tab--danger" : ""}`}
-                  onClick={() => setTab(name)}>
+                  onClick={() => goTab(name)}>
             {name}
             {name === "Locations" && <span className="tab__n">{t.locationCount}/{t.entitlements.maxLocations}</span>}
           </button>
@@ -83,7 +86,7 @@ export default function TenantPage() {
       </nav>
 
       {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
-      {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => setTab("Plan")} />}
+      {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />}
       {tab === "Users" && <Users tenant={t} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} />}
@@ -105,10 +108,8 @@ function RetryBanner({ tenant, onDone, onFix }: { tenant: Tenant; onDone: () => 
       <strong>Setup failed.</strong> {field ? failure.fields[field] : failure.message}
       <div className="row">
         {field && <button className="btn btn--small btn--primary" onClick={() => onFix(field)}>Fix {FIX_LABEL[field] ?? field}</button>}
-        <button className="btn btn--small" disabled={a.busy}
-                onClick={async () => { if (await a.run(() => api.retryOnboarding(tenant.tenantId))) onDone(); }}>
-          {a.busy ? "Retrying…" : "Retry setup"}
-        </button>
+        <SaveButton kind="plain" small type="button" label="Retry setup" busy={a.busy} busyLabel="Retrying…" done={a.done} doneLabel="Started"
+                    onClick={async () => { if (await a.run(() => api.retryOnboarding(tenant.tenantId))) onDone(); }} />
       </div>
       <ErrorNotice error={a.error} />
     </Notice>
@@ -143,6 +144,8 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
   }) as Record<string, string>;
   const [f, setF] = useState(initial);
   const a = useAction();
+  const dirty = useDirty(f, initial(), { guard: editing });
+  const [saved, flashSaved] = useFlash();
   useEffect(() => {
     if (!fixField) return;
     setF(initial());
@@ -174,12 +177,12 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
       if (Object.keys(patch).length) await api.updateTenant(t.tenantId, patch);
       return failed ? api.retryOnboarding(t.tenantId) : true;
     });
-    if (ok) { setEditing(false); onSaved(); }
+    if (ok) { setEditing(false); flashSaved(); onSaved(); }
   }
 
   return (
     <div className="cols">
-      <Card title="Company" actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setEditing(true); }}>Edit</button>}>
+      <Card title="Company" saved={saved} actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setEditing(true); }}>Edit</button>}>
         {!editing ? (
           <dl className="dl">
             {fields.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
@@ -191,7 +194,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
             <ErrorNotice error={a.error} />
             <div className="grid">
               {fields.map(([k, label, hint]) => (
-                <Field key={k} label={label} required={k === "name" || k === "ownerName" || k === "ownerEmail"}
+                <Field key={k} label={label} required={k === "name" || k === "ownerName" || k === "ownerEmail"} changed={k !== "vatNumber" && dirty.changed(k)}
                        hint={k === "orgNumber" ? "10 digits, the dash is added for you" : k === "vatNumber" ? "SE + org. number + 01, filled in from the org. number" : hint}
                        error={a.fields[k] ?? (f[k] === ((t[k] as string) ?? "") ? failure[k] : undefined) ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
                   {k === "contactPhone" || k === "ownerPhone" ? (
@@ -206,15 +209,14 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
                   )}
                 </Field>
               ))}
-              <Field label="Street" error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
-              <Field label="Postal code" error={a.fields["address.postalCode"]}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
-              <Field label="City" error={a.fields["address.city"]}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
-              <Field label="Internal notes" wide error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+              <Field label="Street" changed={dirty.changed("street")} error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
+              <Field label="Postal code" changed={dirty.changed("postalCode")} error={a.fields["address.postalCode"]}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
+              <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
+              <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
             <div className="row">
-              <button className="btn btn--primary" disabled={a.busy}>
-                {a.busy ? "Saving…" : t.status === "provisioning_failed" ? "Save and retry setup" : "Save"}
-              </button>
+              <SaveButton label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
+                          dirty={dirty.dirty} allowClean={t.status === "provisioning_failed"} />
               <button type="button" className="btn btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
             </div>
           </form>
@@ -248,9 +250,12 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
   const [edit, setEdit] = useState<Location | "new" | null>(null);
   const [del, setDel] = useState<Location | null>(null);
   const [term, setTerm] = useState<Location | null>(null);
+  const [saved, flashSaved] = useFlash();
+  const [savedLabel, setSavedLabel] = useState("Saved");
+  const changed = (label: string) => { setSavedLabel(label); flashSaved(); onChanged(); };
   const atLimit = t.locationCount >= t.entitlements.maxLocations;
   return (
-    <Card title={`Locations - ${t.locationCount} of ${t.entitlements.maxLocations}`}
+    <Card title={`Locations - ${t.locationCount} of ${t.entitlements.maxLocations}`} saved={saved} savedLabel={savedLabel}
           actions={<button className="btn btn--primary" onClick={() => setEdit("new")}>+ Add location</button>}>
       {atLimit && (
         <Notice kind="warn">
@@ -279,19 +284,22 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
           {detail.locations.length === 0 && <tr><td colSpan={6} className="empty">No locations yet.</td></tr>}
         </tbody>
       </table>
-      {edit && <LocationModal tenant={t} location={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); onChanged(); }} />}
-      {del && <DeleteLocationModal tenant={t} location={del} onClose={() => setDel(null)} onDone={() => { setDel(null); onChanged(); }} />}
+      {edit && <LocationModal tenant={t} location={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); changed(edit === "new" ? "Added" : "Saved"); }} />}
+      {del && <DeleteLocationModal tenant={t} location={del} onClose={() => setDel(null)} onDone={() => { setDel(null); changed("Deleted"); }} />}
       {term && <TerminalModal tenant={t} location={term} goPlan={goPlan} onClose={() => { setTerm(null); onChanged(); }} />}
     </Card>
   );
 }
 
 function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant; location: Location | null; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState<LocationInput>({
+  const initial: LocationInput = {
     name: location?.name ?? "", address: location?.address ?? "", phone: location?.phone ?? "",
     email: location?.email ?? "", stripeAccountId: location?.stripeAccountId ?? "",
-  });
+  };
+  const [f, setF] = useState<LocationInput>(initial);
   const a = useAction();
+  const dirty = useDirty(f, initial);
+  const close = () => { if (!dirty.dirty || window.confirm("Close without saving?")) onClose(); };
   const [needsRaise, setNeedsRaise] = useState(false);
 
   async function save(e: FormEvent) {
@@ -325,7 +333,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
   }, [a.error]);
 
   return (
-    <Modal title={location ? `Edit ${location.name}` : "Add location"} onClose={onClose}>
+    <Modal title={location ? `Edit ${location.name}` : "Add location"} onClose={close}>
       <form onSubmit={save} noValidate>
         {needsRaise ? (
           <Notice kind="warn">
@@ -336,18 +344,18 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
           </Notice>
         ) : <ErrorNotice error={a.error} />}
         <div className="grid">
-          <Field label="Name" required error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
-          <Field label="Address" required error={a.fields.address}><input className="input" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
-          <Field label="Phone" error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
-          <Field label="Email" error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-          <Field label="Separate Stripe account" wide error={a.fields.stripeAccountId}
+          <Field label="Name" required changed={!!location && dirty.changed("name")} error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
+          <Field label="Address" required changed={!!location && dirty.changed("address")} error={a.fields.address}><input className="input" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
+          <Field label="Phone" changed={!!location && dirty.changed("phone")} error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
+          <Field label="Email" changed={!!location && dirty.changed("email")} error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
+          <Field label="Separate Stripe account" wide changed={!!location && dirty.changed("stripeAccountId")} error={a.fields.stripeAccountId}
                  hint="Only if this location is a different company (own org. number). Empty = the customer's account.">
             <input className="input mono" value={f.stripeAccountId} onChange={(e) => setF({ ...f, stripeAccountId: e.target.value })} placeholder="acct_…" />
           </Field>
         </div>
         <div className="row">
-          <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Saving…" : "Save"}</button>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <SaveButton label={location ? "Save" : "Add location"} busy={a.busy} dirty={dirty.dirty} />
+          <button type="button" className="btn btn--ghost" onClick={close}>Cancel</button>
         </div>
       </form>
     </Modal>
@@ -363,10 +371,8 @@ function DeleteLocationModal({ tenant, location, onClose, onDone }: { tenant: Te
       <Field label={`Type "${location.name}" to confirm`}><input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} /></Field>
       <ErrorNotice error={a.error} />
       <div className="row">
-        <button className="btn btn--danger" disabled={typed !== location.name || a.busy}
-                onClick={async () => { if (await a.run(() => api.deleteLocation(tenant.tenantId, location.locationId))) onDone(); }}>
-          Delete location
-        </button>
+        <SaveButton kind="danger" type="button" label="Delete location" busy={a.busy} busyLabel="Deleting…" disabled={typed !== location.name}
+                    onClick={async () => { if (await a.run(() => api.deleteLocation(tenant.tenantId, location.locationId))) onDone(); }} />
         <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
       </div>
     </Modal>
@@ -378,6 +384,7 @@ function Users({ tenant }: { tenant: Tenant }) {
   const users = useLoad(() => api.users(tenant.tenantId), [tenant.tenantId]);
   const [f, setF] = useState({ email: "", name: "" });
   const a = useAction();
+  const dirty = useDirty(f, { email: "", name: "" });
   return (
     <div className="cols">
       <Card title="Sign-in accounts">
@@ -408,7 +415,8 @@ function Users({ tenant }: { tenant: Tenant }) {
           <Field label="Business email" required error={a.fields.email} hint="Gets a temporary password by email">
             <input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           </Field>
-          <button className="btn btn--primary" disabled={a.busy || !f.email || !f.name}>{a.busy ? "Inviting…" : "Send invite"}</button>
+          <SaveButton label="Send invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invite sent"
+                      dirty={dirty.dirty} disabled={!f.email || !f.name} />
         </form>
       </Card>
     </div>
@@ -425,6 +433,13 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
   const a = useAction();
   const plan = plans.data?.find((p) => p.planId === planId);
+  const current = plans.data?.find((p) => p.planId === tenant.planId);
+  // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
+  const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
+  const dirty = useDirty(
+    { planId, maxLocations, features, price },
+    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features, price: savedPrice },
+  );
 
   useEffect(() => {
     // Back on the current plan: show the tenant's real limits (incl. overrides)
@@ -447,7 +462,7 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
     if (Object.keys(changed).length) overrides.features = changed;
     const body: { planId: string; overrides: Record<string, unknown>; force: boolean; priceSek?: number } = { planId, overrides, force };
     if (price !== "") body.priceSek = Number(price);
-    if (await a.run(() => api.setPlan(tenant.tenantId, body))) onSaved();
+    if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
 
@@ -456,25 +471,25 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
       <p className="muted small">Limits take effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is.</p>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
-          <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}`}>
+          <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}${planId === p.planId && dirty.changed("planId") ? " plan--changed" : ""}`}>
             <input type="radio" checked={planId === p.planId} onChange={() => setPlanId(p.planId)} />
             <strong>{p.name}</strong><span>{p.maxLocations} location(s)</span>
           </label>
         ))}
       </div>
       <div className="grid">
-        <Field label="Locations allowed" error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
+        <Field label="Locations allowed" changed={dirty.changed("maxLocations")} error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
           <input className="input" type="number" min={1} max={100} value={maxLocations} onChange={(e) => setMax(e.target.value)} />
         </Field>
-        <Field label="Monthly price, SEK ex VAT" error={a.fields.priceSek}
+        <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
                hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
           <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
-        <div className="field">
+        <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
           <span className="field__label">Features</span>
           <div className="checks">
             {Object.keys({ ...(plan?.features ?? {}), ...features }).map((k) => (
-              <label key={k} className="check">
+              <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
                 <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {k}
               </label>
             ))}
@@ -485,10 +500,10 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
       {belowCount ? (
         <Notice kind="warn">
           {(a.error as ApiError).message}
-          <div className="row"><button className="btn btn--small btn--danger" onClick={() => save(true)}>Apply anyway</button></div>
+          <div className="row"><SaveButton kind="danger" small type="button" label="Apply anyway" busy={a.busy} onClick={() => void save(true)} /></div>
         </Notice>
       ) : <ErrorNotice error={a.error} />}
-      <button className="btn btn--primary" disabled={a.busy || !plan} onClick={() => save()}>{a.busy ? "Saving…" : "Save plan"}</button>
+      <SaveButton type="button" label="Save plan" busy={a.busy} done={a.done} dirty={dirty.dirty} disabled={!plan} onClick={() => void save()} />
     </Card>
   );
 }
@@ -532,14 +547,10 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
         </Notice>
       )}
       <div className="row">
-        <button className="btn btn--primary" disabled={!s.accountId || link.busy}
-                onClick={async () => { const r = await link.run(() => api.stripeLink(tenant.tenantId)); if (r) setUrl(r.url); }}>
-          Create onboarding link
-        </button>
-        <button className="btn btn--ghost" disabled={!s.accountId || sync.busy}
-                onClick={async () => { if (await sync.run(() => api.stripeSync(tenant.tenantId))) onChanged(); }}>
-          {sync.busy ? "Checking…" : "Check status with Stripe"}
-        </button>
+        <SaveButton type="button" label="Create onboarding link" busy={link.busy} busyLabel="Creating…" done={link.done} doneLabel="Link ready"
+                    disabled={!s.accountId} onClick={async () => { const r = await link.run(() => api.stripeLink(tenant.tenantId)); if (r) setUrl(r.url); }} />
+        <SaveButton kind="ghost" type="button" label="Check status with Stripe" busy={sync.busy} busyLabel="Checking…" done={sync.done} doneLabel="Status updated"
+                    disabled={!s.accountId} onClick={async () => { if (await sync.run(() => api.stripeSync(tenant.tenantId))) onChanged(); }} />
       </div>
     </Card>
   );
@@ -590,7 +601,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
         )}
       </Card>
-      <Card title="Website hostnames" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
+      <Card title="Website hostnames" saved={remove.done} savedLabel="Removing" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
         {t.status === "active" && !detail.domains.some((d) => d.kind === "platform") && (
           <Notice kind="info">
             No {PLATFORM_DOMAIN ? <span className="mono">{t.slug}.{PLATFORM_DOMAIN}</span> : "platform"} address yet - this
@@ -636,9 +647,10 @@ function RerunSetup({ tenant, running, onDone }: { tenant: Tenant; running: bool
   const a = useAction();
   return (
     <span className="row-actions">
-      <button
-        className="btn btn--ghost btn--small"
-        disabled={a.busy || running}
+      <SaveButton
+        kind="ghost" small type="button" busy={a.busy} busyLabel="Starting…" done={a.done} doneLabel="Started"
+        label={running ? "Setup running…" : "Re-run setup"}
+        disabled={running}
         title="Adds anything missing from setup (like the platform address). No new invite, no new Stripe account."
         onClick={async () => {
           const ok = window.confirm(
@@ -647,9 +659,7 @@ function RerunSetup({ tenant, running, onDone }: { tenant: Tenant; running: bool
           );
           if (ok && (await a.run(() => api.retryOnboarding(tenant.tenantId)))) onDone();
         }}
-      >
-        {running ? "Setup running…" : a.busy ? "Starting…" : "Re-run setup"}
-      </button>
+      />
       {a.error != null && <ErrorNotice error={a.error} />}
     </span>
   );
@@ -701,7 +711,7 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
   }
   return (
     <div className="stack">
-      <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger">
+      <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger" saved={a.done} savedLabel="Done">
         <ErrorNotice error={a.error} />
         {failed.length > 0 && (
           <Notice kind="warn">Some users could not be updated - press the button again to retry: {failed.join(", ")}</Notice>
@@ -710,8 +720,8 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
           <>
             <p>Signs-in work again for every user that was active before the suspension. The website and online payments come back.</p>
             <div className="row">
-              <button className="btn btn--primary" disabled={a.busy} onClick={() => lifecycle(() => api.resume(tenant.tenantId))}>Resume customer</button>
-              <button className="btn btn--ghost" disabled={a.busy} onClick={() => lifecycle(() => api.suspend(tenant.tenantId, reason))}>Re-apply suspension</button>
+              <SaveButton type="button" label="Resume customer" busy={a.busy} busyLabel="Working…" onClick={() => void lifecycle(() => api.resume(tenant.tenantId))} />
+              <SaveButton kind="ghost" type="button" label="Re-apply suspension" busy={a.busy} busyLabel="Working…" onClick={() => void lifecycle(() => api.suspend(tenant.tenantId, reason))} />
             </div>
           </>
         ) : (
@@ -721,10 +731,8 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
               Nothing is deleted and nothing is archived; Resume undoes it at any time.
             </p>
             <Field label="Reason (kept in the activity log)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
-            <button className="btn btn--danger" disabled={a.busy || tenant.status !== "active"}
-                    onClick={() => { if (window.confirm(`Suspend ${tenant.name}?`)) void lifecycle(() => api.suspend(tenant.tenantId, reason)); }}>
-              Suspend customer
-            </button>
+            <SaveButton kind="danger" type="button" label="Suspend customer" busy={a.busy} busyLabel="Suspending…" disabled={tenant.status !== "active"}
+                        onClick={() => { if (window.confirm(`Suspend ${tenant.name}?`)) void lifecycle(() => api.suspend(tenant.tenantId, reason)); }} />
           </>
         )}
       </Card>
@@ -742,10 +750,8 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
           <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </Field>
         {tenant.status === "provisioning" && <Notice kind="info">Wait until setup has finished before offboarding.</Notice>}
-        <button className="btn btn--danger" disabled={tenant.status === "provisioning" || confirm !== tenant.slug || a.busy}
-                onClick={async () => { if (await a.run(() => api.offboard(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }}>
-          Offboard customer
-        </button>
+        <SaveButton kind="danger" type="button" label="Offboard customer" busy={a.busy} busyLabel="Offboarding…" disabled={tenant.status === "provisioning" || confirm !== tenant.slug}
+                    onClick={async () => { if (await a.run(() => api.offboard(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }} />
       </Card>
     </div>
   );
@@ -756,7 +762,7 @@ function Restore({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void 
   const [result, setResult] = useState<{ failed: string[]; onboardingError?: string } | null>(null);
   if (!restorable(tenant)) return null;
   return (
-    <Card title="Restore customer">
+    <Card title="Restore customer" saved={a.done} savedLabel="Restoring">
       <ErrorNotice error={a.error} />
       {result && result.failed.length > 0 && (
         <Notice kind="warn">Some users could not be enabled: {result.failed.join(", ")}</Notice>
@@ -767,14 +773,12 @@ function Restore({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void 
         Users can sign in again, the website comes back on {tenant.slug}.{PLATFORM_DOMAIN || "booqy.se"} and its repo is unarchived.
       </p>
       <p className="muted small">Own domains are added again on the Domains tab; start the subscription again on the Billing tab.</p>
-      <button className="btn btn--primary" disabled={a.busy}
-              onClick={async () => {
-                if (!window.confirm(`Restore ${tenant.name}?`)) return;
-                const r = await a.run(() => api.restore(tenant.tenantId));
-                if (r) { setResult(r); onChanged(); }
-              }}>
-        Restore customer
-      </button>
+      <SaveButton type="button" label="Restore customer" busy={a.busy} busyLabel="Restoring…"
+                  onClick={async () => {
+                    if (!window.confirm(`Restore ${tenant.name}?`)) return;
+                    const r = await a.run(() => api.restore(tenant.tenantId));
+                    if (r) { setResult(r); onChanged(); }
+                  }} />
     </Card>
   );
 }
@@ -810,13 +814,11 @@ function DeleteCustomer({ tenant, onChanged }: { tenant: Tenant; onChanged: () =
           <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
             <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </Field>
-          <button className="btn btn--danger" disabled={confirm !== tenant.slug || a.busy}
-                  onClick={async () => {
-                    const r = await a.run(() => api.purgeNow(tenant.tenantId, confirm));
-                    if (r) { setConfirm(""); setRepoError(r.repoError ?? null); onChanged(); }
-                  }}>
-            Delete customer
-          </button>
+          <SaveButton kind="danger" type="button" label="Delete customer" busy={a.busy} busyLabel="Deleting…" disabled={confirm !== tenant.slug}
+                      onClick={async () => {
+                        const r = await a.run(() => api.purgeNow(tenant.tenantId, confirm));
+                        if (r) { setConfirm(""); setRepoError(r.repoError ?? null); onChanged(); }
+                      }} />
         </>
       )}
     </Card>

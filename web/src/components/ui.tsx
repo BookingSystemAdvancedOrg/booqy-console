@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
+import { CheckMark, useFlash } from "./save";
 
 export function Field(props: {
   label: string;
@@ -8,12 +9,15 @@ export function Field(props: {
   required?: boolean;
   children: ReactNode;
   wide?: boolean;
+  /** Differs from the saved value: a light marker until saved or undone. */
+  changed?: boolean;
 }) {
   return (
-    <label className={`field${props.wide ? " field--wide" : ""}${props.error ? " field--error" : ""}`}>
+    <label className={`field${props.wide ? " field--wide" : ""}${props.error ? " field--error" : ""}${props.changed ? " field--changed" : ""}`}>
       <span className="field__label">
         {props.label}
         {props.required && <span className="field__req" aria-hidden> *</span>}
+        {props.changed && <span className="sr-only"> (changed)</span>}
       </span>
       {props.children}
       {props.error ? <span className="field__msg">{props.error}</span> : props.hint && <span className="field__hint">{props.hint}</span>}
@@ -83,12 +87,18 @@ export function ErrorNotice({ error }: { error: unknown }) {
   return <Notice kind="error">{msg}</Notice>;
 }
 
-export function Card(props: { title: string; actions?: ReactNode; children: ReactNode; tone?: "danger" }) {
+/** `saved`: flash the card and stamp "Saved" in its head for a moment. */
+export function Card(props: { title: string; actions?: ReactNode; children: ReactNode; tone?: "danger"; saved?: boolean; savedLabel?: string }) {
   return (
-    <section className={`card${props.tone ? ` card--${props.tone}` : ""}`}>
+    <section className={`card${props.tone ? ` card--${props.tone}` : ""}${props.saved ? " card--saved" : ""}`}>
       <header className="card__head">
         <h2>{props.title}</h2>
-        {props.actions && <div className="card__actions">{props.actions}</div>}
+        {(props.actions || props.saved) && (
+          <div className="card__actions">
+            {props.saved && <span className="saved-stamp" role="status"><CheckMark />{props.savedLabel ?? "Saved"}</span>}
+            {props.actions}
+          </div>
+        )}
       </header>
       <div className="card__body">{props.children}</div>
     </section>
@@ -121,7 +131,7 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [loading, setLoading] = useState(true);
   const latest = useRef(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (): Promise<boolean> => {
     const id = ++latest.current;           // a slower, older response must not win
     try {
       const value = await load();
@@ -129,8 +139,10 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
         setError(null);
         setData(value);
       }
+      return true;
     } catch (e) {
       if (id === latest.current) setError(e);
+      return false;
     } finally {
       if (id === latest.current) setLoading(false);
     }
@@ -143,17 +155,20 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
   return { data, error, loading, reload, setData };
 }
 
-/** Wraps an action: busy flag, field errors, general error. */
+/** Wraps an action: busy flag, field errors, general error, and `done` for a moment after it worked. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [done, flash] = useFlash();
   const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
     setError(null);
     setFields({});
     try {
-      return await fn();
+      const result = await fn();
+      flash();
+      return result;
     } catch (e) {
       setError(e);
       if (e instanceof ApiError) setFields(e.fields);
@@ -161,8 +176,8 @@ export function useAction() {
     } finally {
       setBusy(false);
     }
-  }, []);
-  return { busy, error, fields, run, setError };
+  }, [flash]);
+  return { busy, error, fields, run, setError, done };
 }
 
 export function fmtDate(iso?: string) {

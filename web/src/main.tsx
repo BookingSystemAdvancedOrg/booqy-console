@@ -15,6 +15,7 @@ import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { BusyBar } from "./components/BusyBar";
+import { confirmLeave } from "./components/save";
 import "./styles.css";
 
 // Production is the default and is never labelled; only dev says so.
@@ -40,7 +41,8 @@ function Shell() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      {/* A dirty form asks before any top bar link takes the operator away. */}
+      <header className="topbar" onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         {IS_DEV && <span className="env">dev</span>}
         <nav className="topbar__nav">

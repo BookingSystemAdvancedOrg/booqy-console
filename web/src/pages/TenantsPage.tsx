@@ -4,6 +4,7 @@ import { api } from "../api";
 import { ErrorNotice, Status, fmtDate, useLoad, Printing } from "../components/ui";
 import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } from "../finance";
 import type { PaymentRow } from "../types";
+import { RefreshButton } from "../components/save";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
@@ -46,7 +47,7 @@ export default function TenantsPage() {
           <p className="muted">{data ? `${data.length} restaurants on the platform` : " "}</p>
         </div>
         <div className="row">
-          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+          <RefreshButton reload={reload} />
           <Link className="btn btn--primary" to="/tenants/new">+ New customer</Link>
         </div>
       </div>

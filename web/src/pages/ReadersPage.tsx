@@ -4,6 +4,7 @@ import { api } from "../api";
 import { DEVICE } from "../components/TerminalModal";
 import { ErrorNotice, Notice, Printing, useLoad } from "../components/ui";
 import type { FleetReader } from "../types";
+import { RefreshButton } from "../components/save";
 
 const FILTERS = ["all", "online", "offline", "unassigned"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -59,7 +60,7 @@ export default function ReadersPage() {
           </p>
         </div>
         <div className="row">
-          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+          <RefreshButton reload={reload} />
         </div>
       </div>
 

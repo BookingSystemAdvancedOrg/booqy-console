@@ -5,6 +5,7 @@ import {
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
+import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -62,7 +63,7 @@ export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
       </div>
       <nav className="tabs">
         {TABS.filter((name) => name !== "Outbox" || IS_DEV).map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}`} onClick={() => setTab(name)}>{name}</button>
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}`} onClick={() => { if (name === tab || confirmLeave()) setTab(name); }}>{name}</button>
         ))}
       </nav>
       {sentNotice && <Notice kind="ok">{sentNotice} <button className="link" onClick={() => setSentNotice(null)}>Dismiss</button></Notice>}
@@ -87,6 +88,8 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
   const preview = useDebounced(() => api.mailPreview({ subject, body }), [subject, body]);
   const ready = subject.trim().length > 0 && body.trim().length > 0;
   const count = recipients.data?.count ?? 0;
+  // A draft is unsaved work: leaving asks first, sending clears it.
+  useDirty({ subject, body }, { subject: "", body: "" }, { guard: !send.done });
 
   async function sendTest() {
     setTestInfo(null);
@@ -127,9 +130,8 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
         <ErrorNotice error={test.error ?? send.error} />
         {testInfo && <Notice kind="ok">{testInfo}</Notice>}
         <div className="mail-actions">
-          <button type="button" className="btn btn--ghost" disabled={!ready || test.busy} onClick={() => void sendTest()}>
-            {test.busy ? "Sending test…" : "Send me a test"}
-          </button>
+          <SaveButton kind="ghost" type="button" label="Send me a test" busy={test.busy} busyLabel="Sending test…" done={test.done} doneLabel="Test sent"
+                      disabled={!ready} onClick={() => void sendTest()} />
           <button type="button" className="btn btn--primary" disabled={!ready || count === 0 || send.busy} onClick={() => setConfirm(true)}>
             Send to {count} owner{count === 1 ? "" : "s"}
           </button>
@@ -176,7 +178,7 @@ function Sent() {
           <h2>Sent</h2>
           <p className="muted">Every send, who it went to and what happened{sending ? " - updating while a send runs." : "."}</p>
         </div>
-        <div className="row"><button className="btn btn--ghost" onClick={() => reload()}>Refresh</button></div>
+        <div className="row"><RefreshButton reload={reload} /></div>
       </div>
       <ErrorNotice error={error} />
       {loading && !data ? <Printing /> : (
@@ -284,6 +286,10 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
   const [fileError, setFileError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const a = useAction();
+  const dirty = useDirty(f, {
+    senderName: template.senderName, replyTo: template.replyTo, accentColor: template.accentColor,
+    signature: template.signature, footer: template.footer, logo: { kind: template.logo.kind },
+  });
   const set = <K extends keyof MailTemplateInput>(key: K) => (value: MailTemplateInput[K]) => setF((s) => ({ ...s, [key]: value }));
 
   const previewTemplate = useMemo(() => ({ ...f, logo: f.logo.kind === "custom" && !("dataUrl" in f.logo && f.logo.dataUrl) ? (customPreview ? { kind: "custom" as const } : { kind: "booqy" as const }) : f.logo }), [f, customPreview]);
@@ -332,34 +338,34 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
           <ErrorNotice error={a.error} />
           {saved && <Notice kind="ok">Template saved. New messages use it from now on.</Notice>}
           <div className="grid">
-            <Field label="Sender name" required hint={`Shown as "${f.senderName || "Booqy"} <${template.from}>"`} error={a.fields.senderName}>
+            <Field label="Sender name" required changed={dirty.changed("senderName")} hint={`Shown as "${f.senderName || "Booqy"} <${template.from}>"`} error={a.fields.senderName}>
               <input className="input" value={f.senderName} maxLength={60} onChange={(e) => set("senderName")(e.target.value)} />
             </Field>
-            <Field label="Reply-to address" required hint="Where an owner's reply or question lands" error={a.fields.replyTo}>
+            <Field label="Reply-to address" required changed={dirty.changed("replyTo")} hint="Where an owner's reply or question lands" error={a.fields.replyTo}>
               <input className="input" type="email" value={f.replyTo} onChange={(e) => set("replyTo")(e.target.value)} />
             </Field>
-            <Field label="Accent colour" hint="The short rule under the subject and the links" error={a.fields.accentColor}>
+            <Field label="Accent colour" changed={dirty.changed("accentColor")} hint="The short rule under the subject and the links" error={a.fields.accentColor}>
               <div className="colour-field">
                 <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#350001"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
                 <input className="input mono" value={f.accentColor} maxLength={7} onChange={(e) => set("accentColor")(e.target.value)} />
               </div>
             </Field>
           </div>
-          <Field label="Logo" error={a.fields.logo ?? a.fields["logo.kind"] ?? fileError ?? undefined}>
+          <Field label="Logo" changed={dirty.changed("logo")} error={a.fields.logo ?? a.fields["logo.kind"] ?? fileError ?? undefined}>
             <LogoPicker kind={f.logo.kind} customPreview={customPreview} customName={customName}
                         onKind={(kind) => setF((s) => ({ ...s, logo: kind === "booqy" ? { kind } : { kind, ...(customPreview && "dataUrl" in s.logo ? { dataUrl: s.logo.dataUrl, name: s.logo.name } : {}) } }))}
                         onFile={(file) => void pickFile(file)} />
           </Field>
           <div className="grid">
-            <Field label="Signature" wide hint="Closes every message, above the footer" error={a.fields.signature}>
+            <Field label="Signature" wide changed={dirty.changed("signature")} hint="Closes every message, above the footer" error={a.fields.signature}>
               <textarea className="input" rows={3} value={f.signature} maxLength={600} onChange={(e) => set("signature")(e.target.value)} />
             </Field>
-            <Field label="Footer line" wide hint="Small print at the bottom; the reply-to address is always added after it" error={a.fields.footer}>
+            <Field label="Footer line" wide changed={dirty.changed("footer")} hint="Small print at the bottom; the reply-to address is always added after it" error={a.fields.footer}>
               <textarea className="input" rows={2} value={f.footer} maxLength={600} onChange={(e) => set("footer")(e.target.value)} />
             </Field>
           </div>
           <div className="mail-actions">
-            <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Saving…" : "Save template"}</button>
+            <SaveButton label="Save template" busy={a.busy} done={a.done} dirty={dirty.dirty} />
             {template.updatedAt && <span className="muted">Last saved {fmtDate(template.updatedAt)} by {template.updatedBy}</span>}
           </div>
         </Card>
