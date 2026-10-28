@@ -101,6 +101,9 @@ export default function NewTenantPage() {
   const [terms, setTerms] = useState<"trial" | "subscription">("trial");
   const [startInvoicing, setStartInvoicing] = useState(true);
   const [startDate, setStartDate] = useState("");
+  // Features ticked differently from the plan; cleared when another plan is picked.
+  const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
+  useEffect(() => setFeatureEdits({}), [f.planId]);
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
     const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
@@ -114,6 +117,8 @@ export default function NewTenantPage() {
 
   const plan = plans.data?.find((p) => p.planId === f.planId) ?? null;
   const maxLocations = f.maxLocations ? Number(f.maxLocations) : plan?.maxLocations ?? 1;
+  const features = { ...(plan?.features ?? {}), ...featureEdits };
+  const featureOverrides = plan ? Object.fromEntries(Object.entries(featureEdits).filter(([k, on]) => !!plan.features[k] !== on)) : {};
   const shownPrice = priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
   // Billing counts from the start date; the first invoice is the 25th after that period (in arrears).
@@ -149,7 +154,12 @@ export default function NewTenantPage() {
         senderName: f.senderName, replyToEmail: f.replyToEmail, notes: f.notes,
       }),
       ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
-      ...(f.maxLocations ? { overrides: { maxLocations: Number(f.maxLocations) } } : {}),
+      ...(f.maxLocations || Object.keys(featureOverrides).length ? {
+        overrides: {
+          ...(f.maxLocations ? { maxLocations: Number(f.maxLocations) } : {}),
+          ...(Object.keys(featureOverrides).length ? { features: featureOverrides } : {}),
+        },
+      } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
       billing: compact({
         terms, startInvoicing, priceSek: shownPrice !== "" ? Number(shownPrice) : undefined,
@@ -322,7 +332,20 @@ export default function NewTenantPage() {
             <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
                    onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
           </Field>
+          <div className="field">
+            <span className="field__label">Features</span>
+            {plan ? (
+              <div className="checks">
+                {Object.keys(features).map((k) => (
+                  <label key={k} className="check">
+                    <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {k}
+                  </label>
+                ))}
+              </div>
+            ) : <span className="field__hint">Pick a plan first</span>}
+          </div>
         </div>
+        {features.kassa && <Notice kind="warn">Kassa: turn it on for a paying restaurant only once fiskaly LIVE is on and the SKV 1509 declaration was sent at least 2 weeks ago.</Notice>}
       </Card>
 
       <Card title="4b · Invoicing">
