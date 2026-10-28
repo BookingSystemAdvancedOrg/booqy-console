@@ -1,13 +1,14 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
-import type { SiteDeploy, SiteStatus, Tenant } from "../types";
+import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
 import { Card, ErrorNotice, Field, Notice, Printing, Status, fmtDate, useAction, useLoad } from "./ui";
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
 
 /** The restaurant's own site repo site-<slug>: born in the PROD console's
- * onboarding (Retry here), deployed from dev (dev account) and main (prod,
- * behind the domain gate). The dev console only shows it (read-only) or, for
+ * onboarding (Retry here), deployed from dev (dev account) and main (prod).
+ * Each environment's site is live on its slug address; the restaurant's own
+ * domain is mounted per environment once it is verified (Hosting). The dev console only shows it (read-only) or, for
  * a customer prod hasn't created, a dry run; test-* slugs are the exception
  * for testing the automation. Everything goes through the site-repo function;
  * no token is ever shown or stored here. */
@@ -35,6 +36,7 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     <div className="stack">
       <ErrorNotice error={error} />
       <Repo site={data} tenant={tenant} readOnly={readOnly} onChanged={reload} />
+      {data.hosting && data.status !== "simulated" && <Hosting site={data} tenant={tenant} onChanged={reload} />}
       {data.repoExists && !data.archived && (
         <>
           <Local site={data} />
@@ -56,8 +58,6 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
     <Card title="Website repo" actions={
       <div className="row-actions">
         {site.repoUrl && <a className="btn btn--small" href={site.repoUrl} target="_blank" rel="noreferrer">Open repo</a>}
-        {site.repoExists && site.config.previewUrl && <a className="btn btn--small" href={site.config.previewUrl} target="_blank" rel="noreferrer">Open dev preview</a>}
-        {site.repoExists && site.config.domain && <a className="btn btn--small" href={`https://${site.config.domain}`} target="_blank" rel="noreferrer">Open site</a>}
       </div>}>
       {site.status === "simulated" && (
         <Notice kind="info">
@@ -78,7 +78,6 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
         <dd className="mono">{site.repoUrl ? <a href={site.repoUrl} target="_blank" rel="noreferrer">{site.org}/{site.repo}</a> : `${site.org}/${site.repo}`}</dd>
         <dt>Status</dt><dd><Status value={site.archived ? "archived" : site.status} /></dd>
         <dt>Created</dt><dd>{site.createdAt ? fmtDate(site.createdAt) : <span className="muted">-</span>}</dd>
-        <dt>Own domain</dt><dd>{site.config.domain ?? <span className="muted">none yet (production refuses to deploy without it)</span>}</dd>
       </dl>
       {site.deploys && (
         <div className="table-wrap">
@@ -107,6 +106,83 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
       </div>
       <ErrorNotice error={retry.error ?? redeploy.error} />
     </Card>
+  );
+}
+
+const DOMAIN_STEP: Record<"dev" | "prod", string> = { prod: "www.<domain>", dev: "dev.<domain>" };
+
+/** Where each environment's site answers: always its slug address
+ * (<slug>.booqy.se, <slug>.dev.booqy.se), and the restaurant's own domain
+ * once it is mounted there. One hostname can be on only one CloudFront
+ * distribution, so dev gets dev.<domain>. */
+function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant; onChanged: () => void }) {
+  const mount = useAction();
+  const envs = (["dev", "prod"] as const).filter((env) => site.hosting?.[env]);
+  const manage = site.environment === "prod";
+  const dev = site.hosting?.dev;
+  const cnameNeeded = manage && dev?.host && !dev.dnsByBooqy && (dev.state === "not_mounted" || dev.state === "attaching" || dev.state === "failed");
+  return (
+    <Card title="Where the site answers">
+      <p className="small muted">
+        Every site is live on its slug address from the first deploy; an own domain is never needed for that. Once the
+        restaurant's own domain is live (Domains tab), mount it per environment: production on {DOMAIN_STEP.prod}, dev
+        on {DOMAIN_STEP.dev} (one hostname can be on only one CloudFront distribution). The slug address keeps working.
+      </p>
+      <div className="table-wrap">
+        <table className="table table--stack">
+          <thead><tr><th>Environment</th><th>Slug address</th><th>Own domain</th><th><span className="sr-only">Action</span></th></tr></thead>
+          <tbody>
+            {envs.map((env) => (
+              <HostingRow key={env} env={env} h={site.hosting![env]!} manage={manage} busy={mount.busy}
+                          onMount={async () => { if (await mount.run(() => api.mountSiteDomain(tenant.tenantId, env))) onChanged(); }} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {cnameNeeded && (
+        <Notice kind="info">
+          <strong>One more DNS record for the restaurant.</strong> They keep their own DNS, so they add
+          {" "}<span className="mono">{dev!.host}</span> CNAME <span className="mono">{dev!.cnameTarget || "(dev target)"}</span> at
+          their DNS provider. Dev issues its certificate once the record is there; Refresh shows it.
+        </Notice>
+      )}
+      {manage && (
+        <Notice kind="warn">
+          Production serves the shared customer site on every address until <span className="mono">per_tenant_sites</span> is
+          switched on in prod: deploys from <span className="mono">main</span> go live, but show on the addresses only after that switch.
+        </Notice>
+      )}
+      <ErrorNotice error={mount.error} />
+    </Card>
+  );
+}
+
+function HostingRow({ env, h, manage, busy, onMount }: { env: "dev" | "prod"; h: SiteHosting; manage: boolean; busy: boolean; onMount: () => void }) {
+  const label = (text: string) => <span className="stack-label">{text}: </span>;
+  const status = h.state === "attaching" && h.status ? h.status : h.state;
+  return (
+    <tr>
+      <td className="strong">{ENV_LABEL[env]}</td>
+      <td>{label("Slug address")}{h.slugUrl
+        ? <a href={h.slugUrl} target="_blank" rel="noreferrer">{h.slugUrl.replace(/^https:\/\//, "")}</a>
+        : <span className="muted">not made yet (Domains tab: Re-run setup)</span>}</td>
+      <td>
+        {label("Own domain")}<Status value={status} />
+        {h.host && (h.state === "live"
+          ? <> <a href={`https://${h.host}`} target="_blank" rel="noreferrer">{h.host}</a></>
+          : <> <span className="mono small">{h.host}</span></>)}
+        {h.waitsFor && <div className="small muted">After {h.waitsFor} is live in production</div>}
+        {!h.host && !h.waitsFor && h.state === "slug_only" && <div className="small muted">No own domain yet</div>}
+        {h.lastError && <div className="small hosting-error">{h.lastError}</div>}
+      </td>
+      <td>
+        {manage && h.canMount && (
+          <button className="btn btn--small" disabled={busy} onClick={onMount}>
+            {h.state === "failed" ? "Retry" : `Mount ${h.host ?? DOMAIN_STEP[env]}`}
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }
 

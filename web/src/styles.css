@@ -336,6 +336,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
 .status--ready { color: var(--ok); }
 .status--creating, .status--deploying { color: var(--warn); }
+.status--slug_only, .status--not_mounted, .status--unknown,
 .status--archived, .status--none, .status--simulated, .status--cancelled, .status--skipped { color: var(--print-2); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
@@ -418,13 +419,14 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .row-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* --- login: the oxblood wall, the sign-in ticket on its rail ------------------------- */
-.auth { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr); background: var(--ox-800); }
+.auth { position: relative; min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr); background: var(--ox-800); }
 .auth__brand { background: var(--ox-900); color: var(--on-ox); padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; position: relative; overflow: hidden; }
 .auth__logo .brand__logo { width: 104px; }
 .auth__lead { font: 860 clamp(28px, 2.6vw, 40px)/0.98 var(--sans); font-stretch: 125%; letter-spacing: -0.025em; margin: 0 0 14px; max-width: 13em; text-wrap: balance; }
 .auth__lead em { font-style: normal; color: #e3a3a8; }
 .auth__sub { margin: 0; color: var(--on-ox-2); max-width: 28em; font-size: 1.05rem; line-height: 1.55; }
 .auth__brand .env { align-self: flex-start; }
+.auth__theme { position: absolute; top: 16px; right: 16px; z-index: 1; }
 .auth__main { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; gap: 18px; }
 .auth__card { width: min(440px, 100%); animation: drop 900ms var(--ease) both; }
 .auth__form { display: grid; gap: 14px; padding: 24px 28px 30px; }
@@ -822,3 +824,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   .busy-bar--busy .busy-bar__fill { animation: none; width: 70%; }
   .busy-bar__wave { animation: none; }
 }
+
+/* Website tab, Where the site answers */
+.hosting-error { color: var(--ink-red); overflow-wrap: anywhere; }

@@ -31,7 +31,7 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: THEME_KEY,
     kind: "localStorage",
-    purpose: "Your choice of light or dark mode (the button in the top bar). Set only when you press it; otherwise the console follows your system.",
+    purpose: "Your choice of light or dark mode (the button in the top bar and on the sign-in page). Set only when you press it; otherwise the console follows your system.",
     lifetime: "Until you clear the browser",
   },
 ];

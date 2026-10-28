@@ -31,6 +31,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/site/invite": site.invite,
     "POST /platform/tenants/{tenantId}/site/redeploy": site.redeploy,
     "POST /platform/tenants/{tenantId}/site/archive": site.archive,
+    "POST /platform/tenants/{tenantId}/site/mount": site.mount,
     "GET /platform/tenants/{tenantId}/users": users.list_users,
     "POST /platform/tenants/{tenantId}/owners": users.invite_owner,
     "GET /platform/tenants/{tenantId}/locations": locations.list_locations,

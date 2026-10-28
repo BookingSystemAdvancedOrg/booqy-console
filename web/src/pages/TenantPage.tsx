@@ -120,7 +120,7 @@ const PROFILE_FIELDS: [keyof Tenant, string, string?][] = [
 
 // Editable only while setup has failed: the owner hasn't been invited yet.
 const OWNER_FIELDS: [keyof Tenant, string, string?][] = [
-  ["ownerName", "Owner name"], ["ownerEmail", "Owner business email", "Used to sign in"], ["ownerPhone", "Owner phone"],
+  ["ownerName", "Owner full name"], ["ownerEmail", "Owner business email", "Used to sign in"], ["ownerPhone", "Owner phone"],
 ];
 
 function Overview({ detail, onSaved, fixField, onFixed }: {
@@ -475,6 +475,7 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
           </div>
         </div>
       </div>
+      {features.kassa && <Notice kind="warn">Kassa: turn it on for a paying restaurant only once fiskaly LIVE is on and the SKV 1509 declaration was sent at least 2 weeks ago.</Notice>}
       {belowCount ? (
         <Notice kind="warn">
           {(a.error as ApiError).message}

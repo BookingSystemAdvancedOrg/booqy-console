@@ -95,6 +95,8 @@ export const api = {
   inviteToSite: (id: string, username: string) =>
     request<{ repo: string; username: string; result: string }>("POST", `${t(id)}/site/invite`, { username }),
   redeploySite: (id: string) => request<{ repo: string; branch: string }>("POST", `${t(id)}/site/redeploy`, {}),
+  mountSiteDomain: (id: string, environment: "dev" | "prod") =>
+    request<{ hosting: SiteStatus["hosting"] }>("POST", `${t(id)}/site/mount`, { environment }),
   archiveSite: (id: string, confirmSlug: string) =>
     request<{ repo: string; repoArchived: boolean }>("POST", `${t(id)}/site/archive`, { confirmSlug }),
   users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),

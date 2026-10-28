@@ -3,6 +3,7 @@ import { Printing } from "../components/ui";
 import { STORAGE_REGISTRY } from "../storageRegistry";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Logo } from "../components/Logo";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import {
@@ -155,6 +156,8 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="auth">
+      {/* Light or dark can be picked before signing in. */}
+      <ThemeToggle className="auth__theme" />
       <aside className="auth__brand">
         <div className="brand auth__logo"><Logo className="brand__logo" /><span className="brand__app">Console</span></div>
         <div>
