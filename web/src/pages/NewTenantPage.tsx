@@ -25,7 +25,7 @@ const emptyLocation = (): LocationInput => ({ name: "", address: "", phone: "", 
 const LABELS: Record<string, string> = {
   name: "Restaurant / brand name", slug: "Slug", legalName: "Legal name", orgNumber: "Org. number",
   vatNumber: "VAT number", "address.street": "Street address", "address.postalCode": "Postal code",
-  "address.city": "City", ownerName: "Owner name", ownerEmail: "Owner business email", ownerPhone: "Owner phone",
+  "address.city": "City", ownerName: "Owner full name", ownerEmail: "Owner business email", ownerPhone: "Owner phone",
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
   "overrides.maxLocations": "Locations allowed", locations: "Locations", notes: "Notes",
@@ -131,7 +131,7 @@ export default function NewTenantPage() {
     const out: string[] = [];
     if (!f.name) out.push("restaurant name");
     if (!f.slug) out.push("slug");
-    if (!f.ownerName) out.push("owner name");
+    if (!f.ownerName) out.push("owner full name");
     if (!f.ownerEmail) out.push("owner email");
     if (!f.planId) out.push("a plan");
     return out;
@@ -265,7 +265,7 @@ export default function NewTenantPage() {
       <Card title="2 · Owner login">
         <p className="muted small">This person gets an email with a temporary password and signs in to the restaurant admin app. Their account is tied to this customer permanently.</p>
         <div className="grid">
-          <Field label="Owner name" required error={fields.ownerName}>
+          <Field label="Owner full name" required error={fields.ownerName}>
             <input id="f-ownerName" className="input" value={f.ownerName} onChange={set("ownerName")} />
           </Field>
           <Field label="Owner business email" required error={fields.ownerEmail} hint="Used to sign in">

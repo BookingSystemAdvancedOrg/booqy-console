@@ -120,7 +120,7 @@ const PROFILE_FIELDS: [keyof Tenant, string, string?][] = [
 
 // Editable only while setup has failed: the owner hasn't been invited yet.
 const OWNER_FIELDS: [keyof Tenant, string, string?][] = [
-  ["ownerName", "Owner name"], ["ownerEmail", "Owner business email", "Used to sign in"], ["ownerPhone", "Owner phone"],
+  ["ownerName", "Owner full name"], ["ownerEmail", "Owner business email", "Used to sign in"], ["ownerPhone", "Owner phone"],
 ];
 
 function Overview({ detail, onSaved, fixField, onFixed }: {
