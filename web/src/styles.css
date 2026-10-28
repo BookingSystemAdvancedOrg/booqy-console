@@ -336,6 +336,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
 .status--ready { color: var(--ok); }
 .status--creating, .status--deploying { color: var(--warn); }
+.status--slug_only, .status--not_mounted, .status--unknown,
 .status--archived, .status--none, .status--simulated, .status--cancelled, .status--skipped { color: var(--print-2); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
@@ -823,3 +824,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   .busy-bar--busy .busy-bar__fill { animation: none; width: 70%; }
   .busy-bar__wave { animation: none; }
 }
+
+/* Website tab, Where the site answers */
+.hosting-error { color: var(--ink-red); overflow-wrap: anywhere; }

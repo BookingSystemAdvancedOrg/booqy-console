@@ -61,31 +61,42 @@ def claim_host(tenant_id: str, host: str, actor: str) -> str:
     return "created"
 
 
-def add_domain(req) -> tuple[int, dict]:
-    tenant_id = req.path["tenantId"]
+def check_custom_host(host: str) -> None:
     platform_domain = env("PLATFORM_DOMAIN", "")
     if not platform_domain:
         raise ApiError(409, "platform_domain_not_configured",
                        "Custom domains need the platform domain (var.platform_domain) to be set first")
-    host = v.hostname(req.body.get("domain"))
-    make_primary = bool(req.body.get("makePrimary"))
     if host == platform_domain or host.endswith("." + platform_domain):
         raise ApiError(400, "validation_failed", "Platform subdomains are created automatically",
                        fields={"domain": f"Use the customer's own domain, not *.{platform_domain}"})
+
+
+def start_attach(tenant_id: str, host: str, actor: str, make_primary: bool = False) -> bool:
+    """Claim the host and start domain-attach. False: this tenant already has
+    it attaching or live (nothing started)."""
+    if claim_host(tenant_id, host, actor) == "exists":
+        return False
+    client("stepfunctions").start_execution(
+        stateMachineArn=env("DOMAIN_ATTACH_STATE_MACHINE_ARN"), name=_execution_name("attach", host),
+        input=json.dumps({"tenantId": tenant_id, "domain": host, "makePrimary": make_primary,
+                          "requestedBy": actor}))
+    write_audit(tenant_id, "domain_attach_started", actor, {"domain": host, "makePrimary": make_primary})
+    return True
+
+
+def add_domain(req) -> tuple[int, dict]:
+    tenant_id = req.path["tenantId"]
+    host = v.hostname(req.body.get("domain"))
+    make_primary = bool(req.body.get("makePrimary"))
+    check_custom_host(host)
     profile = get_profile(tenant_id)
     if profile.get("status") not in ("active", "provisioning", "suspended"):
         raise ApiError(409, "invalid_status", f"The tenant is {profile.get('status')}", currentStatus=profile.get("status"))
 
-    if claim_host(tenant_id, host, req.actor) == "exists":
+    if not start_attach(tenant_id, host, req.actor, make_primary):
         row = _domain_row(tenant_id, host) or {}
         raise ApiError(409, "domain_exists", f"Already added ({row.get('status', 'in progress')})",
                        fields={"domain": "Already added"})
-
-    client("stepfunctions").start_execution(
-        stateMachineArn=env("DOMAIN_ATTACH_STATE_MACHINE_ARN"), name=_execution_name("attach", host),
-        input=json.dumps({"tenantId": tenant_id, "domain": host, "makePrimary": make_primary,
-                          "requestedBy": req.actor}))
-    write_audit(tenant_id, "domain_attach_started", req.actor, {"domain": host, "makePrimary": make_primary})
     return 202, {"domain": host, "status": "pending_dns",
                  "dns": [{"type": "CNAME", "name": host, "value": env("TENANT_DOMAIN_CNAME_TARGET", "")}]}
 

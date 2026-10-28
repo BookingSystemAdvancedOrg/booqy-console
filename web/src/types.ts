@@ -682,6 +682,24 @@ export interface SiteDeploy {
   url: string;
 }
 
+/** Where one environment's site answers: its slug address always, its
+ * own domain once mounted (prod www.<domain>, dev dev.<domain>). */
+export interface SiteHosting {
+  slugUrl?: string | null;
+  host?: string | null;
+  state: "slug_only" | "not_mounted" | "attaching" | "live" | "failed" | "unknown";
+  /** The domain row's own status (pending_dns, pending_validation, ...). */
+  status?: string | null;
+  lastError?: string | null;
+  /** The CNAME target of that environment's restaurant-site distribution. */
+  cnameTarget?: string;
+  canMount?: boolean;
+  /** Booqy runs the domain's DNS: Mount writes the record itself. */
+  dnsByBooqy?: boolean;
+  /** Dev: the own domain that has to be live in production first. */
+  waitsFor?: string | null;
+}
+
 /** Website tab: the restaurant's own site repo site-<slug>. */
 export interface SiteStatus {
   enabled: true;
@@ -698,6 +716,8 @@ export interface SiteStatus {
   repoUrl?: string;
   archived?: boolean;
   deploys?: { dev: SiteDeploy | null; prod: SiteDeploy | null };
+  /** Prod console: both environments; dev console: dev only. */
+  hosting?: Partial<Record<"dev" | "prod", SiteHosting>>;
   /** This environment's booqy.json section: public values only. */
   config: {
     tenantId: string;

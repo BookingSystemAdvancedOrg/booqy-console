@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SiteStatus, Tenant } from "../types";
 
 const mocks = vi.hoisted(() => ({
-  site: vi.fn(), retrySite: vi.fn(), inviteToSite: vi.fn(), redeploySite: vi.fn(), archiveSite: vi.fn(),
+  site: vi.fn(), retrySite: vi.fn(), inviteToSite: vi.fn(), redeploySite: vi.fn(), archiveSite: vi.fn(), mountSiteDomain: vi.fn(),
 }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
@@ -21,7 +21,11 @@ const ready: SiteStatus = {
     prod: null,
   },
   config: { tenantId: "t1", apiBaseUrl: "https://api.dev.example", menuImageBaseUrl: "https://img.example",
-            stripePublishableKey: "pk_test_1", turnstileSiteKey: "0x4AAA", previewUrl: "https://roma.dev.booqy.se" },
+            stripePublishableKey: "pk_test_1", turnstileSiteKey: "0x4AAA", previewUrl: "https://roma.booqy.se" },
+  hosting: {
+    prod: { slugUrl: "https://roma.booqy.se", host: null, state: "slug_only", canMount: false },
+    dev: { slugUrl: "https://roma.dev.booqy.se", state: "slug_only", canMount: false },
+  },
 };
 
 beforeEach(() => {
@@ -33,7 +37,10 @@ describe("WebsiteTab", () => {
   it("shows the repo, its deploys and the links", async () => {
     render(<WebsiteTab tenant={tenant} />);
     expect(await screen.findByRole("link", { name: "BookingSystemAdvancedOrg/site-roma" })).toHaveAttribute("href", ready.repoUrl);
-    expect(screen.getByRole("link", { name: "Open dev preview" })).toHaveAttribute("href", "https://roma.dev.booqy.se");
+    expect(screen.getByRole("link", { name: "roma.dev.booqy.se" })).toHaveAttribute("href", "https://roma.dev.booqy.se");
+    expect(screen.getByRole("link", { name: "roma.booqy.se" })).toHaveAttribute("href", "https://roma.booqy.se");
+    expect(screen.getAllByText("No own domain yet")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /Mount/ })).toBeNull();
     expect(screen.getByText("abc1234")).toBeInTheDocument();
     expect(screen.getByText("anna-dev")).toBeInTheDocument();
     expect(screen.getByText("Not deployed yet")).toBeInTheDocument();
@@ -107,5 +114,34 @@ describe("WebsiteTab", () => {
     render(<WebsiteTab tenant={tenant} />);
     expect(await screen.findByRole("button", { name: "Invite" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Redeploy dev" })).toBeInTheDocument();
+  });
+
+  it("mounts the own domain per environment and says which CNAME dev needs", async () => {
+    mocks.site.mockResolvedValue({ ...ready, hosting: {
+      prod: { slugUrl: "https://roma.booqy.se", host: "www.roma.se", state: "live", canMount: false, dnsByBooqy: false },
+      dev: { slugUrl: "https://roma.dev.booqy.se", host: "dev.roma.se", state: "not_mounted", canMount: true,
+             cnameTarget: "ddev.cloudfront.net", dnsByBooqy: false },
+    } });
+    mocks.mountSiteDomain.mockResolvedValue({ hosting: {} });
+    render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByRole("link", { name: "www.roma.se" })).toHaveAttribute("href", "https://www.roma.se");
+    expect(screen.getByText("ddev.cloudfront.net")).toBeInTheDocument();
+    expect(screen.getByText(/per_tenant_sites/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Mount dev.roma.se" }));
+    expect(mocks.mountSiteDomain).toHaveBeenCalledWith("t1", "dev");
+  });
+
+  it("offers Retry for a failed mount", async () => {
+    mocks.site.mockResolvedValue({ ...ready, hosting: {
+      prod: { slugUrl: "https://roma.booqy.se", host: "www.roma.se", state: "failed", status: "validation_timeout",
+              lastError: "CNAME missing", canMount: true },
+      dev: { slugUrl: "https://roma.dev.booqy.se", state: "slug_only", waitsFor: "www.roma.se", canMount: false },
+    } });
+    mocks.mountSiteDomain.mockResolvedValue({ hosting: {} });
+    render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByText("CNAME missing")).toBeInTheDocument();
+    expect(screen.getByText("After www.roma.se is live in production")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.mountSiteDomain).toHaveBeenCalledWith("t1", "prod");
   });
 });

@@ -113,6 +113,22 @@ def test_prod_link_creates_an_empty_dev_tenant(site_repo, aws):
     assert _task({"action": "mirror", **PROD_PROFILE}) == {"tenantId": out["tenantId"], "status": "adopted"}
 
 
+def test_prod_link_mirrors_an_owner_who_already_owns_a_dev_customer(site_repo, aws, tenant):
+    # test-release, 2026-10-28: the prod owner's address already signed in to
+    # another dev customer, and the dev side failed with "1 field needs fixing".
+    from test_api import _owner_of
+    _owner_of(aws, "owner@roma.se", tenant)
+    out = _task({"action": "mirror", **PROD_PROFILE, "slug": "test-release", "orgNumber": "556677-8890"})
+    assert out["status"] == "created"
+    created = call("GET /platform/tenants/{tenantId}", {"tenantId": out["tenantId"]})[1]["tenant"]
+    assert created["ownerEmail"] == "owner+test-release@roma.se" and "orgNumber" not in created
+
+
+def test_prod_link_names_the_field_it_cannot_mirror(site_repo, aws):
+    out = _task({"action": "mirror", **PROD_PROFILE, "ownerName": ""})
+    assert out["error"] == "validation_failed" and "ownerName: Required" in out["message"]
+
+
 def test_prod_link_adopts_an_active_dev_tenant_and_sets_up_its_site(site_repo, aws, tenant):
     _activate(aws, tenant)
     out = _task({"action": "mirror", **PROD_PROFILE, "planId": "unknown-in-dev"})
@@ -133,3 +149,63 @@ def test_site_tasks_never_run_in_prod_and_check_their_input(site_repo, monkeypat
     monkeypatch.setenv("ENVIRONMENT", "prod")
     assert _task({"action": "mirror", **PROD_PROFILE})["error"] == "refused"
     assert site_repo.calls == []
+
+
+def _put(aws, tenant_id, sk, **fields):
+    from app.core import tenant_table, to_ddb
+    aws["ddb"].put_item(TableName=tenant_table(), Item=to_ddb({"PK": f"TENANT#{tenant_id}", "SK": sk, **fields}))
+
+
+def test_a_site_without_an_own_domain_is_live_on_its_slug_address(site_repo, aws, tenant, monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    _put(aws, tenant, "DOMAIN#pizzeria-roma.booqy.se", domain="pizzeria-roma.booqy.se", kind="platform", status="active")
+    site_repo.answer = {"state": "slug_only", "slugUrl": "https://pizzeria-roma.dev.booqy.se", "host": None}
+    hosting = call("GET /platform/tenants/{tenantId}/site", {"tenantId": tenant})[1]["hosting"]
+    assert hosting["prod"]["slugUrl"] == "https://pizzeria-roma.booqy.se" and hosting["prod"]["state"] == "slug_only"
+    assert hosting["dev"]["slugUrl"] == "https://pizzeria-roma.dev.booqy.se" and not hosting["dev"]["canMount"]
+    assert site_repo.calls[-1] == ("RequestResponse", {"action": "devDomain", "op": "status", "tenantId": tenant})
+    status, body = call("POST /platform/tenants/{tenantId}/site/mount", {"tenantId": tenant}, {"environment": "dev"})
+    assert status == 409 and body["error"] == "no_own_domain"
+
+
+def test_dev_mount_waits_for_the_own_domain_in_prod_then_writes_its_cname(site_repo, aws, tenant, monkeypatch):
+    import boto3
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    zone_id = boto3.client("route53").create_hosted_zone(Name="roma.se", CallerReference="r")["HostedZone"]["Id"].split("/")[-1]
+    _put(aws, tenant, "ZONE#roma.se", domain="roma.se", status="live", hostedZoneId=zone_id)
+    _put(aws, tenant, "DOMAIN#www.roma.se", domain="www.roma.se", kind="custom", status="pending_validation")
+    site_repo.answer = {"state": "not_mounted", "host": "dev.roma.se", "cnameTarget": "ddev.cloudfront.net"}
+    p = {"tenantId": tenant}
+    hosting = call("GET /platform/tenants/{tenantId}/site", p)[1]["hosting"]
+    assert hosting["prod"]["state"] == "attaching" and hosting["dev"]["waitsFor"] == "www.roma.se"
+    assert call("POST /platform/tenants/{tenantId}/site/mount", p, {"environment": "dev"})[1]["error"] == "own_domain_not_live"
+    _put(aws, tenant, "DOMAIN#www.roma.se", domain="www.roma.se", kind="custom", status="active")
+    status, body = call("POST /platform/tenants/{tenantId}/site/mount", p, {"environment": "dev"})
+    assert status == 202 and body["hosting"]["prod"]["state"] == "live" and body["hosting"]["dev"]["canMount"]
+    assert ("RequestResponse", {"action": "devDomain", "op": "mount", "tenantId": tenant, "host": "dev.roma.se"}) in site_repo.calls
+    records = boto3.client("route53").list_resource_record_sets(HostedZoneId=zone_id)["ResourceRecordSets"]
+    cname = next(r for r in records if r["Name"] == "dev.roma.se.")
+    assert cname["ResourceRecords"] == [{"Value": "ddev.cloudfront.net"}]
+
+
+def test_prod_mount_retries_a_failed_own_domain(site_repo, aws, tenant, monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("PLATFORM_DOMAIN", "booqy.se")
+    _put(aws, tenant, "DOMAIN#www.roma.se", domain="www.roma.se", kind="custom", status="failed")
+    site_repo.answer = {"state": "slug_only"}
+    assert call("GET /platform/tenants/{tenantId}/site", {"tenantId": tenant})[1]["hosting"]["prod"]["canMount"]
+    status, body = call("POST /platform/tenants/{tenantId}/site/mount", {"tenantId": tenant}, {"environment": "prod"})
+    assert status == 202 and body["hosting"]["prod"]["state"] == "attaching"
+    names = [e["name"] for e in aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"]]
+    assert len(names) == 1 and names[0].startswith("attach-")
+
+
+def test_dev_attaches_dev_domain_for_prod_and_refuses_platform_hosts(site_repo, aws, tenant, monkeypatch):
+    monkeypatch.setenv("PLATFORM_DOMAIN", "dev.booqy.se")
+    monkeypatch.setenv("TENANT_DOMAIN_CNAME_TARGET", "ddev.cloudfront.net")
+    out = _task({"action": "domain", "op": "mount", "slug": "pizzeria-roma", "host": "dev.roma.se"})
+    assert out["state"] == "attaching" and out["cnameTarget"] == "ddev.cloudfront.net"
+    assert _task({"action": "domain", "op": "status", "slug": "pizzeria-roma", "host": "dev.roma.se"})["status"] == "pending_dns"
+    assert _task({"action": "domain", "op": "mount", "slug": "pizzeria-roma", "host": "x.dev.booqy.se"})["error"] == "validation_failed"
+    assert _task({"action": "domain", "op": "status", "slug": "nobody-here"})["error"] == "not_found"
+    assert call("POST /platform/tenants/{tenantId}/site/mount", {"tenantId": tenant}, {"environment": "dev"})[1]["error"] == "managed_from_prod"
