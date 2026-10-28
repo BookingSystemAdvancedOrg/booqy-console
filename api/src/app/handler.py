@@ -24,6 +24,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/resume": tenants.resume,
     "POST /platform/tenants/{tenantId}/offboard": tenants.offboard,
     "POST /platform/tenants/{tenantId}/purge": tenants.purge_now,
+    "POST /platform/tenants/{tenantId}/restore": tenants.restore,
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
     # Website tab: the restaurant's own site repo (site-repo function)
     "GET /platform/tenants/{tenantId}/site": site.get_site,

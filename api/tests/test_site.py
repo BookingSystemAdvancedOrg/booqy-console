@@ -209,3 +209,39 @@ def test_dev_attaches_dev_domain_for_prod_and_refuses_platform_hosts(site_repo, 
     assert _task({"action": "domain", "op": "mount", "slug": "pizzeria-roma", "host": "x.dev.booqy.se"})["error"] == "validation_failed"
     assert _task({"action": "domain", "op": "status", "slug": "nobody-here"})["error"] == "not_found"
     assert call("POST /platform/tenants/{tenantId}/site/mount", {"tenantId": tenant}, {"environment": "dev"})[1]["error"] == "managed_from_prod"
+
+
+def test_delete_customer_deletes_the_repo_now(site_repo, aws, tenant):
+    from test_api import _offboarded
+    _offboarded(aws, tenant)
+    site_repo.answer = {"status": "deleted", "repo": "site-pizzeria-roma", "repoDeleted": True}
+    status, body = call("POST /platform/tenants/{tenantId}/purge", {"tenantId": tenant}, {"confirmSlug": "pizzeria-roma"})
+    assert status == 202 and body["repo"]["repoDeleted"] is True
+    assert site_repo.calls == [("RequestResponse", {"action": "delete", "tenantId": tenant})]
+    audit = call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})[1]["audit"]
+    assert {a["action"] for a in audit[:2]} == {"site_repo_deleted", "purge_requested"}
+
+
+def test_a_refused_repo_delete_is_logged_and_the_data_still_goes(site_repo, aws, tenant):
+    from test_api import _offboarded
+    _offboarded(aws, tenant)
+    site_repo.error = "site-pizzeria-roma NOT deleted: GitHub refused (403)"
+    status, body = call("POST /platform/tenants/{tenantId}/purge", {"tenantId": tenant}, {"confirmSlug": "pizzeria-roma"})
+    assert status == 202 and "NOT deleted" in body["repoError"] and body["purgeAt"]
+    audit = call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})[1]["audit"]
+    assert "site_repo_delete_failed" in {a["action"] for a in audit[:2]}
+
+
+def test_prod_link_restores_an_offboarded_dev_tenant(site_repo, aws, tenant):
+    from test_api import _offboarded
+    _offboarded(aws, tenant)
+    assert _task({"action": "mirror", **PROD_PROFILE}) == {"tenantId": tenant, "status": "restored"}
+    assert call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})[1]["tenant"]["status"] == "active"
+
+
+def test_prod_link_replaces_a_purged_dev_tenant(site_repo, aws, tenant):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET #s = :p", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":p": {"S": "purged"}})
+    out = _task({"action": "mirror", **PROD_PROFILE, "ownerEmail": "new@roma.se"})
+    assert out["status"] == "created" and out["tenantId"] != tenant

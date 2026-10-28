@@ -59,7 +59,9 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
 | `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
-| `POST .../offboard` | "delete": `{confirmSlug}`; users disabled, domains detached, data kept |
+| `POST .../offboard` | `{confirmSlug}`; users disabled, domains detached, website repo archived, data kept until `purgeAt` |
+| `POST .../restore` | an offboarded customer before `purgeAt`: active again, users enabled, setup re-run (slug address, website repo) |
+| `POST .../purge` | "Delete customer", offboarded only: `{confirmSlug}`; website repo deleted now, data at the next purge run, no Restore after |
 | `POST .../onboarding/retry` | re-run setup (failed → retry; active → fill in what was added since, e.g. VAT rates) |
 | `GET .../users`, `POST .../owners` | list sign-in accounts / invite another owner |
 | `GET/POST .../locations`, `PATCH/DELETE .../locations/{locationId}` | location CRUD; create is blocked at the plan limit (`409 plan_limit_reached`) |
@@ -189,9 +191,12 @@ an approval.
 
 ## Notes
 
-- Deleting a customer is **offboarding**: nothing is purged (catering
-  documents are under a 7-year legal lock; exports on request). Permanent
-  deletion is a separate, manual decision.
+- **Suspend** is for unpaid invoices (nothing archived or deleted).
+  **Offboard** ends the customer's use and archives the website repo;
+  **Restore** undoes it until `purgeAt` (90 days in production). After
+  that, or at once with **Delete customer**, the data and the website repo
+  are deleted (catering documents stay under their 7-year legal lock), and
+  the slug is free for a new customer.
 - Deleting a location removes the location row and frees a plan slot; its
   menu/reservations/orders stay stored but unreachable.
 - `custom:tenant_id` is immutable: an email that already has an account

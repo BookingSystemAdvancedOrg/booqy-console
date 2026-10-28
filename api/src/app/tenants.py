@@ -216,6 +216,13 @@ def create_tenant(req) -> tuple[int, dict]:
     f.done()
 
     tenant_id, now = new_id(), now_iso()
+    # A purged customer's slug is free again: its claim moves to the new one
+    # (only while it still points at that purged customer).
+    previous = _slug_owner(slug)
+    if previous and (get_profile(previous, required=False) or {}).get("status") != "purged":
+        previous = None
+    slug_claim = {"ConditionExpression": "tenantId = :old", "ExpressionAttributeValues": {":old": {"S": previous}}} \
+        if previous else {"ConditionExpression": "attribute_not_exists(PK)"}
     billing = {"terms": billing_input["terms"]}
     if billing_input.get("priceSek") is not None and plan and billing_input["priceSek"] != plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
@@ -232,7 +239,7 @@ def create_tenant(req) -> tuple[int, dict]:
         **{k: val for k, val in fields.items() if val is not None},
     }
     items = [
-        {"Put": {"TableName": tenant_table(), "ConditionExpression": "attribute_not_exists(PK)",
+        {"Put": {"TableName": tenant_table(), **slug_claim,
                  "Item": to_ddb({"PK": f"SLUG#{slug}", "SK": "TENANT", "tenantId": tenant_id})}},
         {"Put": {"TableName": tenant_table(), "ConditionExpression": "attribute_not_exists(PK)",
                  "Item": to_ddb(profile)}},
@@ -245,7 +252,8 @@ def create_tenant(req) -> tuple[int, dict]:
                                               "createdAt": now, "createdBy": req.actor,
                                               **v.app_location_fields(loc), **loc})}})
     items.append(audit_put(tenant_id, "tenant_created", req.actor,
-                           {"planId": plan_id, "ownerEmail": owner_email, "locations": len(locations)}))
+                           {"planId": plan_id, "ownerEmail": owner_email, "locations": len(locations),
+                            **({"slugFromPurgedTenant": previous} if previous else {})}))
     try:
         client("dynamodb").transact_write_items(TransactItems=items)
     except ClientError as e:
@@ -271,6 +279,12 @@ def create_tenant(req) -> tuple[int, dict]:
             write_audit(tenant_id, "subscription_start_failed", req.actor, {"error": e.message})
             out["billingError"] = e.message
     return 202, out
+
+
+def _slug_owner(slug: str | None) -> str | None:
+    item = client("dynamodb").get_item(TableName=tenant_table(), ConsistentRead=True,
+                                       Key={"PK": {"S": f"SLUG#{slug}"}, "SK": {"S": "TENANT"}}).get("Item") if slug else None
+    return item["tenantId"]["S"] if item else None
 
 
 def _start_onboarding(tenant_id: str, profile: dict, run: int) -> str:
@@ -519,10 +533,12 @@ def resume(req) -> tuple[int, dict]:
 
 
 def purge_now(req) -> tuple[int, dict]:
-    """'Delete data now' on an offboarded tenant (e.g. the customer asked for
-    erasure): moves purgeAt to now. The tenant-purge Lambda (infrastructure
-    schedule, nightly in production) deletes the data on its next run; this
-    API only ever moves the date."""
+    """'Delete customer' on an offboarded tenant (e.g. the customer asked for
+    erasure, or won't come back): moves purgeAt to now, so Restore is no
+    longer possible, and deletes the website repo right away (site-repo
+    "delete"; a refusal is logged and the purge tries again). The
+    tenant-purge Lambda (nightly in production) deletes the data on its
+    next run."""
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
     if req.body.get("confirmSlug") != profile.get("slug"):
@@ -541,7 +557,63 @@ def purge_now(req) -> tuple[int, dict]:
         raise ApiError(409, "invalid_status", f"Only an offboarded customer's data can be deleted (it is {current})",
                        currentStatus=current) from e
     write_audit(tenant_id, "purge_requested", req.actor, {"previousPurgeAt": profile.get("purgeAt")})
-    return 202, {"status": "offboarded", "purgeAt": now}
+    out = {"status": "offboarded", "purgeAt": now}
+    from . import site                              # site imports this module
+    if site.enabled():
+        try:
+            repo = site.invoke({"action": "delete", "tenantId": tenant_id})
+            write_audit(tenant_id, "site_repo_deleted" if repo.get("repoDeleted") else "site_repo_not_deleted",
+                        req.actor, {k: repo[k] for k in ("repo", "status", "reason") if repo.get(k)})
+            out["repo"] = repo
+        except ApiError as e:
+            write_audit(tenant_id, "site_repo_delete_failed", req.actor, {"error": e.message})
+            out["repoError"] = e.message
+    return 202, out
+
+
+def restore(req) -> tuple[int, dict]:
+    return 202, restore_tenant(req.path["tenantId"], req.actor)
+
+
+def restore_tenant(tenant_id: str, actor: str) -> dict:
+    """Undo an offboarding while its data still exists (before purgeAt and
+    before Delete customer): active again, users enabled again (those whose
+    profile says active), and onboarding re-run, which gives back the
+    <slug> subdomain and sets the website repo up again (unarchived, deploy
+    role and variables; prod also restores dev's side). Own domains are
+    re-added by hand on the Domains tab; billing is restarted on the Billing
+    tab."""
+    profile = get_profile(tenant_id)
+    now = now_iso()
+    try:
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key=tkey(tenant_id),
+            UpdateExpression="SET #s = :active, restoredAt = :n, restoredBy = :b, updatedAt = :n, updatedBy = :b, "
+                             "restoreCount = if_not_exists(restoreCount, :zero) + :one REMOVE purgeAt, offboardedAt",
+            ConditionExpression="#s = :off AND attribute_not_exists(purgeStartedAt) AND "
+                                "(attribute_not_exists(purgeAt) OR purgeAt > :n)",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":active": {"S": "active"}, ":off": {"S": "offboarded"}, ":n": {"S": now},
+                                       ":b": {"S": actor}, ":zero": {"N": "0"}, ":one": {"N": "1"}})
+    except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
+        current = get_profile(tenant_id) or {}
+        status = current.get("status")
+        why = (f"Only an offboarded customer can be restored (it is {status})" if status != "offboarded"
+               else "Too late: the customer's data is being deleted")
+        raise ApiError(409, "not_restorable", why, currentStatus=status) from e
+    users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
+    n, failed = _cognito_each(users, "admin_enable_user")
+    out = {"status": "active", "usersEnabled": n, "failed": failed}
+    run = int(profile.get("onboardingRuns", 1)) + 1
+    try:
+        _start_onboarding(tenant_id, {**profile, "status": "active"}, run)
+    except ApiError as e:
+        out["onboardingError"] = e.message           # Retry setup on the page starts it again
+    write_audit(tenant_id, "restored", actor, {"usersEnabled": n, "failed": failed, "onboardingRun": run,
+                                               "purgeAtWas": profile.get("purgeAt"),
+                                               **({"onboardingError": out["onboardingError"]}
+                                                  if "onboardingError" in out else {})})
+    return out
 
 
 def offboard(req) -> tuple[int, dict]:
@@ -573,9 +645,11 @@ def offboard_tenant(tenant_id: str, profile: dict, actor: str, reason: str | Non
     from .billing import cancel_for_offboarding       # billing imports this module
     subscription = cancel_for_offboarding(tenant_id, profile, actor)
     sfn = client("stepfunctions")
+    restores = int(profile.get("restoreCount", 0))     # one execution name per offboarding
     try:
         sfn.start_execution(
-            stateMachineArn=env("OFFBOARDING_STATE_MACHINE_ARN"), name=f"offboard-{tenant_id}",
+            stateMachineArn=env("OFFBOARDING_STATE_MACHINE_ARN"),
+            name=f"offboard-{tenant_id}" + (f"-{restores + 1}" if restores else ""),
             input=json.dumps({"tenantId": tenant_id, "requestedBy": actor}))
     except sfn.exceptions.ExecutionAlreadyExists:
         pass                                    # already running / ran - nothing to do

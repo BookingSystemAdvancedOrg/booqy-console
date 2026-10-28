@@ -61,6 +61,12 @@ export default function TenantPage() {
           <button className="link" onClick={() => setSearch({})}>Dismiss</button>
         </Notice>
       )}
+      {t.status === "offboarded" && restorable(t) && (
+        <Notice kind="warn">
+          Offboarded. Restorable until <strong>{fmtDate(t.purgeAt)}</strong>; after that the data and the website repo are deleted.
+          <button className="link" onClick={() => setTab("Danger zone")}>Restore or delete</button>
+        </Notice>
+      )}
       {t.status === "provisioning_failed" && (
         <RetryBanner tenant={t} onDone={reload} onFix={(field) => { setTab("Overview"); setFixField(field); }} />
       )}
@@ -669,7 +675,12 @@ function Activity({ detail }: { detail: TenantDetail }) {
 }
 
 // --------------------------------------------------------------- danger zone
-function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+/** Restore works until purgeAt (none yet: until the next deletion run sets it). */
+function restorable(t: Tenant): boolean {
+  return t.status === "offboarded" && !t.purgeStartedAt && (!t.purgeAt || new Date(t.purgeAt).getTime() > Date.now());
+}
+
+export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
   const a = useAction();
   const [failed, setFailed] = useState<string[]>([]);
   const lifecycle = async (fn: () => Promise<unknown>) => {
@@ -679,6 +690,15 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
   const [reason, setReason] = useState("");
   const [confirm, setConfirm] = useState("");
   const done = ["offboarding", "offboarded", "purged"].includes(tenant.status);
+  if (done) {
+    return (
+      <div className="stack">
+        {tenant.status === "offboarding" && <Notice kind="info">Offboarding is running: this page updates by itself.</Notice>}
+        {tenant.status === "offboarded" && <Restore tenant={tenant} onChanged={onChanged} />}
+        {tenant.status !== "offboarding" && <DeleteCustomer tenant={tenant} onChanged={onChanged} />}
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger">
@@ -696,7 +716,10 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
           </>
         ) : (
           <>
-            <p>For unpaid invoices or abuse: every user is signed out and blocked, the website shows "unavailable", nothing is deleted. Reversible.</p>
+            <p>
+              For unpaid invoices or abuse: every user is signed out and blocked and the website shows "unavailable".
+              Nothing is deleted and nothing is archived; Resume undoes it at any time.
+            </p>
             <Field label="Reason (kept in the activity log)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
             <button className="btn btn--danger" disabled={a.busy || tenant.status !== "active"}
                     onClick={() => { if (window.confirm(`Suspend ${tenant.name}?`)) void lifecycle(() => api.suspend(tenant.tenantId, reason)); }}>
@@ -705,59 +728,94 @@ function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }
           </>
         )}
       </Card>
-      <Card title="Delete (offboard) customer" tone="danger">
+      <Card title="Offboard customer" tone="danger">
         <p>
-          Disables and signs out all users, takes the website and its domains offline, and marks the customer offboarded.
-          Their data is deleted automatically after the retention period (90 days in production; export it before then if they ask for it). Catering documents
-          are kept 7 years for bookkeeping, and their Stripe account stays theirs.
+          The customer stops using Booqy: all users are signed out and blocked, the website and its domains go offline,
+          the website repo is archived and the subscription ends.
+        </p>
+        <p>
+          <strong>Restore</strong> brings everything back until the retention period is over (90 days in production).
+          After that, or at once with <strong>Delete customer</strong>, the data and the website repo are deleted for good.
+          Catering documents are kept 7 years for bookkeeping, and their Stripe account stays theirs.
         </p>
         <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
-          <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={done} />
+          <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </Field>
         {tenant.status === "provisioning" && <Notice kind="info">Wait until setup has finished before offboarding.</Notice>}
-        <button className="btn btn--danger" disabled={done || tenant.status === "provisioning" || confirm !== tenant.slug || a.busy}
+        <button className="btn btn--danger" disabled={tenant.status === "provisioning" || confirm !== tenant.slug || a.busy}
                 onClick={async () => { if (await a.run(() => api.offboard(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }}>
-          {done ? `Customer is ${tenant.status}` : "Offboard customer"}
+          Offboard customer
         </button>
       </Card>
-      {(tenant.status === "offboarded" || tenant.status === "purged") && <DeleteData tenant={tenant} onChanged={onChanged} />}
     </div>
   );
 }
 
-function DeleteData({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+function Restore({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+  const a = useAction();
+  const [result, setResult] = useState<{ failed: string[]; onboardingError?: string } | null>(null);
+  if (!restorable(tenant)) return null;
+  return (
+    <Card title="Restore customer">
+      <ErrorNotice error={a.error} />
+      {result && result.failed.length > 0 && (
+        <Notice kind="warn">Some users could not be enabled: {result.failed.join(", ")}</Notice>
+      )}
+      {result?.onboardingError && <Notice kind="warn">Setup did not start: {result.onboardingError}. Use Retry on the Overview tab.</Notice>}
+      <p>
+        Restorable until <strong>{fmtDate(tenant.purgeAt)}</strong>{!tenant.purgeAt && " (the date is set at the next deletion run)"}.
+        Users can sign in again, the website comes back on {tenant.slug}.{PLATFORM_DOMAIN || "booqy.se"} and its repo is unarchived.
+      </p>
+      <p className="muted small">Own domains are added again on the Domains tab; start the subscription again on the Billing tab.</p>
+      <button className="btn btn--primary" disabled={a.busy}
+              onClick={async () => {
+                if (!window.confirm(`Restore ${tenant.name}?`)) return;
+                const r = await a.run(() => api.restore(tenant.tenantId));
+                if (r) { setResult(r); onChanged(); }
+              }}>
+        Restore customer
+      </button>
+    </Card>
+  );
+}
+
+function DeleteCustomer({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
   const a = useAction();
   const [confirm, setConfirm] = useState("");
+  const [repoError, setRepoError] = useState<string | null>(null);
   if (tenant.status === "purged") {
     return (
-      <Card title="Customer data" tone="danger">
+      <Card title="Customer deleted" tone="danger">
         <p>
-          Deleted {fmtDate(tenant.purgedAt)}. Only this company record is left (no personal data); the slug stays reserved.
-          Catering documents are kept 7 years for bookkeeping.
+          Deleted {fmtDate(tenant.purgedAt)}. Only this company record is left (no personal data). The slug is free again:
+          New customer with "{tenant.slug}" starts with a fresh website repo. Catering documents are kept 7 years for bookkeeping.
         </p>
       </Card>
     );
   }
-  const due = !!tenant.purgeAt && new Date(tenant.purgeAt).getTime() <= Date.now();
+  const due = !restorable(tenant);
   return (
-    <Card title="Customer data" tone="danger">
+    <Card title="Delete customer" tone="danger">
       <ErrorNotice error={a.error} />
-      {!tenant.purgeAt ? (
-        <p>A deletion date is set at the next deletion run.</p>
-      ) : due ? (
-        <Notice kind="info">Deleted at the next deletion run (nightly). Nothing to do.</Notice>
+      {repoError && <Notice kind="warn">The website repo was not deleted: {repoError}. The deletion run tries again; the activity log has the details.</Notice>}
+      {due ? (
+        <Notice kind="info">The data and the website repo are deleted at the next deletion run (nightly in production). Nothing to do.</Notice>
       ) : (
-        <p>Bookings, orders, menus, layouts, catering requests, marketing contacts, users and images are deleted on <strong>{fmtDate(tenant.purgeAt)}</strong>.</p>
-      )}
-      {!due && (
         <>
-          <p>If the customer asks to be erased, delete it now instead: it can't be undone.</p>
+          <p>
+            Deletes the website repo now, and bookings, orders, menus, layouts, catering requests, marketing contacts,
+            users and images at the next deletion run (nightly in production) instead of on {tenant.purgeAt ? fmtDate(tenant.purgeAt) : "the deletion date"}.
+            Restore is no longer possible. This can't be undone.
+          </p>
           <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
             <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </Field>
           <button className="btn btn--danger" disabled={confirm !== tenant.slug || a.busy}
-                  onClick={async () => { if (await a.run(() => api.purgeNow(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }}>
-            Delete data now
+                  onClick={async () => {
+                    const r = await a.run(() => api.purgeNow(tenant.tenantId, confirm));
+                    if (r) { setConfirm(""); setRepoError(r.repoError ?? null); onChanged(); }
+                  }}>
+            Delete customer
           </button>
         </>
       )}

@@ -303,7 +303,7 @@ function Archive({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
     <Card title="Archive website repo" tone="danger">
       <p>
         Removes this environment's deploy role and repo variables, so nothing deploys here any more. The repo is archived
-        (read-only, never deleted) once no environment uses it. <strong>Set up</strong> brings it back. Offboarding does this by itself.
+        (read-only) once no environment uses it; Delete customer deletes it. <strong>Set up</strong> brings it back. Offboarding does this by itself.
       </p>
       <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
         <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />

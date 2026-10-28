@@ -60,8 +60,10 @@ export interface Tenant {
   createdBy?: string;
   updatedAt?: string;
   offboardedAt?: string;
-  /** When tenant-purge deletes the data (set at offboarding). */
+  /** When tenant-purge deletes the data and the website repo (set at
+   * offboarding); Restore works until then. */
   purgeAt?: string;
+  purgeStartedAt?: string;
   purgedAt?: string;
   billing?: Partial<Billing> & { customerId?: string };
 }

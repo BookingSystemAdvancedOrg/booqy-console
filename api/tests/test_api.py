@@ -414,3 +414,66 @@ def test_owner_fields_are_editable_only_after_a_failed_setup(aws, tenant):
     assert status == 400 and "ownerEmail" in body["fields"]
     status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "New@Roma.se", "ownerName": "Anna"})
     assert status == 200 and body["tenant"]["ownerEmail"] == "new@roma.se" and body["tenant"]["ownerName"] == "Anna"
+
+
+def _offboarded(aws, tenant, purge_at="2099-01-01T00:00:00Z", **extra):
+    values = {":o": {"S": "offboarded"}, ":p": {"S": purge_at}}
+    sets = "#s = :o, purgeAt = :p, offboardedAt = :p"
+    for i, (k, val) in enumerate(extra.items()):
+        sets += f", {k} = :x{i}"
+        values[f":x{i}"] = {"S": val}
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET " + sets, ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues=values)
+
+
+def test_restore_within_retention(aws, tenant):
+    p = {"tenantId": tenant}
+    _, b = call("POST /platform/tenants/{tenantId}/owners", p, {"email": "partner@roma.se", "name": "Luca"})
+    sub = b["user"]["cognitoSub"]
+    assert call("POST /platform/tenants/{tenantId}/restore", p)[1]["error"] == "not_restorable"   # provisioning
+    _offboarded(aws, tenant)
+    aws["idp"].admin_disable_user(UserPoolId=aws["pool"], Username=sub)
+    status, body = call("POST /platform/tenants/{tenantId}/restore", p)
+    assert status == 202 and body["status"] == "active" and body["usersEnabled"] == 1
+    assert aws["idp"].admin_get_user(UserPoolId=aws["pool"], Username=sub)["Enabled"] is True
+    _, detail = call("GET /platform/tenants/{tenantId}", p)
+    t = detail["tenant"]
+    assert t["status"] == "active" and "purgeAt" not in t and t["restoreCount"] == 1
+    assert detail["audit"][0]["action"] == "restored"
+    # onboarding re-run: the subdomain and the website repo come back
+    ex = aws["sfn"].list_executions(stateMachineArn=os.environ["ONBOARDING_STATE_MACHINE_ARN"])["executions"]
+    assert sorted(e["name"] for e in ex) == [f"onboard-{tenant}-1", f"onboard-{tenant}-2"]
+    # offboarding again starts a new execution, not the old one's name
+    assert call("POST /platform/tenants/{tenantId}/offboard", p, {"confirmSlug": "pizzeria-roma"})[0] == 202
+    ex = aws["sfn"].list_executions(stateMachineArn=os.environ["OFFBOARDING_STATE_MACHINE_ARN"])["executions"]
+    assert [e["name"] for e in ex] == [f"offboard-{tenant}-2"]
+
+
+@pytest.mark.parametrize("purge_at,extra", [("2020-01-01T00:00:00Z", {}),
+                                             ("2099-01-01T00:00:00Z", {"purgeStartedAt": "2026-10-28T00:00:00Z"})])
+def test_no_restore_once_the_data_is_due(aws, tenant, purge_at, extra):
+    _offboarded(aws, tenant, purge_at, **extra)
+    status, body = call("POST /platform/tenants/{tenantId}/restore", {"tenantId": tenant})
+    assert status == 409 and body["error"] == "not_restorable" and "Too late" in body["message"]
+
+
+def test_delete_customer_ends_restore(aws, tenant):
+    p = {"tenantId": tenant}
+    _offboarded(aws, tenant)
+    assert call("POST /platform/tenants/{tenantId}/purge", p, {"confirmSlug": "pizzeria-roma"})[0] == 202
+    assert call("POST /platform/tenants/{tenantId}/restore", p)[1]["error"] == "not_restorable"
+
+
+def test_a_purged_customers_slug_can_be_used_again(aws, tenant):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET #s = :p", ExpressionAttributeNames={"#s": "status"},
+                           ExpressionAttributeValues={":p": {"S": "purged"}})
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "ownerEmail": "new@roma.se", "locations": []})
+    assert status == 202, body
+    claim = aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": "SLUG#pizzeria-roma"}, "SK": {"S": "TENANT"}})
+    assert claim["Item"]["tenantId"]["S"] == body["tenantId"] != tenant
+    audit = call("GET /platform/tenants/{tenantId}", {"tenantId": body["tenantId"]})[1]["audit"]
+    assert audit[0]["details"]["slugFromPurgedTenant"] == tenant
+    # an offboarded (not yet purged) customer still holds its slug
+    assert call("POST /platform/tenants", body={**NEW_TENANT, "ownerEmail": "x@roma.se", "locations": []})[0] == 409
