@@ -1,3 +1,5 @@
+import { withBusy } from "../busy";
+import { Printing } from "../components/ui";
 import { STORAGE_REGISTRY } from "../storageRegistry";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Logo } from "../components/Logo";
@@ -93,7 +95,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     setError(null);
     setInfo(null);
     try {
-      await fn();
+      await withBusy(fn);
     } catch (e) {
       setError(message(e, reset));
     } finally {
@@ -361,5 +363,5 @@ function Qr({ uri }: { uri: string }) {
   useEffect(() => {
     QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fffdf8" } }).then(setSrc);
   }, [uri]);
-  return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : "…"}</div>;
+  return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : <Printing inline label="Making the code" />}</div>;
 }

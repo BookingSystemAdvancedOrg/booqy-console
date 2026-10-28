@@ -56,7 +56,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
                              onDone={() => { setEditing(false); void reload(); }} onCancel={() => setEditing(false)} />
               )}
             </section>
-            <Readers tenant={tenant} location={location} readers={data.readers} onChanged={reload} />
+            <Readers tenant={tenant} location={location} readers={data.readers} onChanged={reload} onRegistered={onClose} />
           </>
         )}
       </div>
@@ -147,8 +147,10 @@ export const DEVICE: Record<string, string> = {
   mobile_phone_reader: "Tap to Pay (phone)",
 };
 
-function Readers({ tenant, location, readers, onChanged }: {
+function Readers({ tenant, location, readers, onChanged, onRegistered }: {
   tenant: Tenant; location: Location; readers: TerminalReader[]; onChanged: () => void;
+  /** After a successful registration: back to the location list. */
+  onRegistered: () => void;
 }) {
   const [code, setCode] = useState("");
   const [label, setLabel] = useState("");
@@ -161,7 +163,7 @@ function Readers({ tenant, location, readers, onChanged }: {
     if (await add.run(() => api.registerReader(tenant.tenantId, location.locationId, code.trim(), label.trim()))) {
       setCode("");
       setLabel("");
-      onChanged();
+      onRegistered();
     }
   };
 

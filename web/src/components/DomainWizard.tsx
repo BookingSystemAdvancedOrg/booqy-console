@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError, uploadToS3 } from "../api";
 import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant, TransferCheck } from "../types";
-import { ErrorNotice, Field, Modal, Notice, useAction } from "./ui";
+import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
 
@@ -248,7 +248,7 @@ export function RegistreringsbevisUpload({ tenantId, error, onKey, onBusy }: {
       <Field label="PDF" error={error}>
         <input className="input" type="file" accept="application/pdf" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} />
       </Field>
-      {upload.busy && <p className="small muted">Uploading…</p>}
+      {upload.busy && <Printing inline label="Uploading" />}
       <ErrorNotice error={upload.error} />
       {name && <Notice kind="ok">Uploaded: {name}</Notice>}
     </>
@@ -291,7 +291,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
         <>
           <p className="small">Moves the <em>registration</em> from the current registrar into our Route 53 account: one bill,
             renewals handled by us. DNS is already ours, so nothing goes offline. A failed transfer just leaves it where it is.</p>
-          {check.busy && <p className="muted small">Checking with the registry…</p>}
+          {check.busy && <Printing inline label="Checking with the registry" />}
           <ErrorNotice error={check.error} />
           {info && !info.transferable && <Notice kind="warn">Can't transfer right now: {info.reason}</Notice>}
           {info?.transferable && (

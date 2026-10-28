@@ -9,8 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import (billing, domains, finance, locations, mail, operators, outbox, stripe_connect, tenants, terminal,
-               users, website, zones)
+from . import (billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
+               terminal, users, website, zones)
 from .core import ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
@@ -25,6 +25,12 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/offboard": tenants.offboard,
     "POST /platform/tenants/{tenantId}/purge": tenants.purge_now,
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
+    # Website tab: the restaurant's own site repo (site-repo function)
+    "GET /platform/tenants/{tenantId}/site": site.get_site,
+    "POST /platform/tenants/{tenantId}/site/retry": site.retry,
+    "POST /platform/tenants/{tenantId}/site/invite": site.invite,
+    "POST /platform/tenants/{tenantId}/site/redeploy": site.redeploy,
+    "POST /platform/tenants/{tenantId}/site/archive": site.archive,
     "GET /platform/tenants/{tenantId}/users": users.list_users,
     "POST /platform/tenants/{tenantId}/owners": users.invite_owner,
     "GET /platform/tenants/{tenantId}/locations": locations.list_locations,
@@ -125,6 +131,14 @@ def handler(event, context):
     if "financeTask" in event and "routeKey" not in event:
         result = billing.finance_task(event, context)
         log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))
+        return result
+    # Prod's site-repo, through the dev account's booqy-sites-prod-link role
+    # (dev only): create or adopt the restaurant's dev tenant, or archive its
+    # dev site. That role may invoke this function and nothing else.
+    if "siteTask" in event and "routeKey" not in event:
+        result = site.site_task(event)
+        log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
+                             "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
         return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")

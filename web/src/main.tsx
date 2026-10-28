@@ -14,6 +14,7 @@ import ReadersPage from "./pages/ReadersPage";
 import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { BusyBar } from "./components/BusyBar";
 import "./styles.css";
 
 // Production is the default and is never labelled; only dev says so.
@@ -54,7 +55,7 @@ function Shell() {
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
           <ThemeToggle />
-          <button className="btn btn--ghost" onClick={() => setConfirmSignOut(true)}>Sign out</button>
+          <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
       </header>
       {confirmSignOut && (
@@ -91,6 +92,7 @@ function Shell() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
+      <BusyBar />
       <Shell />
     </BrowserRouter>
   </StrictMode>,

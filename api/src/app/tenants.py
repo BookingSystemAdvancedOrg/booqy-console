@@ -16,6 +16,9 @@ from .core import (ApiError, audit_put, cancellation_codes, client, env, from_dd
 ACTIVE_LIKE = ("provisioning", "provisioning_failed", "active", "suspended")
 EDITABLE = ("name", "legalName", "orgNumber", "vatNumber", "contactEmail", "contactPhone",
             "billingEmail", "senderName", "replyToEmail", "address", "branding", "notes")
+# The owner is invited by onboarding, so these change only while setup has
+# failed (a wrong or taken address); afterwards the Users tab manages people.
+OWNER_EDITABLE = ("ownerName", "ownerEmail", "ownerPhone")
 HIDDEN = ("PK", "SK", "GSI1PK", "GSI1SK")
 
 
@@ -33,6 +36,25 @@ def get_profile(tenant_id: str, *, required: bool = True) -> dict | None:
 
 def public(profile: dict) -> dict:
     return {k: val for k, val in profile.items() if k not in HIDDEN}
+
+
+def owner_email_problem(email: str | None, tenant_id: str | None = None) -> str | None:
+    """Every owner sign-in belongs to exactly one customer (custom:tenant_id).
+    Caught here, the form can point at the field instead of onboarding
+    failing later at InviteOwner."""
+    if not email:
+        return None
+    idp = client("cognito-idp")
+    try:
+        user = idp.admin_get_user(UserPoolId=env("TENANT_USER_POOL_ID"), Username=email)
+    except idp.exceptions.UserNotFoundException:
+        return None
+    owner = next((a["Value"] for a in user.get("UserAttributes", []) if a["Name"] == "custom:tenant_id"), "")
+    if not owner or owner == tenant_id:
+        return None
+    other = (get_profile(owner, required=False) or {}).get("name") or owner
+    local, _, domain = email.partition("@")
+    return f"Already signs in to {other} - use another address, e.g. {local}+{domain.split('.')[0]}2@{domain}"
 
 
 def get_plan(plan_id: str) -> dict | None:
@@ -181,6 +203,9 @@ def create_tenant(req) -> tuple[int, dict]:
         except ApiError as e:
             for k, msg in e.extra.get("fields", {}).items():
                 f.fail(k, msg)
+    taken = owner_email_problem(owner_email)
+    if taken:
+        f.fail("ownerEmail", taken)
     plan = get_plan(plan_id) if plan_id else None
     if plan_id and plan is None:
         f.fail("planId", "Unknown plan - pick one of the plans listed")
@@ -317,17 +342,32 @@ def get_tenant(req) -> tuple[int, dict]:
 
 def update_tenant(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
-    unknown = sorted(set(req.body) - set(EDITABLE))
+    unknown = sorted(set(req.body) - set(EDITABLE) - set(OWNER_EDITABLE))
     if unknown:
         raise ApiError(400, "validation_failed", "These fields can't be changed here",
                        fields={k: "Not editable" for k in unknown})
+    owner_keys = [k for k in OWNER_EDITABLE if k in req.body]
+    if owner_keys:
+        status = (get_profile(tenant_id) or {}).get("status")
+        if status != "provisioning_failed":
+            raise ApiError(409, "validation_failed", "The owner is already invited - manage people on the Users tab",
+                           fields={k: "Change it on the Users tab" for k in owner_keys})
     f = v.Fields(req.body)
     fields = _profile_fields(f)
     if "name" in req.body:
         fields["name"] = f.text("name", required=True, max_len=100)
+    if "ownerName" in req.body:
+        fields["ownerName"] = f.text("ownerName", required=True, max_len=100)
+    if "ownerEmail" in req.body:
+        fields["ownerEmail"] = f.email("ownerEmail", required=True)
+        taken = owner_email_problem(fields["ownerEmail"], tenant_id)
+        if taken:
+            f.fail("ownerEmail", taken)
+    if "ownerPhone" in req.body:
+        fields["ownerPhone"] = f.phone("ownerPhone")
     f.done()
     sets, removes, names, values = [], [], {}, {}
-    for i, key in enumerate(k for k in EDITABLE if k in req.body):
+    for i, key in enumerate(k for k in EDITABLE + OWNER_EDITABLE if k in req.body):
         names[f"#f{i}"] = key
         if fields.get(key) is None:
             removes.append(f"#f{i}")              # cleared in the form
