@@ -1,6 +1,6 @@
 /** Date ranges, number formatting and the small maths behind the Finance
  * page. Pure functions: tested in finance.test.ts. */
-import type { FinancePoint, FinanceTenantRow } from "./types";
+import type { FinancePoint, FinanceTenantRow, Invoice } from "./types";
 
 /** How many billing periods the Finance page shows, ending with the picked one. */
 export type Span = 1 | 3 | 12;
@@ -289,4 +289,25 @@ export function dailyCsv(series: FinancePoint[]): string {
 
 export function csvName(kind: "customers" | "daily", period: { from: string; to: string }): string {
   return `booqy-finance-${kind}-${period.from}-${period.to}.csv`;
+}
+
+/** An invoice's status as the operator reads it: open past its due date is overdue. */
+export function invoiceStatus(i: Pick<Invoice, "status" | "daysLate">): Invoice["status"] | "overdue" {
+  return i.status === "open" && i.daysLate > 0 ? "overdue" : i.status;
+}
+
+export const INVOICE_STATUS_TEXT: Record<string, string> = {
+  draft: "Draft", open: "Open", overdue: "Overdue", paid: "Paid", void: "Void", uncollectible: "Uncollectible",
+};
+
+export interface CustomerInvoices { state: "overdue" | "open" | "paid" | "none"; daysLate: number; open: number; latestMonth?: string }
+
+/** One customer's invoices on the Customers list: overdue first, then open, then paid. */
+export function customerInvoices(rows: Pick<Invoice, "status" | "daysLate" | "month">[]): CustomerInvoices {
+  const live = rows.filter((r) => r.status !== "void" && r.status !== "draft");
+  const open = live.filter((r) => r.status === "open" || r.status === "uncollectible");
+  const late = open.reduce((n, r) => Math.max(n, r.daysLate), 0);
+  const latestMonth = live.map((r) => r.month ?? "").sort().pop() || undefined;
+  const state = late > 0 ? "overdue" : open.length > 0 ? "open" : live.length > 0 ? "paid" : "none";
+  return { state, daysLate: late, open: open.length, latestMonth };
 }

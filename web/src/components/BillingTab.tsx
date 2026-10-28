@@ -1,13 +1,12 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
-import { addDays, endDateFor, fmtDay, fmtInt, fmtSek, isoDay, periodOf, periodText } from "../finance";
+import { INVOICE_STATUS_TEXT, addDays, endDateFor, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, periodOf, periodText } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, Printing, fmtDate, useAction, useLoad } from "./ui";
 
 const STATUS_TEXT: Record<string, string> = {
   none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
 };
-const INVOICE_TEXT: Record<string, string> = { draft: "Draft", open: "Open", paid: "Paid", void: "Void", uncollectible: "Uncollectible" };
 
 /** The customer's agreement, invoiced in arrears on the 25th for the period
  * from the 25th to the 24th: the monthly price plus the SMS parts sent. */
@@ -295,7 +294,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
                 return (
                   <tr key={i.invoiceId}>
                     <td className="mono">{i.number ?? i.invoiceId}</td>
-                    <td><span className={`status status--invoice-${i.status}`}>{INVOICE_TEXT[i.status] ?? i.status}</span></td>
+                    <td><span className={`status status--invoice-${invoiceStatus(i)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(i)] ?? i.status}</span></td>
                     <td className="small">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
                     <td className="num">{i.feeSek != null ? fmtSek(i.feeSek, { decimals: true }) : "-"}</td>
                     <td className="num">{i.smsParts != null ? `${fmtInt(i.smsParts)} parts${i.smsSek != null ? `, ${fmtSek(i.smsSek, { decimals: true })}` : ""}` : "-"}</td>

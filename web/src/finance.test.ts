@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bucketKey, bucketSeries, daysBetween, fmtPct, fmtSek, grainFor, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
+  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtPct, fmtSek, grainFor, invoiceStatus, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "./finance";
 import type { FinancePoint, FinanceTenantRow } from "./types";
 
@@ -151,5 +151,22 @@ describe("CSV export", () => {
                   activeTenants: 1 } as FinancePoint;
     expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,46;990;1;0;5;1;;");
     expect(csvName("daily", { from: "2026-09-25", to: "2026-10-24" })).toBe("booqy-finance-daily-2026-09-25-2026-10-24.csv");
+  });
+});
+
+describe("invoice status for the operator", () => {
+  it("calls an open invoice past its due date overdue", () => {
+    expect(invoiceStatus({ status: "open", daysLate: 0 })).toBe("open");
+    expect(invoiceStatus({ status: "open", daysLate: 3 })).toBe("overdue");
+    expect(invoiceStatus({ status: "paid", daysLate: 3 })).toBe("paid");
+  });
+
+  it("sums a customer's invoices: overdue before open before paid", () => {
+    expect(customerInvoices([])).toEqual({ state: "none", daysLate: 0, open: 0, latestMonth: undefined });
+    expect(customerInvoices([{ status: "paid", daysLate: 0, month: "2026-09" }, { status: "paid", daysLate: 0, month: "2026-10" }]))
+      .toEqual({ state: "paid", daysLate: 0, open: 0, latestMonth: "2026-10" });
+    expect(customerInvoices([{ status: "paid", daysLate: 0, month: "2026-09" }, { status: "open", daysLate: 0, month: "2026-10" }]).state).toBe("open");
+    expect(customerInvoices([{ status: "open", daysLate: 12, month: "2026-09" }, { status: "open", daysLate: 0, month: "2026-10" },
+      { status: "void", daysLate: 40, month: "2026-08" }])).toEqual({ state: "overdue", daysLate: 12, open: 2, latestMonth: "2026-10" });
   });
 });

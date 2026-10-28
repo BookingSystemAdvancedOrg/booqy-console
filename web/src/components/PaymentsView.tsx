@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { fmtDay, fmtInt, fmtSek, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
+import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
 import { ErrorNotice, Modal, Notice, Printing, Status, useAction, useLoad } from "./ui";
 
@@ -9,7 +9,6 @@ const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
 ] as const;
 type StatusFilter = (typeof STATUSES)[number]["id"];
-const INVOICE_TEXT: Record<string, string> = { draft: "Draft", open: "Open", paid: "Paid", void: "Void", uncollectible: "Uncollectible" };
 
 /** Who has paid for a month: one row per invoice, with reminders and fees. */
 export default function PaymentsView() {
@@ -151,7 +150,7 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
         {r.hostedInvoiceUrl ? <a href={r.hostedInvoiceUrl} target="_blank" rel="noreferrer">{r.number ?? r.invoiceId}</a> : r.number ?? r.invoiceId}
         <div className="muted">{r.periodStart ? `${fmtDay(r.periodStart)} to ${fmtDay(r.periodEnd)}` : ""}</div>
       </td>
-      <td><span className={`status status--invoice-${r.status}`}>{INVOICE_TEXT[r.status] ?? r.status}</span></td>
+      <td><span className={`status status--invoice-${invoiceStatus(r)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(r)] ?? r.status}</span></td>
       <td className="num">{fmtSek(r.subtotalSek)}</td>
       <td className="num">{fmtSek(r.totalSek)}</td>
       <td className="small">{fmtDay(r.dueDate)}</td>

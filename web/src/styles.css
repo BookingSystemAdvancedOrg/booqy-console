@@ -618,8 +618,10 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .th-sort--on { text-decoration: underline; text-underline-offset: 0.25em; }
 .status--billing-active, .status--invoice-paid { color: var(--ok); }
 .status--billing-trialing, .status--billing-paused, .status--invoice-open, .status--billing-incomplete { color: var(--warn); }
-.status--billing-past_due, .status--billing-unpaid, .status--invoice-uncollectible, .status--invoice-void { color: var(--ink-red); }
+.status--billing-past_due, .status--billing-unpaid, .status--invoice-uncollectible, .status--invoice-void, .status--invoice-overdue { color: var(--ink-red); }
 .status--billing-none, .status--billing-canceled, .status--invoice-draft { color: var(--print-2); }
+.cell-link { display: block; color: inherit; text-decoration: none; }
+.cell-link:hover .status { text-decoration: underline; }
 .table-wrap--inner { box-shadow: none; margin: 0; animation: none; }
 .table-wrap--inner::before, .table-wrap--inner::after { display: none; }
 .table-wrap--inner .table th:first-child, .table-wrap--inner .table td:first-child { padding-left: 0; }

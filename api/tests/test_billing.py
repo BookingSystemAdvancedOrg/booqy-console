@@ -112,7 +112,18 @@ def stripe(monkeypatch):
         if method == "POST" and path == "/checkout/sessions":
             return {"id": "cs_1", "url": "https://checkout.stripe.com/c/cs_1", "expires_at": 1_800_000_000}
         if method == "GET" and path == "/invoices":
+            if "created[gte]" in params:        # the invoicing run looks for the period's invoice first
+                made = [i for i in state["made"].values() if i["customer"] == params["customer"]
+                        and i["created"] >= params["created[gte]"]]
+                return {"data": state["invoices"] + made, "has_more": False}
             return {"data": state["invoices"], "has_more": False}
+        if method == "GET" and path.startswith("/invoices/"):
+            invoice_id = path.split("/")[2]
+            return state["made"].get(invoice_id) or state.get("remote", {}).get(invoice_id) or {"id": invoice_id, "status": "open"}
+        if method == "GET" and path == "/invoiceitems":
+            return {"data": [{"id": f"ii_{n + 1}", "metadata": {k[9:-1]: v for k, v in i.items() if k.startswith("metadata[")}}
+                             for n, i in enumerate(state["items"]) if i.get("customer") == params["customer"] and not i.get("_used")],
+                    "has_more": False}
         if method == "POST" and path.startswith("/invoices/") and path.endswith("/send"):
             invoice_id = path.split("/")[2]
             state["sent"].append(invoice_id)
@@ -224,7 +235,7 @@ def _ledger(finance, tenant_id, invoice_id, **fields):
                            "number": f"F-{invoice_id[-1]}", "currency": "sek", "subtotalSek": Decimal("990"),
                            "taxSek": Decimal("247.5"), "totalSek": Decimal("1237.50"), "amountRemainingSek": Decimal("1237.50"),
                            "amountPaidSek": Decimal(0), "createdAt": "2026-10-01T00:00:00Z",
-                           "periodStart": "2026-10-01T00:00:00Z", "periodEnd": "2026-11-01T00:00:00Z",
+                           "periodStart": "2026-09-25", "periodEnd": "2026-10-24",
                            "collectionMethod": "send_invoice", **fields})
 
 
@@ -438,16 +449,31 @@ def test_create_customer_with_billing_starts_the_agreement_while_provisioning(fi
     assert status == 202 and "billing" not in body and _profile(aws, body["tenantId"])["billing"] == {"terms": "subscription"}
 
 
-def test_plan_or_price_change_is_what_the_next_invoice_carries(finance, stripe, aws, tenant):
+def test_plan_or_price_change_applies_from_the_next_period(finance, stripe, aws, tenant):
+    from app.billing import next_period, period_of
     _activate(aws, tenant)
-    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    start, end = period_of(datetime.now(timezone.utc).date())
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+         body={"startDate": (start - timedelta(days=40)).isoformat()})
+    nxt = (end + timedelta(days=1)).isoformat()
     status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "starter", "priceSek": 1490})
-    assert status == 200 and body["subscription"] == {"monthlySek": 1490, "priceSek": 1490, "from": "next invoice"}
+    assert status == 200 and body["subscription"] == {"monthlySek": 1490, "priceSek": 1490, "from": nxt}
     assert not any(c[1].startswith("/subscriptions") for c in stripe["calls"])
     status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "growth"})
-    assert status == 200 and body["subscription"] == {"monthlySek": 1990, "priceSek": None, "from": "next invoice"}
+    assert status == 200 and body["subscription"] == {"monthlySek": 1990, "priceSek": None, "from": nxt}
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+         body={"action": "set_sms_price", "smsPriceSek": 0.9})
+    # the running period keeps the prices it began with; the next one has the new ones
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
-    assert body["billing"]["monthlySek"] == 1990 and body["billing"]["nextInvoice"]["monthlySek"] == 1990
+    b = body["billing"]
+    assert b["monthlySek"] == 1990 and b["nextInvoice"]["monthlySek"] == 990 and b["nextInvoice"]["smsPriceSek"] == 0.7
+    assert b["nextInvoice"]["feeText"].startswith("Booqy Starter,")
+    from app.billing import _billing, invoice_plan
+    profile = _profile(aws, tenant)
+    after = invoice_plan(profile, *next_period(end), locations={})
+    assert after["monthlySek"] == 1990 and after["smsPriceSek"] == Decimal("0.90") and after["feeText"].startswith("Booqy Growth,")
+    # the start's prices, then today's (two changes on one day: the last one)
+    assert [h["monthlySek"] for h in _billing(profile)["priceHistory"]] == [990, 1990]
 
 
 def test_cancel_terms_in_arrears(finance, stripe, aws, tenant):
@@ -692,3 +718,136 @@ def test_restart_rules(finance, stripe, aws, tenant):
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 10, 25))
     # 1-24 Oct of 25 Sep to 24 Oct
     assert [(i["activeDays"], i["feeSek"]) for i in out["invoices"]] == [(24, Decimal("792.00"))]
+
+
+# ------------------------------------------------------------ robustness of the run
+def test_a_rerun_after_a_stopped_run_never_bills_twice(finance, stripe, aws, tenant):
+    """Stripe has the invoice but the ledger and the profile were never
+    written (the run stopped): a rerun, even after Stripe's 24 h idempotency
+    window, finds it instead of making another."""
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
+    _day_row(finance, tenant, "2026-09-12", smsParts=40)
+    first = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    assert len(first["invoices"]) == 1 and len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 2
+    _set_billing(aws, tenant, lastInvoicedPeriodEnd=None)
+    for row in finance.scan()["Items"]:
+        if row["SK"].startswith("INVOICE#"):
+            finance.delete_item(Key={"PK": row["PK"], "SK": row["SK"]})
+    stripe["sent"].clear()
+    again = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 26))
+    assert len(again["invoices"]) == 1 and again["invoices"][0]["invoiceId"] == "in_made_1"
+    assert len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 2           # nothing new in Stripe
+    assert stripe["sent"] == ["in_made_1"]                                     # an open invoice is sent again, not remade
+    assert _profile(aws, tenant)["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24"
+
+
+def test_a_rerun_reuses_items_already_on_the_customer(finance, stripe, aws, tenant):
+    """The items were made but not the invoice: the rerun makes only the invoice."""
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
+    stripe["items"].append({"customer": "cus_test1", "amount": 76645, "metadata[kind]": "fee",
+                            "metadata[periodEnd]": "2026-09-24", "idempotency_key": "fee-x"})
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    assert len(out["invoices"]) == 1 and len(stripe["items"]) == 1 and len(stripe["oneoff"]) == 1
+
+
+def test_a_month_with_nothing_to_pay_makes_no_invoice(finance, stripe, aws, tenant):
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01", "priceSek": 0})
+    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+         body={"action": "set_sms_price", "smsPriceSek": 0})
+    _set_billing(aws, tenant, priceHistory=[{"from": "2026-09-01", "monthlySek": 0, "planName": "Starter", "smsPriceSek": Decimal("0")}])
+    _day_row(finance, tenant, "2026-09-12", smsParts=40)
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    assert out["invoices"] == [] and len(out["skipped"]) == 1 and stripe["oneoff"] == [] and stripe["items"] == []
+    assert _profile(aws, tenant)["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24"
+
+
+def test_no_invoice_without_the_vat_rate(finance, stripe, aws, tenant, monkeypatch):
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
+    monkeypatch.setenv("BILLING_TAX_RATE_ID", "")
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
+    assert out["invoices"] == [] and "BILLING_TAX_RATE_ID" in out["errors"][0]["error"]
+    assert stripe["items"] == [] and stripe["oneoff"] == []
+    assert "lastInvoicedPeriodEnd" not in _profile(aws, tenant)["billing"]   # the next run tries again
+
+
+def test_a_run_out_of_time_leaves_the_rest_to_the_next_daily_run(finance, stripe, aws, tenant):
+    import time as clock
+    from datetime import date
+    from app.billing import run_invoicing
+    from app.handler import handler
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
+    out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25), deadline=clock.monotonic() - 1)
+    assert out["invoices"] == [] and out["unfinished"][0]["name"] == "Pizzeria Roma" and stripe["oneoff"] == []
+
+    class Ctx:
+        def get_remaining_time_in_millis(self):
+            return 10_000                               # under the 30 s margin: nobody is started
+    out = handler({"financeTask": "invoice"}, Ctx())
+    assert out["invoices"] == [] and len(out["unfinished"]) == 1
+    # the preview an operator can invoke: what the run would invoice, nothing written
+    out = handler({"financeTask": "invoice", "dryRun": True}, None)
+    assert out["dryRun"] is True and out["invoices"][0]["periodEnd"] == "2026-09-24"
+    assert stripe["oneoff"] == [] and "lastInvoicedPeriodEnd" not in _profile(aws, tenant)["billing"]
+
+
+def test_a_try_out_runs_from_the_agreements_start(finance, stripe, aws, tenant):
+    _activate(aws, tenant)
+    later = (datetime.now(timezone.utc).date() + timedelta(days=40)).isoformat()
+    status, body = call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+                        body={"startDate": later, "terms": "trial"})
+    assert status == 201 and body["billing"]["termsSince"] == f"{later}T00:00:00Z"
+
+
+def test_an_emailed_invoice_past_due_suspends_like_a_failed_payment(finance, stripe, aws, tenant):
+    """Stripe never fails a payment on an emailed invoice: the ledger's due
+    date is what makes the customer past due."""
+    from app.handler import handler
+    _activate(aws, tenant)
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={})
+    _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(15), lateFeeAdded=_ago(8))
+    out = handler({"financeTask": "dunning"}, None)
+    assert out["suspended"] == ["Pizzeria Roma (15 days past due)"] and _profile(aws, tenant)["status"] == "suspended"
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-02", "includeInactive": "1"})
+    assert status == 200 and body["attention"]["pastDue"][0]["since"].startswith(_ago(15)[:10])
+    assert body["tenants"][0]["billingStatus"] == "past_due"
+    # paid by bankgiro, the webhook missed: the daily task asks Stripe, books it and resumes
+    stripe["remote"] = {"in_a": {"id": "in_a", "object": "invoice", "status": "paid", "customer": "cus_test1",
+                                 "created": int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp()), "total": 123750, "total_excluding_tax": 99000, "tax": 24750,
+                                 "amount_paid": 123750, "amount_remaining": 0, "currency": "sek",
+                                 "status_transitions": {"paid_at": int(time.time())}}}
+    stripe["sent"].clear()
+    out = handler({"financeTask": "dunning"}, None)
+    assert stripe["sent"] == [] and out["resumed"] == ["Pizzeria Roma"] and _profile(aws, tenant)["status"] == "active"
+    assert _row(finance, tenant, "in_a")["status"] == "paid"
+
+
+def test_a_catalog_price_change_also_applies_from_the_next_period(finance, stripe, aws, tenant):
+    from app.billing import _billing, invoice_plan, next_period, period_of
+    from app.handler import handler
+    _activate(aws, tenant)
+    start, end = period_of(datetime.now(timezone.utc).date())
+    call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
+         body={"startDate": (start - timedelta(days=40)).isoformat()})
+    handler({"financeTask": "dunning"}, None)
+    assert len(_billing(_profile(aws, tenant))["priceHistory"]) == 1           # nothing changed: nothing recorded
+    # the plan's price is raised in tfvars (the PLAN row), outside the console
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": "PLAN#starter"}, "SK": {"S": "PLAN"}},
+                           UpdateExpression="SET priceSek = :s", ExpressionAttributeValues={":s": {"N": "1290"}})
+    handler({"financeTask": "dunning"}, None)
+    profile = _profile(aws, tenant)
+    assert [h["monthlySek"] for h in _billing(profile)["priceHistory"]] == [990, 1290]
+    assert invoice_plan(profile, start, end, locations={})["monthlySek"] == 990
+    assert invoice_plan(profile, *next_period(end), locations={})["monthlySek"] == 1290
