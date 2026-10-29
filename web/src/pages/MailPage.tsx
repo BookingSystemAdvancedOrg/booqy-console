@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad,
+  Card, ErrorNotice, Field, Modal, Notice, Printing, Status, errorMessage, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
@@ -308,7 +308,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
       setCustomName(file.name);
       setF((s) => ({ ...s, logo: { kind: "custom", dataUrl, name: file.name } }));
     } catch (e) {
-      setFileError(e instanceof Error ? e.message : String(e));
+      setFileError(errorMessage(e));
     }
   }, []);
 

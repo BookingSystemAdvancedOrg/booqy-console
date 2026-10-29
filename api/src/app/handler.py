@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from . import (billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
                terminal, users, website, zones)
-from .core import ApiError, error_body, log, parse_body, respond
+from .core import SAFE_MESSAGES, ApiError, error_body, log, parse_body, respond
 
 ROUTES = {
     "GET /platform/plans": tenants.list_plans,
@@ -146,7 +146,8 @@ def handler(event, context):
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
     if fn is None:
-        return respond(404, {"error": "not_found", "message": f"No route {route}"})
+        return respond(404, {"error": "not_found", "message": "This page doesn't exist in the API. Reload the console; "
+                                                              "it may be newer than the API."})
     claims = (((event.get("requestContext") or {}).get("authorizer") or {}).get("jwt") or {}).get("claims") or {}
     if OPERATOR_GROUP not in _groups(claims):
         return respond(403, {"error": "forbidden", "message": "Platform operators only"})
@@ -161,8 +162,11 @@ def handler(event, context):
         return respond(status, body)
     except ApiError as e:
         log.info(json.dumps({"route": route, "status": e.status, "error": e.code, "actor": actor,
-                             "requestId": request_id}))
+                             "requestId": request_id,
+                             **({"detail": e.message[:500]} if e.code in SAFE_MESSAGES else {})}))
         return respond(e.status, error_body(e))
     except Exception:  # noqa: BLE001 - last line of defence, details only in the logs
         log.exception("unhandled error on %s (request %s)", route, request_id)
-        return respond(500, {"error": "internal_error", "message": "Something went wrong", "requestId": request_id})
+        return respond(500, {"error": "internal_error", "message": "Something went wrong on our side. Try again; if it keeps failing, "
+                                                                     "check the platform-tenants logs for this reference.",
+                             "requestId": request_id})

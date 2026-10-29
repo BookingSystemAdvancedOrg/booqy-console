@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { CheckMark, useFlash } from "./save";
 
@@ -12,6 +12,15 @@ export function Field(props: {
   /** Differs from the saved value: a light marker until saved or undone. */
   changed?: boolean;
 }) {
+  const msgId = useId();
+  // One control inside: point it at the error (or hint) so screen readers read it with the field.
+  const described = props.error || props.hint ? msgId : undefined;
+  const control = isValidElement<Record<string, unknown>>(props.children)
+    ? cloneElement(props.children, {
+        "aria-invalid": props.error ? true : props.children.props["aria-invalid"],
+        "aria-describedby": [props.children.props["aria-describedby"], described].filter(Boolean).join(" ") || undefined,
+      })
+    : props.children;
   return (
     <label className={`field${props.wide ? " field--wide" : ""}${props.error ? " field--error" : ""}${props.changed ? " field--changed" : ""}`}>
       <span className="field__label">
@@ -19,8 +28,9 @@ export function Field(props: {
         {props.required && <span className="field__req" aria-hidden> *</span>}
         {props.changed && <span className="sr-only"> (changed)</span>}
       </span>
-      {props.children}
-      {props.error ? <span className="field__msg">{props.error}</span> : props.hint && <span className="field__hint">{props.hint}</span>}
+      {control}
+      {props.error ? <span id={msgId} className="field__msg">{props.error}</span>
+        : props.hint && <span id={msgId} className="field__hint">{props.hint}</span>}
     </label>
   );
 }
@@ -81,10 +91,28 @@ export function Printing({ label = "Loading", inline = false }: { label?: string
   );
 }
 
+/** What to show for any thrown value: our API's message, an Error's, or a
+ * plain fallback; never "[object Object]" or a browser's "Failed to fetch". */
+export function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message || "Something went wrong. Try again.";
+  if (error instanceof TypeError) return "Couldn't reach the API. Check your internet connection and try again.";
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  return "Something went wrong. Try again; if it keeps failing, reload the page.";
+}
+
 export function ErrorNotice({ error }: { error: unknown }) {
   if (!error) return null;
-  const msg = error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
-  return <Notice kind="error">{msg}</Notice>;
+  return <Notice kind="error">{errorMessage(error)}</Notice>;
+}
+
+/** After a save the API refused field by field: the first marked field gets focus, so the
+ * operator fixes it and presses Save again. */
+function focusFirstInvalid() {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>('.field--error input, .field--error select, .field--error textarea');
+    el?.focus();
+  });
 }
 
 /** `saved`: flash the card and stamp "Saved" in its head for a moment. */
@@ -171,7 +199,10 @@ export function useAction() {
       return result;
     } catch (e) {
       setError(e);
-      if (e instanceof ApiError) setFields(e.fields);
+      if (e instanceof ApiError) {
+        setFields(e.fields);
+        if (Object.keys(e.fields).length) focusFirstInvalid();
+      }
       return undefined;
     } finally {
       setBusy(false);

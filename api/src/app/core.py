@@ -128,8 +128,26 @@ def respond(status: int, body) -> dict:
     }
 
 
+# Codes whose message carries a provider's or parser's own text (Stripe,
+# Route 53, Step Functions, json): the caller gets this instead, the
+# original goes to the log (handler.py logs it with the request id).
+SAFE_MESSAGES = {
+    "invalid_json": "The request body isn't valid JSON. Reload the page and try again.",
+    "stripe_error": "Stripe refused the request. Check the customer's Stripe account and try again; "
+                    "the reason is in the platform-tenants logs.",
+    "stripe_unreachable": "Stripe didn't answer. Try again in a minute.",
+    "registration_refused": "Route 53 refused the registration. Check the contact details and that the domain "
+                            "is still free, then try again; the reason is in the platform-tenants logs.",
+    "transfer_refused": "Route 53 refused the transfer. Check the authorization code and that the domain is "
+                        "unlocked at the current registrar; the reason is in the platform-tenants logs.",
+    "dns_setup_failed": "Couldn't set up DNS for the domain. Try again; the reason is in the platform-tenants logs.",
+    "workflow_start_failed": "Couldn't start onboarding. Try again in a minute; the reason is in the "
+                             "platform-tenants logs.",
+}
+
+
 def error_body(err: ApiError) -> dict:
-    body = {"error": err.code, "message": err.message or err.code}
+    body = {"error": err.code, "message": SAFE_MESSAGES.get(err.code) or err.message or err.code}
     body.update(err.extra)
     return body
 

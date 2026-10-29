@@ -477,3 +477,16 @@ def test_a_purged_customers_slug_can_be_used_again(aws, tenant):
     assert audit[0]["details"]["slugFromPurgedTenant"] == tenant
     # an offboarded (not yet purged) customer still holds its slug
     assert call("POST /platform/tenants", body={**NEW_TENANT, "ownerEmail": "x@roma.se", "locations": []})[0] == 409
+
+
+def test_provider_and_parser_text_never_reaches_the_operator():
+    from app.core import ApiError, error_body
+    for err in (ApiError(502, "stripe_error", "Stripe: No such account: 'acct_123'", stripeStatus=400),
+                ApiError(502, "registration_refused", "Route 53 refused the registration: InvalidInput acct"),
+                ApiError(400, "invalid_json", "Expecting value: line 1 column 1 (char 0)")):
+        body = error_body(err)
+        assert body["error"] == err.code and "acct_" not in body["message"] and "char 0" not in body["message"]
+        assert body["message"].endswith(".")
+    assert error_body(ApiError(502, "stripe_error", "Stripe: x", stripeStatus=400))["stripeStatus"] == 400
+    assert error_body(ApiError(409, "self", "You can't disable your own account"))["message"] == \
+        "You can't disable your own account"
