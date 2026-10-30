@@ -12,6 +12,7 @@ import {
 } from "../website";
 import type { PageRow, VisitRow, WebsiteOverview } from "../website";
 import "./WebsitePage.css";
+import { RefreshButton } from "../components/save";
 
 const PLACES = ["Countries", "Regions", "Cities"] as const;
 const TECH = ["Devices", "Browsers", "Operating systems", "Languages"] as const;
@@ -191,7 +192,7 @@ export default function WebsitePage() {
   );
 }
 
-function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => void }) {
+function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => Promise<boolean> }) {
   return (
     <div className="page-head">
       <div>
@@ -213,7 +214,7 @@ function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => vo
         <button className="btn btn--ghost" disabled={!data?.breakdowns}
                 title="Sources, campaigns, pages, places and devices for the chosen period"
                 onClick={() => data && downloadCsv(csvName("breakdowns", data.period), breakdownsCsv(data))}>Export breakdowns (CSV)</button>
-        <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+        <RefreshButton reload={reload} />
       </div>
     </div>
   );

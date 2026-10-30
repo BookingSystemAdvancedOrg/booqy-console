@@ -158,13 +158,15 @@ def _mrr(profile: dict, plans: dict | None = None) -> Decimal:
     return _q((plans if plans is not None else _plans()).get(profile.get("planId") or "", Decimal(0)))
 
 
-def _billing_status(profile: dict) -> str:
+def _billing_status(profile: dict, invoices: list[dict] | None = None) -> str:
     """none | scheduled | active | ending | ended, or past_due while an
-    invoice is overdue."""
-    from .billing import phase
+    invoice is overdue: a failed card payment, or an open invoice past its
+    due date (an emailed invoice never fails a payment)."""
+    from .billing import days_late, phase
     billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
     ph = phase(billing)
-    if ph in ("active", "ending") and billing.get("pastDueSince"):
+    overdue = any(i.get("status") == "open" and days_late(i) > 0 for i in invoices or [])
+    if ph in ("active", "ending", "ended") and (billing.get("pastDueSince") or overdue):
         return "past_due"
     return ph
 
@@ -207,6 +209,9 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         if row.get("active"):
             point["activeTenants"] += 1
     invoices = _invoices(tenant_id)
+    from .billing import days_late
+    overdue_since = min((i["dueDate"] for i in invoices if i.get("status") == "open" and i.get("dueDate") and days_late(i) > 0),
+                        default=None)
     sms_cost = _q(split["sms"])
     sms_revenue = _q(sums["smsRevenueSek"])
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
@@ -216,8 +221,9 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "tenantId": tenant_id, "name": profile.get("name"), "slug": profile.get("slug"),
         "orgNumber": profile.get("orgNumber"), "legalName": profile.get("legalName"),
         "status": profile.get("status"), "planId": profile.get("planId"),
-        "billingStatus": _billing_status(profile),
-        "pastDueSince": (profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None,
+        "billingStatus": _billing_status(profile, invoices),
+        "pastDueSince": ((profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None)
+        or overdue_since,
         "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"]),
         "creditedSek": _q(sums["creditedSek"]), "outstandingSek": _outstanding(invoices),
         "costSek": cost, "costSplitSek": {k: _q(val) for k, val in split.items()},
@@ -284,10 +290,12 @@ def overview(req) -> tuple[int, dict]:
     customers_at_start = sum(1 for p in profiles if (p.get("createdAt") or "")[:10] < first
                              and not ((p.get("offboardedAt") or "")[:10] < first and p.get("offboardedAt"))
                              and p.get("status") not in ("provisioning", "provisioning_failed"))
+    overdue = {t["tenantId"]: t["pastDueSince"] for t in tenants if t["billingStatus"] == "past_due"}
     attention = {
-        "pastDue": [{"tenantId": p["tenantId"], "name": p.get("name"), "since": p["billing"].get("pastDueSince"),
+        "pastDue": [{"tenantId": p["tenantId"], "name": p.get("name"), "since": p["billing"].get("pastDueSince") or overdue.get(p["tenantId"]),
                      "status": p.get("status")}
-                    for p in profiles if isinstance(p.get("billing"), dict) and p["billing"].get("pastDueSince")
+                    for p in profiles if isinstance(p.get("billing"), dict)
+                    and (p["billing"].get("pastDueSince") or p["tenantId"] in overdue)
                     and p.get("status") in ("active", "suspended")],
         "noSubscription": [{"tenantId": p["tenantId"], "name": p.get("name"), "createdAt": p.get("createdAt")}
                            for p in profiles if p.get("status") == "active" and _billing_status(p) in ("none", "ended")],
@@ -358,7 +366,8 @@ def invoices(req) -> tuple[int, dict]:
         if not isinstance(p.get("billing"), dict) or not p["billing"].get("customerId"):
             continue
         for inv in list_invoices(p["tenantId"], limit=1000):
-            when = (inv.get("periodStart") or inv.get("createdAt") or "")[:10]
+            # The month an invoice belongs to is the one its period ends in (its date).
+            when = (inv.get("periodEnd") or inv.get("createdAt") or "")[:10]
             if not (first <= when <= last):
                 continue
             late = inv["daysLate"]
@@ -423,11 +432,11 @@ def stripe_sync(req) -> tuple[int, dict]:
                     params["starting_after"] = after
                 page = stripe_request("GET", "/invoices", params)
                 for invoice in page.get("data") or []:
+                    after = invoice["id"]               # also past a draft, or the next page repeats it
                     if invoice.get("status") == "draft":
                         continue
                     summary["invoices"] += 1
                     summary["booked"] += len(record_invoice(profile["tenantId"], invoice))
-                    after = invoice["id"]
                 if not page.get("has_more") or not after:
                     break
         except ApiError as e:

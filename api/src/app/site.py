@@ -9,7 +9,7 @@ runs that step again.
     POST /platform/tenants/{tenantId}/site/invite     {username}: write access to this repo only
     POST /platform/tenants/{tenantId}/site/redeploy   deploy this environment's branch again
     POST /platform/tenants/{tenantId}/site/archive    {confirmSlug}: this environment's role and
-                                                      variables go; the repo is archived, never deleted
+                                                      variables go; the repo is archived (deleted only by Delete customer or the purge)
     POST /platform/tenants/{tenantId}/site/mount      {environment: prod | dev}: put the restaurant's
                                                       verified own domain on that environment's site (prod only)
 
@@ -30,6 +30,8 @@ through the dev account's booqy-sites-prod-link role, which may invoke this
 function with {"siteTask": {...}} and nothing else (site_task below, dev
 only): create or adopt the restaurant's empty dev tenant by slug (its own
 onboarding then sets up the dev side of the repo), or archive that side.
+A prod customer restored after offboarding restores its offboarded dev
+customer the same way; a purged dev customer's slug goes to a new one.
 """
 
 import json
@@ -39,7 +41,7 @@ from types import SimpleNamespace
 from . import domains
 from . import validation as v
 from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table, write_audit
-from .tenants import create_tenant, get_plan, get_profile
+from .tenants import create_tenant, get_plan, get_profile, restore_tenant
 
 _SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
 _MIRROR_FIELDS = ("name", "slug", "ownerEmail", "ownerName", "legalName", "orgNumber", "contactEmail",
@@ -48,11 +50,11 @@ _OPTIONAL_MIRROR_FIELDS = ("legalName", "orgNumber", "contactEmail", "contactPho
 LINK_ACTOR = "prod-site-repo"
 
 
-def _enabled() -> bool:
+def enabled() -> bool:
     return env("SITE_REPOS_ENABLED", "false") == "true"
 
 
-def _invoke(payload: dict, *, wait: bool = True) -> dict:
+def invoke(payload: dict, *, wait: bool = True) -> dict:
     response = client("lambda").invoke(
         FunctionName=env("SITE_REPO_FUNCTION_ARN"), InvocationType="RequestResponse" if wait else "Event",
         Payload=json.dumps(payload).encode("utf-8"))
@@ -70,7 +72,7 @@ def _invoke(payload: dict, *, wait: bool = True) -> dict:
 
 def _require(tenant_id: str) -> dict:
     profile = get_profile(tenant_id)
-    if not _enabled():
+    if not enabled():
         raise ApiError(409, "site_repos_off", "Site repos are not switched on in this environment yet")
     return profile
 
@@ -78,9 +80,9 @@ def _require(tenant_id: str) -> dict:
 def get_site(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     get_profile(tenant_id)
-    if not _enabled():
+    if not enabled():
         return 200, {"enabled": False}
-    return 200, {"enabled": True, **_invoke({"action": "status", "tenantId": tenant_id}),
+    return 200, {"enabled": True, **invoke({"action": "status", "tenantId": tenant_id}),
                  "hosting": hosting(tenant_id, get_profile(tenant_id))}
 
 
@@ -90,7 +92,7 @@ def retry(req) -> tuple[int, dict]:
     if profile.get("status") not in ("active", "suspended"):
         raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
                        currentStatus=profile.get("status"))
-    _invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
+    invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
     write_audit(tenant_id, "site_setup_rerun", req.actor)
     return 202, {"status": "creating"}
 
@@ -101,7 +103,7 @@ def invite(req) -> tuple[int, dict]:
     username = req.body.get("username")
     if not isinstance(username, str) or not username.strip():
         raise ApiError(400, "validation_failed", "Enter a GitHub username", fields={"username": "Required"})
-    result = _invoke({"action": "invite", "tenantId": tenant_id, "username": username.strip()})
+    result = invoke({"action": "invite", "tenantId": tenant_id, "username": username.strip()})
     write_audit(tenant_id, "site_access_granted", req.actor, {"username": result.get("username")})
     return 200, result
 
@@ -109,7 +111,7 @@ def invite(req) -> tuple[int, dict]:
 def redeploy(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     _require(tenant_id)
-    result = _invoke({"action": "redeploy", "tenantId": tenant_id})
+    result = invoke({"action": "redeploy", "tenantId": tenant_id})
     write_audit(tenant_id, "site_redeployed", req.actor, {"branch": result.get("branch")})
     return 202, result
 
@@ -120,7 +122,7 @@ def archive(req) -> tuple[int, dict]:
     if req.body.get("confirmSlug") != profile.get("slug"):
         raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
                        fields={"confirmSlug": "Does not match"})
-    result = _invoke({"action": "archive", "tenantId": tenant_id})
+    result = invoke({"action": "archive", "tenantId": tenant_id})
     write_audit(tenant_id, "site_archived", req.actor, {"repoArchived": result.get("repoArchived")})
     return 200, result
 
@@ -175,7 +177,7 @@ def hosting(tenant_id: str, profile: dict) -> dict:
     prod["canMount"] = prod["state"] in ("not_mounted", "failed")
     prod["dnsByBooqy"] = bool(zone)
     try:
-        dev = _invoke({"action": "devDomain", "op": "status", "tenantId": tenant_id,
+        dev = invoke({"action": "devDomain", "op": "status", "tenantId": tenant_id,
                        **({"host": dev_host} if prod["state"] == "live" else {})})
     except ApiError as e:
         dev = {"state": "unknown", "lastError": e.message}
@@ -203,7 +205,7 @@ def mount(req) -> tuple[int, dict]:
     else:
         if _entry(tenant_id, host)["state"] != "live":
             raise ApiError(409, "own_domain_not_live", f"{host} is not live in production yet")
-        dev = _invoke({"action": "devDomain", "op": "mount", "tenantId": tenant_id, "host": dev_host})
+        dev = invoke({"action": "devDomain", "op": "mount", "tenantId": tenant_id, "host": dev_host})
         if zone and dev.get("cnameTarget"):
             # Booqy runs this domain's DNS: the restaurant has nothing to add.
             client("route53").change_resource_record_sets(HostedZoneId=zone["hostedZoneId"], ChangeBatch={
@@ -261,19 +263,22 @@ def site_task(event: dict) -> dict:
         if task.get("action") == "archive":
             if not tenant_id:
                 return {"status": "none"}
-            return {"tenantId": tenant_id, **_invoke({"action": "archive", "tenantId": tenant_id})}
+            return {"tenantId": tenant_id, **invoke({"action": "archive", "tenantId": tenant_id})}
         if task.get("action") == "domain":
             return _domain_task(tenant_id, task)
         if task.get("action") != "mirror":
             return {"error": "validation_failed", "message": "unknown site task"}
-        if tenant_id:
+        status = get_profile(tenant_id).get("status") if tenant_id else None
+        if status == "offboarded":
+            restore_tenant(tenant_id, LINK_ACTOR)        # its re-run onboarding sets up the dev side
+            return {"tenantId": tenant_id, "status": "restored"}
+        if tenant_id and status != "purged":
             # The same restaurant already has a dev tenant: keep its test data,
             # set up the dev side of the repo now (provision is idempotent).
-            status = get_profile(tenant_id).get("status")
-            if status in ("offboarding", "offboarded", "purged"):
+            if status == "offboarding":
                 return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
             if status in ("active", "suspended"):
-                _invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
+                invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
             write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
             return {"tenantId": tenant_id, "status": "adopted"}
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}

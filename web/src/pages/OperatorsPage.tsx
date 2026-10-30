@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { api } from "../api";
 import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
 import type { OperatorAccount } from "../types";
+import { RefreshButton, SaveButton, useDirty } from "../components/save";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
   if (!o.enabled) return { label: "Disabled", cls: "suspended" };
@@ -37,7 +38,7 @@ export default function OperatorsPage({ me }: { me: string }) {
           <p className="muted">People who can sign in to Booqy Console. Everyone here has the same rights.</p>
         </div>
         <div className="row">
-          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
+          <RefreshButton reload={reload} />
           <button className="btn btn--primary" onClick={() => setAdding(true)}>+ Add operator</button>
         </div>
       </div>
@@ -122,6 +123,7 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const a = useAction();
+  const dirty = useDirty({ email, name }, { email: "", name: "" });
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const r = await a.run(() => api.createOperator(email.trim(), name.trim()));
@@ -142,7 +144,7 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
           <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <div className="row">
-          <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Sending invite…" : "Send invite"}</button>
+          <SaveButton label="Send invite" busy={a.busy} busyLabel="Sending invite…" dirty={dirty.dirty} />
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -153,6 +155,7 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
 function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(op.name);
   const a = useAction();
+  const dirty = useDirty(name.trim(), op.name);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (await a.run(() => api.updateOperator(op.username, { name: name.trim() }))) onSaved();
@@ -161,14 +164,14 @@ function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: 
     <Modal title="Edit operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
-        <Field label="Name" required error={a.fields.name}>
+        <Field label="Name" required changed={dirty.dirty} error={a.fields.name}>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100} />
         </Field>
         <Field label="Email" hint="The email is the sign-in name and can't be changed. Add a new operator instead.">
           <input className="input" value={op.email} disabled />
         </Field>
         <div className="row">
-          <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Saving…" : "Save"}</button>
+          <SaveButton label="Save" busy={a.busy} dirty={dirty.dirty} />
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
         </div>
       </form>

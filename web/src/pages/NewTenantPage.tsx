@@ -7,6 +7,7 @@ import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from 
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
 import type { LocationInput } from "../types";
+import { SaveButton, useDirty } from "../components/save";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -74,6 +75,14 @@ function FieldErrors({ fields }: { fields: Record<string, string> }) {
   );
 }
 
+const BLANK = {
+  name: "", slug: "", legalName: "", orgNumber: "",
+  street: "", postalCode: "", city: "",
+  ownerName: "", ownerEmail: "", ownerPhone: "",
+  contactEmail: "", contactPhone: "", billingEmail: "", senderName: "", replyToEmail: "",
+  planId: "", maxLocations: "", notes: "",
+};
+
 export default function NewTenantPage() {
   const navigate = useNavigate();
   const plans = useLoad(() => api.plans());
@@ -86,13 +95,7 @@ export default function NewTenantPage() {
   const fields = useMemo(() => ({ ...setupFields, ...apiFields }), [setupFields, apiFields]);
   const saved = phase === "failed";      // plan, invoicing and locations were saved with the customer
 
-  const [f, setF] = useState({
-    name: "", slug: "", legalName: "", orgNumber: "",
-    street: "", postalCode: "", city: "",
-    ownerName: "", ownerEmail: "", ownerPhone: "",
-    contactEmail: "", contactPhone: "", billingEmail: "", senderName: "", replyToEmail: "",
-    planId: "", maxLocations: "", notes: "",
-  });
+  const [f, setF] = useState(BLANK);
   const [slugTouched, setSlugTouched] = useState(false);
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
   // Invoicing: the plan's price unless typed over, try-out or subscription terms, start now.
@@ -104,6 +107,8 @@ export default function NewTenantPage() {
   // Features ticked differently from the plan; cleared when another plan is picked.
   const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
   useEffect(() => setFeatureEdits({}), [f.planId]);
+  // Anything typed is unsaved until Create; leaving asks first (not once setup runs).
+  const dirty = useDirty({ f, locations }, { f: BLANK, locations: [emptyLocation()] }, { guard: phase !== "setup" });
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
     const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
@@ -440,9 +445,8 @@ export default function NewTenantPage() {
             </div>
           )}
         </div>
-        <button className="btn btn--primary" disabled={!canSubmit || busy}>
-          {saved ? (busy ? "Saving…" : "Save and retry") : busy ? "Creating…" : "Create customer"}
-        </button>
+        <SaveButton label={saved ? "Save and retry" : "Create customer"} busy={busy} busyLabel={saved ? "Saving…" : "Creating…"}
+                    dirty={dirty.dirty} allowClean disabled={!canSubmit} hint={false} />
       </div>
     </form>
   );

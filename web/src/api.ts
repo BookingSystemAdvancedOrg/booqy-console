@@ -87,7 +87,10 @@ export const api = {
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
   offboard: (id: string, confirmSlug: string) => request("POST", `${t(id)}/offboard`, { confirmSlug }),
-  purgeNow: (id: string, confirmSlug: string) => request("POST", `${t(id)}/purge`, { confirmSlug }),
+  purgeNow: (id: string, confirmSlug: string) =>
+    request<{ purgeAt: string; repoError?: string }>("POST", `${t(id)}/purge`, { confirmSlug }),
+  restore: (id: string) =>
+    request<{ usersEnabled: number; failed: string[]; onboardingError?: string }>("POST", `${t(id)}/restore`, {}),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
   // Website tab: the restaurant's own site repo (site-repo function)
   site: (id: string) => request<SiteStatus | { enabled: false }>("GET", `${t(id)}/site`),

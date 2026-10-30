@@ -10,6 +10,7 @@ import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetwe
 import { toneClass, trendOf } from "../trend";
 import type { Trend, TrendTone } from "../trend";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
+import { RefreshButton, SaveButton } from "../components/save";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -106,11 +107,9 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                   onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data.series))}>
             Export daily (CSV)
           </button>
-          <button className="btn btn--ghost" onClick={() => reload()}>Refresh</button>
-          <button className="btn btn--ghost" disabled={sync.busy}
-                  onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }}>
-            {sync.busy ? "Reading Stripe…" : "Import from Stripe"}
-          </button>
+          <RefreshButton reload={reload} />
+          <SaveButton kind="ghost" type="button" label="Import from Stripe" busy={sync.busy} busyLabel="Reading Stripe…" done={sync.done} doneLabel="Imported"
+                      onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }} />
           <button className="btn btn--primary" onClick={() => setRebuild(true)}>Rebuild</button>
         </div>
       </div>
@@ -457,7 +456,7 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
         <ErrorNotice error={a.error} />
         {done && <Notice kind="ok">Rebuild started for {done}.</Notice>}
         <div className="row">
-          <button className="btn btn--primary" type="submit" disabled={a.busy || !!done}>{a.busy ? "Starting…" : "Start rebuild"}</button>
+          <SaveButton label="Start rebuild" busy={a.busy} busyLabel="Starting…" done={!!done} doneLabel="Started" />
           <button className="btn btn--ghost" type="button" onClick={onClose}>Close</button>
         </div>
       </form>

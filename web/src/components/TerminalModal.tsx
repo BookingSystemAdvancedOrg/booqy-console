@@ -3,6 +3,7 @@ import { api, ApiError } from "../api";
 import { ErrorNotice, Field, Modal, Notice, Printing, useAction, useLoad } from "./ui";
 import type { Location, Tenant, TerminalAddress, TerminalReader } from "../types";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
+import { CheckMark, SaveButton, useDirty, useFlash } from "./save";
 
 /** Card terminals (Stripe Terminal) for one restaurant location: enable, pair
  *  readers, remove readers. Everything lives on the restaurant's own Stripe
@@ -14,6 +15,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
                                                    [tenant.tenantId, location.locationId]);
   const stripeReady = !!tenant.stripe?.chargesEnabled || !!location.stripeAccountId;
   const [editing, setEditing] = useState(false);
+  const [saved, flashSaved] = useFlash();
 
   return (
     <Modal title={`Card terminals - ${location.name}`} onClose={onClose}>
@@ -47,13 +49,14 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
                   <strong>{data.terminal.displayName}</strong> · {data.terminal.address.line1},{" "}
                   {formatPostalCode(data.terminal.address.postalCode)} {data.terminal.address.city}
                   <button className="link" onClick={() => setEditing(true)}>Change address</button>
+                  {saved && <span className="saved-stamp" role="status"><CheckMark />Saved</span>}
                   <br />
                   <span className="muted mono">{data.terminal.locationId} on {data.terminal.accountId}</span>
                 </p>
               ) : (
                 <EditAddress tenant={tenant} location={location} current={data.terminal.address}
                              displayName={data.terminal.displayName}
-                             onDone={() => { setEditing(false); void reload(); }} onCancel={() => setEditing(false)} />
+                             onDone={() => { setEditing(false); flashSaved(); void reload(); }} onCancel={() => setEditing(false)} />
               )}
             </section>
             <Readers tenant={tenant} location={location} readers={data.readers} onChanged={reload} onRegistered={onClose} />
@@ -66,23 +69,24 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
 
 type AddrForm = TerminalAddress & { displayName?: string };
 
-function AddressFields({ v, set, fields }: {
+function AddressFields({ v, set, fields, changed = () => false }: {
   v: AddrForm;
   set: (v: AddrForm) => void;
   fields: Record<string, string>;
+  changed?: (key: keyof AddrForm) => boolean;
 }) {
   return (
     <div className="grid">
-      <Field label="Name on receipts / in Stripe" error={fields.displayName} hint="Defaults to the location name">
+      <Field label="Name on receipts / in Stripe" changed={changed("displayName")} error={fields.displayName} hint="Defaults to the location name">
         <input className="input" value={v.displayName ?? ""} onChange={(e) => set({ ...v, displayName: e.target.value })} />
       </Field>
-      <Field label="Street address" required error={fields.line1}>
+      <Field label="Street address" required changed={changed("line1")} error={fields.line1}>
         <input className="input" value={v.line1} onChange={(e) => set({ ...v, line1: e.target.value })} />
       </Field>
-      <Field label="Postal code" required error={fields.postalCode}>
+      <Field label="Postal code" required changed={changed("postalCode")} error={fields.postalCode}>
         <input className="input mono" {...POSTAL_CODE_INPUT} value={v.postalCode} onChange={(e) => set({ ...v, postalCode: formatPostalCode(e.target.value) })} />
       </Field>
-      <Field label="City" required error={fields.city}>
+      <Field label="City" required changed={changed("city")} error={fields.city}>
         <input className="input" value={v.city} onChange={(e) => set({ ...v, city: e.target.value })} />
       </Field>
     </div>
@@ -113,7 +117,7 @@ function EnableForm({ tenant, location, onDone }: { tenant: Tenant; location: Lo
       <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
       <AddressFields v={v} set={set} fields={a.fields} />
       <div className="row">
-        <button className="btn btn--primary" disabled={a.busy}>{a.busy ? "Enabling…" : "Enable card terminals"}</button>
+        <SaveButton label="Enable card terminals" busy={a.busy} busyLabel="Enabling…" />
       </div>
     </form>
   );
@@ -122,8 +126,10 @@ function EnableForm({ tenant, location, onDone }: { tenant: Tenant; location: Lo
 function EditAddress({ tenant, location, current, displayName, onDone, onCancel }: {
   tenant: Tenant; location: Location; current: TerminalAddress; displayName: string; onDone: () => void; onCancel: () => void;
 }) {
-  const [v, set] = useState<AddrForm>({ ...current, postalCode: formatPostalCode(current.postalCode), displayName });
+  const initial: AddrForm = { ...current, postalCode: formatPostalCode(current.postalCode), displayName };
+  const [v, set] = useState<AddrForm>(initial);
   const a = useAction();
+  const dirty = useDirty(v, initial);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const body = { line1: v.line1, postalCode: postalCodeDigits(v.postalCode), city: v.city, displayName: v.displayName };
@@ -132,9 +138,9 @@ function EditAddress({ tenant, location, current, displayName, onDone, onCancel 
   return (
     <form onSubmit={submit} className="stack">
       <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
-      <AddressFields v={v} set={set} fields={a.fields} />
+      <AddressFields v={v} set={set} fields={a.fields} changed={dirty.changed} />
       <div className="row">
-        <button className="btn btn--primary btn--small" disabled={a.busy}>{a.busy ? "Saving…" : "Save address"}</button>
+        <SaveButton small label="Save address" busy={a.busy} dirty={dirty.dirty} />
         <button type="button" className="btn btn--ghost btn--small" onClick={onCancel}>Cancel</button>
       </div>
     </form>
@@ -157,6 +163,7 @@ function Readers({ tenant, location, readers, onChanged, onRegistered }: {
   const add = useAction();
   const rm = useAction();
   const [confirm, setConfirm] = useState<TerminalReader | null>(null);
+  const dirty = useDirty({ code, label }, { code: "", label: "" });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -188,15 +195,13 @@ function Readers({ tenant, location, readers, onChanged, onRegistered }: {
                 <td className="right">
                   {confirm?.id === r.id ? (
                     <>
-                      <button className="btn btn--danger btn--small" disabled={rm.busy}
-                              onClick={async () => {
-                                if (await rm.run(() => api.removeReader(tenant.tenantId, location.locationId, r.id))) {
-                                  setConfirm(null);
-                                  onChanged();
-                                }
-                              }}>
-                        {rm.busy ? "Removing…" : "Remove"}
-                      </button>
+                      <SaveButton kind="danger" small type="button" label="Remove" busy={rm.busy} busyLabel="Removing…" hint={false}
+                                  onClick={async () => {
+                                    if (await rm.run(() => api.removeReader(tenant.tenantId, location.locationId, r.id))) {
+                                      setConfirm(null);
+                                      onChanged();
+                                    }
+                                  }} />
                       <button className="btn btn--ghost btn--small" onClick={() => setConfirm(null)}>Cancel</button>
                     </>
                   ) : (
@@ -224,9 +229,7 @@ function Readers({ tenant, location, readers, onChanged, onRegistered }: {
             <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} />
           </Field>
         </div>
-        <button className="btn btn--primary btn--small" disabled={add.busy || !code.trim() || !label.trim()}>
-          {add.busy ? "Registering…" : "Register reader"}
-        </button>
+        <SaveButton small label="Register reader" busy={add.busy} busyLabel="Registering…" dirty={dirty.dirty} disabled={!code.trim() || !label.trim()} />
       </form>
     </section>
   );

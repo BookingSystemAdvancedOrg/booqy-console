@@ -186,7 +186,7 @@ def register_reader(req) -> tuple[int, dict]:
                                 account=term["accountId"])
     except ApiError as e:
         if e.code == "stripe_error" and e.extra.get("stripeStatus") == 400:
-            raise ApiError(400, "validation_failed", e.message,
+            raise ApiError(400, "validation_failed", "Stripe didn't accept the registration code",
                            fields={"registrationCode": "Stripe didn't accept this code - check the reader's screen "
                                                        "(codes expire after a few minutes)"}) from e
         raise
@@ -271,7 +271,8 @@ def list_all_readers(req) -> tuple[int, dict]:
         except Exception as e:  # noqa: BLE001 - one account's failure is reported, not fatal
             log.warning("reader list failed for %s: %s", acct, e)
             errors.append({"accountId": acct, "tenantId": accounts[acct], "tenantName": names.get(accounts[acct]),
-                           "message": getattr(e, "message", None) or "Stripe didn't answer"})
+                           "message": "Stripe didn't answer" if getattr(e, "code", None) == "stripe_unreachable"
+                           else "Stripe refused the request; the reason is in the platform-tenants logs"})
 
     pending = list(accounts)
     if pending:

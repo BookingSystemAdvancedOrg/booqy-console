@@ -2,6 +2,7 @@ import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
 import { Card, ErrorNotice, Field, Notice, Printing, Status, fmtDate, useAction, useLoad } from "./ui";
+import { CheckMark, SaveButton, useDirty } from "./save";
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
 
@@ -91,16 +92,14 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
       )}
       <div className="row">
         {canRetry && (
-          <button className="btn btn--small" disabled={retry.busy}
-                  onClick={async () => { if (await retry.run(() => api.retrySite(tenant.tenantId))) onChanged(); }}>
-            {site.status === "ready" ? "Run setup again" : site.status === "failed" ? "Retry" : "Set up"}
-          </button>
+          <SaveButton kind="plain" small type="button" busy={retry.busy} busyLabel="Starting…" done={retry.done} doneLabel="Started"
+                      label={site.status === "ready" ? "Run setup again" : site.status === "failed" ? "Retry" : "Set up"}
+                      onClick={async () => { if (await retry.run(() => api.retrySite(tenant.tenantId))) onChanged(); }} />
         )}
         {!readOnly && site.repoExists && !site.archived && (
-          <button className="btn btn--small" disabled={redeploy.busy}
-                  onClick={async () => { if (await redeploy.run(() => api.redeploySite(tenant.tenantId))) setStarted(true); }}>
-            Redeploy {branch}
-          </button>
+          <SaveButton kind="plain" small type="button" busy={redeploy.busy} busyLabel="Starting…" done={redeploy.done} doneLabel="Deploy started"
+                      label={`Redeploy ${branch}`}
+                      onClick={async () => { if (await redeploy.run(() => api.redeploySite(tenant.tenantId))) setStarted(true); }} />
         )}
         {started && <span className="small muted">Deploy started - it shows above within a minute (Refresh).</span>}
       </div>
@@ -133,7 +132,7 @@ function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
           <thead><tr><th>Environment</th><th>Slug address</th><th>Own domain</th><th><span className="sr-only">Action</span></th></tr></thead>
           <tbody>
             {envs.map((env) => (
-              <HostingRow key={env} env={env} h={site.hosting![env]!} manage={manage} busy={mount.busy}
+              <HostingRow key={env} env={env} h={site.hosting![env]!} manage={manage} busy={mount.busy} done={mount.done}
                           onMount={async () => { if (await mount.run(() => api.mountSiteDomain(tenant.tenantId, env))) onChanged(); }} />
             ))}
           </tbody>
@@ -157,7 +156,7 @@ function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
   );
 }
 
-function HostingRow({ env, h, manage, busy, onMount }: { env: "dev" | "prod"; h: SiteHosting; manage: boolean; busy: boolean; onMount: () => void }) {
+function HostingRow({ env, h, manage, busy, done, onMount }: { env: "dev" | "prod"; h: SiteHosting; manage: boolean; busy: boolean; done: boolean; onMount: () => void }) {
   const label = (text: string) => <span className="stack-label">{text}: </span>;
   const status = h.state === "attaching" && h.status ? h.status : h.state;
   return (
@@ -177,9 +176,8 @@ function HostingRow({ env, h, manage, busy, onMount }: { env: "dev" | "prod"; h:
       </td>
       <td>
         {manage && h.canMount && (
-          <button className="btn btn--small" disabled={busy} onClick={onMount}>
-            {h.state === "failed" ? "Retry" : `Mount ${h.host ?? DOMAIN_STEP[env]}`}
-          </button>
+          <SaveButton kind="plain" small type="button" busy={busy} busyLabel="Mounting…" done={done} doneLabel="Mounting"
+                      label={h.state === "failed" ? "Retry" : `Mount ${h.host ?? DOMAIN_STEP[env]}`} onClick={onMount} />
         )}
       </td>
     </tr>
@@ -207,7 +205,7 @@ function CopyButton({ text, children = "Copy" }: { text: string; children?: Reac
   return (
     <button type="button" className="btn btn--small"
             onClick={async () => { await navigator.clipboard.writeText(text); setDone(true); window.setTimeout(() => setDone(false), 1500); }}>
-      {done ? "Copied" : children}
+      {done ? <><CheckMark />Copied</> : children}
     </button>
   );
 }
@@ -269,6 +267,7 @@ function Access({ site, tenant }: { site: SiteStatus; tenant: Tenant }) {
   const a = useAction();
   const [username, setUsername] = useState("");
   const [result, setResult] = useState<{ username: string; result: string } | null>(null);
+  const dirty = useDirty(username, "");
   async function invite(e: FormEvent) {
     e.preventDefault();
     const r = await a.run(() => api.inviteToSite(tenant.tenantId, username));
@@ -284,7 +283,7 @@ function Access({ site, tenant }: { site: SiteStatus; tenant: Tenant }) {
         <Field label="GitHub username" error={a.fields.username}>
           <input className="input mono" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="anna-dev" autoComplete="off" />
         </Field>
-        <button className="btn btn--primary" disabled={a.busy || !username.trim()}>Invite</button>
+        <SaveButton label="Invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invited" dirty={dirty.dirty} disabled={!username.trim()} hint={false} />
       </form>
       {result && (
         <Notice kind="ok">
@@ -303,15 +302,14 @@ function Archive({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
     <Card title="Archive website repo" tone="danger">
       <p>
         Removes this environment's deploy role and repo variables, so nothing deploys here any more. The repo is archived
-        (read-only, never deleted) once no environment uses it. <strong>Set up</strong> brings it back. Offboarding does this by itself.
+        (read-only) once no environment uses it; Delete customer deletes it. <strong>Set up</strong> brings it back. Offboarding does this by itself.
       </p>
       <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
         <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
       </Field>
-      <button className="btn btn--danger" disabled={confirm !== tenant.slug || a.busy}
-              onClick={async () => { if (await a.run(() => api.archiveSite(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }}>
-        Archive {site.repo}
-      </button>
+      <SaveButton kind="danger" type="button" label={`Archive ${site.repo}`} busy={a.busy} busyLabel="Archiving…" done={a.done} doneLabel="Archived"
+                  disabled={confirm !== tenant.slug}
+                  onClick={async () => { if (await a.run(() => api.archiveSite(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }} />
       <ErrorNotice error={a.fields.confirmSlug ? null : a.error} />
     </Card>
   );

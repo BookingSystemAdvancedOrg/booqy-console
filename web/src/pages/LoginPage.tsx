@@ -1,5 +1,5 @@
 import { withBusy } from "../busy";
-import { Printing } from "../components/ui";
+import { Printing, errorMessage } from "../components/ui";
 import { STORAGE_REGISTRY } from "../storageRegistry";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Logo } from "../components/Logo";
@@ -66,7 +66,7 @@ function message(e: unknown, reset = false): string {
         ? "The link has expired (it works for one hour). Request a new one."
         : "The code has expired. Request a new one.";
     default:
-      return e instanceof Error ? e.message : String(e);
+      return errorMessage(e);
   }
 }
 
