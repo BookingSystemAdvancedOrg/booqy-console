@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { SOUND_KEY } from "./storageRegistry";
+import { SOUND_KEY, SOUND_VOLUME_KEY } from "./storageRegistry";
 
 /**
  * Press feedback, the same as booqy.se and admin: a modern, quiet Windows-style click (Web
@@ -36,6 +36,21 @@ function storedSound(): boolean {
 }
 
 let on = storedSound();
+
+/** Volume 0-100. 70 is the standard level; 100 is a little louder, 0 is silent. */
+export const DEFAULT_VOLUME = 70;
+
+function storedVolume(): number {
+  try {
+    const raw = localStorage.getItem(SOUND_VOLUME_KEY);
+    const v = Number(raw);
+    return raw !== null && Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : DEFAULT_VOLUME;
+  } catch {
+    return DEFAULT_VOLUME;
+  }
+}
+
+let volume = storedVolume();
 let ctx: AudioContext | null = null;
 const listeners = new Set<() => void>();
 
@@ -66,8 +81,35 @@ export function useSound(): [boolean, () => void] {
   return [value, () => setSound(!value)];
 }
 
+export function soundVolume(): number {
+  return volume;
+}
+
+/** Saves the volume. A click plays when the slider is released (preview), not while dragging. */
+export function setSoundVolume(next: number, preview = false) {
+  volume = Math.min(100, Math.max(0, Math.round(next)));
+  try {
+    localStorage.setItem(SOUND_VOLUME_KEY, String(volume));
+  } catch {
+    /* private mode without storage */
+  }
+  for (const listener of listeners) listener();
+  if (preview) play("press");
+}
+
+export function useSoundVolume(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    soundVolume,
+    () => DEFAULT_VOLUME,
+  );
+}
+
 function play(kind: keyof typeof VOICES) {
-  if (!on) return;
+  if (!on || volume <= 0) return;
   try {
     if (!ctx) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -93,7 +135,11 @@ function play(kind: keyof typeof VOICES) {
     limit.ratio.value = 20;
     limit.attack.value = 0.001;
     limit.release.value = 0.05;
-    limit.connect(c.destination);
+    // the volume goes last, after the limiter: 70 = the standard level
+    const master = c.createGain();
+    master.gain.value = volume / DEFAULT_VOLUME;
+    limit.connect(master);
+    master.connect(c.destination);
     const out = c.createBiquadFilter();
     out.type = "lowpass";
     out.frequency.value = 6000;

@@ -1,4 +1,5 @@
 import { SoundToggle } from "../components/SoundToggle";
+import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
 
 /**
@@ -31,6 +32,13 @@ export default function SettingsPage({ email }: { email?: string }) {
               <p className="muted small">A soft click when you press buttons and links. On by default.</p>
             </div>
             <SoundToggle className="setting-toggle" label />
+          </div>
+          <div className="setting-row">
+            <div>
+              <label className="strong" htmlFor="sound-volume">Volume</label>
+              <p className="muted small">How loud the click is. 70 % is the standard, 0 % is silent.</p>
+            </div>
+            <SoundVolume id="sound-volume" />
           </div>
         </div>
       </section>
