@@ -1504,3 +1504,10 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .skel-block { animation: none; opacity: 0.8; }
   .skel-sheen { display: none; }
 }
+
+/* A status inside a chip (the Customers filter): just its words in the chip's
+   own font and colour, no pill of its own behind the text. */
+.chip .status, [data-glide] > .chip .status {
+  padding: 0; border: 0; border-radius: 0; background: none; transform: none; animation: none;
+  font: inherit; letter-spacing: inherit; text-transform: none; color: inherit;
+}
