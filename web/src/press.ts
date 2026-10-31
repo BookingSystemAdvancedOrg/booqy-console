@@ -85,17 +85,25 @@ function play(kind: keyof typeof VOICES) {
     }
     const [pitch, vol] = VOICES[kind];
     const c = ctx;
-    const t = c.currentTime + 0.002;
+    const t = c.currentTime + 0.003;
     const sr = c.sampleRate;
+    // a limiter keeps the peaks under 0 dB, so it can be clearly loud without crackling
+    const limit = c.createDynamicsCompressor();
+    limit.threshold.value = -6;
+    limit.knee.value = 0;
+    limit.ratio.value = 20;
+    limit.attack.value = 0.001;
+    limit.release.value = 0.05;
+    limit.connect(c.destination);
     const out = c.createBiquadFilter();
     out.type = "lowpass";
     out.frequency.value = 7000;
-    out.connect(c.destination);
-    // one snap of the switch: 4 ms of noise ringing at one pitch, plus a tiny
+    out.connect(limit);
+    // one snap of the switch: 6 ms of noise ringing at one pitch, plus a small
     // knock under it. The noise is the same every time (fixed seed), like a real
     // switch, so every press sounds alike and the volume never jumps
     const snap = (at: number, hz: number, gain: number) => {
-      const buf = c.createBuffer(1, Math.ceil(sr * 0.004), sr);
+      const buf = c.createBuffer(1, Math.ceil(sr * 0.006), sr);
       const d = buf.getChannelData(0);
       let seed = 7;
       for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0003)) * Math.pow(1 - i / d.length, 2);
@@ -104,24 +112,24 @@ function play(kind: keyof typeof VOICES) {
       const ring = c.createBiquadFilter();
       ring.type = "bandpass";
       ring.frequency.value = hz;
-      ring.Q.value = 5;
+      ring.Q.value = 3.5;
       const g = c.createGain();
-      g.gain.value = gain * 6;
+      g.gain.value = gain * 14;
       src.connect(ring).connect(g).connect(out);
       src.start(at);
       const osc = c.createOscillator();
       osc.frequency.value = hz * 0.3;
       const og = c.createGain();
       og.gain.setValueAtTime(0, at);
-      og.gain.linearRampToValueAtTime(gain * 0.8, at + 0.001);
-      og.gain.exponentialRampToValueAtTime(0.0001, at + 0.012);
+      og.gain.linearRampToValueAtTime(gain * 1.6, at + 0.001);
+      og.gain.exponentialRampToValueAtTime(0.0001, at + 0.03);
       osc.connect(og).connect(out);
       osc.start(at);
-      osc.stop(at + 0.014);
+      osc.stop(at + 0.032);
     };
     // press, then the lighter release a moment later
     snap(t, pitch, vol);
-    snap(t + 0.026, pitch * 1.2, vol * 0.45);
+    snap(t + 0.03, pitch * 1.2, vol * 0.5);
   } catch {
     /* no audio: the visual is enough */
   }
@@ -147,6 +155,7 @@ function visual(el: Element, x: number | null, y: number | null) {
 }
 
 let installed = false;
+let unlocked = false;
 
 /** Listens once on the document; every press anywhere in the console gets the feedback. */
 export function installPress() {
@@ -163,11 +172,18 @@ export function installPress() {
         ctx = new AC();
       }
       if (ctx.state !== "running") void ctx.resume();
+      if (!unlocked) {
+        const silent = ctx.createBufferSource();
+        silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        silent.connect(ctx.destination);
+        silent.start(0);
+        unlocked = true;
+      }
     } catch {
       /* no audio */
     }
   };
-  for (const type of ["click", "touchend", "keydown"]) document.addEventListener(type, unlock, { capture: true, passive: true });
+  for (const type of ["pointerup", "click", "touchend", "keydown"]) document.addEventListener(type, unlock, { capture: true, passive: true });
   document.addEventListener(
     "pointerdown",
     (e) => {
