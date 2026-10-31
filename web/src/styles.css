@@ -1323,3 +1323,18 @@ html.is-busy, html.is-busy * { cursor: progress; }
 @media (max-width: 1023px) {
   .topbar__heading { display: none; }
 }
+
+/* the chosen tab glides (src/tabGlide.ts): one lacquered pill under the bar
+   slides and stretches to the chosen tab, like the tabs on booqy.se */
+.tabs { position: relative; isolation: isolate; }
+.tabs.is-glide::before {
+  content: ""; position: absolute; z-index: -1; top: 5px; bottom: 5px; left: 0;
+  width: var(--glide-w, 0); translate: var(--glide-x, 0) 0;
+  border-radius: 999px; background: var(--lacquer); box-shadow: var(--lacquer-rim);
+  pointer-events: none;
+}
+.tabs.is-glide.is-placed::before { transition: translate 440ms cubic-bezier(0.34, 1.22, 0.64, 1), width 440ms cubic-bezier(0.34, 1.22, 0.64, 1); }
+.tabs.is-glide .tab--on, .tabs.is-glide .tab--on:hover { background: transparent; box-shadow: none; }
+.tabs .tab--on, .tabs .tab--on:hover { color: #ffffff; }
+:root[data-theme="dark"] .tabs .tab--on, :root[data-theme="dark"] .tabs .tab--on:hover { color: #1a120e; }
+@media (prefers-reduced-motion: reduce) { .tabs.is-glide.is-placed::before { transition: none; } }

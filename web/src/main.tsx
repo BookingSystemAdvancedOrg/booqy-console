@@ -17,9 +17,11 @@ import { Modal, Printing } from "./components/ui";
 import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
+import { installTabGlide } from "./tabGlide";
 import "./styles.css";
 
 installPress();
+installTabGlide();
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
