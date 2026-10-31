@@ -18,10 +18,12 @@ import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
+import { installGlassFilter } from "./glassFilter";
 import "./styles.css";
 
 installPress();
 installGlide();
+installGlassFilter();
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";

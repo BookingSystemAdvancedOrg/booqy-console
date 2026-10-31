@@ -1409,14 +1409,45 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .month-pick__label { flex: 1; }
 }
 
-/* Plain chips (.chips--plain, the Website period): no track and no glide,
-   just clear pills that switch on a click. The chosen one is solid espresso,
-   the others white with a fine edge. */
+/* Glass chips (.chips--plain, the Website period): no track and no glide,
+   each option is its own clear glass pill that switches on a click. Glass the
+   booqy.se way: on Chromium the backdrop is bent by the "booqy-glass" filter
+   (src/glassFilter.ts) under a light blur; elsewhere a plain frosted blur. A
+   1 px lit top edge gives the pill thickness. The chosen one is smoked
+   espresso glass (cream glass at night), so it stays obvious. */
 .chips--plain { display: flex; flex-wrap: wrap; gap: 8px; }
-.chips--plain .chip { min-height: 40px; padding: 0 18px; font: 600 14px/1 var(--sans); transition: none; }
-.chips--plain .chip:not(.chip--on) { background: #ffffff; box-shadow: inset 0 0 0 1px rgb(58 36 24 / 0.18); color: #1a120e; }
-.chips--plain .chip:not(.chip--on):hover { background: #ffffff; box-shadow: inset 0 0 0 1.5px #1a120e; }
-.chips--plain .chip--on, .chips--plain .chip--on:hover { background: #1a120e; box-shadow: none; color: #ffffff; }
-:root[data-theme="dark"] .chips--plain .chip:not(.chip--on) { background: rgb(255 255 255 / 0.04); box-shadow: inset 0 0 0 1px rgb(213 196 174 / 0.28); color: #f6f1ea; }
-:root[data-theme="dark"] .chips--plain .chip:not(.chip--on):hover { box-shadow: inset 0 0 0 1.5px #f6f1ea; }
-:root[data-theme="dark"] .chips--plain .chip--on, :root[data-theme="dark"] .chips--plain .chip--on:hover { background: #f6f1ea; color: #1a120e; }
+.chips--plain .chip {
+  min-height: 40px; padding: 0 18px; border: 0; font: 600 14px/1 var(--sans); color: #1a120e;
+  background: rgb(255 255 255 / 0.34);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4); backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8), inset 0 0 0 1px rgb(58 36 24 / 0.13), 0 6px 18px -10px rgb(58 36 24 / 0.35);
+  transition: none;
+}
+.glass-refract .chips--plain .chip { backdrop-filter: url(#booqy-glass) blur(8px) saturate(1.4); }
+.chips--plain .chip:not(.chip--on):hover {
+  background: rgb(255 255 255 / 0.55); border: 0;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 0 0 1px rgb(58 36 24 / 0.22), 0 8px 20px -10px rgb(58 36 24 / 0.4);
+}
+.chips--plain .chip--on, .chips--plain .chip--on:hover {
+  background: rgb(26 18 14 / 0.84); color: #ffffff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), inset 0 0 0 1px rgb(26 18 14 / 0.4), 0 10px 22px -12px rgb(26 18 14 / 0.6);
+}
+:root[data-theme="dark"] .chips--plain .chip {
+  color: #f6f1ea; background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 1px 0 rgb(213 196 174 / 0.3), inset 0 0 0 1px rgb(213 196 174 / 0.16), 0 6px 18px -10px rgb(0 0 0 / 0.6);
+}
+:root[data-theme="dark"] .chips--plain .chip:not(.chip--on):hover {
+  background: rgb(255 255 255 / 0.11);
+  box-shadow: inset 0 1px 0 rgb(213 196 174 / 0.4), inset 0 0 0 1px rgb(213 196 174 / 0.32), 0 8px 20px -10px rgb(0 0 0 / 0.6);
+}
+:root[data-theme="dark"] .chips--plain .chip--on, :root[data-theme="dark"] .chips--plain .chip--on:hover {
+  background: rgb(246 241 234 / 0.9); color: #1a120e;
+  box-shadow: inset 0 1px 0 #ffffff, 0 10px 22px -12px rgb(0 0 0 / 0.7);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .chips--plain .chip, .glass-refract .chips--plain .chip { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .chips--plain .chip:not(.chip--on) { background: #ffffff; }
+  :root[data-theme="dark"] .chips--plain .chip:not(.chip--on) { background: #2a1d16; }
+  .chips--plain .chip--on { background: #1a120e; }
+  :root[data-theme="dark"] .chips--plain .chip--on { background: #f6f1ea; }
+}
