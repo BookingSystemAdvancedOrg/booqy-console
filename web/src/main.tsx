@@ -11,10 +11,9 @@ import MailPage from "./pages/MailPage";
 import FinancePage from "./pages/FinancePage";
 import WebsitePage from "./pages/WebsitePage";
 import ReadersPage from "./pages/ReadersPage";
+import SettingsPage from "./pages/SettingsPage";
 import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
-import { ThemeToggle } from "./components/ThemeToggle";
-import { SoundToggle } from "./components/SoundToggle";
 import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
@@ -60,8 +59,7 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
-          <SoundToggle />
-          <ThemeToggle />
+          <NavLink to="/settings" className="btn btn--ghost topbar__settings">Settings</NavLink>
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
       </header>
@@ -87,6 +85,7 @@ function Shell() {
           <Route path="/mail" element={<MailPage />} />
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>

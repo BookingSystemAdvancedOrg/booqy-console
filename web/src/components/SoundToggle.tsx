@@ -1,19 +1,19 @@
 import { useSound } from "../press";
 
 /**
- * The top-bar button that switches the click sound on and off (src/press.ts).
- * A toggle button (aria-pressed): pressed = sound on, like booqy.se's
- * "Ljud på/av" in English.
+ * The button in Settings that switches the click sound on and off
+ * (src/press.ts). A toggle button (aria-pressed): pressed = sound on, like
+ * booqy.se's "Ljud på/av" in English. `label` shows the state next to the icon.
  */
-export function SoundToggle({ className = "" }: { className?: string }) {
+export function SoundToggle({ className = "", label = false }: { className?: string; label?: boolean }) {
   const [on, toggle] = useSound();
   return (
     <button
       type="button"
       className={`theme-toggle sound-toggle${className ? ` ${className}` : ""}`}
       aria-pressed={on}
-      aria-label="Click sound"
-      title={on ? "Click sound on" : "Click sound off"}
+      aria-label={label ? undefined : "Click sound"}
+      title={label ? undefined : on ? "Click sound on" : "Click sound off"}
       onClick={toggle}
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -27,6 +27,7 @@ export function SoundToggle({ className = "" }: { className?: string }) {
           <path d="m17 9 5 6M22 9l-5 6" />
         )}
       </svg>
+      {label && <span className="theme-toggle-label">{on ? "Sound on" : "Sound off"}</span>}
     </button>
   );
 }
