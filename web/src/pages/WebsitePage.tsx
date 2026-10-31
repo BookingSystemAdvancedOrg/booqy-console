@@ -57,7 +57,7 @@ export default function WebsitePage() {
       <Head data={data} reload={reload} />
 
       <div className="toolbar web-toolbar">
-        <div className="chips" role="group" aria-label="Period">
+        <div className="chips chips--plain" role="group" aria-label="Period">
           {PRESETS.map((p) => (
             <button key={p.id} className={`chip${preset === p.id ? " chip--on" : ""}`} aria-pressed={preset === p.id}
                     onClick={() => { if (p.id === "custom") setCustom(range); setPreset(p.id); }}>{p.label}</button>

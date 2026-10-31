@@ -10,7 +10,8 @@
  * one is chosen. The style sits at the end of styles.css.
  */
 
-const GROUPS = [".tabs", ".chips"];
+// `.chips--plain` opts a group out: plain chips that switch with a simple click
+const GROUPS = [".tabs", ".chips:not(.chips--plain)"];
 const ACTIVE = ".tab--on, .chip--on, [aria-pressed='true'], [aria-selected='true']";
 
 function place(bar: HTMLElement) {
