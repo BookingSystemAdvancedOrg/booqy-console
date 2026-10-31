@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { SOUND_KEY } from "./storageRegistry";
 
 /**
- * Press feedback, the same as booqy.se and admin: a warm, classic click (Web
+ * Press feedback, the same as booqy.se and admin: a subtle, traditional click (Web
  * Audio, made on the fly, no files) and a squeeze plus a tan ripple, on
  * pointerdown and on Enter or Space. Never on hover. Sound is on by default
  * and starts on the first press (autoplay rules); Settings switches it
@@ -15,13 +15,13 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a classic click, like a good switch, kept warm: a very short burst of noise
-// ringing at one pitch, with a soft low thump under it. A light tick for links,
-// a fuller click for buttons, a deeper one for the main actions. [pitch Hz, length s, volume]
-const VOICES: Record<"tick" | "press" | "cta", [number, number, number]> = {
-  tick: [3400, 0.028, 0.32],
-  press: [2600, 0.034, 0.42],
-  cta: [1900, 0.04, 0.5],
+// a traditional click, kept subtle: a short, soft snap with a small round
+// tone under it, like a good switch heard from a step away. Brightest for
+// links, a little deeper for buttons and the main actions. [pitch Hz, volume]
+const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
+  tick: [3000, 0.13],
+  press: [2600, 0.17],
+  cta: [2200, 0.21],
 };
 
 function reducedMotion(): boolean {
@@ -83,39 +83,39 @@ function play(kind: keyof typeof VOICES) {
       }, () => {});
       return;
     }
-    const [pitch, len, vol] = VOICES[kind];
-    const t = ctx.currentTime;
-    const soft = ctx.createBiquadFilter();
-    soft.type = "lowpass";
-    soft.frequency.value = 6000;
-    soft.connect(ctx.destination);
-    // the click: noise that dies away fast, ringing at one pitch
-    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+    const [pitch, vol] = VOICES[kind];
+    const t = ctx.currentTime + 0.002;
+    const sr = ctx.sampleRate;
+    const out = ctx.createBiquadFilter();
+    out.type = "lowpass";
+    out.frequency.value = 4500;
+    out.connect(ctx.destination);
+    // the snap: 6 ms of noise, eased in over half a millisecond so it never cracks
+    const buf = ctx.createBuffer(1, Math.ceil(sr * 0.006), sr);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 6);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.min(1, i / (sr * 0.0005)) * Math.pow(1 - i / d.length, 4);
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    const ring = ctx.createBiquadFilter();
-    ring.type = "bandpass";
-    ring.frequency.value = pitch;
-    ring.Q.value = 4;
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.value = pitch;
+    band.Q.value = 1.4;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    src.connect(ring).connect(g).connect(soft);
+    g.gain.value = vol;
+    src.connect(band).connect(g).connect(out);
     src.start(t);
-    src.stop(t + len);
-    // the warmth: a soft low thump under it
+    // the body: a short round tone under the snap, what makes it a button and not static
     const osc = ctx.createOscillator();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(pitch / 8, t);
-    osc.frequency.exponentialRampToValueAtTime(pitch / 14, t + 0.02);
+    osc.frequency.setValueAtTime(pitch * 0.42, t);
+    osc.frequency.exponentialRampToValueAtTime(pitch * 0.36, t + 0.015);
     const og = ctx.createGain();
-    og.gain.setValueAtTime(vol * 0.35, t);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
-    osc.connect(og).connect(soft);
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(vol * 0.6, t + 0.001);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+    osc.connect(og).connect(out);
     osc.start(t);
-    osc.stop(t + 0.025);
+    osc.stop(t + 0.02);
   } catch {
     /* no audio: the visual is enough */
   }
