@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
-import { ErrorNotice, Modal, Notice, Printing, Status, useAction, useLoad } from "./ui";
+import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
+import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -57,7 +58,7 @@ export default function PaymentsView() {
       </div>
 
       <ErrorNotice error={error} />
-      {loading && !data ? <Printing label="Checking payments" /> : data && s && (
+      {loading && !data ? <SkelPage label="Checking payments"><SkelKpis className="kpis--row" /><SkelTable rows={5} cols={8} /></SkelPage> : data && s && (
         <>
           <section className="kpis kpis--row" aria-label={`Payments ${monthLabel(month)}`}>
             <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} sub={`${fmtSek(s.collectedSek)} of ${fmtSek(s.invoicedSek)} ex VAT`} />
@@ -96,7 +97,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
   return (
     <Modal title={result ? "Invoicing done" : "Run invoicing: preview"} onClose={onClose} wide>
       <div className="stack">
-        {preview.loading && !preview.data ? <Printing label="Adding up the periods" /> : shown && (
+        {preview.loading && !preview.data ? <SkelRows n={4} cols={4} /> : shown && (
           <>
             {shown.invoices.length === 0 && shown.errors.length === 0 ? (
               <Notice kind="info">{result ? "Nothing was invoiced." : "Nothing to invoice: every complete period is already invoiced."}</Notice>

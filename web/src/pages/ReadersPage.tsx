@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { DEVICE } from "../components/TerminalModal";
-import { ErrorNotice, Notice, Printing, useLoad } from "../components/ui";
+import { ErrorNotice, Notice, useLoad } from "../components/ui";
 import type { FleetReader } from "../types";
 import { RefreshButton } from "../components/save";
+import { SkelPage, SkelTable } from "../components/Skeleton";
 
 const FILTERS = ["all", "online", "offline", "unassigned"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -84,7 +85,7 @@ export default function ReadersPage() {
         </Notice>
       ))}
 
-      {loading && !data ? <Printing label="Asking Stripe" /> : (
+      {loading && !data ? <SkelPage label="Asking Stripe"><SkelTable rows={4} cols={5} /></SkelPage> : (
         <>
           <div className="table-wrap">
             <table className="table table--stack">

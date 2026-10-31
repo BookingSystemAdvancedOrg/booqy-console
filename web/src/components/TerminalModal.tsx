@@ -1,9 +1,10 @@
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
-import { ErrorNotice, Field, Modal, Notice, Printing, useAction, useLoad } from "./ui";
+import { ErrorNotice, Field, Modal, Notice, useAction, useLoad } from "./ui";
 import type { Location, Tenant, TerminalAddress, TerminalReader } from "../types";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { CheckMark, SaveButton, useDirty, useFlash } from "./save";
+import { SkelRows } from "./Skeleton";
 
 /** Card terminals (Stripe Terminal) for one restaurant location: enable, pair
  *  readers, remove readers. Everything lives on the restaurant's own Stripe
@@ -21,7 +22,7 @@ export default function TerminalModal({ tenant, location, goPlan, onClose }: {
     <Modal title={`Card terminals - ${location.name}`} onClose={onClose}>
       <div className="stack">
         <ErrorNotice error={error} />
-        {loading && !data && <Printing inline />}
+        {loading && !data && <SkelRows n={3} cols={3} />}
 
         {data && !data.inPlan && (
           <Notice kind="warn">

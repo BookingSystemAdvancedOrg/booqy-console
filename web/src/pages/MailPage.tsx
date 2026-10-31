@@ -1,11 +1,12 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Printing, Status, errorMessage, fmtDate, useAction, useLoad,
+  Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
+import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -44,7 +45,7 @@ function Preview({ html, title }: { html: string | null; title: string }) {
       <div className="card__head"><h2>{title}</h2></div>
       <div className="card__body">
         <p className="mail-preview__hint">As the owner sees it</p>
-        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <Printing inline label="Rendering" />}
+        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <SkelLines n={8} />}
       </div>
     </div>
   );
@@ -114,7 +115,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
             <dt>From</dt><dd>{template.data.senderName} &lt;{template.data.from}&gt;</dd>
             <dt>Reply-to</dt><dd>{template.data.replyTo}</dd>
             <dt>To</dt>
-            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <Printing inline label="Counting" />}</dd>
+            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <SkelBlock w={220} h={14} />}</dd>
           </dl>
         )}
         <div className="stack">
@@ -181,7 +182,7 @@ function Sent() {
         <div className="row"><RefreshButton reload={reload} /></div>
       </div>
       <ErrorNotice error={error} />
-      {loading && !data ? <Printing /> : (
+      {loading && !data ? <SkelPage label="Loading sent mail"><SkelTable rows={5} cols={4} /></SkelPage> : (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Sent</th><th>Subject</th><th>Status</th><th>Recipients</th><th>Delivered</th><th>By</th></tr></thead>
@@ -212,7 +213,7 @@ function NewsletterModal({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <Modal title={n?.subject ?? "Newsletter"} onClose={onClose}>
       <ErrorNotice error={error} />
-      {loading || !data ? <Printing inline /> : (
+      {loading || !data ? <SkelLines n={6} /> : (
         <div className="stack">
           <dl className="mail-meta">
             <dt>Status</dt><dd><Status value={n!.status} /></dd>
@@ -271,7 +272,7 @@ function shrinkImage(file: File): Promise<string> {
 function TemplateEditor() {
   const { data, error, loading, setData } = useLoad(() => api.mailTemplate());
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !data) return <Printing />;
+  if (loading || !data) return <SkelPage label="Loading the template"><SkelCard lines={8} /></SkelPage>;
   return <TemplateForm template={data} onSaved={setData} />;
 }
 

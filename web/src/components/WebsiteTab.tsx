@@ -1,8 +1,9 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
-import { Card, ErrorNotice, Field, Notice, Printing, Status, fmtDate, useAction, useLoad } from "./ui";
+import { Card, ErrorNotice, Field, Notice, Status, fmtDate, useAction, useLoad } from "./ui";
 import { CheckMark, SaveButton, useDirty } from "./save";
+import { SkelCard, SkelPage } from "./Skeleton";
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
 
@@ -22,7 +23,12 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     return () => window.clearInterval(id);
   }, [creating, reload]);
 
-  if (loading && !data) return <Printing />;
+  if (loading && !data) return (
+    <SkelPage label="Loading the website">
+      <SkelCard lines={5} />
+      <SkelCard rows={3} cols={3} />
+    </SkelPage>
+  );
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   if (!data.enabled) {
     return (

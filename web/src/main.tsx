@@ -13,13 +13,14 @@ import WebsitePage from "./pages/WebsitePage";
 import ReadersPage from "./pages/ReadersPage";
 import SettingsPage from "./pages/SettingsPage";
 import { Logo } from "./components/Logo";
-import { Modal, Printing } from "./components/ui";
+import { Modal } from "./components/ui";
 import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import "./styles.css";
+import { SkelShell } from "./components/Skeleton";
 
 installPress();
 installGlide();
@@ -47,7 +48,7 @@ function Shell() {
   // The emailed reset link works signed in or out (LoginPage signs out
   // once the new password is set).
   if (location.pathname === RESET_PATH) return <LoginPage onSignedIn={refresh} />;
-  if (user === undefined) return <div className="boot"><Printing label="Signing in" /></div>;
+  if (user === undefined) return <SkelShell label="Signing in" />;
   if (!user) return <LoginPage onSignedIn={refresh} />;
 
   return (

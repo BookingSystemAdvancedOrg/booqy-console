@@ -1451,3 +1451,40 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .chips--plain .chip--on { background: #1a120e; }
   :root[data-theme="dark"] .chips--plain .chip--on { background: #f6f1ea; }
 }
+
+/* Skeletons (src/components/Skeleton.tsx): blurry glass blocks in the real
+   cards while a page loads, the same look as Booqy Admin. */
+.skel { display: flex; flex-direction: column; gap: 22px; }
+.skel > .card, .skel > .table-wrap, .skel > .kpis, .skel .charts > .card { margin-bottom: 0; }
+.skel-block {
+  display: block; flex: none; max-width: 100%; border: 0; border-radius: 10px;
+  background: color-mix(in srgb, var(--print) 10%, transparent); filter: blur(4px);
+  animation: skel-breathe 1.8s ease-in-out infinite;
+}
+:root[data-theme="dark"] .skel-block { background: rgb(246 241 234 / 0.12); }
+.skel-round { border-radius: 999px; }
+.skel-card { position: relative; overflow: hidden; }
+.skel-sheen {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.5) 50%, transparent 70%);
+  translate: -100% 0; animation: skel-sheen 2.6s ease-in-out infinite;
+}
+:root[data-theme="dark"] .skel-sheen { background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.06) 50%, transparent 70%); }
+.kpi.skel-card { gap: 12px; min-height: 140px; }
+.skel-rows { display: flex; flex-direction: column; }
+.skel-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; border-top: 1px dashed var(--paper-line); }
+.skel-row:first-child { border-top: 0; }
+.skel-lines { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.skel-chart { display: flex; align-items: flex-end; gap: 6px; padding: 8px 0 4px; }
+.skel-bar { flex: 1 1 0; min-width: 0; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, #a88462 34%, transparent); }
+.skel-topbar .topbar__nav { gap: 16px; }
+.skel-topbar .skel-nav-head { margin-top: 8px; }
+@media (max-width: 1023px) {
+  .skel-topbar .topbar__nav { display: none; }
+}
+@keyframes skel-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes skel-sheen { 0% { translate: -100% 0; } 60%, 100% { translate: 100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .skel-block { animation: none; opacity: 0.8; }
+  .skel-sheen { display: none; }
+}

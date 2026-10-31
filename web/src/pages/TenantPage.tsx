@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad, Printing } from "../components/ui";
+  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
@@ -13,6 +13,7 @@ import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
 import { setupFailure } from "./NewTenantPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
+import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -42,7 +43,17 @@ export default function TenantPage() {
     return () => window.clearInterval(id);
   }, [busy, reload]);
 
-  if (loading && !data) return <Printing />;
+  if (loading && !data) return (
+    <SkelPage label="Loading the customer">
+      <SkelBlock w={160} h={14} />
+      <div className="page-head"><SkelBlock w={300} h={34} /></div>
+      <SkelBlock w={520} h={48} round />
+      <div className="cols">
+        <SkelCard lines={6} />
+        <SkelCard rows={4} cols={2} />
+      </div>
+    </SkelPage>
+  );
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   const t = data.tenant;
 
