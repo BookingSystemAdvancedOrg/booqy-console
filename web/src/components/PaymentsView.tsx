@@ -6,6 +6,7 @@ import type { InvoicingRun, PaymentRow } from "../types";
 import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
+import { useRowOpen } from "./rowLink";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -146,12 +147,13 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
 
 function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   const remind = useAction();
+  const openRow = useRowOpen();
   const overdue = r.status === "open" && r.daysLate > 0;
   const fees = (Number(r.lateFeeSek) || 0) + (Number(r.interestSek) || 0);
   return (
-    <tr className={overdue ? "overdue" : undefined}>
+    <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
       <td>
-        <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong">{r.name}</Link>
+        <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong row-link__name">{r.name}</Link>
         <div className="muted small mono">{r.orgNumber ?? r.slug}{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
       </td>
       <td className="mono small">

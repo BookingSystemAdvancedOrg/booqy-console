@@ -4,6 +4,7 @@ import { ErrorNotice, Notice, fmtDate, useAction, useLoad } from "../components/
 import type { OutboxMessage, OutboxSummary } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
+import { rowAction } from "../components/rowLink";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -126,7 +127,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet. Make a booking or an order in dev.</td></tr>}
                 {rows.map((r) => (
-                  <tr key={r.id} className={`clickable${selected === r.id ? " selected" : ""}`} onClick={() => setSelected(r.id)}>
+                  <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
                     <td className="nowrap">{fmtDate(r.at)}</td>
                     <td>{r.channel === "sms" ? "SMS" : "Email"}</td>
                     <td>{r.to}</td>

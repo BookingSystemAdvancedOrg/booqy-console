@@ -1599,6 +1599,9 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .table tbody tr.row-link:hover .row-link__name { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 0.2em; }
   :root[data-theme="dark"] .table tbody tr.row-link:hover td { background: rgb(213 196 174 / 0.1); }
 }
-.table tbody tr.row-link:has(.row-link__name:focus-visible) td { background: rgb(168 132 98 / 0.12); }
+.table tbody tr.row-link:has(.row-link__name:focus-visible) td, .table tbody tr.row-link:focus-visible td { background: rgb(168 132 98 / 0.12); }
+.table tbody tr.row-link:focus-visible { outline: 2px solid #1a120e; outline-offset: -2px; }
+:root[data-theme="dark"] .table tbody tr.row-link:focus-visible { outline-color: #f6f1ea; }
+.table tbody tr.row-link.selected td { background: rgb(168 132 98 / 0.18); }
 .row-link__name { text-decoration: none; }
 .table tbody tr.row-link, .table tbody tr.row-link td { cursor: default; }

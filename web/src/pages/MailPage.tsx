@@ -7,6 +7,7 @@ import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient }
 import OutboxPage from "./OutboxPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
 import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
+import { rowAction } from "../components/rowLink";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -189,9 +190,9 @@ function Sent() {
             <tbody>
               {(data ?? []).length === 0 && <tr><td colSpan={6} className="empty">No news sent yet. Write one under Compose.</td></tr>}
               {(data ?? []).map((n) => (
-                <tr key={n.newsletterId} className="clickable" onClick={() => setOpen(n)}>
+                <tr key={n.newsletterId} className="row-link" {...rowAction(() => setOpen(n))}>
                   <td className="small nowrap">{fmtDate(n.createdAt)}</td>
-                  <td className="strong">{n.subject}</td>
+                  <td className="strong row-link__name">{n.subject}</td>
                   <td><Status value={n.status} /></td>
                   <td className="mono">{n.recipientCount}</td>
                   <td className="mono">{n.sentCount} sent{n.failedCount ? ` · ${n.failedCount} failed` : ""}</td>

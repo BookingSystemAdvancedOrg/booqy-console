@@ -12,6 +12,7 @@ import type { Trend, TrendTone } from "../trend";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 import { RefreshButton, SaveButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
+import { useRowOpen } from "../components/rowLink";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -418,10 +419,11 @@ function Th({ k, sort, setSort, children }: {
 }
 
 function TenantRow({ t }: { t: FinanceTenantRow }) {
+  const openRow = useRowOpen();
   return (
-    <tr>
+    <tr className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}?tab=billing`)}>
       <td>
-        <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong">{t.name}</Link>
+        <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
         <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
       <td><span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span></td>
