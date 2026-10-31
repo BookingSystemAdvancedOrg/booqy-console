@@ -63,11 +63,15 @@ function Shell() {
           <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
         </button>
         <nav className="topbar__nav" id="topbar-menu">
+          {/* The headings only show in the side menu on wide screens. */}
+          <p className="topbar__heading" aria-hidden="true">Restaurants</p>
           <NavLink to="/" end>Customers</NavLink>
           <NavLink to="/tenants/new">New customer</NavLink>
           <NavLink to="/readers">Card readers</NavLink>
+          <p className="topbar__heading" aria-hidden="true">Platform</p>
           <NavLink to="/operators">Operators</NavLink>
           <NavLink to="/mail">Mail</NavLink>
+          <p className="topbar__heading" aria-hidden="true">Numbers</p>
           <NavLink to="/finance">Finance</NavLink>
           <NavLink to="/website">Website</NavLink>
         </nav>
