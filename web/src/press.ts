@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { SOUND_KEY, SOUND_VOLUME_KEY } from "./storageRegistry";
 
 /**
- * Press feedback, the same as booqy.se and admin: a modern, quiet Windows-style click (Web
+ * Press feedback, the same as booqy.se and admin: a soft, round "pop" like a water drop (Web
  * Audio, made on the fly, no files) and a squeeze plus a tan ripple, on
  * pointerdown and on Enter or Space. Never on hover. Sound is on by default
  * and starts on the first press (autoplay rules); Settings switches it
@@ -15,12 +15,12 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a modern, quiet click like Windows: a short, clean "tk" with a little body.
+// a soft, round "pop" that drops a little in pitch, like a water drop.
 // Brightest for links, a little deeper for buttons and the main actions. [pitch Hz, peak]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [2400, 0.425],
-  press: [2150, 0.5],
-  cta: [1900, 0.56],
+  tick: [900, 0.425],
+  press: [780, 0.5],
+  cta: [660, 0.56],
 };
 
 function reducedMotion(): boolean {
@@ -111,23 +111,23 @@ export function useSoundVolume(): number {
 }
 
 /**
- * The click as ready-made samples: a short noisy edge, a clean ping and a
- * little body, like the Windows click. Computed once per voice in plain
+ * The click as ready-made samples: a round note that drops a little (a
+ * soft pop). Computed once per voice in plain
  * JavaScript and then only played back. No filters or oscillators at click
  * time, so it sounds the same and works in Safari too.
  */
 function clickSamples(sr: number, pitch: number, peak: number): Float32Array {
-  const n = Math.ceil(sr * 0.045);
+  const n = Math.ceil(sr * 0.09);
   const out = new Float32Array(n);
-  let seed = 7;
+  let phase = 0;
   let max = 0;
   for (let i = 0; i < n; i++) {
     const t = i / sr;
-    const ping = Math.sin(2 * Math.PI * pitch * t) * Math.exp(-t / 0.007);
-    const body = 0.5 * Math.sin(2 * Math.PI * pitch * 0.45 * t) * Math.exp(-t / 0.005);
-    seed = (seed * 16807) % 2147483647;
-    const edge = 0.35 * (seed / 1073741823.5 - 1) * Math.exp(-t / 0.0007);
-    out[i] = Math.min(1, t / 0.0006) * (ping + body + edge);
+    // a round note that drops a little, like a water drop: no sharp edge
+    const f = pitch * (1 + 0.9 * Math.exp(-t / 0.008));
+    phase += (2 * Math.PI * f) / sr;
+    const tone = Math.sin(phase) + 0.15 * Math.sin(2 * phase);
+    out[i] = Math.min(1, t / 0.0015) * Math.exp(-t / 0.022) * tone;
     max = Math.max(max, Math.abs(out[i]));
   }
   for (let i = 0; i < n; i++) out[i] *= peak / max;
@@ -233,13 +233,18 @@ function visual(el: Element, x: number | null, y: number | null) {
   const cls = el.matches(BLOCK) ? "is-pressed" : "is-pressed-text";
   el.classList.add(cls);
   window.setTimeout(() => el.classList.remove(cls), 160);
-  if (reducedMotion() || x == null || y == null) return;
+  if (x != null && y != null) signal(x, y);
+}
+
+// the signal: a dot and two rings where you press, anywhere on the page
+function signal(x: number, y: number) {
+  if (reducedMotion()) return;
   const ripple = document.createElement("span");
   ripple.className = "press-ripple";
   ripple.style.left = `${x}px`;
   ripple.style.top = `${y}px`;
   document.body.appendChild(ripple);
-  window.setTimeout(() => ripple.remove(), 260);
+  window.setTimeout(() => ripple.remove(), 900);
 }
 
 let installed = false;
@@ -277,7 +282,10 @@ export function installPress() {
     (e) => {
       if (e.button !== 0) return;
       const el = (e.target as Element | null)?.closest?.(TARGETS);
-      if (!el || (el as HTMLButtonElement).disabled) return;
+      if (!el || (el as HTMLButtonElement).disabled) {
+        signal(e.clientX, e.clientY);
+        return;
+      }
       play(kindOf(el));
       visual(el, e.clientX, e.clientY);
     },
