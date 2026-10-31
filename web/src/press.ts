@@ -132,6 +132,51 @@ function clickSamples(sr: number, pitch: number, peak: number): Float32Array {
   return out;
 }
 
+let unlocked = false;
+
+// Safari can leave the audio engine stuck: after sleep, a change of output
+// (AirPods, a call, another app) or a long time in the background it often says
+// "running" while its clock stands still and nothing is heard, or it never wakes.
+// Then the next press swaps in a new one, instead of the click staying silent
+// until the page is reloaded.
+let seen = { time: -1, at: 0 };
+let wokeAt = 0;
+
+function stuck(c: AudioContext): boolean {
+  if (c.state === "closed") return true;
+  const now = performance.now();
+  if (c.state === "running") {
+    wokeAt = 0;
+    if (c.currentTime !== seen.time) {
+      seen = { time: c.currentTime, at: now };
+      return false;
+    }
+    return now - seen.at > 250;
+  }
+  return wokeAt > 0 && now - wokeAt > 1000;
+}
+
+function audio(): AudioContext | null {
+  if (ctx && stuck(ctx)) {
+    ctx.close().catch(() => {});
+    ctx = null;
+    unlocked = false;
+  }
+  if (!ctx) {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    seen = { time: -1, at: 0 };
+    wokeAt = 0;
+  }
+  return ctx;
+}
+
+function wake(c: AudioContext): Promise<void> {
+  if (!wokeAt) wokeAt = performance.now();
+  return c.resume();
+}
+
 const buffers = new Map<string, AudioBuffer>();
 
 /** The voice as an audio buffer, built once per audio context and sample rate. */
@@ -151,20 +196,15 @@ function clickBuffer(c: AudioContext, kind: keyof typeof VOICES): AudioBuffer {
 function play(kind: keyof typeof VOICES) {
   if (!on || volume <= 0) return;
   try {
-    if (!ctx) {
-      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AC) return;
-      ctx = new AC();
-    }
+    const c = audio();
+    if (!c) return;
     // Safari starts the audio asleep: wake it, then play once it is running
-    if (ctx.state !== "running") {
-      const c = ctx;
-      c.resume().then(() => {
+    if (c.state !== "running") {
+      wake(c).then(() => {
         if (c.state === "running") play(kind);
       }, () => {});
       return;
     }
-    const c = ctx;
     const src = c.createBufferSource();
     src.buffer = clickBuffer(c, kind);
     const gain = c.createGain();
@@ -197,7 +237,6 @@ function visual(el: Element, x: number | null, y: number | null) {
 }
 
 let installed = false;
-let unlocked = false;
 
 /** Listens once on the document; every press anywhere in the console gets the feedback. */
 export function installPress() {
@@ -208,16 +247,13 @@ export function installPress() {
   const unlock = () => {
     if (!on) return;
     try {
-      if (!ctx) {
-        const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AC) return;
-        ctx = new AC();
-      }
-      if (ctx.state !== "running") void ctx.resume();
+      const c = audio();
+      if (!c) return;
+      if (c.state !== "running") void wake(c);
       if (!unlocked) {
-        const silent = ctx.createBufferSource();
-        silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-        silent.connect(ctx.destination);
+        const silent = c.createBufferSource();
+        silent.buffer = c.createBuffer(1, 1, c.sampleRate);
+        silent.connect(c.destination);
         silent.start(0);
         unlocked = true;
       }
@@ -226,6 +262,10 @@ export function installPress() {
     }
   };
   for (const type of ["pointerup", "click", "touchend", "keydown"]) document.addEventListener(type, unlock, { capture: true, passive: true });
+  // back on the tab: read the audio clock, so the next press can tell if it stands still
+  document.addEventListener("visibilitychange", () => {
+    if (ctx && document.visibilityState === "visible") stuck(ctx);
+  });
   document.addEventListener(
     "pointerdown",
     (e) => {
