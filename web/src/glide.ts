@@ -25,12 +25,14 @@ function place(bar: HTMLElement) {
     delete bar.dataset.glideOn;
     return;
   }
-  const box = bar.getBoundingClientRect();
-  const r = on.getBoundingClientRect();
-  bar.style.setProperty("--glide-x", `${r.left - box.left - bar.clientLeft + bar.scrollLeft}px`);
-  bar.style.setProperty("--glide-y", `${r.top - box.top - bar.clientTop + bar.scrollTop}px`);
-  bar.style.setProperty("--glide-w", `${r.width}px`);
-  bar.style.setProperty("--glide-h", `${r.height}px`);
+  // layout sizes, not getBoundingClientRect: the press feedback shrinks the
+  // button for a moment (scale), and the pill would first aim at the smaller
+  // button and then jump. offsetLeft/-Top count from the bar's edge and move
+  // with it when it scrolls, just like the pill.
+  bar.style.setProperty("--glide-x", `${on.offsetLeft}px`);
+  bar.style.setProperty("--glide-y", `${on.offsetTop}px`);
+  bar.style.setProperty("--glide-w", `${on.offsetWidth}px`);
+  bar.style.setProperty("--glide-h", `${on.offsetHeight}px`);
   if (bar.dataset.glideOn === undefined) {
     // the first placement lands without sliding in from the edge
     bar.dataset.glideOn = "";
