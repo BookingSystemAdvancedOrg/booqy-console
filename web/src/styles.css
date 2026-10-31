@@ -1324,17 +1324,50 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .topbar__heading { display: none; }
 }
 
-/* the chosen tab glides (src/tabGlide.ts): one lacquered pill under the bar
-   slides and stretches to the chosen tab, like the tabs on booqy.se */
-.tabs { position: relative; isolation: isolate; }
-.tabs.is-glide::before {
-  content: ""; position: absolute; z-index: -1; top: 5px; bottom: 5px; left: 0;
-  width: var(--glide-w, 0); translate: var(--glide-x, 0) 0;
-  border-radius: 999px; background: var(--lacquer); box-shadow: var(--lacquer-rim);
-  pointer-events: none;
+/* pick-one controls glide (src/glide.ts), like the tabs on booqy.se: a sand
+   track, dark text, and one espresso pill that slides and stretches to the
+   chosen option. Dark mode: a dark brown track and a light pill. The pages'
+   own chosen-state fills are switched off here (hence !important), or two
+   pills would show while it glides. */
+[data-glide] { position: relative; isolation: isolate; }
+[data-glide="track"] {
+  display: flex !important; flex-wrap: nowrap !important; gap: 4px !important; width: fit-content; max-width: 100%;
+  margin-top: 0; padding: 5px !important; overflow-x: auto; scrollbar-width: none;
+  border: 0 !important; border-radius: 999px !important; background: #a88462 !important; box-shadow: none !important;
 }
-.tabs.is-glide.is-placed::before { transition: translate 440ms cubic-bezier(0.34, 1.22, 0.64, 1), width 440ms cubic-bezier(0.34, 1.22, 0.64, 1); }
-.tabs.is-glide .tab--on, .tabs.is-glide .tab--on:hover { background: transparent; box-shadow: none; }
-.tabs .tab--on, .tabs .tab--on:hover { color: #ffffff; }
-:root[data-theme="dark"] .tabs .tab--on, :root[data-theme="dark"] .tabs .tab--on:hover { color: #1a120e; }
-@media (prefers-reduced-motion: reduce) { .tabs.is-glide.is-placed::before { transition: none; } }
+[data-glide="track"]::-webkit-scrollbar { display: none; }
+[data-glide] > :is(button, a) {
+  position: relative; flex: none; min-height: 38px; margin: 0; padding: 0 18px;
+  border-color: transparent !important; border-radius: 999px !important; background: transparent !important; box-shadow: none !important;
+  translate: none !important; color: #1a120e !important; font: 600 14px/1 var(--sans); white-space: nowrap;
+  transition: color 300ms var(--ease), background-color 200ms var(--ease);
+}
+[data-glide] > :is(button, a):is(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"]) { color: #d5c4ae !important; }
+@media (hover: hover) {
+  [data-glide] > :is(button, a):not(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"], :disabled):hover { background: rgb(26 18 14 / 0.16) !important; }
+  :root[data-theme="dark"] [data-glide] > :is(button, a):not(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"], :disabled):hover { background: rgb(213 196 174 / 0.14) !important; }
+}
+[data-glide]::before {
+  content: ""; position: absolute; z-index: -1; top: 0; left: 0;
+  width: var(--glide-w, 0); height: var(--glide-h, 0); translate: var(--glide-x, 0) var(--glide-y, 0);
+  border-radius: 999px; background: #1a120e; box-shadow: 0 10px 24px -14px rgb(26 18 14 / 0.7);
+  opacity: 0; pointer-events: none;
+}
+[data-glide][data-glide-on]::before { opacity: 1; }
+[data-glide][data-glide-placed]::before {
+  transition: translate 440ms cubic-bezier(0.34, 1.22, 0.64, 1), width 440ms cubic-bezier(0.34, 1.22, 0.64, 1),
+    height 440ms cubic-bezier(0.34, 1.22, 0.64, 1), opacity 160ms var(--ease);
+}
+:root[data-theme="dark"] [data-glide="track"] { background: #3a2418 !important; }
+:root[data-theme="dark"] [data-glide] > :is(button, a) { color: #d5c4ae !important; }
+:root[data-theme="dark"] [data-glide] > :is(button, a):is(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"]) { color: #1a120e !important; }
+:root[data-theme="dark"] [data-glide]::before { background: #f6f1ea; }
+@media (prefers-reduced-motion: reduce) {
+  [data-glide][data-glide-placed]::before { transition: translate 160ms linear, width 160ms linear, height 160ms linear; }
+}
+/* phones: the bar spans the width and the options share it, like booqy.se;
+   a group that still doesn't fit scrolls sideways */
+@media (max-width: 560px) {
+  [data-glide="track"] { width: 100%; }
+  [data-glide] > :is(button, a) { flex: 1 0 auto; padding: 0 10px; }
+}
