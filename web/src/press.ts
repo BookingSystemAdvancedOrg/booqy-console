@@ -19,9 +19,9 @@ const CTA = ".btn--primary, button[type='submit']";
 // tone under it, like a good switch heard from a step away. Brightest for
 // links, a little deeper for buttons and the main actions. [pitch Hz, volume]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [3000, 0.13],
-  press: [2600, 0.17],
-  cta: [2200, 0.21],
+  tick: [3000, 0.4],
+  press: [2600, 0.48],
+  cta: [2200, 0.5],
 };
 
 function reducedMotion(): boolean {
@@ -88,34 +88,34 @@ function play(kind: keyof typeof VOICES) {
     const sr = ctx.sampleRate;
     const out = ctx.createBiquadFilter();
     out.type = "lowpass";
-    out.frequency.value = 4500;
+    out.frequency.value = 5000;
     out.connect(ctx.destination);
     // the snap: 6 ms of noise, eased in over half a millisecond so it never cracks
-    const buf = ctx.createBuffer(1, Math.ceil(sr * 0.006), sr);
+    const buf = ctx.createBuffer(1, Math.ceil(sr * 0.008), sr);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.min(1, i / (sr * 0.0005)) * Math.pow(1 - i / d.length, 4);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.min(1, i / (sr * 0.0005)) * Math.pow(1 - i / d.length, 3);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const band = ctx.createBiquadFilter();
     band.type = "bandpass";
     band.frequency.value = pitch;
-    band.Q.value = 1.4;
+    band.Q.value = 1.2;
     const g = ctx.createGain();
-    g.gain.value = vol;
+    g.gain.value = vol * 2.4;
     src.connect(band).connect(g).connect(out);
     src.start(t);
     // the body: a short round tone under the snap, what makes it a button and not static
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.setValueAtTime(pitch * 0.42, t);
-    osc.frequency.exponentialRampToValueAtTime(pitch * 0.36, t + 0.015);
+    osc.frequency.exponentialRampToValueAtTime(pitch * 0.34, t + 0.025);
     const og = ctx.createGain();
     og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(vol * 0.6, t + 0.001);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+    og.gain.linearRampToValueAtTime(vol, t + 0.0015);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.032);
     osc.connect(og).connect(out);
     osc.start(t);
-    osc.stop(t + 0.02);
+    osc.stop(t + 0.035);
   } catch {
     /* no audio: the visual is enough */
   }
