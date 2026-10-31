@@ -37,8 +37,10 @@ function storedSound(): boolean {
 
 let on = storedSound();
 
-/** Volume 0-100. 70 is the standard level; 100 is a little louder, 0 is silent. */
-export const DEFAULT_VOLUME = 70;
+/** Volume 0-100. 40 is the standard level, 0 is silent. */
+export const DEFAULT_VOLUME = 40;
+/** The gain at 100 %: as loud as 50 % used to be (full strength was too loud). */
+const MAX_GAIN = 5 / 7;
 
 function storedVolume(): number {
   try {
@@ -134,40 +136,35 @@ function clickSamples(sr: number, pitch: number, peak: number): Float32Array {
 
 let unlocked = false;
 
-// Safari can leave the audio engine stuck: after sleep, a change of output
-// (AirPods, a call, another app) or a long time in the background it often says
-// "running" while its clock stands still and nothing is heard, or it never wakes.
-// Then the next press swaps in a new one, instead of the click staying silent
-// until the page is reloaded.
-let seen = { time: -1, at: 0 };
+// Safari can leave the audio engine silent: after sleep, a change of output
+// (AirPods, a call, another app) or a while in the background, often while it
+// says all is well ("running"). So a press after 30 seconds of quiet gets a new
+// engine, tied to the output in use now; so does one after coming back to the
+// tab, when Safari says the audio was interrupted, or when it has not woken a
+// second after being woken.
+let stale = false;
 let wokeAt = 0;
-
-function stuck(c: AudioContext): boolean {
-  if (c.state === "closed") return true;
-  const now = performance.now();
-  if (c.state === "running") {
-    wokeAt = 0;
-    if (c.currentTime !== seen.time) {
-      seen = { time: c.currentTime, at: now };
-      return false;
-    }
-    return now - seen.at > 250;
-  }
-  return wokeAt > 0 && now - wokeAt > 1000;
-}
+let usedAt = 0;
+const IDLE_MS = 30_000;
 
 function audio(): AudioContext | null {
-  if (ctx && stuck(ctx)) {
+  if (ctx && (stale || Date.now() - usedAt > IDLE_MS || ctx.state === "closed" || (ctx.state !== "running" && wokeAt > 0 && performance.now() - wokeAt > 1000))) {
     ctx.close().catch(() => {});
     ctx = null;
     unlocked = false;
   }
+  stale = false;
   if (!ctx) {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return null;
-    ctx = new AC();
-    seen = { time: -1, at: 0 };
+    const c = new AC();
+    c.onstatechange = () => {
+      if (c.state === "running") wokeAt = 0;
+      else if ((c.state as string) === "interrupted") stale = true;
+    };
+    ctx = c;
     wokeAt = 0;
+    usedAt = Date.now();
   }
   return ctx;
 }
@@ -201,17 +198,26 @@ function play(kind: keyof typeof VOICES) {
     // Safari starts the audio asleep: wake it, then play once it is running
     if (c.state !== "running") {
       wake(c).then(() => {
-        if (c.state === "running") play(kind);
+        if (c.state === "running") sound(c, kind);
       }, () => {});
       return;
     }
+    sound(c, kind);
+  } catch {
+    /* no sound */
+  }
+}
+
+function sound(c: AudioContext, kind: keyof typeof VOICES) {
+  try {
     const src = c.createBufferSource();
     src.buffer = clickBuffer(c, kind);
     const gain = c.createGain();
-    gain.gain.value = volume / DEFAULT_VOLUME;
+    gain.gain.value = (volume / 100) * MAX_GAIN;
     src.connect(gain);
     gain.connect(c.destination);
     src.start(0);
+    usedAt = Date.now();
   } catch {
     /* no audio: the visual is enough */
   }
@@ -262,9 +268,9 @@ export function installPress() {
     }
   };
   for (const type of ["pointerup", "click", "touchend", "keydown"]) document.addEventListener(type, unlock, { capture: true, passive: true });
-  // back on the tab: read the audio clock, so the next press can tell if it stands still
+  // back on the tab: the next press gets a fresh audio engine
   document.addEventListener("visibilitychange", () => {
-    if (ctx && document.visibilityState === "visible") stuck(ctx);
+    if (ctx && document.visibilityState === "visible") stale = true;
   });
   document.addEventListener(
     "pointerdown",

@@ -36,7 +36,7 @@ export default function SettingsPage({ email }: { email?: string }) {
           <div className="setting-row">
             <div>
               <label className="strong" htmlFor="sound-volume">Volume</label>
-              <p className="muted small">How loud the click is. 70 % is the standard, 0 % is silent.</p>
+              <p className="muted small">How loud the click is. 40 % is the standard, 0 % is silent.</p>
             </div>
             <SoundVolume id="sound-volume" />
           </div>
