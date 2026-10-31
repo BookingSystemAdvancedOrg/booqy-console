@@ -1590,3 +1590,15 @@ html.is-busy, html.is-busy * { cursor: progress; }
     width: auto;
   }
 }
+
+/* Whole-row links (the Customers list): the row lights up on hover and its
+   name gets an underline, so the whole row reads as one thing to press. */
+.table tbody tr.row-link td { transition: background-color 160ms var(--ease); }
+@media (hover: hover) and (pointer: fine) {
+  .table tbody tr.row-link:hover td { background: rgb(168 132 98 / 0.12); }
+  .table tbody tr.row-link:hover .row-link__name { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 0.2em; }
+  :root[data-theme="dark"] .table tbody tr.row-link:hover td { background: rgb(213 196 174 / 0.1); }
+}
+.table tbody tr.row-link:has(.row-link__name:focus-visible) td { background: rgb(168 132 98 / 0.12); }
+.row-link__name { text-decoration: none; }
+.table tbody tr.row-link, .table tbody tr.row-link td { cursor: default; }

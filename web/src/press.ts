@@ -11,7 +11,7 @@ import { SOUND_KEY, SOUND_VOLUME_KEY } from "./storageRegistry";
  */
 
 const TARGETS =
-  "a[href], button, summary, [role='tab'], [role='button'], label[for], select, input[type='checkbox'], input[type='radio'], .choice, .plan, .chip, .logo-option";
+  "a[href], button, summary, [role='tab'], [role='button'], label[for], select, input[type='checkbox'], input[type='radio'], .choice, .plan, .chip, .logo-option, tr.row-link";
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 

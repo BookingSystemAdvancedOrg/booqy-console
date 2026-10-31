@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import type { MouseEvent } from "react";
 import { api } from "../api";
 import { ErrorNotice, Status, fmtDate, useLoad } from "../components/ui";
 import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } from "../finance";
@@ -11,6 +12,16 @@ const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspen
 
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());
+  const navigate = useNavigate();
+  // The whole row opens the customer. The name stays a real link (keyboard,
+  // screen readers); clicks on the row's own links and text selection are left alone.
+  const openRow = (e: MouseEvent, tenantId: string) => {
+    if ((e.target as HTMLElement).closest("a, button, input, select, label")) return;
+    if (window.getSelection()?.toString()) return;
+    const url = `/tenants/${tenantId}`;
+    if (e.metaKey || e.ctrlKey) window.open(url, "_blank", "noopener");
+    else navigate(url);
+  };
   const [q, setQ] = useState("");
   // Active first: offboarded and other inactive customers are one click away.
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("active");
@@ -77,9 +88,9 @@ export default function TenantsPage() {
             </thead>
             <tbody>
               {rows.map((t) => (
-                <tr key={t.tenantId}>
+                <tr key={t.tenantId} className="row-link" onClick={(e) => openRow(e, t.tenantId)}>
                   <td>
-                    <Link to={`/tenants/${t.tenantId}`} className="strong">{t.name}</Link>
+                    <Link to={`/tenants/${t.tenantId}`} className="strong row-link__name">{t.name}</Link>
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
                   <td><Status value={t.status} /></td>
