@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { SOUND_KEY } from "./storageRegistry";
 
 /**
- * Press feedback, the same as booqy.se and admin: a subtle, traditional click (Web
+ * Press feedback, the same as booqy.se and admin: a deep, soft clock tick (Web
  * Audio, made on the fly, no files) and a squeeze plus a tan ripple, on
  * pointerdown and on Enter or Space. Never on hover. Sound is on by default
  * and starts on the first press (autoplay rules); Settings switches it
@@ -15,13 +15,13 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a traditional mechanical switch: a firm click as it goes down and a lighter
-// tick as it springs back. Brightest for links, a little deeper and fuller for
-// buttons and the main actions. [pitch Hz, volume]
+// a deep, soft tick like a wooden clock: a short strike and a round tone
+// that rings out. Brightest for links, deeper for buttons and deepest for
+// the main actions. [pitch Hz, volume]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [4200, 0.34],
-  press: [3600, 0.42],
-  cta: [3100, 0.48],
+  tick: [1700, 0.34],
+  press: [1450, 0.42],
+  cta: [1250, 0.48],
 };
 
 function reducedMotion(): boolean {
@@ -87,7 +87,7 @@ function play(kind: keyof typeof VOICES) {
     const c = ctx;
     const t = c.currentTime + 0.003;
     const sr = c.sampleRate;
-    // a limiter keeps the peaks under 0 dB, so it can be clearly loud without crackling
+    // a limiter keeps the peaks down, so it never crackles
     const limit = c.createDynamicsCompressor();
     limit.threshold.value = -6;
     limit.knee.value = 0;
@@ -97,39 +97,38 @@ function play(kind: keyof typeof VOICES) {
     limit.connect(c.destination);
     const out = c.createBiquadFilter();
     out.type = "lowpass";
-    out.frequency.value = 7000;
+    out.frequency.value = 4000;
     out.connect(limit);
-    // one snap of the switch: 6 ms of noise ringing at one pitch, plus a small
-    // knock under it. The noise is the same every time (fixed seed), like a real
-    // switch, so every press sounds alike and the volume never jumps
-    const snap = (at: number, hz: number, gain: number) => {
-      const buf = c.createBuffer(1, Math.ceil(sr * 0.006), sr);
-      const d = buf.getChannelData(0);
-      let seed = 7;
-      for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0003)) * Math.pow(1 - i / d.length, 2);
-      const src = c.createBufferSource();
-      src.buffer = buf;
-      const ring = c.createBiquadFilter();
-      ring.type = "bandpass";
-      ring.frequency.value = hz;
-      ring.Q.value = 3.5;
-      const g = c.createGain();
-      g.gain.value = gain * 14;
-      src.connect(ring).connect(g).connect(out);
-      src.start(at);
+    // the strike: 3 ms of soft noise, like wood being hit
+    const buf = c.createBuffer(1, Math.ceil(sr * 0.003), sr);
+    const d = buf.getChannelData(0);
+    let seed = 7;
+    for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0004)) * Math.pow(1 - i / d.length, 2);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const band = c.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.value = pitch * 2;
+    band.Q.value = 1.5;
+    const g = c.createGain();
+    g.gain.value = vol * 4.5;
+    src.connect(band).connect(g).connect(out);
+    src.start(t);
+    // the body: a round tone that rings out, and a faint overtone that makes it wooden
+    const tone = (hz: number, gain: number, decay: number) => {
       const osc = c.createOscillator();
-      osc.frequency.value = hz * 0.3;
+      osc.frequency.setValueAtTime(hz * 1.04, t);
+      osc.frequency.exponentialRampToValueAtTime(hz, t + 0.01);
       const og = c.createGain();
-      og.gain.setValueAtTime(0, at);
-      og.gain.linearRampToValueAtTime(gain * 1.6, at + 0.001);
-      og.gain.exponentialRampToValueAtTime(0.0001, at + 0.03);
+      og.gain.setValueAtTime(0, t);
+      og.gain.linearRampToValueAtTime(gain, t + 0.0015);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + decay);
       osc.connect(og).connect(out);
-      osc.start(at);
-      osc.stop(at + 0.032);
+      osc.start(t);
+      osc.stop(t + decay + 0.005);
     };
-    // press, then the lighter release a moment later
-    snap(t, pitch, vol);
-    snap(t + 0.03, pitch * 1.2, vol * 0.5);
+    tone(pitch, vol * 1.8, 0.05);
+    tone(pitch * 2.76, vol * 0.45, 0.02);
   } catch {
     /* no audio: the visual is enough */
   }
