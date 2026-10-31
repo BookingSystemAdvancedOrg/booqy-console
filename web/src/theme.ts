@@ -74,8 +74,32 @@ function subscribe(listener: () => void) {
   };
 }
 
-export function useTheme(): { theme: Theme; toggle: () => void; setTheme: (theme: Theme) => void } {
+/**
+ * Switches mode with a sweep: the new colours grow out of the button
+ * (origin) in a circle until they cover the page (View Transitions).
+ * Without browser support, without an origin or with reduced motion it
+ * just switches.
+ */
+export function switchTheme(theme: Theme, origin?: { x: number; y: number }) {
+  const doc = document as Document & { startViewTransition?: (update: () => void) => { ready: Promise<void> } };
+  const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!origin || reduce || typeof doc.startViewTransition !== "function") {
+    setTheme(theme);
+    return;
+  }
+  const { x, y } = origin;
+  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const transition = doc.startViewTransition(() => setTheme(theme));
+  transition.ready.then(() => {
+    document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 700, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
+    );
+  }, () => {});
+}
+
+export function useTheme(): { theme: Theme; toggle: (origin?: { x: number; y: number }) => void; setTheme: (theme: Theme) => void } {
   const theme = useSyncExternalStore(subscribe, currentTheme, () => "light" as Theme);
-  const toggle = useCallback(() => setTheme(currentTheme() === "dark" ? "light" : "dark"), []);
+  const toggle = useCallback((origin?: { x: number; y: number }) => switchTheme(currentTheme() === "dark" ? "light" : "dark", origin), []);
   return { theme, toggle, setTheme };
 }

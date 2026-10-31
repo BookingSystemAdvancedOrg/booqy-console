@@ -32,15 +32,16 @@ describe("theme", () => {
     expect(currentTheme()).toBe("dark");
   });
 
-  it("the toggle is a pressed button for dark mode", () => {
-    render(<ThemeToggle />);
-    const button = screen.getByRole("button", { name: "Dark mode" });
-    expect(button).toHaveAttribute("aria-pressed", "false");
+  it("the toggle names the mode in effect and what a press does", () => {
+    render(<ThemeToggle label />);
+    const button = screen.getByRole("button", { name: "Light mode, switch to dark mode" });
+    expect(button).toHaveTextContent("Light mode");
     fireEvent.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAccessibleName("Dark mode, switch to light mode");
+    expect(button).toHaveTextContent("Dark mode");
     expect(localStorage.getItem(THEME_KEY)).toBe("dark");
     fireEvent.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAttribute("data-mode", "light");
     expect(localStorage.getItem(THEME_KEY)).toBe("light");
   });
 });

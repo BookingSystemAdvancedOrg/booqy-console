@@ -261,8 +261,8 @@ a:hover { text-decoration-thickness: 2px; }
 .theme-toggle-icon { position: relative; display: inline-grid; width: 20px; height: 20px; }
 .theme-toggle-icon svg { grid-area: 1 / 1; width: 20px; height: 20px; transition: opacity 320ms var(--ease), rotate 360ms var(--ease), scale 360ms var(--ease); }
 /* the icon not in effect is gone: faded and turned away; on a switch the sun fades out one way while the moon turns in from the other */
-.theme-toggle[aria-pressed="false"] .theme-toggle-moon { opacity: 0; rotate: -90deg; scale: 0.6; }
-.theme-toggle[aria-pressed="true"] .theme-toggle-sun { opacity: 0; rotate: 90deg; scale: 0.6; }
+.theme-toggle[data-mode="light"] .theme-toggle-moon { opacity: 0; rotate: -90deg; scale: 0.6; }
+.theme-toggle[data-mode="dark"] .theme-toggle-sun { opacity: 0; rotate: 90deg; scale: 0.6; }
 .main { max-width: 1180px; margin: 0 auto; padding: 44px 24px 96px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .page-head p { margin: 0; }
@@ -560,9 +560,13 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .logo-option__label { font: 650 13px/1.3 var(--sans); }
 .logo-box { display: grid; place-items: center; height: 72px; padding: 8px; background: #fff; border: 1.5px dashed var(--paper-line); border-radius: 3px; }
 .logo-box img { max-height: 56px; max-width: 100%; width: auto; }
-.logo-box--empty { color: var(--print-2); font: 500 11px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
-.logo-file { font-size: 13px; }
-.logo-file input { display: block; margin-top: 6px; font: 13px var(--sans); }
+.logo-box--empty { color: #7a6a60; font: 500 11px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.logo-file { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+.logo-file__hint { flex-basis: 100%; }
+.logo-file[hidden] { display: none; }
+.logo-colour { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.logo-colour select.input { width: auto; }
+.logo-colour .muted { flex-basis: 100%; }
 .colour-field { display: flex; gap: 8px; align-items: center; }
 .colour-field input[type="color"] { width: 44px; height: 40px; padding: 2px; border: 1.5px solid var(--paper-line); border-radius: 3px; background: var(--paper); cursor: default; }
 .colour-field .input { max-width: 140px; }
@@ -1605,3 +1609,11 @@ html.is-busy, html.is-busy * { cursor: progress; }
 .table tbody tr.row-link.selected td { background: rgb(168 132 98 / 0.18); }
 .row-link__name { text-decoration: none; }
 .table tbody tr.row-link, .table tbody tr.row-link td { cursor: default; }
+
+/* Light/dark switch: the new colours sweep over the page in a circle from
+   the button (switchTheme in theme.ts animates the clip); no cross-fade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}

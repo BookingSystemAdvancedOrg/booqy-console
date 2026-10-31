@@ -342,6 +342,8 @@ export interface OutboxMessage {
 export interface MailLogo {
   kind: "booqy" | "custom";
   name?: string | null;
+  /** The one colour the logo is drawn in; null keeps the file's own colours. */
+  color?: string | null;
   /** The logo as shown in the email (data URI), for the picker's preview. */
   dataUrl: string;
 }
@@ -365,8 +367,9 @@ export interface MailTemplateInput {
   accentColor: string;
   signature: string;
   footer: string;
-  /** dataUrl only when a new file was picked; without it the uploaded logo is kept. */
-  logo: { kind: "booqy" } | { kind: "custom"; dataUrl?: string; name?: string };
+  /** dataUrl (the finished PNG) only when the logo or its colour changed;
+   * without it the saved logo is kept. */
+  logo: { kind: "booqy" | "custom"; dataUrl?: string; name?: string; color?: string | null };
 }
 
 export interface MailRecipient {

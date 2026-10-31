@@ -2,30 +2,35 @@ import { MoonIcon, SunIcon } from "./ThemeIcons";
 import { useTheme } from "../theme";
 
 /**
- * The top-bar button that switches between light and dark mode. A toggle
- * button (aria-pressed): pressed = dark mode. The icon shows the mode in
- * effect (sun = light, moon = dark) and cross-fades to the other on a
- * switch; with reduced motion it just swaps. `label` shows the name next to
- * the icon (Settings). The console's copy is English, so the name is
- * "Dark mode" here (the other apps say "Mörkt läge").
+ * The button that switches between light and dark mode. It shows the mode in
+ * effect: sun and "Light mode", or moon and "Dark mode"; the icon cross-fades
+ * on a switch. Its name for screen readers and the tooltip also say what a
+ * press does ("Light mode, switch to dark mode"). The switch sweeps over the
+ * page from the button (switchTheme). `label` shows the text next to the icon.
  */
 export function ThemeToggle({ className = "", label = false }: { className?: string; label?: boolean }) {
   const { theme, toggle } = useTheme();
   const dark = theme === "dark";
+  const name = dark ? "Dark mode" : "Light mode";
+  const action = `${name}, switch to ${dark ? "light" : "dark"} mode`;
   return (
     <button
       type="button"
       className={`theme-toggle${className ? ` ${className}` : ""}`}
-      aria-pressed={dark}
-      aria-label={label ? undefined : "Dark mode"}
-      title={label ? undefined : "Dark mode"}
-      onClick={toggle}
+      data-mode={dark ? "dark" : "light"}
+      aria-label={action}
+      title={action}
+      onClick={(e) => {
+        // the sweep starts from the middle of the button, also for a key press
+        const r = e.currentTarget.getBoundingClientRect();
+        toggle({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }}
     >
       <span className="theme-toggle-icon" aria-hidden="true">
         <SunIcon className="theme-toggle-sun" />
         <MoonIcon className="theme-toggle-moon" />
       </span>
-      {label && <span className="theme-toggle-label">Dark mode</span>}
+      {label && <span className="theme-toggle-label">{name}</span>}
     </button>
   );
 }

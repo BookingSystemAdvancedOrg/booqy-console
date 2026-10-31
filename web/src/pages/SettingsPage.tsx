@@ -21,8 +21,8 @@ export default function SettingsPage({ email }: { email?: string }) {
         <div className="card__body">
           <div className="setting-row">
             <div>
-              <p className="strong">Dark mode</p>
-              <p className="muted small">Dark surfaces instead of light. Light is the default.</p>
+              <p className="strong">Light or dark</p>
+              <p className="muted small">Press to switch: dark surfaces are easier on the eyes at night. Light is the default.</p>
             </div>
             <ThemeToggle className="setting-toggle" label />
           </div>
