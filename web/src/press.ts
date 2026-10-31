@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { SOUND_KEY } from "./storageRegistry";
 
 /**
- * Press feedback, the same as booqy.se and admin: a deep, soft clock tick (Web
+ * Press feedback, the same as booqy.se and admin: a modern, quiet Windows-style click (Web
  * Audio, made on the fly, no files) and a squeeze plus a tan ripple, on
  * pointerdown and on Enter or Space. Never on hover. Sound is on by default
  * and starts on the first press (autoplay rules); Settings switches it
@@ -15,13 +15,12 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a deep, soft tick like a wooden clock: a short strike and a round tone
-// that rings out. Brightest for links, deeper for buttons and deepest for
-// the main actions. [pitch Hz, volume]
+// a modern, quiet click like Windows: a short, clean "tk" with a little body.
+// Brightest for links, a little deeper for buttons and the main actions. [pitch Hz, volume]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [1700, 0.34],
-  press: [1450, 0.42],
-  cta: [1250, 0.48],
+  tick: [2400, 0.34],
+  press: [2150, 0.42],
+  cta: [1900, 0.48],
 };
 
 function reducedMotion(): boolean {
@@ -97,38 +96,37 @@ function play(kind: keyof typeof VOICES) {
     limit.connect(c.destination);
     const out = c.createBiquadFilter();
     out.type = "lowpass";
-    out.frequency.value = 4000;
+    out.frequency.value = 6000;
     out.connect(limit);
-    // the strike: 3 ms of soft noise, like wood being hit
-    const buf = c.createBuffer(1, Math.ceil(sr * 0.003), sr);
+    // the edge: 2 ms of soft noise that gives the click its crispness
+    const buf = c.createBuffer(1, Math.ceil(sr * 0.002), sr);
     const d = buf.getChannelData(0);
     let seed = 7;
-    for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0004)) * Math.pow(1 - i / d.length, 2);
+    for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0002)) * Math.pow(1 - i / d.length, 2);
     const src = c.createBufferSource();
     src.buffer = buf;
     const band = c.createBiquadFilter();
     band.type = "bandpass";
-    band.frequency.value = pitch * 2;
-    band.Q.value = 1.5;
+    band.frequency.value = pitch * 1.3;
+    band.Q.value = 2;
     const g = c.createGain();
-    g.gain.value = vol * 4.5;
+    g.gain.value = vol * 5;
     src.connect(band).connect(g).connect(out);
     src.start(t);
-    // the body: a round tone that rings out, and a faint overtone that makes it wooden
+    // the tone: a short, clean ping with a little body under it, like the Windows click
     const tone = (hz: number, gain: number, decay: number) => {
       const osc = c.createOscillator();
-      osc.frequency.setValueAtTime(hz * 1.04, t);
-      osc.frequency.exponentialRampToValueAtTime(hz, t + 0.01);
+      osc.frequency.value = hz;
       const og = c.createGain();
       og.gain.setValueAtTime(0, t);
-      og.gain.linearRampToValueAtTime(gain, t + 0.0015);
+      og.gain.linearRampToValueAtTime(gain, t + 0.0008);
       og.gain.exponentialRampToValueAtTime(0.0001, t + decay);
       osc.connect(og).connect(out);
       osc.start(t);
-      osc.stop(t + decay + 0.005);
+      osc.stop(t + decay + 0.003);
     };
-    tone(pitch, vol * 1.8, 0.05);
-    tone(pitch * 2.76, vol * 0.45, 0.02);
+    tone(pitch, vol * 1.8, 0.014);
+    tone(pitch * 0.45, vol * 0.8, 0.009);
   } catch {
     /* no audio: the visual is enough */
   }
