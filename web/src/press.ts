@@ -110,7 +110,7 @@ function play(kind: keyof typeof VOICES) {
     band.frequency.value = pitch * 1.3;
     band.Q.value = 2;
     const g = c.createGain();
-    g.gain.value = vol * 5;
+    g.gain.value = vol * 6;
     src.connect(band).connect(g).connect(out);
     src.start(t);
     // the tone: a short, clean ping with a little body under it, like the Windows click
@@ -125,8 +125,8 @@ function play(kind: keyof typeof VOICES) {
       osc.start(t);
       osc.stop(t + decay + 0.003);
     };
-    tone(pitch, vol * 1.8, 0.014);
-    tone(pitch * 0.45, vol * 0.8, 0.009);
+    tone(pitch, vol * 2.6, 0.025);
+    tone(pitch * 0.45, vol * 1.1, 0.015);
   } catch {
     /* no audio: the visual is enough */
   }
