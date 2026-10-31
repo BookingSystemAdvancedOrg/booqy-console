@@ -14,9 +14,13 @@ import ReadersPage from "./pages/ReadersPage";
 import { Logo } from "./components/Logo";
 import { Modal, Printing } from "./components/ui";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { SoundToggle } from "./components/SoundToggle";
+import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
 import "./styles.css";
+
+installPress();
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -56,6 +60,7 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           <span>{user.email || "operator"}</span>
+          <SoundToggle />
           <ThemeToggle />
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>

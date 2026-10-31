@@ -3,17 +3,16 @@ import { THEME_KEY } from "./storageRegistry";
 
 /**
  * Light and dark mode. The choice lives in localStorage (booqy-theme) and
- * on <html data-theme>; public/theme.v1.js sets the attribute before the
+ * on <html data-theme>; public/theme.v2.js sets the attribute before the
  * first paint so the page never flashes light before dark. Without a
- * choice the console follows the system, also when it changes while the
- * page is open. The same key is used by every Booqy app.
+ * choice the console is light, like booqy.se; dark is one press away. The
+ * same key is used by every Booqy app.
  */
 
 export type Theme = "light" | "dark";
 
-/** What the browser's own frame gets (meta theme-color): the wall. */
-const THEME_COLOR: Record<Theme, string> = { light: "#350001", dark: "#1f0002" };
-const DARK_QUERY = "(prefers-color-scheme: dark)";
+/** What the browser's own frame gets (meta theme-color): the room. */
+const THEME_COLOR: Record<Theme, string> = { light: "#f6f1ea", dark: "#1a120e" };
 
 function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark";
@@ -28,19 +27,13 @@ export function storedTheme(): Theme | null {
   }
 }
 
-/** The system setting; light where it cannot be read (tests). */
-export function systemTheme(): Theme {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
-  return window.matchMedia(DARK_QUERY).matches ? "dark" : "light";
-}
-
-/** The mode right now: what is on <html>, else the stored one, else the system's. */
+/** The mode right now: what is on <html>, else the stored one, else light. */
 export function currentTheme(): Theme {
   if (typeof document !== "undefined") {
     const attr = document.documentElement.getAttribute("data-theme");
     if (isTheme(attr)) return attr;
   }
-  return storedTheme() ?? systemTheme();
+  return storedTheme() ?? "light";
 }
 
 const listeners = new Set<() => void>();
@@ -75,16 +68,9 @@ function subscribe(listener: () => void) {
     if (e.key === THEME_KEY && isTheme(e.newValue)) applyTheme(e.newValue);
   };
   window.addEventListener("storage", onStorage);
-  // Without a choice of its own the page follows the system, also when it flips.
-  const media = typeof window.matchMedia === "function" ? window.matchMedia(DARK_QUERY) : null;
-  const onMedia = () => {
-    if (!storedTheme()) applyTheme(systemTheme());
-  };
-  media?.addEventListener("change", onMedia);
   return () => {
     listeners.delete(listener);
     window.removeEventListener("storage", onStorage);
-    media?.removeEventListener("change", onMedia);
   };
 }
 

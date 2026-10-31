@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { applyTheme, currentTheme, setTheme, storedTheme, systemTheme } from "./theme";
+import { applyTheme, currentTheme, setTheme, storedTheme } from "./theme";
 import { THEME_KEY } from "./storageRegistry";
 
 describe("theme", () => {
@@ -14,9 +14,9 @@ describe("theme", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("follows the system until the operator chooses", () => {
+  it("is light until the operator chooses, whatever the system says", () => {
     expect(storedTheme()).toBeNull();
-    expect(currentTheme()).toBe(systemTheme());
+    expect(currentTheme()).toBe("light");
   });
 
   it("setTheme stores the choice and marks the page", () => {
