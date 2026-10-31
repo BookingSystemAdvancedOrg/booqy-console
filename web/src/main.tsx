@@ -28,6 +28,10 @@ function Shell() {
   const location = useLocation();
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  // Phones: the links sit behind a Menu button. The menu belongs to the page
+  // it was opened on, so going to another page closes it.
+  const [menuAt, setMenuAt] = useState<string | null>(null);
+  const menuOpen = menuAt === location.pathname;
   const refresh = useCallback(() => {
     currentOperator().then(setUser);
   }, []);
@@ -45,10 +49,20 @@ function Shell() {
   return (
     <div className="app">
       {/* A dirty form asks before any top bar link takes the operator away. */}
-      <header className="topbar" onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
+      <header className={menuOpen ? "topbar is-open" : "topbar"} onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         {IS_DEV && <span className="env">dev</span>}
-        <nav className="topbar__nav">
+        <button
+          type="button"
+          className="topbar__menu"
+          aria-expanded={menuOpen}
+          aria-controls="topbar-menu"
+          aria-label={menuOpen ? "Close menu" : "Menu"}
+          onClick={() => setMenuAt(menuOpen ? null : location.pathname)}
+        >
+          <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+        </button>
+        <nav className="topbar__nav" id="topbar-menu">
           <NavLink to="/" end>Customers</NavLink>
           <NavLink to="/tenants/new">New customer</NavLink>
           <NavLink to="/readers">Card readers</NavLink>
@@ -58,7 +72,6 @@ function Shell() {
           <NavLink to="/website">Website</NavLink>
         </nav>
         <div className="topbar__user">
-          <span>{user.email || "operator"}</span>
           <NavLink to="/settings" className="btn btn--ghost topbar__settings">Settings</NavLink>
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
         </div>
@@ -85,7 +98,7 @@ function Shell() {
           <Route path="/mail" element={<MailPage />} />
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>

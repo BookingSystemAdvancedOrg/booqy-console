@@ -6,13 +6,13 @@ import { ThemeToggle } from "../components/ThemeToggle";
  * browser (localStorage, see src/storageRegistry.ts) under the same keys as
  * booqy.se and admin. Light and sound on are the defaults.
  */
-export default function SettingsPage() {
+export default function SettingsPage({ email }: { email?: string }) {
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">How the console looks and sounds in this browser.</p>
+          <p className="muted">{email ? `Signed in as ${email}. ` : ""}How the console looks and sounds in this browser.</p>
         </div>
       </div>
       <section className="card">
