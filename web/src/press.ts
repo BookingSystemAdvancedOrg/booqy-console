@@ -15,13 +15,13 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a traditional click, kept subtle: a short, soft snap with a small round
-// tone under it, like a good switch heard from a step away. Brightest for
-// links, a little deeper for buttons and the main actions. [pitch Hz, volume]
+// a traditional mechanical switch: a firm click as it goes down and a lighter
+// tick as it springs back. Brightest for links, a little deeper and fuller for
+// buttons and the main actions. [pitch Hz, volume]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [3000, 0.4],
-  press: [2600, 0.48],
-  cta: [2200, 0.5],
+  tick: [4200, 0.34],
+  press: [3600, 0.42],
+  cta: [3100, 0.48],
 };
 
 function reducedMotion(): boolean {
@@ -84,38 +84,44 @@ function play(kind: keyof typeof VOICES) {
       return;
     }
     const [pitch, vol] = VOICES[kind];
-    const t = ctx.currentTime + 0.002;
-    const sr = ctx.sampleRate;
-    const out = ctx.createBiquadFilter();
+    const c = ctx;
+    const t = c.currentTime + 0.002;
+    const sr = c.sampleRate;
+    const out = c.createBiquadFilter();
     out.type = "lowpass";
-    out.frequency.value = 5000;
-    out.connect(ctx.destination);
-    // the snap: 6 ms of noise, eased in over half a millisecond so it never cracks
-    const buf = ctx.createBuffer(1, Math.ceil(sr * 0.008), sr);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.min(1, i / (sr * 0.0005)) * Math.pow(1 - i / d.length, 3);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = pitch;
-    band.Q.value = 1.2;
-    const g = ctx.createGain();
-    g.gain.value = vol * 2.4;
-    src.connect(band).connect(g).connect(out);
-    src.start(t);
-    // the body: a short round tone under the snap, what makes it a button and not static
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(pitch * 0.42, t);
-    osc.frequency.exponentialRampToValueAtTime(pitch * 0.34, t + 0.025);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(vol, t + 0.0015);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.032);
-    osc.connect(og).connect(out);
-    osc.start(t);
-    osc.stop(t + 0.035);
+    out.frequency.value = 7000;
+    out.connect(c.destination);
+    // one snap of the switch: 4 ms of noise ringing at one pitch, plus a tiny
+    // knock under it. The noise is the same every time (fixed seed), like a real
+    // switch, so every press sounds alike and the volume never jumps
+    const snap = (at: number, hz: number, gain: number) => {
+      const buf = c.createBuffer(1, Math.ceil(sr * 0.004), sr);
+      const d = buf.getChannelData(0);
+      let seed = 7;
+      for (let i = 0; i < d.length; i++) d[i] = ((seed = (seed * 16807) % 2147483647) / 1073741823.5 - 1) * Math.min(1, i / (sr * 0.0003)) * Math.pow(1 - i / d.length, 2);
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      const ring = c.createBiquadFilter();
+      ring.type = "bandpass";
+      ring.frequency.value = hz;
+      ring.Q.value = 5;
+      const g = c.createGain();
+      g.gain.value = gain * 6;
+      src.connect(ring).connect(g).connect(out);
+      src.start(at);
+      const osc = c.createOscillator();
+      osc.frequency.value = hz * 0.3;
+      const og = c.createGain();
+      og.gain.setValueAtTime(0, at);
+      og.gain.linearRampToValueAtTime(gain * 0.8, at + 0.001);
+      og.gain.exponentialRampToValueAtTime(0.0001, at + 0.012);
+      osc.connect(og).connect(out);
+      osc.start(at);
+      osc.stop(at + 0.014);
+    };
+    // press, then the lighter release a moment later
+    snap(t, pitch, vol);
+    snap(t + 0.026, pitch * 1.2, vol * 0.45);
   } catch {
     /* no audio: the visual is enough */
   }
