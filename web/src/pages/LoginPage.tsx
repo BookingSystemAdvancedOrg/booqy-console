@@ -165,127 +165,130 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
       </aside>
 
       <main className="auth__main">
-        <div className="auth__card">
-          {step.kind === "signIn" && (
-            <Form title="Sign in" lead="Use your operator account." error={error} info={info}
-                  onSubmit={(pw) => run(async () => {
-                    try {
-                      await next(await signIn({ username: email.trim().toLowerCase(), password: pw.password }));
-                    } catch (e) {
-                      if ((e as { name?: string })?.name === "UserAlreadyAuthenticatedException") {
-                        await signOut();
+        {/* the receipt hangs from its rail; the paper is cut in a real zigzag below */}
+        <div className="auth__hang">
+          <div className="auth__card">
+            {step.kind === "signIn" && (
+              <Form title="Sign in" lead="Use your operator account." error={error} info={info}
+                    onSubmit={(pw) => run(async () => {
+                      try {
                         await next(await signIn({ username: email.trim().toLowerCase(), password: pw.password }));
-                      } else throw e;
-                    }
-                  })}
-                  busy={busy} submit="Sign in"
-                  footer={<button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
-                    Forgot your password?</button>}>
-              <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
-              <Input label="Password" name="password" type="password" autoComplete="current-password" />
-            </Form>
-          )}
+                      } catch (e) {
+                        if ((e as { name?: string })?.name === "UserAlreadyAuthenticatedException") {
+                          await signOut();
+                          await next(await signIn({ username: email.trim().toLowerCase(), password: pw.password }));
+                        } else throw e;
+                      }
+                    })}
+                    busy={busy} submit="Sign in"
+                    footer={<button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
+                      Forgot your password?</button>}>
+                <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
+                <Input label="Password" name="password" type="password" autoComplete="current-password" />
+              </Form>
+            )}
 
-          {step.kind === "newPassword" && (
-            <Form title="Choose your password" lead={`First sign-in: replace the temporary password. ${PASSWORD_RULES}`}
-                  error={error} busy={busy} submit="Save password"
-                  onSubmit={(v) => run(async () => {
-                    if (v.password !== v.confirm) throw new Error("The passwords don't match.");
-                    await next(await confirmSignIn({ challengeResponse: v.password }));
-                  })}>
-              <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
-              <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
-            </Form>
-          )}
+            {step.kind === "newPassword" && (
+              <Form title="Choose your password" lead={`First sign-in: replace the temporary password. ${PASSWORD_RULES}`}
+                    error={error} busy={busy} submit="Save password"
+                    onSubmit={(v) => run(async () => {
+                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      await next(await confirmSignIn({ challengeResponse: v.password }));
+                    })}>
+                <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
+                <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
+              </Form>
+            )}
 
-          {step.kind === "totpSetup" && (
-            <Form title="Set up two-step sign-in" error={error} busy={busy} submit="Verify and sign in"
-                  lead="Scan the code with an authenticator app (Google Authenticator, 1Password, Microsoft Authenticator…), then enter the 6-digit code it shows."
-                  onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}>
-              <Qr uri={step.uri} />
-              <details className="auth__secret">
-                <summary>Can't scan? Enter this key instead</summary>
-                <code className="mono">{step.secret}</code>
-              </details>
-              <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
-            </Form>
-          )}
+            {step.kind === "totpSetup" && (
+              <Form title="Set up two-step sign-in" error={error} busy={busy} submit="Verify and sign in"
+                    lead="Scan the code with an authenticator app (Google Authenticator, 1Password, Microsoft Authenticator…), then enter the 6-digit code it shows."
+                    onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}>
+                <Qr uri={step.uri} />
+                <details className="auth__secret">
+                  <summary>Can't scan? Enter this key instead</summary>
+                  <code className="mono">{step.secret}</code>
+                </details>
+                <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
+              </Form>
+            )}
 
-          {step.kind === "totpCode" && (
-            <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for Booqy Console."
-                  error={error} busy={busy} submit="Sign in"
-                  onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}
-                  footer={<button type="button" className="link" onClick={back}>Back</button>}>
-              <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
-            </Form>
-          )}
+            {step.kind === "totpCode" && (
+              <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for Booqy Console."
+                    error={error} busy={busy} submit="Sign in"
+                    onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}
+                    footer={<button type="button" className="link" onClick={back}>Back</button>}>
+                <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
+              </Form>
+            )}
 
-          {step.kind === "forgot" && (
-            <Form title="Reset your password" lead="We'll email you a link to choose a new password."
-                  error={error} busy={busy} submit="Send link"
-                  onSubmit={() => run(async () => {
-                    await resetPassword({ username: email.trim().toLowerCase() });
-                    setStep({ kind: "forgotSent" });
-                  }, true)}
-                  footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
-              <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
-            </Form>
-          )}
+            {step.kind === "forgot" && (
+              <Form title="Reset your password" lead="We'll email you a link to choose a new password."
+                    error={error} busy={busy} submit="Send link"
+                    onSubmit={() => run(async () => {
+                      await resetPassword({ username: email.trim().toLowerCase() });
+                      setStep({ kind: "forgotSent" });
+                    }, true)}
+                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
+              </Form>
+            )}
 
-          {step.kind === "forgotSent" && (
-            <div className="auth__form">
-              <h1>Check your email</h1>
-              {info && <div className="notice notice--ok" role="status">{info}</div>}
-              <p className="muted auth__lead-text">
-                If <strong>{email.trim().toLowerCase()}</strong> has an operator account, we've sent a link to
-                choose a new password. It works once and for one hour.
-              </p>
-              <div className="auth__links">
-                <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgotConfirm" }); }}>
-                  Got a code instead? Enter it</button>
-                {" · "}
-                <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgot" }); }}>
-                  Send again</button>
-                {" · "}
-                <button type="button" className="link" onClick={back}>Back to sign in</button>
+            {step.kind === "forgotSent" && (
+              <div className="auth__form">
+                <h1>Check your email</h1>
+                {info && <div className="notice notice--ok" role="status">{info}</div>}
+                <p className="muted auth__lead-text">
+                  If <strong>{email.trim().toLowerCase()}</strong> has an operator account, we've sent a link to
+                  choose a new password. It works once and for one hour.
+                </p>
+                <div className="auth__links">
+                  <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgotConfirm" }); }}>
+                    Got a code instead? Enter it</button>
+                  {" · "}
+                  <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgot" }); }}>
+                    Send again</button>
+                  {" · "}
+                  <button type="button" className="link" onClick={back}>Back to sign in</button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {step.kind === "forgotConfirm" && (
-            <Form title="Choose a new password" lead={PASSWORD_RULES} error={error} info={info} busy={busy}
-                  submit="Save new password"
-                  onSubmit={(v) => run(async () => {
-                    if (v.password !== v.confirm) throw new Error("The passwords don't match.");
-                    await confirmResetPassword({ username: email.trim().toLowerCase(), confirmationCode: v.code.replace(/\s+/g, ""),
-                                                 newPassword: v.password });
-                    await passwordChanged();
-                  }, true)}
-                  footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
-              <Input label="Code from the email" name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus />
-              <Input label="New password" name="password" type="password" autoComplete="new-password" />
-              <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
-            </Form>
-          )}
+            {step.kind === "forgotConfirm" && (
+              <Form title="Choose a new password" lead={PASSWORD_RULES} error={error} info={info} busy={busy}
+                    submit="Save new password"
+                    onSubmit={(v) => run(async () => {
+                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      await confirmResetPassword({ username: email.trim().toLowerCase(), confirmationCode: v.code.replace(/\s+/g, ""),
+                                                   newPassword: v.password });
+                      await passwordChanged();
+                    }, true)}
+                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                <Input label="Code from the email" name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus />
+                <Input label="New password" name="password" type="password" autoComplete="new-password" />
+                <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
+              </Form>
+            )}
 
-          {step.kind === "linkReset" && (
-            <Form title="Choose a new password" lead={`For ${email}. ${PASSWORD_RULES}`} error={error} busy={busy}
-                  submit="Save new password"
-                  onSubmit={(v) => run(async () => {
-                    if (v.password !== v.confirm) throw new Error("The passwords don't match.");
-                    await confirmResetPassword({ username: email, confirmationCode: step.code, newPassword: v.password });
-                    await passwordChanged();
-                  }, true)}
-                  footer={<>
-                    <button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
-                      Request a new link</button>
-                    {" · "}
-                    <button type="button" className="link" onClick={back}>Back to sign in</button>
-                  </>}>
-              <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
-              <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
-            </Form>
-          )}
+            {step.kind === "linkReset" && (
+              <Form title="Choose a new password" lead={`For ${email}. ${PASSWORD_RULES}`} error={error} busy={busy}
+                    submit="Save new password"
+                    onSubmit={(v) => run(async () => {
+                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      await confirmResetPassword({ username: email, confirmationCode: step.code, newPassword: v.password });
+                      await passwordChanged();
+                    }, true)}
+                    footer={<>
+                      <button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
+                        Request a new link</button>
+                      {" · "}
+                      <button type="button" className="link" onClick={back}>Back to sign in</button>
+                    </>}>
+                <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
+                <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
+              </Form>
+            )}
+          </div>
         </div>
         <p className="auth__foot">Restricted to platform operators. Every action is logged.</p>
         <details className="auth__storage">

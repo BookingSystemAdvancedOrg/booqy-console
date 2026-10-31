@@ -461,6 +461,30 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .auth__brand .env { align-self: flex-start; }
 .auth__main { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; gap: 18px; }
 .auth__card { width: min(440px, 100%); animation: drop 900ms var(--ease) both; }
+/* sign-in receipt like booqy.se: the rail sits on the hanger, the paper itself
+   is cut in a zigzag (mask) and the shadow follows the teeth (drop-shadow) */
+.auth__hang {
+  width: min(440px, 100%);
+  animation: drop 900ms var(--ease) both;
+  filter: drop-shadow(0 0 1px rgb(107 74 46 / 0.55)) drop-shadow(0 14px 18px rgb(58 36 24 / 0.22)) drop-shadow(0 2px 3px rgb(58 36 24 / 0.16));
+}
+:root[data-theme="dark"] .auth__hang { filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)) drop-shadow(0 14px 18px rgb(0 0 0 / 0.5)) drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
+.auth__hang::before {
+  content: ""; display: block; position: relative; z-index: 1; height: 14px; margin: 0 -6px -1px; border-radius: 3px;
+  background: linear-gradient(var(--steel) 0 8px, var(--steel-lo) 8px 10px, var(--steel) 10px);
+  box-shadow: 0 8px 16px -8px rgb(58 36 24 / 0.55);
+}
+.auth__hang > .auth__card {
+  width: 100%; animation: none; box-shadow: none;
+  padding-bottom: var(--tooth);
+  -webkit-mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x,
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
+          mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x,
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
+}
+.auth__hang > .auth__card::before, .auth__hang > .auth__card::after { display: none; }
 .auth__form { display: grid; gap: 14px; padding: 24px 28px 30px; }
 .auth__form h1 { margin: 0; font-size: 26px; }
 .auth__lead-text { margin: -6px 0 2px; font-size: 14px; }
@@ -532,7 +556,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .modal .card { box-shadow: none; animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .page, .card, .table-wrap, .status, .modal, .modal__panel, .auth__card, .printing, .printing i { animation: none !important; }
+  .page, .card, .table-wrap, .status, .modal, .modal__panel, .auth__card, .auth__hang, .printing, .printing i { animation: none !important; }
   .printing i { transform: none; }
   .btn, .chip, .choice, .input, .tab, .topbar__nav a, .topbar__menu span, .theme-toggle, .theme-toggle-icon svg { transition: none; }
 }
