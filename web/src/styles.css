@@ -1371,3 +1371,40 @@ html.is-busy, html.is-busy * { cursor: progress; }
   [data-glide="track"] { width: 100%; }
   [data-glide] > :is(button, a) { flex: 1 0 auto; padding: 0 10px; }
 }
+
+/* Payments filter row (PaymentsView): one even row of pills, 48 px tall. The
+   month is a sand pill like the status bar beside it, arrows inside and the
+   month as words; the search is a pearl pill with a magnifier. */
+.finance-toolbar { align-items: center; gap: 12px; }
+.month-pick { gap: 2px; height: 48px; padding: 5px; border-radius: 999px; background: #a88462; }
+.month-pick__step {
+  flex: none; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: #1a120e; font: 600 20px/1 var(--sans); transition: background-color 200ms var(--ease);
+}
+.month-pick__step:hover:not(:disabled) { background: rgb(26 18 14 / 0.16); }
+.month-pick__step:disabled { opacity: 0.35; }
+.month-pick__label { position: relative; display: grid; place-items: center; min-width: 132px; height: 38px; padding: 0 12px; border-radius: 999px; color: #1a120e; font: 600 14px/1 var(--sans); white-space: nowrap; }
+.month-pick__label:hover { background: rgb(26 18 14 / 0.16); }
+.month-pick__label:focus-within { outline: 2px solid #1a120e; outline-offset: 1px; }
+.month-pick__native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
+.month-pick__native::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+:root[data-theme="dark"] .month-pick { background: #3a2418; }
+:root[data-theme="dark"] .month-pick__step, :root[data-theme="dark"] .month-pick__label { color: #d5c4ae; }
+:root[data-theme="dark"] .month-pick__step:hover:not(:disabled), :root[data-theme="dark"] .month-pick__label:hover { background: rgb(213 196 174 / 0.14); }
+:root[data-theme="dark"] .month-pick__label:focus-within { outline-color: #d5c4ae; }
+.finance-toolbar [data-glide] { height: 48px; align-items: center; }
+.chip__n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border: 0; border-radius: 999px;
+  background: rgb(26 18 14 / 0.12); font: 650 11.5px/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 1; }
+:root[data-theme="dark"] .chip__n, [data-glide] > .chip--on .chip__n { background: rgb(213 196 174 / 0.18); }
+:root[data-theme="dark"] [data-glide] > .chip--on .chip__n { background: rgb(26 18 14 / 0.12); }
+.toolbar .payments-search {
+  flex: 1 1 240px; max-width: 420px; height: 48px; padding: 0 18px 0 44px; border: 0; border-radius: 999px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 16px 50% / 18px 18px no-repeat, var(--pearl);
+  box-shadow: var(--pearl-rim); font: 500 14px/1 var(--sans);
+}
+.toolbar .payments-search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 16px 50% / 18px 18px no-repeat, var(--pearl); box-shadow: var(--pearl-rim), 0 0 0 2px #a88462; border: 0; }
+@media (max-width: 760px) {
+  .finance-toolbar > * { flex: 1 1 100%; max-width: none; }
+  .month-pick { justify-content: space-between; }
+  .month-pick__label { flex: 1; }
+}

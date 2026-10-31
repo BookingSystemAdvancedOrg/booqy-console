@@ -31,11 +31,18 @@ export default function PaymentsView() {
       </div>
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}
       <div className="toolbar finance-toolbar">
+        {/* One sand pill like the status bar beside it: arrows either side and
+            the month as words. The browser's own month field sits invisibly
+            over the words, so a click (or the keyboard) still opens its picker. */}
         <div className="month-pick" role="group" aria-label="Month">
-          <button className="btn btn--ghost btn--small" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
-          <input className="input month-pick__input" type="month" value={month} max={thisMonth} aria-label="Month"
-                 onChange={(e) => { if (e.target.value) setMonth(e.target.value); }} />
-          <button className="btn btn--ghost btn--small" aria-label="Next month" disabled={month >= thisMonth}
+          <button type="button" className="month-pick__step" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
+          <label className="month-pick__label">
+            <span aria-hidden="true">{monthLabel(month)}</span>
+            <input className="month-pick__native" type="month" value={month} max={thisMonth} aria-label="Month"
+                   onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* picker not allowed here; typing still works */ } }}
+                   onChange={(e) => { if (e.target.value) setMonth(e.target.value); }} />
+          </label>
+          <button type="button" className="month-pick__step" aria-label="Next month" disabled={month >= thisMonth}
                   onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
         </div>
         <div className="chips" role="group" aria-label="Status">
@@ -45,7 +52,7 @@ export default function PaymentsView() {
             </button>
           ))}
         </div>
-        <input className="input search" placeholder="Customer: name, org. number or slug…" value={needle}
+        <input className="input search payments-search" type="search" placeholder="Customer: name, org. number or slug…" value={needle}
                aria-label="Filter invoices by customer" onChange={(e) => setNeedle(e.target.value)} />
       </div>
 
