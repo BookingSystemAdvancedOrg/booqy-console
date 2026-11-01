@@ -46,7 +46,7 @@ PK = "PLATFORM#MAIL"
 TEMPLATE_SK = "TEMPLATE"
 NEWSLETTER_PREFIX = "NEWSLETTER#"
 DEFAULT_REPLY_TO = "support@ithjalparna.se"
-DEFAULT_ACCENT = "#350001"
+DEFAULT_ACCENT = "#1a120e"   # Booqy's espresso, the same as the apps' pills
 LOGO_MAX_BYTES = 200_000
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg"}
 SUBJECT_MAX = 150
@@ -149,7 +149,7 @@ def put_template(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     sender = f.text("senderName", required=True, max_len=60)
     reply_to = f.email("replyTo", required=True)
-    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #350001")
+    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
     signature = f.text("signature", max_len=600) or ""
     footer = f.text("footer", max_len=600) or ""
     logo = _parse_logo(f, current)
@@ -305,7 +305,7 @@ def preview(req) -> tuple[int, dict]:
         reply_to = f.email("replyTo")
         if reply_to:
             template["replyTo"] = reply_to
-        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #350001")
+        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
         if accent:
             template["accentColor"] = accent
         logo = _parse_logo(f, template)

@@ -1017,6 +1017,8 @@ html.is-busy, html.is-busy * { cursor: progress; }
   -webkit-backdrop-filter: blur(16px) saturate(1.6); backdrop-filter: blur(16px) saturate(1.6);
 }
 :root[data-theme="dark"] .topbar { background: rgb(26 18 14 / 0.72); }
+/* the search field on a card: in the dark room the card is already paper-coloured, so the field takes the next shade */
+:root[data-theme="dark"] .toolbar .input { background: var(--paper-2); }
 .topbar::after { display: none; }
 .brand, .brand__app { color: var(--on-ox); }
 .brand__app { color: var(--on-ox-3); }

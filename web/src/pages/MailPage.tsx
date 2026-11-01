@@ -419,7 +419,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
             </Field>
             <Field label="Accent colour" changed={dirty.changed("accentColor")} hint="The short rule under the subject and the links" error={a.fields.accentColor}>
               <div className="colour-field">
-                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#350001"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#1a120e"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
                 <input className="input mono" value={f.accentColor} maxLength={7} onChange={(e) => set("accentColor")(e.target.value)} />
               </div>
             </Field>
