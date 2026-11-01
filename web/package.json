@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@booqy/brand": "file:vendor/booqy-brand-0.1.0.tgz",
     "aws-amplify": "^6.20.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
