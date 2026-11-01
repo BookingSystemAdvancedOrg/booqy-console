@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { SOUND_KEY, SOUND_VOLUME_KEY } from "./storageRegistry";
 
 /**
- * Press feedback, the same as booqy.se and admin: a soft, round "pop" like a water drop (Web
+ * Press feedback, the same as booqy.se and admin: a crisp gaming-mouse click (Web
  * Audio, made on the fly, no files) and a squeeze plus a tan ripple, on
  * pointerdown and on Enter or Space. Never on hover. Sound is on by default
  * and starts on the first press (autoplay rules); Settings switches it
@@ -15,12 +15,12 @@ const TARGETS =
 const BLOCK = "button, summary, [role='tab'], [role='button'], .btn, .chip, .choice, .plan, .logo-option, .topbar__nav a";
 const CTA = ".btn--primary, button[type='submit']";
 
-// a soft, round "pop" that drops a little in pitch, like a water drop.
+// a crisp, tight gaming-mouse click: the press and a quick release.
 // Brightest for links, a little deeper for buttons and the main actions. [pitch Hz, peak]
 const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
-  tick: [900, 0.425],
-  press: [780, 0.5],
-  cta: [660, 0.56],
+  tick: [4536, 0.425],
+  press: [4200, 0.5],
+  cta: [3864, 0.56],
 };
 
 function reducedMotion(): boolean {
@@ -111,23 +111,32 @@ export function useSoundVolume(): number {
 }
 
 /**
- * The click as ready-made samples: a round note that drops a little (a
- * soft pop). Computed once per voice in plain
+ * The click as ready-made samples: a tight mouse click (press and
+ * release). Computed once per voice in plain
  * JavaScript and then only played back. No filters or oscillators at click
  * time, so it sounds the same and works in Safari too.
  */
 function clickSamples(sr: number, pitch: number, peak: number): Float32Array {
-  const n = Math.ceil(sr * 0.09);
+  const n = Math.ceil(sr * 0.08);
   const out = new Float32Array(n);
-  let phase = 0;
+  // a ringing resonator (band-pass) gives the high, crisp plastic sound
+  const w = (2 * Math.PI * pitch) / sr;
+  const rr = Math.exp(-w / 24);
+  let seed = 7;
+  let y1 = 0;
+  let y2 = 0;
   let max = 0;
   for (let i = 0; i < n; i++) {
     const t = i / sr;
-    // a round note that drops a little, like a water drop: no sharp edge
-    const f = pitch * (1 + 0.9 * Math.exp(-t / 0.008));
-    phase += (2 * Math.PI * f) / sr;
-    const tone = Math.sin(phase) + 0.15 * Math.sin(2 * phase);
-    out[i] = Math.min(1, t / 0.0015) * Math.exp(-t / 0.022) * tone;
+    seed = (seed * 16807) % 2147483647;
+    const noise = seed / 1073741823.5 - 1;
+    // the press and, 55 ms later, the release at half strength
+    const hit = noise * (Math.exp(-t / 0.0004) + (t >= 0.055 ? 0.5 * Math.exp(-(t - 0.055) / 0.0004) : 0));
+    const y = hit * (1 - rr) + 2 * rr * Math.cos(w) * y1 - rr * rr * y2;
+    y2 = y1;
+    y1 = y;
+    const body = 0.25 * Math.sin(2 * Math.PI * pitch * 0.31 * t) * Math.exp(-t / 0.002);
+    out[i] = Math.min(1, t / 0.0004) * (1.7 * y + body);
     max = Math.max(max, Math.abs(out[i]));
   }
   for (let i = 0; i < n; i++) out[i] *= peak / max;
