@@ -17,7 +17,7 @@ import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
-const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Website", "Activity", "Danger zone"] as const;
+const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Website", "Activity", "Suspend or offboard"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TenantPage() {
@@ -78,7 +78,7 @@ export default function TenantPage() {
       {t.status === "offboarded" && restorable(t) && (
         <Notice kind="warn">
           Offboarded. Restorable until <strong>{fmtDate(t.purgeAt)}</strong>; after that the data and the website repo are deleted.
-          <button className="link" onClick={() => goTab("Danger zone")}>Restore or delete</button>
+          <button className="link" onClick={() => goTab("Suspend or offboard")}>Restore or delete</button>
         </Notice>
       )}
       {t.status === "provisioning_failed" && (
@@ -88,7 +88,7 @@ export default function TenantPage() {
 
       <nav className="tabs">
         {TABS.map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Danger zone" ? " tab--danger" : ""}`}
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`}
                   onClick={() => goTab(name)}>
             {name}
             {name === "Locations" && <span className="tab__n">{t.locationCount}/{t.entitlements.maxLocations}</span>}
@@ -105,7 +105,7 @@ export default function TenantPage() {
       {tab === "Domains" && <Domains detail={data} onChanged={reload} />}
       {tab === "Website" && <WebsiteTab tenant={t} />}
       {tab === "Activity" && <Activity detail={data} />}
-      {tab === "Danger zone" && <Danger tenant={t} onChanged={reload} />}
+      {tab === "Suspend or offboard" && <Danger tenant={t} onChanged={reload} />}
     </>
   );
 }
@@ -695,7 +695,7 @@ function Activity({ detail }: { detail: TenantDetail }) {
   );
 }
 
-// --------------------------------------------------------------- danger zone
+// ------------------------------------------------------- suspend or offboard
 /** Restore works until purgeAt (none yet: until the next deletion run sets it). */
 function restorable(t: Tenant): boolean {
   return t.status === "offboarded" && !t.purgeStartedAt && (!t.purgeAt || new Date(t.purgeAt).getTime() > Date.now());

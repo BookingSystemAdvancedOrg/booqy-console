@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
-describe("Danger zone", () => {
+describe("Suspend or offboard", () => {
   it("offers Suspend and Offboard to an active customer, not Restore or Delete", () => {
     render(<Danger tenant={base} onChanged={() => {}} />);
     expect(screen.getByRole("button", { name: "Suspend customer" })).toBeInTheDocument();

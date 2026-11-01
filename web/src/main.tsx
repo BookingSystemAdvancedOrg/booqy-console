@@ -1,17 +1,8 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
-import TenantsPage from "./pages/TenantsPage";
-import NewTenantPage from "./pages/NewTenantPage";
-import TenantPage from "./pages/TenantPage";
-import OperatorsPage from "./pages/OperatorsPage";
-import MailPage from "./pages/MailPage";
-import FinancePage from "./pages/FinancePage";
-import WebsitePage from "./pages/WebsitePage";
-import ReadersPage from "./pages/ReadersPage";
-import SettingsPage from "./pages/SettingsPage";
 import { Logo } from "./components/Logo";
 import { Modal } from "./components/ui";
 import { installPress } from "./press";
@@ -20,7 +11,39 @@ import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import "./styles.css";
-import { SkelShell } from "./components/Skeleton";
+import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
+
+// Each page loads when it is opened, so the first load only fetches the shell
+// and the page in view; the rest follow in the background once signed in.
+const pages = {
+  tenants: () => import("./pages/TenantsPage"),
+  newTenant: () => import("./pages/NewTenantPage"),
+  tenant: () => import("./pages/TenantPage"),
+  operators: () => import("./pages/OperatorsPage"),
+  mail: () => import("./pages/MailPage"),
+  finance: () => import("./pages/FinancePage"),
+  website: () => import("./pages/WebsitePage"),
+  readers: () => import("./pages/ReadersPage"),
+  settings: () => import("./pages/SettingsPage"),
+};
+const TenantsPage = lazy(pages.tenants);
+const NewTenantPage = lazy(pages.newTenant);
+const TenantPage = lazy(pages.tenant);
+const OperatorsPage = lazy(pages.operators);
+const MailPage = lazy(pages.mail);
+const FinancePage = lazy(pages.finance);
+const WebsitePage = lazy(pages.website);
+const ReadersPage = lazy(pages.readers);
+const SettingsPage = lazy(pages.settings);
+
+let preloaded = false;
+function preloadPages() {
+  if (preloaded) return;
+  preloaded = true;
+  const run = () => { for (const load of Object.values(pages)) void load().catch(() => {}); };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
+  else setTimeout(run, 1500);
+}
 
 installPress();
 installGlide();
@@ -44,6 +67,10 @@ function Shell() {
     refresh();
     return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
   }, [refresh]);
+
+  useEffect(() => {
+    if (user) preloadPages();
+  }, [user]);
 
   // The emailed reset link works signed in or out (LoginPage signs out
   // once the new password is set).
@@ -98,6 +125,7 @@ function Shell() {
       )}
       <main className="main">
         <div className="page" key={location.pathname}>
+        <Suspense fallback={<SkelPage label="Loading the page"><SkelKpis /><SkelCard /></SkelPage>}>
         <Routes>
           <Route path="/" element={<TenantsPage />} />
           <Route path="/tenants/new" element={<NewTenantPage />} />
@@ -111,6 +139,7 @@ function Shell() {
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>
+        </Suspense>
         </div>
       </main>
     </div>
