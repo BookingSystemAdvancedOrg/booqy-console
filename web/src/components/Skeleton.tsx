@@ -84,7 +84,7 @@ export function SkelKpis({ n = 4, className = "" }: { n?: number; className?: st
         <div key={i} className="kpi skel-card">
           <Sheen />
           <SkelBlock w="46%" h={12} />
-          <SkelBlock w="40%" h={32} style={{ borderRadius: 10 }} />
+          <SkelBlock w="40%" h={32} style={{ borderRadius: 'var(--r-md)' }} />
           <SkelBlock w="70%" h={12} />
         </div>
       ))}
