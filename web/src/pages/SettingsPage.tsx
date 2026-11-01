@@ -1,6 +1,7 @@
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { Slot } from "../slots";
 
 /**
  * Settings: light or dark mode and the click sound. Both are kept in this
@@ -42,6 +43,7 @@ export default function SettingsPage({ email }: { email?: string }) {
           </div>
         </div>
       </section>
+      <Slot id="settings.metaAds" />
     </>
   );
 }

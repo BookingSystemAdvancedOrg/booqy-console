@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Bar } from "@booqy/brand";
 import { useBusy } from "../busy";
 
 // Quick answers (the status polling, a fast save) don't flash the strip.
@@ -9,7 +10,8 @@ const DONE_MS = 900;
  * The strip at the top while anything loads or saves: wine red runs in from
  * the left with a shimmer moving along it, creeps on while the work runs,
  * then fills the width and fades when it's done. Screen readers hear
- * "Loading" and "Done".
+ * "Loading" and "Done". The strip itself is the busy variant of Bar from
+ * @booqy/brand (the shared brand pilot); the phase is worked out here.
  */
 export function BusyBar() {
   const { active, finishedAt } = useBusy();
@@ -30,12 +32,6 @@ export function BusyBar() {
     return () => document.documentElement.classList.remove("is-busy");
   }, [phase]);
 
-  return (
-    <div className={`busy-bar busy-bar--${phase}`} aria-hidden={phase === "idle"}>
-      <div className="busy-bar__fill"><span className="busy-bar__wave" /></div>
-      <span className="sr-only" role="status" aria-live="polite">
-        {phase === "busy" ? "Loading" : phase === "done" ? "Done" : ""}
-      </span>
-    </div>
-  );
+  // busy-bar and busy-bar--<phase> stay as hooks for the tests; the look comes from Bar
+  return <Bar variant="busy" phase={phase} position="fixed" className={`busy-bar busy-bar--${phase}`} busyLabel="Loading" doneLabel="Done" />;
 }

@@ -10,6 +10,7 @@ import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
+import "@booqy/brand/styles.css";
 import "./styles.css";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 

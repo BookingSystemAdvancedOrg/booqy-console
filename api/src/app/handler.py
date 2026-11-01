@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from . import (billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
                terminal, users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, log, parse_body, respond
+from .features import MODULES as FEATURE_MODULES
 
 ROUTES = {
     "GET /platform/plans": tenants.list_plans,
@@ -88,6 +89,21 @@ ROUTES = {
     # Website page: booqy.se's cookieless statistics
     "GET /platform/website": website.overview,
 }
+
+
+
+def merge_routes(base: dict, modules) -> dict:
+    """Adds each feature module's ROUTES; a route defined twice is a bug."""
+    out = dict(base)
+    for module in modules:
+        for key, fn in module.ROUTES.items():
+            if key in out:
+                raise RuntimeError(f"duplicate route {key} in {module.__name__}")
+            out[key] = fn
+    return out
+
+
+ROUTES = merge_routes(ROUTES, FEATURE_MODULES)
 
 OPERATOR_GROUP = "platform_admin"
 
