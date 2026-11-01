@@ -156,8 +156,29 @@ let wokeAt = 0;
 let usedAt = 0;
 const IDLE_MS = 30_000;
 
+/** Does the next press need a fresh audio engine (see above)? */
+function needsNew(c: AudioContext): boolean {
+  return stale || Date.now() - usedAt > IDLE_MS || c.state === "closed" || (c.state !== "running" && wokeAt > 0 && performance.now() - wokeAt > 1000);
+}
+
+/**
+ * A press while the audio engine is not ready. Safari only wakes audio on a
+ * click, a release or a key, not on the press itself, so the click plays when
+ * the finger or mouse button comes up (unlock) instead of staying silent.
+ */
+let pending: { kind: keyof typeof VOICES; at: number } | null = null;
+
+/** Plays a waiting click once the engine runs; one older than a second is dropped. */
+function flush() {
+  const c = ctx;
+  if (!pending || !c || c.state !== "running") return;
+  const { kind, at } = pending;
+  pending = null;
+  if (performance.now() - at < 1000) sound(c, kind);
+}
+
 function audio(): AudioContext | null {
-  if (ctx && (stale || Date.now() - usedAt > IDLE_MS || ctx.state === "closed" || (ctx.state !== "running" && wokeAt > 0 && performance.now() - wokeAt > 1000))) {
+  if (ctx && needsNew(ctx)) {
     ctx.close().catch(() => {});
     ctx = null;
     unlocked = false;
@@ -202,16 +223,16 @@ function clickBuffer(c: AudioContext, kind: keyof typeof VOICES): AudioBuffer {
 function play(kind: keyof typeof VOICES) {
   if (!on || volume <= 0) return;
   try {
-    const c = audio();
-    if (!c) return;
-    // Safari starts the audio asleep: wake it, then play once it is running
-    if (c.state !== "running") {
-      wake(c).then(() => {
-        if (c.state === "running") sound(c, kind);
-      }, () => {});
+    const c = ctx;
+    if (c && !needsNew(c) && c.state === "running") {
+      sound(c, kind);
       return;
     }
-    sound(c, kind);
+    // Not ready: the click waits for the release (unlock), or for the engine
+    // to wake if this already is a click or a key
+    pending = { kind, at: performance.now() };
+    const ready = c ? (needsNew(c) ? null : c) : audio();
+    if (ready) wake(ready).then(flush, () => {});
   } catch {
     /* no sound */
   }
@@ -269,7 +290,7 @@ export function installPress() {
     try {
       const c = audio();
       if (!c) return;
-      if (c.state !== "running") void wake(c);
+      if (c.state !== "running") wake(c).then(flush, () => {});
       if (!unlocked) {
         const silent = c.createBufferSource();
         silent.buffer = c.createBuffer(1, 1, c.sampleRate);
@@ -277,6 +298,7 @@ export function installPress() {
         silent.start(0);
         unlocked = true;
       }
+      flush();
     } catch {
       /* no audio */
     }
