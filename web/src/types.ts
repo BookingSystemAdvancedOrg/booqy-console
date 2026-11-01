@@ -42,7 +42,8 @@ export interface Tenant {
   slug: string;
   status: TenantStatus;
   planId: string;
-  entitlements: { maxLocations: number; features: Features; limits?: Limits };
+  /** featuresEver: every feature key ever turned on (read-only; only grows, CONTRACTS.md 9.2). */
+  entitlements: { maxLocations: number; features: Features; limits?: Limits; featuresEver?: string[] };
   locationCount: number;
   ownerEmail?: string;
   ownerName?: string;

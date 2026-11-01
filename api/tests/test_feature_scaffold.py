@@ -134,3 +134,34 @@ def test_forward_refuses_wrong_target():
     from app.features import _forward
     with pytest.raises(ValueError):
         _forward.forward("site-builder", "meta-ads.tenant.get")
+
+
+def _ever(tenant_id):
+    return call("GET /platform/tenants/{tenantId}", {"tenantId": tenant_id})[1]["tenant"]["entitlements"].get("featuresEver", [])
+
+
+def test_features_ever_only_grows(aws, tenant):
+    assert sorted(_ever(tenant)) == ["ordering", "reservations"]          # stamped at create from the plan
+    body = _plan(tenant, {"planId": "starter", "overrides": {"features": {"giftCards": True}}})[1]
+    assert sorted(body["tenant"]["entitlements"]["featuresEver"]) == ["giftCards", "ordering", "reservations"]
+    _plan(tenant, {"planId": "starter", "overrides": {"features": {"giftCards": False}}})
+    assert "giftCards" in _ever(tenant)                                       # turning off keeps it
+    _plan(tenant, {"planId": "growth"})
+    assert sorted(_ever(tenant)) == ["catering", "giftCards", "ordering", "reservations"]  # plan change keeps earlier keys
+    _plan(tenant, {"planId": "starter", "overrides": {"features": {"reservations": False, "ordering": False}}})
+    assert sorted(_ever(tenant)) == ["catering", "giftCards", "ordering", "reservations"]  # nothing on: unchanged
+
+
+def test_create_with_overrides_stamps_them(aws):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "ever-place",
+                                                        "overrides": {"features": {"waitlist": True, "ordering": False}}})
+    assert status == 202, body
+    assert sorted(_ever(body["tenantId"])) == ["reservations", "waitlist"]
+
+
+def test_plan_change_on_a_row_without_entitlements(aws, tenant):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="REMOVE entitlements")
+    _plan(tenant, {"planId": "starter", "overrides": {"features": {"metaAds": True}}})
+    assert sorted(_ever(tenant)) == ["metaAds", "ordering", "reservations"]
