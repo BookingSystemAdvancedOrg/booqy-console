@@ -6,10 +6,17 @@ import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
-import type { LocationInput } from "../types";
+import type { Features, LocationInput } from "../types";
+import { FEATURE_KEYS, FEATURE_LABELS, LIMITS } from "../contracts";
 import { SaveButton, useDirty } from "../components/save";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
+
+/** Every contract feature (ticked or not), then any other key a plan or tenant carries. */
+export const featureKeys = (...maps: Features[]) =>
+  [...new Set<string>([...FEATURE_KEYS, ...maps.flatMap((m) => Object.keys(m))])];
+export const featureLabel = (k: string) => (FEATURE_LABELS as Record<string, { en: string }>)[k]?.en ?? k;
+export const AI_EDITS = "siteBuilderAiEditsPerMonth";
 
 export function slugify(name: string) {
   return name
@@ -29,7 +36,8 @@ const LABELS: Record<string, string> = {
   "address.city": "City", ownerName: "Owner full name", ownerEmail: "Owner business email", ownerPhone: "Owner phone",
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
-  "overrides.maxLocations": "Locations allowed", locations: "Locations", notes: "Notes",
+  "overrides.maxLocations": "Locations allowed", "overrides.limits.siteBuilderAiEditsPerMonth": "AI site edits per month",
+  "overrides.features": "Features", locations: "Locations", notes: "Notes",
   "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "Agreement start date",
   "billing.collectionMethod": "Invoicing",
 };
@@ -80,7 +88,7 @@ const BLANK = {
   street: "", postalCode: "", city: "",
   ownerName: "", ownerEmail: "", ownerPhone: "",
   contactEmail: "", contactPhone: "", billingEmail: "", senderName: "", replyToEmail: "",
-  planId: "", maxLocations: "", notes: "",
+  planId: "", maxLocations: "", aiEdits: "", notes: "",
 };
 
 export default function NewTenantPage() {
@@ -159,10 +167,11 @@ export default function NewTenantPage() {
         senderName: f.senderName, replyToEmail: f.replyToEmail, notes: f.notes,
       }),
       ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
-      ...(f.maxLocations || Object.keys(featureOverrides).length ? {
+      ...(f.maxLocations || f.aiEdits || Object.keys(featureOverrides).length ? {
         overrides: {
           ...(f.maxLocations ? { maxLocations: Number(f.maxLocations) } : {}),
           ...(Object.keys(featureOverrides).length ? { features: featureOverrides } : {}),
+          ...(f.aiEdits ? { limits: { [AI_EDITS]: Number(f.aiEdits) } } : {}),
         },
       } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
@@ -322,7 +331,7 @@ export default function NewTenantPage() {
               <input id={i === 0 ? "f-planId" : undefined} type="radio" name="plan" value={p.planId} checked={f.planId === p.planId} onChange={set("planId")} />
               <strong>{p.name}</strong>
               <span>{p.maxLocations} location{p.maxLocations > 1 ? "s" : ""}</span>
-              <span className="small muted">{Object.entries(p.features).filter(([, on]) => on).map(([k]) => k).join(" · ")}</span>
+              <span className="small muted">{Object.entries(p.features).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(" · ")}</span>
             </label>
           ))}
         </div>
@@ -331,6 +340,11 @@ export default function NewTenantPage() {
           <Field label="Locations allowed (override)" error={fields["overrides.maxLocations"]}
                  hint={plan ? `Leave empty for the plan's ${plan.maxLocations}` : "Pick a plan first"}>
             <input id="f-overrides.maxLocations" className="input" type="number" min={1} max={100} value={f.maxLocations} onChange={set("maxLocations")} />
+          </Field>
+          <Field label="AI site edits per month (override)" error={fields[`overrides.limits.${AI_EDITS}`]}
+                 hint={plan ? `Leave empty for the plan's ${plan.limits?.[AI_EDITS] ?? LIMITS[AI_EDITS].default}; used with Site builder` : "Pick a plan first"}>
+            <input id={`f-overrides.limits.${AI_EDITS}`} className="input" type="number" min={LIMITS[AI_EDITS].min} max={LIMITS[AI_EDITS].max}
+                   value={f.aiEdits} onChange={set("aiEdits")} />
           </Field>
           <Field label="Monthly price, SEK ex VAT" error={fields["billing.priceSek"]}
                  hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
@@ -341,9 +355,9 @@ export default function NewTenantPage() {
             <span className="field__label">Features</span>
             {plan ? (
               <div className="checks">
-                {Object.keys(features).map((k) => (
+                {featureKeys(features).map((k) => (
                   <label key={k} className="check">
-                    <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {k}
+                    <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {featureLabel(k)}
                   </label>
                 ))}
               </div>

@@ -75,3 +75,23 @@ describe("NewTenantPage", () => {
     expect(screen.getByRole("status", { name: "Setting up Test Pizza" })).toBeInTheDocument();
   });
 });
+
+describe("NewTenantPage plan features", () => {
+  it("labels every feature and sends an AI edit limit override", async () => {
+    renderPage();
+    await screen.findByText("Starter");
+    fireEvent.click(document.getElementById("f-planId")!);
+    expect(screen.getByLabelText("Meta ads")).not.toBeChecked();
+    expect(screen.getByLabelText("Staff ledger (personalliggare)")).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText(/AI site edits per month/), { target: { value: "10" } });
+    fireEvent.click(screen.getByLabelText("Gift cards"));
+    fireEvent.change(document.getElementById("f-name")!, { target: { value: "Test Pizza" } });
+    fireEvent.change(document.getElementById("f-ownerName")!, { target: { value: "Lamo" } });
+    fireEvent.change(document.getElementById("f-ownerEmail")!, { target: { value: "lamo@example.se" } });
+    mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    expect(mocks.createTenant).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { features: { giftCards: true }, limits: { siteBuilderAiEditsPerMonth: 10 } },
+    }));
+  });
+});

@@ -9,6 +9,7 @@ import json
 from botocore.exceptions import ClientError
 
 from . import validation as v
+from .contracts import FEATURE_KEYS, LIMITS
 from .core import (ApiError, audit_put, cancellation_codes, client, env, from_ddb, location_table,
                    new_id, not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
                    user_table, write_audit)
@@ -92,7 +93,7 @@ def list_plans(req) -> tuple[int, dict]:
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
          "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
-         "priceSek": p.get("priceSek")}
+         "limits": p.get("limits", {}), "priceSek": p.get("priceSek")}
         for p in plans]}
 
 
@@ -103,6 +104,9 @@ def _entitlements(plan: dict, overrides: dict | None) -> dict:
             ent["maxLocations"] = int(overrides["maxLocations"])
         for k, val in (overrides.get("features") or {}).items():
             ent["features"][k] = bool(val)
+    ent["limits"] = {k: int(val) for k, val in (plan.get("limits") or {}).items()}
+    for k, val in ((overrides or {}).get("limits") or {}).items():
+        ent["limits"][k] = int(val)
     return ent
 
 
@@ -119,8 +123,25 @@ def _overrides(f: v.Fields) -> dict | None:
     if feats is not None:
         if not isinstance(feats, dict) or not all(isinstance(x, bool) for x in feats.values()):
             sub.fail("features", "Map of feature -> true/false")
+        elif any(k not in FEATURE_KEYS for k in feats):
+            sub.fail("features", "Unknown feature")
         else:
             out["features"] = feats
+    lims = raw.get("limits")
+    if lims is not None:
+        if not isinstance(lims, dict):
+            sub.fail("limits", "Map of limit -> whole number")
+        else:
+            ls = v.Fields(lims)
+            for k in lims:
+                if k not in LIMITS:
+                    ls.fail(k, "Unknown limit")
+                else:
+                    ls.integer(k, minimum=LIMITS[k]["min"], maximum=LIMITS[k]["max"])
+            for k, msg in ls.errors.items():
+                sub.fail(f"limits.{k}", msg)
+            if not ls.errors:
+                out["limits"] = {k: int(val) for k, val in lims.items()}
     for k, msg in sub.errors.items():
         f.fail(f"overrides.{k}", msg)
     return {k: val for k, val in out.items() if val is not None}

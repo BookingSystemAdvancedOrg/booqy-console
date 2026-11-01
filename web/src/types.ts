@@ -1,13 +1,18 @@
 export type TenantStatus =
   | "provisioning" | "provisioning_failed" | "active" | "suspended" | "offboarding" | "offboarded" | "purged";
 
+import type { LimitKey } from "./contracts";
+
 export type Features = Record<string, boolean>;
+/** Plan and tenant limits (CONTRACTS.md 2); a missing limit counts as its default. */
+export type Limits = Partial<Record<LimitKey, number>>;
 
 export interface Plan {
   planId: string;
   name: string;
   maxLocations: number;
   features: Features;
+  limits?: Limits;
   /** Monthly price excluding VAT (the plan's default; a customer can have their own). */
   priceSek?: number | null;
 }
@@ -37,7 +42,7 @@ export interface Tenant {
   slug: string;
   status: TenantStatus;
   planId: string;
-  entitlements: { maxLocations: number; features: Features };
+  entitlements: { maxLocations: number; features: Features; limits?: Limits };
   locationCount: number;
   ownerEmail?: string;
   ownerName?: string;
@@ -301,7 +306,7 @@ export interface NewTenantInput {
               collectionMethod?: "send_invoice" | "charge_automatically" };
   address?: Address;
   notes?: string;
-  overrides?: { maxLocations?: number };
+  overrides?: { maxLocations?: number; features?: Features; limits?: Limits };
   locations: LocationInput[];
 }
 
