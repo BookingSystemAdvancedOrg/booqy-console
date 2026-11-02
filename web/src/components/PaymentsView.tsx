@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
-import { ErrorNotice, Modal, Notice, Printing, Status, useAction, useLoad } from "./ui";
+import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
+import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
+import { useRowOpen } from "./rowLink";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -31,11 +33,18 @@ export default function PaymentsView() {
       </div>
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}
       <div className="toolbar finance-toolbar">
+        {/* One sand pill like the status bar beside it: arrows either side and
+            the month as words. The browser's own month field sits invisibly
+            over the words, so a click (or the keyboard) still opens its picker. */}
         <div className="month-pick" role="group" aria-label="Month">
-          <button className="btn btn--ghost btn--small" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
-          <input className="input month-pick__input" type="month" value={month} max={thisMonth} aria-label="Month"
-                 onChange={(e) => { if (e.target.value) setMonth(e.target.value); }} />
-          <button className="btn btn--ghost btn--small" aria-label="Next month" disabled={month >= thisMonth}
+          <button type="button" className="month-pick__step" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
+          <label className="month-pick__label">
+            <span aria-hidden="true">{monthLabel(month)}</span>
+            <input className="month-pick__native" type="month" value={month} max={thisMonth} aria-label="Month"
+                   onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* picker not allowed here; typing still works */ } }}
+                   onChange={(e) => { if (e.target.value) setMonth(e.target.value); }} />
+          </label>
+          <button type="button" className="month-pick__step" aria-label="Next month" disabled={month >= thisMonth}
                   onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
         </div>
         <div className="chips" role="group" aria-label="Status">
@@ -45,12 +54,12 @@ export default function PaymentsView() {
             </button>
           ))}
         </div>
-        <input className="input search" placeholder="Customer: name, org. number or slug…" value={needle}
+        <input className="input search payments-search" type="search" placeholder="Customer: name, org. number or slug…" value={needle}
                aria-label="Filter invoices by customer" onChange={(e) => setNeedle(e.target.value)} />
       </div>
 
       <ErrorNotice error={error} />
-      {loading && !data ? <Printing label="Checking payments" /> : data && s && (
+      {loading && !data ? <SkelPage label="Checking payments"><SkelKpis className="kpis--row" /><SkelTable rows={5} cols={8} /></SkelPage> : data && s && (
         <>
           <section className="kpis kpis--row" aria-label={`Payments ${monthLabel(month)}`}>
             <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} sub={`${fmtSek(s.collectedSek)} of ${fmtSek(s.invoicedSek)} ex VAT`} />
@@ -89,7 +98,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
   return (
     <Modal title={result ? "Invoicing done" : "Run invoicing: preview"} onClose={onClose} wide>
       <div className="stack">
-        {preview.loading && !preview.data ? <Printing label="Adding up the periods" /> : shown && (
+        {preview.loading && !preview.data ? <SkelRows n={4} cols={4} /> : shown && (
           <>
             {shown.invoices.length === 0 && shown.errors.length === 0 ? (
               <Notice kind="info">{result ? "Nothing was invoiced." : "Nothing to invoice: every complete period is already invoiced."}</Notice>
@@ -138,12 +147,13 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
 
 function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   const remind = useAction();
+  const openRow = useRowOpen();
   const overdue = r.status === "open" && r.daysLate > 0;
   const fees = (Number(r.lateFeeSek) || 0) + (Number(r.interestSek) || 0);
   return (
-    <tr className={overdue ? "overdue" : undefined}>
+    <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
       <td>
-        <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong">{r.name}</Link>
+        <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong row-link__name">{r.name}</Link>
         <div className="muted small mono">{r.orgNumber ?? r.slug}{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
       </td>
       <td className="mono small">

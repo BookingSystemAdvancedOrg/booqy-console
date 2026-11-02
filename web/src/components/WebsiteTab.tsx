@@ -1,8 +1,10 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
-import { Card, ErrorNotice, Field, Notice, Printing, Status, fmtDate, useAction, useLoad } from "./ui";
+import { Card, ErrorNotice, Field, Notice, Status, fmtDate, useAction, useLoad } from "./ui";
 import { CheckMark, SaveButton, useDirty } from "./save";
+import { SkelCard, SkelPage } from "./Skeleton";
+import { Slot } from "../slots";
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
 
@@ -22,14 +24,23 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     return () => window.clearInterval(id);
   }, [creating, reload]);
 
-  if (loading && !data) return <Printing />;
+  if (loading && !data) return (
+    <SkelPage label="Loading the website">
+      <SkelCard lines={5} />
+      <SkelCard rows={3} cols={3} />
+    </SkelPage>
+  );
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
+  const builder = <Slot id="tenant.website.siteBuilder" features={tenant.entitlements?.features} props={{ tenantId: tenant.tenantId }} />;
   if (!data.enabled) {
     return (
+      <>
       <Notice kind="info">
         Site repos aren't switched on in this environment yet: the "Booqy Sites" GitHub App key has to be stored first
         (CUSTOMER-SITE-RUNBOOK.md). Until then the restaurant uses the shared site.
       </Notice>
+      {builder}
+      </>
     );
   }
   const readOnly = data.environment === "dev" && !data.repo.startsWith("site-test-");
@@ -45,6 +56,7 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
           {!readOnly && <Archive site={data} tenant={tenant} onChanged={reload} />}
         </>
       )}
+      {builder}
     </div>
   );
 }

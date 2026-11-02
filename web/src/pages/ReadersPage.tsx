@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { DEVICE } from "../components/TerminalModal";
-import { ErrorNotice, Notice, Printing, useLoad } from "../components/ui";
+import { ErrorNotice, Notice, useLoad } from "../components/ui";
 import type { FleetReader } from "../types";
 import { RefreshButton } from "../components/save";
+import { SkelPage, SkelTable } from "../components/Skeleton";
+import { useRowOpen } from "../components/rowLink";
 
 const FILTERS = ["all", "online", "offline", "unassigned"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -29,6 +31,7 @@ function matches(r: FleetReader, filter: Filter) {
  * is the overview across customers.
  */
 export default function ReadersPage() {
+  const openRow = useRowOpen();
   const { data, error, loading, reload } = useLoad(() => api.allReaders());
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -84,7 +87,7 @@ export default function ReadersPage() {
         </Notice>
       ))}
 
-      {loading && !data ? <Printing label="Asking Stripe" /> : (
+      {loading && !data ? <SkelPage label="Asking Stripe"><SkelTable rows={4} cols={5} /></SkelPage> : (
         <>
           <div className="table-wrap">
             <table className="table table--stack">
@@ -93,7 +96,7 @@ export default function ReadersPage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className="row-link" onClick={(e) => openRow(e, `/tenants/${r.tenantId}`)}>
                     <td>
                       <span className="strong">{r.label}</span>
                       <div className="muted small">{DEVICE[r.device_type] ?? r.device_type}{r.serial_number ? ` · ${r.serial_number}` : ""}</div>
@@ -104,7 +107,7 @@ export default function ReadersPage() {
                       </span>
                     </td>
                     <td>
-                      <Link to={`/tenants/${r.tenantId}`}>{r.tenantName ?? r.tenantId}</Link>
+                      <Link to={`/tenants/${r.tenantId}`} className="row-link__name">{r.tenantName ?? r.tenantId}</Link>
                       <div className={r.locationId ? "small" : "muted small"}>
                         {r.locationId ? r.locationName ?? r.locationId
                           : "Not at a Booqy location: remove it in the restaurant's Stripe account"}
@@ -132,8 +135,8 @@ export default function ReadersPage() {
                 </thead>
                 <tbody>
                   {waiting.map((l) => (
-                    <tr key={l.terminalLocationId}>
-                      <td><Link to={`/tenants/${l.tenantId}`}>{l.tenantName ?? l.tenantId}</Link></td>
+                    <tr key={l.terminalLocationId} className="row-link" onClick={(e) => openRow(e, `/tenants/${l.tenantId}`)}>
+                      <td><Link to={`/tenants/${l.tenantId}`} className="row-link__name">{l.tenantName ?? l.tenantId}</Link></td>
                       <td>{l.locationName ?? l.locationId}</td>
                     </tr>
                   ))}

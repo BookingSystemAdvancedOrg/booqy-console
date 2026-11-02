@@ -46,7 +46,7 @@ PK = "PLATFORM#MAIL"
 TEMPLATE_SK = "TEMPLATE"
 NEWSLETTER_PREFIX = "NEWSLETTER#"
 DEFAULT_REPLY_TO = "support@ithjalparna.se"
-DEFAULT_ACCENT = "#350001"
+DEFAULT_ACCENT = "#1a120e"   # Booqy's espresso, the same as the apps' pills
 LOGO_MAX_BYTES = 200_000
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg"}
 SUBJECT_MAX = 150
@@ -86,7 +86,7 @@ def _public_template(template: dict) -> dict:
     JSON except as a data URI for the picker's preview."""
     out = {k: template.get(k) for k in ("senderName", "replyTo", "accentColor", "signature", "footer", "updatedAt", "updatedBy")}
     logo = template.get("logo") or {"kind": "booqy"}
-    out["logo"] = {"kind": logo.get("kind", "booqy"), "name": logo.get("name"),
+    out["logo"] = {"kind": logo.get("kind", "booqy"), "name": logo.get("name"), "color": logo.get("color"),
                    "dataUrl": _logo_data_url(template)}
     out["from"] = env("NO_REPLY_EMAIL_ADDRESS", "no-reply@booqy.se")
     return out
@@ -97,6 +97,10 @@ def get_template(req) -> tuple[int, dict]:
 
 
 def _parse_logo(f: v.Fields, current: dict) -> dict | None:
+    """The logo the console sends: Booqy's or an uploaded one, with the colour
+    it was drawn in (None = the file's own colours). The console renders the
+    final PNG itself (recoloured, background removed), so the data here is
+    exactly what the email shows."""
     raw = f.data.get("logo")
     if raw is None:
         return None
@@ -104,17 +108,22 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
         f.fail("logo", "Must be an object")
         return None
     kind = raw.get("kind")
-    if kind == "booqy":
-        return {"kind": "booqy"}
-    if kind != "custom":
+    if kind not in ("booqy", "custom"):
         f.fail("logo.kind", "Must be booqy or custom")
+        return None
+    color = raw.get("color")
+    if color is not None and not (isinstance(color, str) and HEX_COLOUR.match(color)):
+        f.fail("logo.color", "A colour like #3a2418")
         return None
     data_url = raw.get("dataUrl")
     if not data_url:
-        # Keep the logo already uploaded.
-        if (current.get("logo") or {}).get("kind") == "custom":
-            return current["logo"]
-        f.fail("logo", "Upload a PNG or JPEG logo, or choose the Booqy logo")
+        # Keep the logo already saved for this choice (uploaded or recoloured).
+        saved = current.get("logo") or {}
+        if saved.get("kind") == kind and (kind == "booqy" or saved.get("data")):
+            return saved
+        if kind == "booqy":
+            return {"kind": "booqy"}
+        f.fail("logo", "Upload a logo, or choose the Booqy logo")
         return None
     match = re.match(r"^data:(image/png|image/jpeg);base64,([A-Za-z0-9+/=\s]+)$", str(data_url))
     if not match:
@@ -128,8 +137,11 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
     if len(blob) > LOGO_MAX_BYTES:
         f.fail("logo", f"The logo must be under {LOGO_MAX_BYTES // 1000} kB (the console shrinks it; try a smaller file)")
         return None
-    name = str(raw.get("name") or "logo")[:100]
-    return {"kind": "custom", "contentType": match.group(1), "data": base64.b64encode(blob).decode("ascii"), "name": name}
+    out = {"kind": kind, "contentType": match.group(1), "data": base64.b64encode(blob).decode("ascii"),
+           "name": str(raw.get("name") or "logo")[:100]}
+    if color:
+        out["color"] = color.lower()
+    return out
 
 
 def put_template(req) -> tuple[int, dict]:
@@ -137,7 +149,7 @@ def put_template(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     sender = f.text("senderName", required=True, max_len=60)
     reply_to = f.email("replyTo", required=True)
-    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #350001")
+    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
     signature = f.text("signature", max_len=600) or ""
     footer = f.text("footer", max_len=600) or ""
     logo = _parse_logo(f, current)
@@ -156,7 +168,7 @@ def _booqy_logo() -> bytes:
 
 def _logo_bytes(template: dict) -> tuple[bytes, str]:
     logo = template.get("logo") or {}
-    if logo.get("kind") == "custom" and logo.get("data"):
+    if logo.get("data"):
         return base64.b64decode(logo["data"]), logo.get("contentType") or "image/png"
     return _booqy_logo(), "image/png"
 
@@ -293,7 +305,7 @@ def preview(req) -> tuple[int, dict]:
         reply_to = f.email("replyTo")
         if reply_to:
             template["replyTo"] = reply_to
-        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #350001")
+        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
         if accent:
             template["accentColor"] = accent
         logo = _parse_logo(f, template)

@@ -62,6 +62,24 @@ def test_template_defaults_and_save(mail):
     assert set(body["fields"]) == {"senderName", "replyTo", "accentColor", "logo"}
 
 
+
+def test_logo_colour_is_kept_and_checked(mail):
+    base = {"senderName": "Booqy", "replyTo": "support@ithjalparna.se", "accentColor": "#350001"}
+    data_url = "data:image/png;base64," + base64.b64encode(PNG).decode()
+    # The built-in logo drawn in another colour (the console renders the PNG).
+    status, body = call("PUT /platform/mail/template", body={**base, "logo": {"kind": "booqy", "color": "#1F5A46", "dataUrl": data_url}})
+    assert status == 200, body
+    logo = body["template"]["logo"]
+    assert logo["kind"] == "booqy" and logo["color"] == "#1f5a46" and logo["dataUrl"] == data_url
+    # Saving other fields keeps the recoloured logo.
+    status, body = call("PUT /platform/mail/template", body={**base, "signature": "Hej", "logo": {"kind": "booqy"}})
+    assert status == 200 and body["template"]["logo"]["dataUrl"] == data_url and body["template"]["logo"]["color"] == "#1f5a46"
+    # Own logo in its own colours: no colour stored.
+    status, body = call("PUT /platform/mail/template", body={**base, "logo": {"kind": "custom", "dataUrl": data_url, "color": None}})
+    assert status == 200 and body["template"]["logo"]["color"] is None
+    status, body = call("PUT /platform/mail/template", body={**base, "logo": {"kind": "custom", "dataUrl": data_url, "color": "red"}})
+    assert status == 400 and "logo.color" in body["fields"]
+
 def test_preview_renders_blocks(mail):
     status, body = call("POST /platform/mail/preview", body={
         "subject": "Nyheter i oktober", "body": "Hej!\n\n# Nytt i Booqy\n\n- Bordsbokning i 3D\n- QR vid bordet\n\nLäs mer på https://booqy.se/nyheter **nu**."})

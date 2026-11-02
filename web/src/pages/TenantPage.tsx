@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad, Printing } from "../components/ui";
+  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
@@ -11,12 +11,15 @@ import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from 
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { setupFailure } from "./NewTenantPage";
+import { LIMIT_LABELS, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
+import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
+import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
-const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Website", "Activity", "Danger zone"] as const;
+const TABS = ["Overview", "Locations", "Users", "Plan", "Billing", "Payments", "Domains", "Website", "Integrations", "Activity", "Suspend or offboard"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TenantPage() {
@@ -42,7 +45,17 @@ export default function TenantPage() {
     return () => window.clearInterval(id);
   }, [busy, reload]);
 
-  if (loading && !data) return <Printing />;
+  if (loading && !data) return (
+    <SkelPage label="Loading the customer">
+      <SkelBlock w={160} h={14} />
+      <div className="page-head"><SkelBlock w={300} h={34} /></div>
+      <SkelBlock w={520} h={48} round />
+      <div className="cols">
+        <SkelCard lines={6} />
+        <SkelCard rows={4} cols={2} />
+      </div>
+    </SkelPage>
+  );
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   const t = data.tenant;
 
@@ -67,7 +80,7 @@ export default function TenantPage() {
       {t.status === "offboarded" && restorable(t) && (
         <Notice kind="warn">
           Offboarded. Restorable until <strong>{fmtDate(t.purgeAt)}</strong>; after that the data and the website repo are deleted.
-          <button className="link" onClick={() => goTab("Danger zone")}>Restore or delete</button>
+          <button className="link" onClick={() => goTab("Suspend or offboard")}>Restore or delete</button>
         </Notice>
       )}
       {t.status === "provisioning_failed" && (
@@ -76,8 +89,8 @@ export default function TenantPage() {
       <ErrorNotice error={error} />
 
       <nav className="tabs">
-        {TABS.map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Danger zone" ? " tab--danger" : ""}`}
+        {TABS.filter((name) => name !== "Integrations" || hasIntegrations(t)).map((name) => (
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`}
                   onClick={() => goTab(name)}>
             {name}
             {name === "Locations" && <span className="tab__n">{t.locationCount}/{t.entitlements.maxLocations}</span>}
@@ -93,9 +106,25 @@ export default function TenantPage() {
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
       {tab === "Domains" && <Domains detail={data} onChanged={reload} />}
       {tab === "Website" && <WebsiteTab tenant={t} />}
+      {tab === "Integrations" && hasIntegrations(t) && <Integrations tenant={t} />}
       {tab === "Activity" && <Activity detail={data} />}
-      {tab === "Danger zone" && <Danger tenant={t} onChanged={reload} />}
+      {tab === "Suspend or offboard" && <Danger tenant={t} onChanged={reload} />}
     </>
+  );
+}
+
+const INTEGRATION_SLOTS = ["tenant.integrations.metaAds", "tenant.integrations.googleBusiness", "tenant.integrations.phoneAgent"] as const;
+
+// Visible while one of its slots' features is on (CONTRACTS.md 8.3).
+const hasIntegrations = (t: Tenant) => INTEGRATION_SLOTS.some((id) => slotOn(id, t.entitlements.features));
+
+function Integrations({ tenant }: { tenant: Tenant }) {
+  const props = { tenantId: tenant.tenantId };
+  return (
+    <div className="stack">
+      <p className="muted small">Connections this customer has made to outside services.</p>
+      {INTEGRATION_SLOTS.map((id) => <Slot key={id} id={id} features={tenant.entitlements.features} props={props} />)}
+    </div>
   );
 }
 
@@ -227,7 +256,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
           <dl className="dl">
             <Row label="Owner" value={t.ownerName && `${t.ownerName} · ${t.ownerEmail}`} />
             <Row label="Plan" value={`${t.planId} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
-            <Row label="Features" value={Object.entries(t.entitlements.features).filter(([, on]) => on).map(([k]) => k).join(", ")} />
+            <Row label="Features" value={Object.entries(t.entitlements.features).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
             <Row label="Payments" value={t.stripe?.chargesEnabled ? "Ready" : t.stripe?.accountId ? "Stripe setup not finished" : "No Stripe account yet"} />
             <Row label="Website" value={t.primaryDomain} />
             <Row label="Users" value={String(detail.userCount)} />
@@ -321,7 +350,8 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
     const res = await a.run(async () => {
       await api.setPlan(tenant.tenantId, {
         planId: tenant.planId,
-        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: tenant.entitlements.features },
+        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: tenant.entitlements.features,
+                     ...(tenant.entitlements.limits ? { limits: tenant.entitlements.limits } : {}) },
       });
       return api.createLocation(tenant.tenantId, compact(f) as LocationInput);
     });
@@ -424,11 +454,15 @@ function Users({ tenant }: { tenant: Tenant }) {
 }
 
 // ---------------------------------------------------------------------- plan
-function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
+export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const plans = useLoad(() => api.plans());
   const [planId, setPlanId] = useState(tenant.planId);
   const [maxLocations, setMax] = useState(String(tenant.entitlements.maxLocations));
   const [features, setFeatures] = useState(tenant.entitlements.features);
+  // Every contract limit as input text: the plan's, or the tenant's own (incl. overrides).
+  const limitsOf = (p?: { limits?: Tenant["entitlements"]["limits"] }) =>
+    Object.fromEntries(LIMIT_KEYS.map((k) => [k, limitValue(k, p?.limits)])) as Record<LimitKey, string>;
+  const [limits, setLimits] = useState(limitsOf(tenant.entitlements));
   const ownPrice = tenant.billing?.priceSek;
   const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
   const a = useAction();
@@ -437,8 +471,9 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
   const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
   const dirty = useDirty(
-    { planId, maxLocations, features, price },
-    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features, price: savedPrice },
+    { planId, maxLocations, features, price, ...limits },
+    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features,
+      price: savedPrice, ...limitsOf(tenant.entitlements) },
   );
 
   useEffect(() => {
@@ -447,10 +482,12 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
     if (planId === tenant.planId) {
       setMax(String(tenant.entitlements.maxLocations));
       setFeatures(tenant.entitlements.features);
+      setLimits(limitsOf(tenant.entitlements));
       setPrice(ownPrice != null ? String(ownPrice) : plan?.priceSek != null ? String(plan.priceSek) : "");
     } else if (plan) {
       setMax(String(plan.maxLocations));
       setFeatures(plan.features);
+      setLimits(limitsOf(plan));
       setPrice(plan.priceSek != null ? String(plan.priceSek) : "");
     }
   }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -460,6 +497,8 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
     if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
     const changed = plan ? Object.fromEntries(Object.entries(features).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
+    const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];
+    if (changedLimits.length) overrides.limits = Object.fromEntries(changedLimits.map((k) => [k, Number(limits[k])]));
     const body: { planId: string; overrides: Record<string, unknown>; force: boolean; priceSek?: number } = { planId, overrides, force };
     if (price !== "") body.priceSek = Number(price);
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
@@ -485,12 +524,19 @@ function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
                hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
           <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
+        {LIMIT_KEYS.map((k) => (
+          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}
+                 hint={`Used with ${featureLabel(LIMITS[k].feature)}. The plan's is ${limitValue(k, plan?.limits)}`}>
+            <input className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max} step={1} value={limits[k]}
+                   onChange={(e) => setLimits({ ...limits, [k]: e.target.value })} />
+          </Field>
+        ))}
         <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
           <span className="field__label">Features</span>
           <div className="checks">
-            {Object.keys({ ...(plan?.features ?? {}), ...features }).map((k) => (
+            {featureKeys(plan?.features ?? {}, features).map((k) => (
               <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
-                <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {k}
+                <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {featureLabel(k)}
               </label>
             ))}
           </div>
@@ -684,7 +730,7 @@ function Activity({ detail }: { detail: TenantDetail }) {
   );
 }
 
-// --------------------------------------------------------------- danger zone
+// ------------------------------------------------------- suspend or offboard
 /** Restore works until purgeAt (none yet: until the next deletion run sets it). */
 function restorable(t: Tenant): boolean {
   return t.status === "offboarded" && !t.purgeStartedAt && (!t.purgeAt || new Date(t.purgeAt).getTime() > Date.now());
@@ -706,6 +752,7 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
         {tenant.status === "offboarding" && <Notice kind="info">Offboarding is running: this page updates by itself.</Notice>}
         {tenant.status === "offboarded" && <Restore tenant={tenant} onChanged={onChanged} />}
         {tenant.status !== "offboarding" && <DeleteCustomer tenant={tenant} onChanged={onChanged} />}
+        <Slot id="tenant.offboard.personalliggare" props={{ tenantId: tenant.tenantId }} />
       </div>
     );
   }
@@ -753,6 +800,7 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
         <SaveButton kind="danger" type="button" label="Offboard customer" busy={a.busy} busyLabel="Offboarding…" disabled={tenant.status === "provisioning" || confirm !== tenant.slug}
                     onClick={async () => { if (await a.run(() => api.offboard(tenant.tenantId, confirm))) { setConfirm(""); onChanged(); } }} />
       </Card>
+      <Slot id="tenant.offboard.personalliggare" props={{ tenantId: tenant.tenantId }} />
     </div>
   );
 }

@@ -1,11 +1,13 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Printing, Status, errorMessage, fmtDate, useAction, useLoad,
+  Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
+import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
+import { rowAction } from "../components/rowLink";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -44,7 +46,7 @@ function Preview({ html, title }: { html: string | null; title: string }) {
       <div className="card__head"><h2>{title}</h2></div>
       <div className="card__body">
         <p className="mail-preview__hint">As the owner sees it</p>
-        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <Printing inline label="Rendering" />}
+        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <SkelLines n={8} />}
       </div>
     </div>
   );
@@ -114,7 +116,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
             <dt>From</dt><dd>{template.data.senderName} &lt;{template.data.from}&gt;</dd>
             <dt>Reply-to</dt><dd>{template.data.replyTo}</dd>
             <dt>To</dt>
-            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <Printing inline label="Counting" />}</dd>
+            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <SkelBlock w={220} h={14} />}</dd>
           </dl>
         )}
         <div className="stack">
@@ -181,16 +183,16 @@ function Sent() {
         <div className="row"><RefreshButton reload={reload} /></div>
       </div>
       <ErrorNotice error={error} />
-      {loading && !data ? <Printing /> : (
+      {loading && !data ? <SkelPage label="Loading sent mail"><SkelTable rows={5} cols={4} /></SkelPage> : (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Sent</th><th>Subject</th><th>Status</th><th>Recipients</th><th>Delivered</th><th>By</th></tr></thead>
             <tbody>
               {(data ?? []).length === 0 && <tr><td colSpan={6} className="empty">No news sent yet. Write one under Compose.</td></tr>}
               {(data ?? []).map((n) => (
-                <tr key={n.newsletterId} className="clickable" onClick={() => setOpen(n)}>
+                <tr key={n.newsletterId} className="row-link" {...rowAction(() => setOpen(n))}>
                   <td className="small nowrap">{fmtDate(n.createdAt)}</td>
-                  <td className="strong">{n.subject}</td>
+                  <td className="strong row-link__name">{n.subject}</td>
                   <td><Status value={n.status} /></td>
                   <td className="mono">{n.recipientCount}</td>
                   <td className="mono">{n.sentCount} sent{n.failedCount ? ` · ${n.failedCount} failed` : ""}</td>
@@ -212,7 +214,7 @@ function NewsletterModal({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <Modal title={n?.subject ?? "Newsletter"} onClose={onClose}>
       <ErrorNotice error={error} />
-      {loading || !data ? <Printing inline /> : (
+      {loading || !data ? <SkelLines n={6} /> : (
         <div className="stack">
           <dl className="mail-meta">
             <dt>Status</dt><dd><Status value={n!.status} /></dd>
@@ -247,31 +249,80 @@ function RecipientList({ recipients }: { recipients: NewsletterRecipient[] }) {
 
 // ----------------------------------------------------------------- template
 const LOGO_MAX_WIDTH = 480;
+/** Booqy's dark brown: the built-in logo's colour until someone picks another. */
+const BOOQY_INK = "#3a2418";
+const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/** The picked image, shrunk to at most 480 px wide, as a PNG data URI
- * (keeps transparency; the API refuses files over 200 kB). */
-function shrinkImage(file: File): Promise<string> {
+/** The Booqy wordmark in one colour, without a background, as an SVG data URI. */
+function wordmarkUrl(color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="52 191 416 180" width="${LOGO_MAX_WIDTH}" height="208">`
+    + `<g fill="none" stroke="${color}" stroke-width="14" stroke-linecap="round">`
+    + `<circle cx="104.5" cy="281.5" r="35.5"/><circle cx="186" cy="281.5" r="35.5"/><circle cx="265.5" cy="281.5" r="35.5"/><circle cx="345" cy="281.5" r="35.5"/>`
+    + `<path d="M66.5 205.5V311.5"/><path d="M379 281.5V351"/><path d="M387 240 424 315"/><path d="M453 238 405 356"/></g>`
+    + `<g fill="${color}"><path d="M84 280.5A20.5 20.5 0 0 1 125 280.5Z"/><rect x="79.5" y="282.5" width="50" height="5"/></g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, LOGO_MAX_WIDTH / img.naturalWidth);
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That file isn't an image the browser can read.")); };
-    img.src = url;
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("That file isn't an image the browser can read."));
+    img.src = src;
+  });
+}
+
+/** Paints every visible part of the logo in one colour. A logo without
+ * transparency (a JPEG, a logo on white) loses its plain background first:
+ * how far each pixel is from the corner colour becomes how solid it is. */
+function recolour(data: ImageData, color: string) {
+  const px = data.data;
+  const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+  const lum = (i: number) => 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+  const w = data.width, h = data.height;
+  const corners = [0, (w - 1) * 4, (h - 1) * w * 4, (h * w - 1) * 4];
+  const opaque = corners.every((i) => px[i + 3] > 250);
+  const bg = corners.reduce((sum, i) => sum + lum(i), 0) / corners.length;
+  const range = Math.max(bg, 255 - bg) || 255;
+  for (let i = 0; i < px.length; i += 4) {
+    if (opaque) px[i + 3] = Math.min(255, Math.round((Math.abs(lum(i) - bg) / range) * 255 * 1.15));
+    px[i] = r; px[i + 1] = g; px[i + 2] = b;
+  }
+}
+
+/** The logo as the email gets it: a PNG at most 480 px wide, keeping
+ * transparency, recoloured when a colour is given (the API refuses files over 200 kB). */
+async function renderLogo(src: string, color: string | null): Promise<string> {
+  const img = await loadImage(src);
+  const scale = Math.min(1, LOGO_MAX_WIDTH / (img.naturalWidth || LOGO_MAX_WIDTH));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((img.naturalWidth || LOGO_MAX_WIDTH) * scale));
+  canvas.height = Math.max(1, Math.round((img.naturalHeight || 208) * scale));
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (color) {
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    recolour(data, color);
+    ctx.putImageData(data, 0, 0);
+  }
+  const url = canvas.toDataURL("image/png");
+  if (url.length > 300_000) throw new Error("The logo is still over 200 kB after shrinking. Pick a simpler image.");
+  return url;
+}
+
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("That file couldn't be read."));
+    reader.readAsDataURL(file);
   });
 }
 
 function TemplateEditor() {
   const { data, error, loading, setData } = useLoad(() => api.mailTemplate());
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !data) return <Printing />;
+  if (loading || !data) return <SkelPage label="Loading the template"><SkelCard lines={8} /></SkelPage>;
   return <TemplateForm template={data} onSaved={setData} />;
 }
 
@@ -280,9 +331,12 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
     senderName: template.senderName, replyTo: template.replyTo, accentColor: template.accentColor,
     signature: template.signature, footer: template.footer, logo: { kind: template.logo.kind },
   });
-  // What the picker shows: the saved custom logo, or the file just picked.
+  // The uploaded logo as picked (before any recolouring), and how it looks now.
+  const [customSource, setCustomSource] = useState<string | null>(template.logo.kind === "custom" ? template.logo.dataUrl : null);
   const [customPreview, setCustomPreview] = useState<string | null>(template.logo.kind === "custom" ? template.logo.dataUrl : null);
   const [customName, setCustomName] = useState<string | null>(template.logo.name ?? null);
+  const [booqyColor, setBooqyColor] = useState<string>(template.logo.kind === "booqy" && template.logo.color ? template.logo.color : BOOQY_INK);
+  const [customColor, setCustomColor] = useState<string | null>(template.logo.kind === "custom" ? template.logo.color ?? null : null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const a = useAction();
@@ -292,31 +346,50 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
   });
   const set = <K extends keyof MailTemplateInput>(key: K) => (value: MailTemplateInput[K]) => setF((s) => ({ ...s, [key]: value }));
 
-  const previewTemplate = useMemo(() => ({ ...f, logo: f.logo.kind === "custom" && !("dataUrl" in f.logo && f.logo.dataUrl) ? (customPreview ? { kind: "custom" as const } : { kind: "booqy" as const }) : f.logo }), [f, customPreview]);
+  const previewTemplate = useMemo(() => ({ ...f, logo: f.logo.kind === "custom" && !f.logo.dataUrl && !customPreview ? { kind: "booqy" as const } : f.logo }), [f, customPreview]);
   const preview = useDebounced(
     () => api.mailPreview({ subject: SAMPLE_SUBJECT, body: SAMPLE_BODY, template: previewTemplate }),
     [previewTemplate],
   );
 
+  // Draws the chosen logo in its colour; only the latest choice lands.
+  const drawn = useRef(0);
+  const draw = useCallback(async (kind: "booqy" | "custom", color: string | null, source: string | null, name: string | null) => {
+    const turn = ++drawn.current;
+    setFileError(null);
+    if (kind === "custom" && !source) {
+      setF((s) => ({ ...s, logo: { kind } }));
+      return;
+    }
+    try {
+      const dataUrl = kind === "booqy" ? await renderLogo(wordmarkUrl(color ?? BOOQY_INK), null) : await renderLogo(source!, color);
+      if (turn !== drawn.current) return;
+      if (kind === "custom") setCustomPreview(dataUrl);
+      setF((s) => ({ ...s, logo: { kind, dataUrl, color, ...(kind === "custom" && name ? { name } : {}) } }));
+    } catch (e) {
+      if (turn === drawn.current) setFileError(errorMessage(e));
+    }
+  }, []);
+
   const pickFile = useCallback(async (file: File | undefined) => {
     setFileError(null);
     if (!file) return;
     try {
-      const dataUrl = await shrinkImage(file);
-      if (dataUrl.length > 300_000) throw new Error("The logo is still over 200 kB after shrinking. Pick a simpler image.");
-      setCustomPreview(dataUrl);
+      const source = await readFile(file);
+      await loadImage(source);
+      setCustomSource(source);
       setCustomName(file.name);
-      setF((s) => ({ ...s, logo: { kind: "custom", dataUrl, name: file.name } }));
+      await draw("custom", customColor, source, file.name);
     } catch (e) {
       setFileError(errorMessage(e));
     }
-  }, []);
+  }, [customColor, draw]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaved(false);
     if (f.logo.kind === "custom" && !customPreview) {
-      setFileError("Pick a logo file, or choose the Booqy logo.");
+      setFileError("Upload a logo file, or choose the Booqy logo.");
       return;
     }
     const res = await a.run(() => api.saveMailTemplate(f));
@@ -346,14 +419,20 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
             </Field>
             <Field label="Accent colour" changed={dirty.changed("accentColor")} hint="The short rule under the subject and the links" error={a.fields.accentColor}>
               <div className="colour-field">
-                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#350001"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#1a120e"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
                 <input className="input mono" value={f.accentColor} maxLength={7} onChange={(e) => set("accentColor")(e.target.value)} />
               </div>
             </Field>
           </div>
           <Field label="Logo" changed={dirty.changed("logo")} error={a.fields.logo ?? a.fields["logo.kind"] ?? fileError ?? undefined}>
             <LogoPicker kind={f.logo.kind} customPreview={customPreview} customName={customName}
-                        onKind={(kind) => setF((s) => ({ ...s, logo: kind === "booqy" ? { kind } : { kind, ...(customPreview && "dataUrl" in s.logo ? { dataUrl: s.logo.dataUrl, name: s.logo.name } : {}) } }))}
+                        booqyColor={booqyColor} customColor={customColor}
+                        onKind={(kind) => void draw(kind, kind === "booqy" ? booqyColor : customColor, customSource, customName)}
+                        onColor={(color) => {
+                          if (f.logo.kind === "booqy") setBooqyColor(color ?? BOOQY_INK);
+                          else setCustomColor(color);
+                          if (color === null || HEX.test(color)) void draw(f.logo.kind, color, customSource, customName);
+                        }}
                         onFile={(file) => void pickFile(file)} />
           </Field>
           <div className="grid">
@@ -379,46 +458,62 @@ function LogoPicker(props: {
   kind: "booqy" | "custom";
   customPreview: string | null;
   customName: string | null;
+  booqyColor: string;
+  customColor: string | null;
   onKind: (kind: "booqy" | "custom") => void;
+  onColor: (color: string | null) => void;
   onFile: (file: File | undefined) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const option = (kind: "booqy" | "custom", label: string, box: ReactNode) => (
     <label className={`logo-option${props.kind === kind ? " logo-option--on" : ""}`}>
-      <input type="radio" name="logo" checked={props.kind === kind} onChange={() => props.onKind(kind)} />
+      <input type="radio" name="logo" checked={props.kind === kind}
+             onChange={() => { props.onKind(kind); if (kind === "custom" && !props.customPreview) fileRef.current?.click(); }} />
       <span className="logo-option__label">{label}</span>
       {box}
     </label>
   );
+  const booqy = props.kind === "booqy";
+  const color = booqy ? props.booqyColor : props.customColor;
   return (
     <div className="logo-pick">
       <div className="logo-pick__options">
-        {option("booqy", "Booqy logo (built in)", <span className="logo-box"><BooqyLogoMark /></span>)}
+        {option("booqy", "Booqy logo (built in)", <span className="logo-box"><img src={wordmarkUrl(HEX.test(props.booqyColor) ? props.booqyColor : BOOQY_INK)} alt="" /></span>)}
         {option("custom", "Your own logo", props.customPreview
           ? <span className="logo-box"><img src={props.customPreview} alt={props.customName ?? "Uploaded logo"} /></span>
           : <span className="logo-box logo-box--empty">No file yet</span>)}
       </div>
-      {props.kind === "custom" && (
-        <label className="logo-file">
-          PNG or JPEG, ideally wider than tall; it's shrunk to 480 px wide and sent inline in every message.
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={(e) => props.onFile(e.target.files?.[0])} />
-          {props.customName && <span className="muted"> Picked: {props.customName}</span>}
-        </label>
-      )}
+      <div className="logo-file" hidden={booqy}>
+        <button type="button" className="btn btn--ghost btn--small" onClick={() => fileRef.current?.click()}>
+          {props.customPreview ? "Upload another logo" : "Upload logo"}
+        </button>
+        {props.customName && <span className="muted small">{props.customName}</span>}
+        <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+               aria-label="Logo file" onChange={(e) => { props.onFile(e.target.files?.[0]); e.target.value = ""; }} />
+        <span className="muted small logo-file__hint">Any image: PNG, JPEG, SVG, WebP or GIF. It's turned into a PNG at most 480 px wide and sent inline in every message.</span>
+      </div>
+      <div className="logo-colour">
+        {!booqy && (
+          <select className="input" value={color === null ? "original" : "one"} aria-label="Logo colours"
+                  onChange={(e) => props.onColor(e.target.value === "original" ? null : BOOQY_INK)}>
+            <option value="original">The file's own colours</option>
+            <option value="one">One colour</option>
+          </select>
+        )}
+        {color !== null && (
+          <div className="colour-field">
+            <input type="color" value={HEX.test(color) ? color : BOOQY_INK} onChange={(e) => props.onColor(e.target.value)} aria-label="Pick logo colour" />
+            <input className="input mono" value={color} maxLength={7} aria-label="Logo colour" onChange={(e) => props.onColor(e.target.value)} />
+          </div>
+        )}
+        <span className="muted small">
+          {color === null
+            ? "Sent as uploaded. Pick One colour to paint it in your colour."
+            : booqy
+              ? "The Booqy logo in this colour, with no background."
+              : "Every visible part of the logo gets this colour; a white or plain background is removed."}
+        </span>
+      </div>
     </div>
-  );
-}
-
-/** The same wordmark the email carries, in print black for the picker. */
-function BooqyLogoMark() {
-  return (
-    <svg viewBox="52 191 416 180" width={100} aria-hidden="true" focusable="false" style={{ color: "#1c1918" }}>
-      <g fill="none" stroke="currentColor" strokeWidth={14} strokeLinecap="round">
-        <circle cx={104.5} cy={281.5} r={35.5} /><circle cx={186} cy={281.5} r={35.5} />
-        <circle cx={265.5} cy={281.5} r={35.5} /><circle cx={345} cy={281.5} r={35.5} />
-        <path d="M66.5 205.5V311.5" /><path d="M379 281.5V351" /><path d="M387 240 424 315" /><path d="M453 238 405 356" />
-      </g>
-      <g fill="currentColor"><path d="M84 280.5A20.5 20.5 0 0 1 125 280.5Z" /><rect x={79.5} y={282.5} width={50} height={5} /></g>
-    </svg>
   );
 }

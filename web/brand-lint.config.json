@@ -1,0 +1,10 @@
+{
+  "paths": ["src"],
+  "block": [
+    "features/meta-ads/**",
+    "features/site-builder/**",
+    "features/google-business/**",
+    "features/personalliggare/**",
+    "features/phone-agent/**"
+  ]
+}

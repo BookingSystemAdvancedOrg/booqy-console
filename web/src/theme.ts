@@ -3,17 +3,16 @@ import { THEME_KEY } from "./storageRegistry";
 
 /**
  * Light and dark mode. The choice lives in localStorage (booqy-theme) and
- * on <html data-theme>; public/theme.v1.js sets the attribute before the
+ * on <html data-theme>; public/theme.v2.js sets the attribute before the
  * first paint so the page never flashes light before dark. Without a
- * choice the console follows the system, also when it changes while the
- * page is open. The same key is used by every Booqy app.
+ * choice the console is light, like booqy.se; dark is one press away. The
+ * same key is used by every Booqy app.
  */
 
 export type Theme = "light" | "dark";
 
-/** What the browser's own frame gets (meta theme-color): the wall. */
-const THEME_COLOR: Record<Theme, string> = { light: "#350001", dark: "#1f0002" };
-const DARK_QUERY = "(prefers-color-scheme: dark)";
+/** What the browser's own frame gets (meta theme-color): the room. */
+const THEME_COLOR: Record<Theme, string> = { light: "#f6f1ea", dark: "#1a120e" };
 
 function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark";
@@ -28,19 +27,13 @@ export function storedTheme(): Theme | null {
   }
 }
 
-/** The system setting; light where it cannot be read (tests). */
-export function systemTheme(): Theme {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
-  return window.matchMedia(DARK_QUERY).matches ? "dark" : "light";
-}
-
-/** The mode right now: what is on <html>, else the stored one, else the system's. */
+/** The mode right now: what is on <html>, else the stored one, else light. */
 export function currentTheme(): Theme {
   if (typeof document !== "undefined") {
     const attr = document.documentElement.getAttribute("data-theme");
     if (isTheme(attr)) return attr;
   }
-  return storedTheme() ?? systemTheme();
+  return storedTheme() ?? "light";
 }
 
 const listeners = new Set<() => void>();
@@ -75,21 +68,38 @@ function subscribe(listener: () => void) {
     if (e.key === THEME_KEY && isTheme(e.newValue)) applyTheme(e.newValue);
   };
   window.addEventListener("storage", onStorage);
-  // Without a choice of its own the page follows the system, also when it flips.
-  const media = typeof window.matchMedia === "function" ? window.matchMedia(DARK_QUERY) : null;
-  const onMedia = () => {
-    if (!storedTheme()) applyTheme(systemTheme());
-  };
-  media?.addEventListener("change", onMedia);
   return () => {
     listeners.delete(listener);
     window.removeEventListener("storage", onStorage);
-    media?.removeEventListener("change", onMedia);
   };
 }
 
-export function useTheme(): { theme: Theme; toggle: () => void; setTheme: (theme: Theme) => void } {
+/**
+ * Switches mode with a sweep: the new colours grow out of the button
+ * (origin) in a circle until they cover the page (View Transitions).
+ * Without browser support, without an origin or with reduced motion it
+ * just switches.
+ */
+export function switchTheme(theme: Theme, origin?: { x: number; y: number }) {
+  const doc = document as Document & { startViewTransition?: (update: () => void) => { ready: Promise<void> } };
+  const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!origin || reduce || typeof doc.startViewTransition !== "function") {
+    setTheme(theme);
+    return;
+  }
+  const { x, y } = origin;
+  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const transition = doc.startViewTransition(() => setTheme(theme));
+  transition.ready.then(() => {
+    document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 700, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
+    );
+  }, () => {});
+}
+
+export function useTheme(): { theme: Theme; toggle: (origin?: { x: number; y: number }) => void; setTheme: (theme: Theme) => void } {
   const theme = useSyncExternalStore(subscribe, currentTheme, () => "light" as Theme);
-  const toggle = useCallback(() => setTheme(currentTheme() === "dark" ? "light" : "dark"), []);
+  const toggle = useCallback((origin?: { x: number; y: number }) => switchTheme(currentTheme() === "dark" ? "light" : "dark", origin), []);
   return { theme, toggle, setTheme };
 }

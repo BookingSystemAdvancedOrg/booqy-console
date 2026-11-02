@@ -2,8 +2,9 @@ import { FormEvent, useState } from "react";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, addDays, endDateFor, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, periodOf, periodText } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
-import { Card, ErrorNotice, Modal, Notice, Printing, fmtDate, useAction, useLoad } from "./ui";
+import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from "./ui";
 import { SaveButton, useFlash } from "./save";
+import { SkelCard, SkelPage } from "./Skeleton";
 
 const STATUS_TEXT: Record<string, string> = {
   none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
@@ -24,7 +25,12 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const [run, setRun] = useState<InvoicingRun | null>(null);
   const [started, flashStarted] = useFlash();
 
-  if (loading && !data) return <Printing />;
+  if (loading && !data) return (
+    <SkelPage label="Loading billing">
+      <SkelCard lines={5} />
+      <SkelCard rows={3} cols={3} />
+    </SkelPage>
+  );
   if (!data) return <ErrorNotice error={error ?? "Not found"} />;
   const b = data.billing;
   const running = b.subscribed;

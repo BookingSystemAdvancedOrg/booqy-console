@@ -2,7 +2,7 @@ import { ReactNode, useMemo, useState } from "react";
 import { api } from "../api";
 import { BarLineChart, HBarChart, countTick } from "../components/charts";
 import { CountUp, Delta, useTrendPop } from "../components/motion";
-import { Card, ErrorNotice, Notice, Printing, fmtDate, useLoad } from "../components/ui";
+import { Card, ErrorNotice, Notice, fmtDate, useLoad } from "../components/ui";
 import { daysBetween, fmtDay, fmtInt, fmtPct } from "../finance";
 import { toneClass, trendOf } from "../trend";
 import type { Trend, TrendMetric, TrendTone } from "../trend";
@@ -13,6 +13,7 @@ import {
 import type { PageRow, VisitRow, WebsiteOverview } from "../website";
 import "./WebsitePage.css";
 import { RefreshButton } from "../components/save";
+import { SkelCard, SkelKpis, SkelPage } from "../components/Skeleton";
 
 const PLACES = ["Countries", "Regions", "Cities"] as const;
 const TECH = ["Devices", "Browsers", "Operating systems", "Languages"] as const;
@@ -57,7 +58,7 @@ export default function WebsitePage() {
       <Head data={data} reload={reload} />
 
       <div className="toolbar web-toolbar">
-        <div className="chips" role="group" aria-label="Period">
+        <div className="chips chips--plain" role="group" aria-label="Period">
           {PRESETS.map((p) => (
             <button key={p.id} className={`chip${preset === p.id ? " chip--on" : ""}`} aria-pressed={preset === p.id}
                     onClick={() => { if (p.id === "custom") setCustom(range); setPreset(p.id); }}>{p.label}</button>
@@ -81,7 +82,17 @@ export default function WebsitePage() {
 
       <ErrorNotice error={error} />
 
-      {loading && !data ? <Printing label="Counting visits" /> : data && k && trends && (
+      {loading && !data ? (
+        <SkelPage label="Counting visits">
+          <SkelKpis className="kpis--lead" />
+          <SkelKpis n={3} className="kpis--units" />
+          <div className="charts">
+            <SkelCard chart />
+            <SkelCard rows={5} cols={4} />
+          </div>
+          <SkelCard rows={2} cols={5} />
+        </SkelPage>
+      ) : data && k && trends && (
         <>
           {empty && (
             <Card title="No visits counted yet">

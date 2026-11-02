@@ -2,7 +2,7 @@
 .web-toolbar { align-items: flex-end; }
 .web-compare { font: 500 12px/1.4 var(--mono); color: var(--fg-2); }
 
-.web-live { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1.5px dashed var(--fg-line); border-radius: 3px; font: 600 13px/1 var(--mono); color: var(--fg); }
+.web-live { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1.5px dashed var(--fg-line); border-radius: var(--r-md); font: 600 13px/1 var(--mono); color: var(--fg); }
 .web-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--trend-good); box-shadow: 0 0 0 0 var(--trend-good); animation: web-pulse 2s ease-out infinite; }
 @keyframes web-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--trend-good) 60%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
 

@@ -9,6 +9,7 @@ import json
 from botocore.exceptions import ClientError
 
 from . import validation as v
+from .contracts import FEATURE_KEYS, LIMITS
 from .core import (ApiError, audit_put, cancellation_codes, client, env, from_ddb, location_table,
                    new_id, not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
                    user_table, write_audit)
@@ -92,7 +93,7 @@ def list_plans(req) -> tuple[int, dict]:
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
          "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
-         "priceSek": p.get("priceSek")}
+         "limits": p.get("limits", {}), "priceSek": p.get("priceSek")}
         for p in plans]}
 
 
@@ -103,7 +104,15 @@ def _entitlements(plan: dict, overrides: dict | None) -> dict:
             ent["maxLocations"] = int(overrides["maxLocations"])
         for k, val in (overrides.get("features") or {}).items():
             ent["features"][k] = bool(val)
+    ent["limits"] = {k: int(val) for k, val in (plan.get("limits") or {}).items()}
+    for k, val in ((overrides or {}).get("limits") or {}).items():
+        ent["limits"][k] = int(val)
     return ent
+
+
+def _turned_on(ent: dict) -> set[str]:
+    """Feature keys on in these entitlements: stamped into featuresEver, which only grows (CONTRACTS.md 9.2)."""
+    return {k for k, on in (ent.get("features") or {}).items() if on}
 
 
 def _overrides(f: v.Fields) -> dict | None:
@@ -119,8 +128,25 @@ def _overrides(f: v.Fields) -> dict | None:
     if feats is not None:
         if not isinstance(feats, dict) or not all(isinstance(x, bool) for x in feats.values()):
             sub.fail("features", "Map of feature -> true/false")
+        elif any(k not in FEATURE_KEYS for k in feats):
+            sub.fail("features", "Unknown feature")
         else:
             out["features"] = feats
+    lims = raw.get("limits")
+    if lims is not None:
+        if not isinstance(lims, dict):
+            sub.fail("limits", "Map of limit -> whole number")
+        else:
+            ls = v.Fields(lims)
+            for k in lims:
+                if k not in LIMITS:
+                    ls.fail(k, "Unknown limit")
+                else:
+                    ls.integer(k, minimum=LIMITS[k]["min"], maximum=LIMITS[k]["max"])
+            for k, msg in ls.errors.items():
+                sub.fail(f"limits.{k}", msg)
+            if not ls.errors:
+                out["limits"] = {k: int(val) for k, val in lims.items()}
     for k, msg in sub.errors.items():
         f.fail(f"overrides.{k}", msg)
     return {k: val for k, val in out.items() if val is not None}
@@ -210,6 +236,8 @@ def create_tenant(req) -> tuple[int, dict]:
     if plan_id and plan is None:
         f.fail("planId", "Unknown plan - pick one of the plans listed")
     entitlements = _entitlements(plan, overrides) if plan else None
+    if entitlements and _turned_on(entitlements):
+        entitlements["featuresEver"] = _turned_on(entitlements)   # a DynamoDB string set
     if entitlements and len(raw_locations) > entitlements["maxLocations"]:
         f.fail("locations", f"The plan allows {entitlements['maxLocations']} - remove a location "
                             "or raise 'Locations allowed'")
@@ -425,12 +453,28 @@ def set_plan(req) -> tuple[int, dict]:
                        "Send force=true to apply anyway (existing locations keep working, no new ones).",
                        locationCount=count)
     ensure_billing_map(tenant_id)
-    values = {":p": {"S": plan_id}, ":e": to_ddb_value(ent), ":n": {"S": now_iso()}, ":b": {"S": req.actor}}
+    values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": req.actor}}
+    ever = _turned_on(ent)
+    if isinstance(profile.get("entitlements"), dict):
+        # Field by field, so featuresEver is only ever added to (ADD is a set union, safe against concurrent writes).
+        values.update({":m": to_ddb_value(ent["maxLocations"]), ":f": to_ddb_value(ent["features"]),
+                       ":l": to_ddb_value(ent["limits"])})
+        expression = ("SET planId = :p, entitlements.maxLocations = :m, entitlements.features = :f, "
+                      "entitlements.limits = :l, updatedAt = :n, updatedBy = :b")
+        if ever:
+            values[":ever"] = to_ddb_value(ever)
+            expression_add = " ADD entitlements.featuresEver :ever"
+        else:
+            expression_add = ""
+    else:
+        values[":e"] = to_ddb_value({**ent, **({"featuresEver": ever} if ever else {})})
+        expression, expression_add = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b", ""
     if custom_price is not None:
         values[":price"] = {"N": str(custom_price)}
-        expression = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b, billing.priceSek = :price"
+        expression += ", billing.priceSek = :price"
     else:
-        expression = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b REMOVE billing.priceSek"
+        expression += " REMOVE billing.priceSek"
+    expression += expression_add
     out = client("dynamodb").update_item(
         TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
         ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues=values, ReturnValues="ALL_NEW")

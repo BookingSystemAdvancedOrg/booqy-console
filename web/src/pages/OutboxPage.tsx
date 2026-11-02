@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorNotice, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
+import { ErrorNotice, Notice, fmtDate, useAction, useLoad } from "../components/ui";
 import type { OutboxMessage, OutboxSummary } from "../types";
 import { RefreshButton } from "../components/save";
+import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
+import { rowAction } from "../components/rowLink";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -19,7 +21,7 @@ function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
   useEffect(() => setTab("html"), [id]);
 
   if (error) return <ErrorNotice error={error} />;
-  if (loading || !m) return <div className="card"><div className="card__body"><Printing inline /></div></div>;
+  if (loading || !m) return <SkelCard lines={8} />;
   const links = linksOf(m);
   const showHtml = m.channel === "email" && !!m.html && tab === "html";
 
@@ -115,7 +117,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
         <Notice kind="info">The outbox is off here - emails are sent normally (infrastructure <code>mail_outbox</code>).</Notice>
       )}
 
-      {loading && !data ? <Printing /> : data?.enabled && (
+      {loading && !data ? <SkelPage label="Loading the outbox"><SkelTable rows={6} cols={4} /></SkelPage> : data?.enabled && (
         <div className={`outbox${selected ? " outbox--reading" : ""}`}>
           <div className="table-wrap">
             <table className="table">
@@ -125,7 +127,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet. Make a booking or an order in dev.</td></tr>}
                 {rows.map((r) => (
-                  <tr key={r.id} className={`clickable${selected === r.id ? " selected" : ""}`} onClick={() => setSelected(r.id)}>
+                  <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
                     <td className="nowrap">{fmtDate(r.at)}</td>
                     <td>{r.channel === "sms" ? "SMS" : "Email"}</td>
                     <td>{r.to}</td>

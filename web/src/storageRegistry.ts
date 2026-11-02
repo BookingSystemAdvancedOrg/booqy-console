@@ -20,6 +20,8 @@ export interface StorageEntry {
 }
 
 export const THEME_KEY = "booqy-theme";
+export const SOUND_KEY = "booqy-sound";
+export const SOUND_VOLUME_KEY = "booqy-sound-volume";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
@@ -31,7 +33,19 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: THEME_KEY,
     kind: "localStorage",
-    purpose: "Your choice of light or dark mode (the button in the top bar and on the sign-in page). Set only when you press it; otherwise the console follows your system.",
+    purpose: "Your choice of light or dark mode (Settings). Set only when you press it; otherwise the console is light.",
+    lifetime: "Until you clear the browser",
+  },
+  {
+    name: SOUND_KEY,
+    kind: "localStorage",
+    purpose: "Your choice of click sound on or off (Settings). Sound is on until you switch it off; set only when you press it.",
+    lifetime: "Until you clear the browser",
+  },
+  {
+    name: SOUND_VOLUME_KEY,
+    kind: "localStorage",
+    purpose: "How loud the click sound is, 0-100 (Settings). Set only when you change it.",
     lifetime: "Until you clear the browser",
   },
 ];

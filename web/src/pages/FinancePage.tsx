@@ -5,12 +5,14 @@ import { BarLineChart, HBarChart, LineChart } from "../components/charts";
 import { CountUp, Delta, deltaPct, useTrendPop } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
-import { Card, ErrorNotice, Modal, Notice, Printing, Status, fmtDate, useAction, useLoad } from "../components/ui";
+import { Card, ErrorNotice, Modal, Notice, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
 import { toneClass, trendOf } from "../trend";
 import type { Trend, TrendTone } from "../trend";
 import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 import { RefreshButton, SaveButton } from "../components/save";
+import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
+import { useRowOpen } from "../components/rowLink";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -187,7 +189,17 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </Notice>
       )}
 
-      {loading && !data ? <Printing label="Adding up" /> : data && k && trends && (
+      {loading && !data ? (
+        <SkelPage label="Adding up">
+          <SkelKpis className="kpis--lead" />
+          <SkelKpis n={3} className="kpis--units" />
+          <div className="charts">
+            <SkelCard chart />
+            <SkelCard chart />
+          </div>
+          <SkelTable rows={5} cols={6} />
+        </SkelPage>
+      ) : data && k && trends && (
         <>
           {empty && (
             <Card title="Nothing to add up yet">
@@ -407,10 +419,11 @@ function Th({ k, sort, setSort, children }: {
 }
 
 function TenantRow({ t }: { t: FinanceTenantRow }) {
+  const openRow = useRowOpen();
   return (
-    <tr>
+    <tr className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}?tab=billing`)}>
       <td>
-        <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong">{t.name}</Link>
+        <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
         <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
       <td><span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span></td>

@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
-import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad, Printing } from "../components/ui";
+import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
 import type { OperatorAccount } from "../types";
 import { RefreshButton, SaveButton, useDirty } from "../components/save";
+import { SkelPage, SkelTable } from "../components/Skeleton";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
   if (!o.enabled) return { label: "Disabled", cls: "suspended" };
@@ -47,7 +48,7 @@ export default function OperatorsPage({ me }: { me: string }) {
       <ErrorNotice error={row.error} />
       {done && <Notice kind="ok">{done}</Notice>}
 
-      {loading && !data ? <Printing /> : (
+      {loading && !data ? <SkelPage label="Loading operators"><SkelTable rows={4} cols={4} /></SkelPage> : (
         <div className="table-wrap">
           <table className="table">
             <thead>

@@ -1,15 +1,18 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ErrorNotice, Status, fmtDate, useLoad, Printing } from "../components/ui";
+import { ErrorNotice, Status, fmtDate, useLoad } from "../components/ui";
 import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } from "../finance";
 import type { PaymentRow } from "../types";
 import { RefreshButton } from "../components/save";
+import { SkelPage, SkelTable } from "../components/Skeleton";
+import { useRowOpen } from "../components/rowLink";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());
+  const openRow = useRowOpen();
   const [q, setQ] = useState("");
   // Active first: offboarded and other inactive customers are one click away.
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("active");
@@ -66,7 +69,7 @@ export default function TenantsPage() {
       </div>
 
       <ErrorNotice error={error} />
-      {loading && !data ? <Printing /> : (
+      {loading && !data ? <SkelPage label="Loading customers"><SkelTable rows={6} cols={5} /></SkelPage> : (
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -76,9 +79,9 @@ export default function TenantsPage() {
             </thead>
             <tbody>
               {rows.map((t) => (
-                <tr key={t.tenantId}>
+                <tr key={t.tenantId} className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}`)}>
                   <td>
-                    <Link to={`/tenants/${t.tenantId}`} className="strong">{t.name}</Link>
+                    <Link to={`/tenants/${t.tenantId}`} className="strong row-link__name">{t.name}</Link>
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
                   <td><Status value={t.status} /></td>
