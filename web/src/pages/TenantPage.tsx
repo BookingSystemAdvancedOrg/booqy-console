@@ -11,8 +11,8 @@ import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from 
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { AI_EDITS, featureKeys, featureLabel, setupFailure } from "./NewTenantPage";
-import { LIMITS } from "../contracts";
+import { LIMIT_LABELS, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
 import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
@@ -113,17 +113,17 @@ export default function TenantPage() {
   );
 }
 
+const INTEGRATION_SLOTS = ["tenant.integrations.metaAds", "tenant.integrations.googleBusiness", "tenant.integrations.phoneAgent"] as const;
+
 // Visible while one of its slots' features is on (CONTRACTS.md 8.3).
-const hasIntegrations = (t: Tenant) =>
-  slotOn("tenant.integrations.metaAds", t.entitlements.features) || slotOn("tenant.integrations.googleBusiness", t.entitlements.features);
+const hasIntegrations = (t: Tenant) => INTEGRATION_SLOTS.some((id) => slotOn(id, t.entitlements.features));
 
 function Integrations({ tenant }: { tenant: Tenant }) {
   const props = { tenantId: tenant.tenantId };
   return (
     <div className="stack">
       <p className="muted small">Connections this customer has made to outside services.</p>
-      <Slot id="tenant.integrations.metaAds" features={tenant.entitlements.features} props={props} />
-      <Slot id="tenant.integrations.googleBusiness" features={tenant.entitlements.features} props={props} />
+      {INTEGRATION_SLOTS.map((id) => <Slot key={id} id={id} features={tenant.entitlements.features} props={props} />)}
     </div>
   );
 }
@@ -459,8 +459,10 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const [planId, setPlanId] = useState(tenant.planId);
   const [maxLocations, setMax] = useState(String(tenant.entitlements.maxLocations));
   const [features, setFeatures] = useState(tenant.entitlements.features);
-  const planAi = (p?: { limits?: Tenant["entitlements"]["limits"] }) => String(p?.limits?.[AI_EDITS] ?? LIMITS[AI_EDITS].default);
-  const [aiEdits, setAiEdits] = useState(planAi(tenant.entitlements));
+  // Every contract limit as input text: the plan's, or the tenant's own (incl. overrides).
+  const limitsOf = (p?: { limits?: Tenant["entitlements"]["limits"] }) =>
+    Object.fromEntries(LIMIT_KEYS.map((k) => [k, limitValue(k, p?.limits)])) as Record<LimitKey, string>;
+  const [limits, setLimits] = useState(limitsOf(tenant.entitlements));
   const ownPrice = tenant.billing?.priceSek;
   const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
   const a = useAction();
@@ -469,9 +471,9 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
   const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
   const dirty = useDirty(
-    { planId, maxLocations, features, aiEdits, price },
+    { planId, maxLocations, features, price, ...limits },
     { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features,
-      aiEdits: planAi(tenant.entitlements), price: savedPrice },
+      price: savedPrice, ...limitsOf(tenant.entitlements) },
   );
 
   useEffect(() => {
@@ -480,12 +482,12 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     if (planId === tenant.planId) {
       setMax(String(tenant.entitlements.maxLocations));
       setFeatures(tenant.entitlements.features);
-      setAiEdits(planAi(tenant.entitlements));
+      setLimits(limitsOf(tenant.entitlements));
       setPrice(ownPrice != null ? String(ownPrice) : plan?.priceSek != null ? String(plan.priceSek) : "");
     } else if (plan) {
       setMax(String(plan.maxLocations));
       setFeatures(plan.features);
-      setAiEdits(planAi(plan));
+      setLimits(limitsOf(plan));
       setPrice(plan.priceSek != null ? String(plan.priceSek) : "");
     }
   }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -495,7 +497,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
     const changed = plan ? Object.fromEntries(Object.entries(features).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
-    if (plan && aiEdits !== planAi(plan)) overrides.limits = { [AI_EDITS]: Number(aiEdits) };
+    const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];
+    if (changedLimits.length) overrides.limits = Object.fromEntries(changedLimits.map((k) => [k, Number(limits[k])]));
     const body: { planId: string; overrides: Record<string, unknown>; force: boolean; priceSek?: number } = { planId, overrides, force };
     if (price !== "") body.priceSek = Number(price);
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
@@ -521,11 +524,13 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
                hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
           <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
-        <Field label="AI site edits per month" changed={dirty.changed("aiEdits")} error={a.fields[`overrides.limits.${AI_EDITS}`]}
-               hint={`Used with Site builder. The plan's is ${planAi(plan)}`}>
-          <input className="input" type="number" min={LIMITS[AI_EDITS].min} max={LIMITS[AI_EDITS].max} step={1} value={aiEdits}
-                 onChange={(e) => setAiEdits(e.target.value)} />
-        </Field>
+        {LIMIT_KEYS.map((k) => (
+          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}
+                 hint={`Used with ${featureLabel(LIMITS[k].feature)}. The plan's is ${limitValue(k, plan?.limits)}`}>
+            <input className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max} step={1} value={limits[k]}
+                   onChange={(e) => setLimits({ ...limits, [k]: e.target.value })} />
+          </Field>
+        ))}
         <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
           <span className="field__label">Features</span>
           <div className="checks">

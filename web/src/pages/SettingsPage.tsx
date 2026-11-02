@@ -44,6 +44,7 @@ export default function SettingsPage({ email }: { email?: string }) {
         </div>
       </section>
       <Slot id="settings.metaAds" />
+      <Slot id="settings.phoneAgent" />
     </>
   );
 }

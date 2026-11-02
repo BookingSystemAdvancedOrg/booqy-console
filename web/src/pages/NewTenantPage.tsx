@@ -6,8 +6,8 @@ import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
-import type { Features, LocationInput } from "../types";
-import { FEATURE_KEYS, FEATURE_LABELS, LIMITS } from "../contracts";
+import type { Features, Limits, LocationInput } from "../types";
+import { FEATURE_KEYS, FEATURE_LABELS, LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { SaveButton, useDirty } from "../components/save";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -16,7 +16,13 @@ const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 export const featureKeys = (...maps: Features[]) =>
   [...new Set<string>([...FEATURE_KEYS, ...maps.flatMap((m) => Object.keys(m))])];
 export const featureLabel = (k: string) => (FEATURE_LABELS as Record<string, { en: string }>)[k]?.en ?? k;
-export const AI_EDITS = "siteBuilderAiEditsPerMonth";
+/** The input label of each contract limit (CONTRACTS.md 8.3); a new limit without one fails typecheck. */
+export const LIMIT_LABELS: Record<LimitKey, string> = {
+  siteBuilderAiEditsPerMonth: "AI site edits per month",
+  phoneAgentMinutesPerMonth: "Phone agent minutes per month",
+};
+/** A plan's or tenant's value of a limit (else the contract default), as input text. */
+export const limitValue = (k: LimitKey, limits?: Limits) => String(limits?.[k] ?? LIMITS[k].default);
 
 export function slugify(name: string) {
   return name
@@ -36,7 +42,8 @@ const LABELS: Record<string, string> = {
   "address.city": "City", ownerName: "Owner full name", ownerEmail: "Owner business email", ownerPhone: "Owner phone",
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
-  "overrides.maxLocations": "Locations allowed", "overrides.limits.siteBuilderAiEditsPerMonth": "AI site edits per month",
+  "overrides.maxLocations": "Locations allowed",
+  ...Object.fromEntries(LIMIT_KEYS.map((k) => [`overrides.limits.${k}`, LIMIT_LABELS[k]])),
   "overrides.features": "Features", locations: "Locations", notes: "Notes",
   "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "Agreement start date",
   "billing.collectionMethod": "Invoicing",
@@ -88,7 +95,7 @@ const BLANK = {
   street: "", postalCode: "", city: "",
   ownerName: "", ownerEmail: "", ownerPhone: "",
   contactEmail: "", contactPhone: "", billingEmail: "", senderName: "", replyToEmail: "",
-  planId: "", maxLocations: "", aiEdits: "", notes: "",
+  planId: "", maxLocations: "", notes: "",
 };
 
 export default function NewTenantPage() {
@@ -104,6 +111,8 @@ export default function NewTenantPage() {
   const saved = phase === "failed";      // plan, invoicing and locations were saved with the customer
 
   const [f, setF] = useState(BLANK);
+  // Limit overrides as typed; empty means the plan's.
+  const [limitEdits, setLimitEdits] = useState<Partial<Record<LimitKey, string>>>({});
   const [slugTouched, setSlugTouched] = useState(false);
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
   // Invoicing: the plan's price unless typed over, try-out or subscription terms, start now.
@@ -116,7 +125,7 @@ export default function NewTenantPage() {
   const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
   useEffect(() => setFeatureEdits({}), [f.planId]);
   // Anything typed is unsaved until Create; leaving asks first (not once setup runs).
-  const dirty = useDirty({ f, locations }, { f: BLANK, locations: [emptyLocation()] }, { guard: phase !== "setup" });
+  const dirty = useDirty({ f, locations, limitEdits }, { f: BLANK, locations: [emptyLocation()], limitEdits: {} }, { guard: phase !== "setup" });
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
     const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
@@ -132,6 +141,7 @@ export default function NewTenantPage() {
   const maxLocations = f.maxLocations ? Number(f.maxLocations) : plan?.maxLocations ?? 1;
   const features = { ...(plan?.features ?? {}), ...featureEdits };
   const featureOverrides = plan ? Object.fromEntries(Object.entries(featureEdits).filter(([k, on]) => !!plan.features[k] !== on)) : {};
+  const limitOverrides: Limits = Object.fromEntries(LIMIT_KEYS.filter((k) => limitEdits[k]).map((k) => [k, Number(limitEdits[k])]));
   const shownPrice = priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
   // Billing counts from the start date; the first invoice is the 25th after that period (in arrears).
@@ -167,11 +177,11 @@ export default function NewTenantPage() {
         senderName: f.senderName, replyToEmail: f.replyToEmail, notes: f.notes,
       }),
       ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
-      ...(f.maxLocations || f.aiEdits || Object.keys(featureOverrides).length ? {
+      ...(f.maxLocations || Object.keys(limitOverrides).length || Object.keys(featureOverrides).length ? {
         overrides: {
           ...(f.maxLocations ? { maxLocations: Number(f.maxLocations) } : {}),
           ...(Object.keys(featureOverrides).length ? { features: featureOverrides } : {}),
-          ...(f.aiEdits ? { limits: { [AI_EDITS]: Number(f.aiEdits) } } : {}),
+          ...(Object.keys(limitOverrides).length ? { limits: limitOverrides } : {}),
         },
       } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
@@ -341,11 +351,13 @@ export default function NewTenantPage() {
                  hint={plan ? `Leave empty for the plan's ${plan.maxLocations}` : "Pick a plan first"}>
             <input id="f-overrides.maxLocations" className="input" type="number" min={1} max={100} value={f.maxLocations} onChange={set("maxLocations")} />
           </Field>
-          <Field label="AI site edits per month (override)" error={fields[`overrides.limits.${AI_EDITS}`]}
-                 hint={plan ? `Leave empty for the plan's ${plan.limits?.[AI_EDITS] ?? LIMITS[AI_EDITS].default}; used with Site builder` : "Pick a plan first"}>
-            <input id={`f-overrides.limits.${AI_EDITS}`} className="input" type="number" min={LIMITS[AI_EDITS].min} max={LIMITS[AI_EDITS].max}
-                   value={f.aiEdits} onChange={set("aiEdits")} />
-          </Field>
+          {LIMIT_KEYS.map((k) => (
+            <Field key={k} label={`${LIMIT_LABELS[k]} (override)`} error={fields[`overrides.limits.${k}`]}
+                   hint={plan ? `Leave empty for the plan's ${limitValue(k, plan.limits)}; used with ${featureLabel(LIMITS[k].feature)}` : "Pick a plan first"}>
+              <input id={`f-overrides.limits.${k}`} className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max}
+                     value={limitEdits[k] ?? ""} onChange={(e) => setLimitEdits({ ...limitEdits, [k]: e.target.value })} />
+            </Field>
+          ))}
           <Field label="Monthly price, SEK ex VAT" error={fields["billing.priceSek"]}
                  hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
             <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
