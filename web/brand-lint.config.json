@@ -4,6 +4,7 @@
     "features/meta-ads/**",
     "features/site-builder/**",
     "features/google-business/**",
-    "features/personalliggare/**"
+    "features/personalliggare/**",
+    "features/phone-agent/**"
   ]
 }

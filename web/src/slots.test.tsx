@@ -35,4 +35,16 @@ describe("console slots", () => {
     const { container } = render(<C tenantId="t1" />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("gates the phone agent slots on phoneAgent", () => {
+    expect(slotOn("tenant.integrations.phoneAgent", {})).toBe(false);
+    expect(slotOn("tenant.integrations.phoneAgent", { phoneAgent: true })).toBe(true);
+  });
+
+  it("the addendum placeholders render nothing", async () => {
+    const { default: Section } = await SLOT_LOADERS["tenant.integrations.phoneAgent"]();
+    const { default: Card } = await SLOT_LOADERS["settings.phoneAgent"]();
+    expect(render(<Section tenantId="t1" />).container).toBeEmptyDOMElement();
+    expect(render(<Card />).container).toBeEmptyDOMElement();
+  });
 });

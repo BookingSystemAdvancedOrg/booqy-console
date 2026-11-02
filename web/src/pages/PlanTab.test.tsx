@@ -45,6 +45,41 @@ describe("Plan tab", () => {
     });
   });
 
+  it("lists the addendum features and the phone minutes limit, all off for an existing tenant", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.getByLabelText("Events and tickets")).not.toBeChecked();
+    expect(screen.getByLabelText("Phone agent")).not.toBeChecked();
+    expect(screen.getByLabelText(/^Phone agent minutes per month/)).toHaveValue(0);
+    expect(screen.getByLabelText(/^Phone agent minutes per month/)).toHaveAttribute("max", "100000");
+    expect(screen.getByText("Used with Phone agent. The plan's is 0")).toBeInTheDocument();
+  });
+
+  it("sends a changed phone minutes limit as an override, keeping the tenant's other override", async () => {
+    const own = { ...tenant, entitlements: { ...tenant.entitlements, limits: { siteBuilderAiEditsPerMonth: 25 } } };
+    render(<PlanTab tenant={own} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.getByLabelText(/^AI site edits per month/)).toHaveValue(25);
+    fireEvent.change(screen.getByLabelText(/^Phone agent minutes per month/), { target: { value: "300" } });
+    fireEvent.click(screen.getByLabelText("Phone agent"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
+      planId: "starter", force: false, priceSek: 3950,
+      overrides: { features: { kassa: false, phoneAgent: true },
+                   limits: { siteBuilderAiEditsPerMonth: 25, phoneAgentMinutesPerMonth: 300 } },
+    });
+  });
+
+  it("starts the phone minutes from another plan's value", async () => {
+    mocks.plans.mockResolvedValue([STARTER, { planId: "growth", name: "Growth", maxLocations: 3, features: {},
+                                              limits: { phoneAgentMinutesPerMonth: 300 } }]);
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    fireEvent.click(await screen.findByText("Growth"));
+    expect(await screen.findByLabelText(/^Phone agent minutes per month/)).toHaveValue(300);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan.mock.calls[0][1].overrides.limits).toBeUndefined();
+  });
+
   it("sends no limit when it equals the plan's", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");
@@ -82,6 +117,17 @@ describe("Integrations tab", () => {
     expect(tabs.indexOf("Integrations")).toBe(tabs.indexOf("Website") + 1);
     fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
     expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+  });
+
+  it("shows with only the phone agent on", async () => {
+    await renderTenant({ phoneAgent: true });
+    fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+    expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+  });
+
+  it("stays hidden with only events and tickets on", async () => {
+    await renderTenant({ events: true });
+    expect(screen.queryByRole("button", { name: "Integrations" })).toBeNull();
   });
 
   it("uses feature labels on the Overview", async () => {
