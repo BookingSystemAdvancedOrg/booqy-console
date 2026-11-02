@@ -41,6 +41,11 @@ describe("console slots", () => {
     expect(slotOn("tenant.integrations.phoneAgent", { phoneAgent: true })).toBe(true);
   });
 
+  it("the platform-wide settings card has no tenant feature (CONTRACTS.md 8.3, like settings.metaAds)", () => {
+    expect(CONSOLE_SLOTS["settings.phoneAgent"].feature).toBeNull();
+    expect(slotOn("settings.phoneAgent")).toBe(true);
+  });
+
   it("the addendum placeholders render nothing", async () => {
     const { default: Section } = await SLOT_LOADERS["tenant.integrations.phoneAgent"]();
     const { default: Card } = await SLOT_LOADERS["settings.phoneAgent"]();
