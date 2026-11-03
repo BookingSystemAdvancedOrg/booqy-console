@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, ErrorNotice, Field, Notice, useAction, useLoad } from "../../components/ui";
+import { ApiError } from "../../api";
 import { metaAdsApi } from "./api";
 
 /** Settings page: the platform kill switch and the ceiling for every restaurant's monthly cap. */
@@ -8,6 +9,14 @@ export default function MetaAdsSettingsCard() {
   const action = useAction();
   const [cap, setCap] = useState<string | null>(null);
 
+  // The platform settings route has no tenant, so a 404 can only mean the meta-ads function is not deployed here yet.
+  if (error instanceof ApiError && error.status === 404) {
+    return (
+      <Card title="Meta ads">
+        <Notice>Meta ads is not set up in this environment yet. The kill switch and the cap ceiling appear here once it is deployed.</Notice>
+      </Card>
+    );
+  }
   if (error) return <Card title="Meta ads"><ErrorNotice error={error} /></Card>;
   if (!data) return null;
   const capValue = cap ?? String(data.maxMonthlyCapSek);

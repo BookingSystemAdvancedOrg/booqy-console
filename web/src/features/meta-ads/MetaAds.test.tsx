@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import MetaAdsSettingsCard from "./MetaAdsSettingsCard";
 import MetaAdsTenantSection from "./MetaAdsTenantSection";
 import { metaAdsApi } from "./api";
+import { ApiError } from "../../api";
 
 vi.mock("./api", () => ({
   metaAdsApi: { settings: vi.fn(), saveSettings: vi.fn(), tenant: vi.fn(), setPaused: vi.fn() },
@@ -27,6 +28,22 @@ describe("MetaAdsSettingsCard", () => {
     fireEvent.change(await screen.findByLabelText(/Max monthly cap/), { target: { value: "5000" } });
     fireEvent.click(screen.getByRole("button", { name: "Save ceiling" }));
     await waitFor(() => expect(metaAdsApi.saveSettings).toHaveBeenCalledWith({ killSwitch: false, maxMonthlyCapSek: 5000 }));
+  });
+});
+
+describe("MetaAdsSettingsCard before meta-ads is deployed", () => {
+  it("shows a calm empty state instead of an error", async () => {
+    vi.mocked(metaAdsApi.settings).mockRejectedValue(new ApiError(404, "not_found", "This feature is not deployed in this environment"));
+    render(<MetaAdsSettingsCard />);
+    expect(await screen.findByText(/Meta ads is not set up in this environment yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("still shows other errors", async () => {
+    vi.mocked(metaAdsApi.settings).mockRejectedValue(new ApiError(503, "feature_unavailable", "The feature did not answer; try again"));
+    render(<MetaAdsSettingsCard />);
+    expect(await screen.findByText(/did not answer/)).toBeInTheDocument();
   });
 });
 
