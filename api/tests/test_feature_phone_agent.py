@@ -1,7 +1,6 @@
-"""Run 0 addendum, phone agent (L): the console side of CONTRACTS.md 2, 9.3 and
-OWNERSHIP.md 6.4. The feature module has no routes yet; the four forward ops,
-the `phoneAgent` key and the `phoneAgentMinutesPerMonth` limit work through
-the generic Run 0 code."""
+"""Phone agent (L): the console side of CONTRACTS.md 2, 6.L (L15-L18) and 9.3.
+The feature module forwards the four operator routes; the `phoneAgent` key and
+the `phoneAgentMinutesPerMonth` limit work through the generic Run 0 code."""
 
 import pytest
 
@@ -11,11 +10,15 @@ from test_feature_scaffold import FakeLambda, _audit, _ever, _plan
 LIMIT = "phoneAgentMinutesPerMonth"
 
 
-def test_module_is_merged_with_no_routes():
+def test_module_routes_are_the_four_operator_routes():
     from app import handler
     from app.features import MODULES, phone_agent
-    assert phone_agent in MODULES and phone_agent.ROUTES == {}
-    assert not [r for r in handler.ROUTES if "phone-agent" in r]  # nothing reachable before the feature run
+    assert phone_agent in MODULES
+    assert sorted(phone_agent.ROUTES) == ["GET /platform/phone-agent/settings",
+                                          "GET /platform/tenants/{tenantId}/phone-agent",
+                                          "PUT /platform/phone-agent/settings",
+                                          "PUT /platform/tenants/{tenantId}/phone-agent"]
+    assert all(handler.ROUTES[k] is v for k, v in phone_agent.ROUTES.items())
 
 
 def test_contract_has_key_limit_and_ops():
@@ -61,18 +64,10 @@ def test_plan_minutes_copied(aws, tenant):
 
 
 @pytest.fixture
-def fwd(aws, monkeypatch):
-    from app import core, handler
-    from app.features import _forward
+def fwd(aws):
+    from app import core
     fake = FakeLambda()
     core._clients["lambda"] = fake
-    routes = {  # the operator routes L15-L18 (CONTRACTS.md 6.L), as the feature run will add them
-        "GET /platform/tenants/{tenantId}/phone-agent": _forward.forward("phone-agent", "phone-agent.tenant.get"),
-        "PUT /platform/tenants/{tenantId}/phone-agent": _forward.forward("phone-agent", "phone-agent.tenant.pause"),
-        "GET /platform/phone-agent/settings": _forward.forward("phone-agent", "phone-agent.settings.get"),
-        "PUT /platform/phone-agent/settings": _forward.forward("phone-agent", "phone-agent.settings.put"),
-    }
-    monkeypatch.setattr(handler, "ROUTES", {**handler.ROUTES, **routes})
     return fake
 
 
