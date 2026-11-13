@@ -912,3 +912,17 @@ html[data-glass-backdrop="image"][data-theme="dark"] body::before,
 html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::before {
   background: linear-gradient(rgb(26 18 14 / 0.42), rgb(26 18 14 / 0.42)), var(--user-image) center / cover no-repeat, var(--ox-800);
 }
+
+/* Phones: the open menu never grows past the screen; it scrolls inside
+   (dvh follows Safari's toolbar, svh is the fallback), with room for the home
+   indicator, and the page behind does not scroll along. */
+@media (max-width: 1023px) {
+  .topbar.is-open {
+    max-block-size: calc(100svh - 24px);
+    max-block-size: calc(100dvh - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
