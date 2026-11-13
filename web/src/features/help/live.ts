@@ -5,12 +5,12 @@ import type { TenantSummary } from "../../types";
 /**
  * Live numbers in the assistant's answers ("How many customers do we
  * have?", "What is our MRR?"). Read with the operator's own token from the
- * same APIs the pages use (Customers, Finance, Card readers, Outbox), so the
+ * same APIs the pages use (Customers, Finance, Outbox), so the
  * number is the one the page shows. Read only; the server never fetches
  * numbers, it only says which metric (help_assistant.py `live`).
  */
 
-type Source = Pick<typeof api, "tenants" | "financeOverview" | "outbox" | "allReaders">;
+type Source = Pick<typeof api, "tenants" | "financeOverview" | "outbox">;
 type Metric = (src: Source) => Promise<string | null>;
 
 const tenants = (pick: (t: TenantSummary) => boolean): Metric => async (src) => fmtInt((await src.tenants()).filter(pick).length);
@@ -33,7 +33,6 @@ export const METRICS: Record<string, Metric> = {
   mrr: finance((k) => fmtSek(k.mrrSek)),
   payingCustomers: finance((k) => fmtInt(k.payingCustomers)),
   outstanding: finance((k) => fmtSek(k.outstandingSek)),
-  readers: async (src) => fmtInt((await src.allReaders()).readers.length),
   outboxMessages: async (src) => {
     let page = await src.outbox();
     if (!page.enabled) return null;

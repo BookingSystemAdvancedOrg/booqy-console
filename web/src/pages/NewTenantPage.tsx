@@ -12,9 +12,12 @@ import { SaveButton, useDirty } from "../components/save";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
-/** Every contract feature (ticked or not), then any other key a plan or tenant carries. */
-export const featureKeys = (...maps: Features[]) =>
-  [...new Set<string>([...FEATURE_KEYS, ...maps.flatMap((m) => Object.keys(m))])];
+/** Every contract feature, ticked or not. A key a plan or tenant still carries
+    but the contract no longer has (a retired feature) is not shown or sent. */
+export const featureKeys = (): string[] => [...FEATURE_KEYS];
+/** Only the contract's keys of a feature map (drops retired ones). */
+export const contractFeatures = (m: Features): Features =>
+  Object.fromEntries(Object.entries(m).filter(([k]) => (FEATURE_KEYS as readonly string[]).includes(k)));
 export const featureLabel = (k: string) => (FEATURE_LABELS as Record<string, { en: string }>)[k]?.en ?? k;
 /** The input label of each contract limit (CONTRACTS.md 8.3); a new limit without one fails typecheck. */
 export const LIMIT_LABELS: Record<LimitKey, string> = {
@@ -341,7 +344,7 @@ export default function NewTenantPage() {
               <input id={i === 0 ? "f-planId" : undefined} type="radio" name="plan" value={p.planId} checked={f.planId === p.planId} onChange={set("planId")} />
               <strong>{p.name}</strong>
               <span>{p.maxLocations} location{p.maxLocations > 1 ? "s" : ""}</span>
-              <span className="small muted">{Object.entries(p.features).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(" · ")}</span>
+              <span className="small muted">{Object.entries(contractFeatures(p.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(" · ")}</span>
             </label>
           ))}
         </div>
@@ -367,7 +370,7 @@ export default function NewTenantPage() {
             <span className="field__label">Features</span>
             {plan ? (
               <div className="checks">
-                {featureKeys(features).map((k) => (
+                {featureKeys().map((k) => (
                   <label key={k} className="check">
                     <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {featureLabel(k)}
                   </label>

@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 
 from . import (backdrop, billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
-               terminal, users, website, zones)
+               users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
 
@@ -52,12 +52,6 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer,
     "POST /platform/tenants/{tenantId}/stripe/account-link": stripe_connect.account_link,
     "POST /platform/tenants/{tenantId}/stripe/sync": stripe_connect.sync_account,
-    "GET /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.get_terminal,
-    "POST /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.enable_terminal,
-    "PATCH /platform/tenants/{tenantId}/locations/{locationId}/terminal": terminal.update_terminal,
-    "POST /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers": terminal.register_reader,
-    "DELETE /platform/tenants/{tenantId}/locations/{locationId}/terminal/readers/{readerId}": terminal.remove_reader,
-    "GET /platform/terminal/readers": terminal.list_all_readers,
     "GET /platform/operators": operators.list_operators,
     "POST /platform/operators": operators.create_operator,
     "PATCH /platform/operators/{username}": operators.update_operator,

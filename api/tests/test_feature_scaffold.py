@@ -15,11 +15,29 @@ def _plan(p, body):
     return call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": p}, body)
 
 
-def test_unknown_feature_key_is_refused(aws, tenant):
-    status, body = _plan(tenant, {"planId": "starter", "overrides": {"features": {"nope": True}}})
-    assert status == 400 and "overrides.features" in body["fields"]
-    status, body = _plan(tenant, {"planId": "starter", "overrides": {"features": {"metaAds": True}}})
-    assert status == 200 and body["tenant"]["entitlements"]["features"]["metaAds"] is True
+@pytest.fixture
+def terminal_retired(monkeypatch):
+    """The contract without "terminal", whether or not contracts.py is regenerated yet."""
+    from app import tenants
+    monkeypatch.setattr(tenants, "FEATURE_KEYS", tuple(k for k in tenants.FEATURE_KEYS if k != "terminal"))
+
+
+def test_unknown_feature_key_is_dropped(aws, tenant, terminal_retired):
+    # A retired key ("terminal") still on stored entitlements and sent back is dropped, not refused.
+    status, body = _plan(tenant, {"planId": "starter",
+                                  "overrides": {"features": {"terminal": True, "nope": False, "metaAds": True}}})
+    assert status == 200, body
+    feats = body["tenant"]["entitlements"]["features"]
+    assert feats["metaAds"] is True and "terminal" not in feats and "nope" not in feats
+    assert "overrides.features" in _plan(tenant, {"planId": "starter", "overrides": {"features": {"x": 1}}})[1]["fields"]
+
+
+def test_create_drops_unknown_feature_keys(aws, terminal_retired):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "legacy-place",
+                                                        "overrides": {"features": {"terminal": True, "waitlist": True, "ordering": False}}})
+    assert status == 202, body
+    assert sorted(_ever(body["tenantId"])) == ["reservations", "waitlist"]
 
 
 @pytest.mark.parametrize("value", [-1, 1001, 2.5, True, "3"])

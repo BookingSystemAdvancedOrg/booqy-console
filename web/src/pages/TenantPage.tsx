@@ -4,14 +4,13 @@ import { api, ApiError } from "../api";
 import {
   Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
-import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { LIMIT_LABELS, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
@@ -257,7 +256,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
           <dl className="dl">
             <Row label="Owner" value={t.ownerName && `${t.ownerName} · ${t.ownerEmail}`} />
             <Row label="Plan" value={`${t.planId} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
-            <Row label="Features" value={Object.entries(t.entitlements.features).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
+            <Row label="Features" value={Object.entries(contractFeatures(t.entitlements.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
             <Row label="Payments" value={t.stripe?.chargesEnabled ? "Ready" : t.stripe?.accountId ? "Stripe setup not finished" : "No Stripe account yet"} />
             <Row label="Website" value={t.primaryDomain} />
             <Row label="Users" value={String(detail.userCount)} />
@@ -279,7 +278,6 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
   const t = detail.tenant;
   const [edit, setEdit] = useState<Location | "new" | null>(null);
   const [del, setDel] = useState<Location | null>(null);
-  const [term, setTerm] = useState<Location | null>(null);
   const [saved, flashSaved] = useFlash();
   const [savedLabel, setSavedLabel] = useState("Saved");
   const changed = (label: string) => { setSavedLabel(label); flashSaved(); onChanged(); };
@@ -293,7 +291,7 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
         </Notice>
       )}
       <table className="table">
-        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th>Card terminals</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th /></tr></thead>
         <tbody>
           {detail.locations.map((l) => (
             <tr key={l.locationId}>
@@ -301,22 +299,17 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
               <td>{l.address}</td>
               <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
               <td className="small mono">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
-              <td className="small">
-                {l.terminal ? <span className="status status--active">Enabled</span> : <span className="muted">Off</span>}
-                <button className="btn btn--ghost btn--small" style={{ marginLeft: 6 }} onClick={() => setTerm(l)}>Manage</button>
-              </td>
               <td className="right">
                 <button className="btn btn--ghost btn--small" onClick={() => setEdit(l)}>Edit</button>
                 <button className="btn btn--ghost btn--small danger" onClick={() => setDel(l)}>Delete</button>
               </td>
             </tr>
           ))}
-          {detail.locations.length === 0 && <tr><td colSpan={6} className="empty">No locations yet.</td></tr>}
+          {detail.locations.length === 0 && <tr><td colSpan={5} className="empty">No locations yet.</td></tr>}
         </tbody>
       </table>
       {edit && <LocationModal tenant={t} location={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); changed(edit === "new" ? "Added" : "Saved"); }} />}
       {del && <DeleteLocationModal tenant={t} location={del} onClose={() => setDel(null)} onDone={() => { setDel(null); changed("Deleted"); }} />}
-      {term && <TerminalModal tenant={t} location={term} goPlan={goPlan} onClose={() => { setTerm(null); onChanged(); }} />}
     </Card>
   );
 }
@@ -351,7 +344,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
     const res = await a.run(async () => {
       await api.setPlan(tenant.tenantId, {
         planId: tenant.planId,
-        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: tenant.entitlements.features,
+        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: contractFeatures(tenant.entitlements.features),
                      ...(tenant.entitlements.limits ? { limits: tenant.entitlements.limits } : {}) },
       });
       return api.createLocation(tenant.tenantId, compact(f) as LocationInput);
@@ -473,7 +466,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
   const dirty = useDirty(
     { planId, maxLocations, features, price, ...limits },
-    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features,
+    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: contractFeatures(tenant.entitlements.features),
       price: savedPrice, ...limitsOf(tenant.entitlements) },
   );
 
@@ -496,7 +489,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   async function save(force = false) {
     const overrides: Record<string, unknown> = {};
     if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
-    const changed = plan ? Object.fromEntries(Object.entries(features).filter(([k, v]) => plan.features[k] !== v)) : {};
+    const changed = plan ? Object.fromEntries(Object.entries(contractFeatures(features)).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
     const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];
     if (changedLimits.length) overrides.limits = Object.fromEntries(changedLimits.map((k) => [k, Number(limits[k])]));
@@ -535,7 +528,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
         <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
           <span className="field__label">Features</span>
           <div className="checks">
-            {featureKeys(plan?.features ?? {}, features).map((k) => (
+            {featureKeys().map((k) => (
               <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
                 <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {featureLabel(k)}
               </label>

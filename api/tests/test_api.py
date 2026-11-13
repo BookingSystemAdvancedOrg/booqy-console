@@ -348,11 +348,11 @@ def test_stripe_request_encodes_v1_and_v2(monkeypatch):
         return io.BytesIO(b'{"id": "x"}')
 
     monkeypatch.setattr(stripe_connect.urllib.request, "urlopen", fake_urlopen)
-    stripe_connect.stripe_request("POST", "/terminal/locations", {"display_name": "A+B"}, account="acct_1")
+    stripe_connect.stripe_request("POST", "/customers", {"name": "A+B"}, account="acct_1")
     stripe_connect.stripe_request("POST", "/v2/core/account_links", {"use_case": {"type": "account_onboarding"}})
     v1, v2 = sent
-    assert v1.full_url == "https://api.stripe.com/v1/terminal/locations"
-    assert v1.data == b"display_name=A%2BB" and v1.headers["Stripe-account"] == "acct_1"
+    assert v1.full_url == "https://api.stripe.com/v1/customers"
+    assert v1.data == b"name=A%2BB" and v1.headers["Stripe-account"] == "acct_1"
     assert v2.full_url == "https://api.stripe.com/v2/core/account_links"
     assert v2.headers["Content-type"] == "application/json"
     assert _json.loads(v2.data) == {"use_case": {"type": "account_onboarding"}}

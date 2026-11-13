@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   tenants: vi.fn(),
   financeOverview: vi.fn(),
   outbox: vi.fn(),
-  allReaders: vi.fn(),
   helpStatus: vi.fn(),
   helpAnswer: vi.fn(),
 }));

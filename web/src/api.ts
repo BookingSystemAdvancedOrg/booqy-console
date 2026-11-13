@@ -4,7 +4,7 @@ import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
   BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export class ApiError extends Error {
@@ -173,19 +173,6 @@ export const api = {
   financeStripeSync: () =>
     request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
       "POST", "/platform/finance/stripe-sync", {}),
-
-  terminal: (id: string, locationId: string) =>
-    request<TerminalState>("GET", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`),
-  enableTerminal: (id: string, locationId: string, body: TerminalAddress & { displayName?: string }) =>
-    request<{ terminal: TerminalSetup }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
-  updateTerminal: (id: string, locationId: string, body: Partial<TerminalAddress> & { displayName?: string }) =>
-    request<{ terminal: TerminalSetup }>("PATCH", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
-  registerReader: (id: string, locationId: string, registrationCode: string, label: string) =>
-    request<{ reader: TerminalReader }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers`,
-                                        { registrationCode, label }),
-  allReaders: () => request<ReaderFleet>("GET", "/platform/terminal/readers"),
-  removeReader: (id: string, locationId: string, readerId: string) =>
-    request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers/${encodeURIComponent(readerId)}`),
 
   operators: () => request<{ operators: OperatorAccount[] }>("GET", "/platform/operators").then((r) => r.operators),
   createOperator: (email: string, name: string) =>

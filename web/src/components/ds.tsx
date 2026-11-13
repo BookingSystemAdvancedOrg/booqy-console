@@ -6,13 +6,12 @@ import { createPortal } from "react-dom";
    one stroke icon set, the command palette (Cmd/Ctrl+K), the primary CTA and the
    accordion. Styles in src/ds.css. */
 
-export type IconName = "users" | "plus" | "terminal" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
+export type IconName = "users" | "plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
 
 // 24x24, 1.8 px stroke: the same drawings as admin's Icon.tsx.
 const PATHS: Record<IconName, string> = {
   users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.2a5.5 5.5 0 0 1 3 5.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
-  terminal: '<rect x="6" y="3.5" width="12" height="17" rx="2"/><path d="M9 7.5h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01"/>',
   staff: '<circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5a7 7 0 0 1 14 0M9.5 14.5l2.5 3 2.5-3"/>',
   badge: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M9.5 3v4h5V3M9 14.5a3 3 0 0 1 6 0M12 11.5h.01"/>',
   mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/>',

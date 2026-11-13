@@ -121,11 +121,9 @@ def update_location(req) -> tuple[int, dict]:
 def delete_location(req) -> tuple[int, dict]:
     """Removes the location row and frees a slot in the plan. The location's
     menu, reservations and orders stay in their tables (keyed by its id, which
-    is never reused) - nothing reaches them any more. Card readers registered
-for the location are removed from Stripe too (terminal.cleanup_location)."""
+    is never reused) - nothing reaches them any more."""
     tenant_id, location_id = req.path["tenantId"], req.path["locationId"]
     profile = get_profile(tenant_id)
-    existing = client("dynamodb").get_item(TableName=location_table(), Key=lkey(tenant_id, location_id)).get("Item")
     now = now_iso()
     items = [{"Delete": {"TableName": location_table(), "Key": lkey(tenant_id, location_id),
                          "ConditionExpression": "attribute_exists(PK)"}}]
@@ -147,6 +145,4 @@ for the location are removed from Stripe too (terminal.cleanup_location)."""
         if "ConditionalCheckFailed" in codes[1:]:
             raise ApiError(409, "count_changed", "The location count changed meanwhile - try again") from e
         raise
-    from .terminal import cleanup_location   # local import: terminal imports this module
-    cleanup_location(from_ddb(existing))
     return 200, {"deleted": location_id}

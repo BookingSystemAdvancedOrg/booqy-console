@@ -73,7 +73,6 @@ export const ROUTE_PATTERNS = [
   "/",
   "/tenants/new",
   "/tenants/:tenantId",
-  "/readers",
   "/operators",
   "/mail",
   "/finance",

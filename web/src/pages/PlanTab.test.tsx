@@ -5,6 +5,11 @@ import type { Tenant, TenantDetail } from "../types";
 
 const mocks = vi.hoisted(() => ({ plans: vi.fn(), setPlan: vi.fn(), tenant: vi.fn(), site: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
+// The contract without the retired "terminal" key, whether or not contracts.ts is regenerated yet.
+vi.mock("../contracts", async (load) => {
+  const m = await load<typeof import("../contracts")>();
+  return { ...m, FEATURE_KEYS: m.FEATURE_KEYS.filter((k) => k !== "terminal") };
+});
 
 import TenantPage, { PlanTab } from "./TenantPage";
 
@@ -80,6 +85,18 @@ describe("Plan tab", () => {
     expect(mocks.setPlan.mock.calls[0][1].overrides.limits).toBeUndefined();
   });
 
+  it("neither shows nor sends a retired feature key the tenant and plan still carry", async () => {
+    mocks.plans.mockResolvedValue([{ ...STARTER, features: { ...STARTER.features, terminal: true } }]);
+    const legacy = { ...tenant, entitlements: { ...tenant.entitlements, features: { ...tenant.entitlements.features, terminal: true } } };
+    render(<PlanTab tenant={legacy} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.queryByLabelText(/terminal/i)).toBeNull();
+    expect(screen.queryByText(/terminal/i)).toBeNull();
+    fireEvent.click(screen.getByLabelText("Site builder"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ kassa: false, siteBuilder: true });
+  });
+
   it("sends no limit when it equals the plan's", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");
@@ -128,6 +145,11 @@ describe("Integrations tab", () => {
   it("stays hidden with only events and tickets on", async () => {
     await renderTenant({ events: true });
     expect(screen.queryByRole("button", { name: "Integrations" })).toBeNull();
+  });
+
+  it("leaves a retired feature key out of the Overview", async () => {
+    await renderTenant({ reservations: true, terminal: true });
+    expect(screen.getByText("Reservations")).toBeInTheDocument();
   });
 
   it("uses feature labels on the Overview", async () => {

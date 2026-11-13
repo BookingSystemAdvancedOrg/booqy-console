@@ -128,10 +128,10 @@ def _overrides(f: v.Fields) -> dict | None:
     if feats is not None:
         if not isinstance(feats, dict) or not all(isinstance(x, bool) for x in feats.values()):
             sub.fail("features", "Map of feature -> true/false")
-        elif any(k not in FEATURE_KEYS for k in feats):
-            sub.fail("features", "Unknown feature")
         else:
-            out["features"] = feats
+            # Keys no longer in the contract (a retired feature, e.g. "terminal", still on
+            # stored entitlements and sent back) are dropped, not rejected.
+            out["features"] = {k: on for k, on in feats.items() if k in FEATURE_KEYS}
     lims = raw.get("limits")
     if lims is not None:
         if not isinstance(lims, dict):
