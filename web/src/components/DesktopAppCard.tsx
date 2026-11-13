@@ -1,5 +1,6 @@
 import "./desktopApp.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { desktopAppVersion, desktopFiles, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
 
 /** Labels in the console's language; URLs from desktopDownloads (shared with admin). */
@@ -33,8 +34,24 @@ export function DesktopAppCard({ heading = true }: { heading?: boolean }) {
   }, []);
   const mine = rec ? files.find((f) => f.os === rec.os) : undefined;
 
+  // The menu's "Download app" goes to /settings#desktop-app: scroll here, move
+  // focus and light the card up briefly, on every click (location.key).
+  const location = useLocation();
+  const ref = useRef<HTMLElement>(null);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (location.hash !== "#desktop-app" || !el) return;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView?.({ behavior: still ? "auto" : "smooth", block: "start" });
+    el.focus({ preventScroll: true });
+    setFlash(true);
+    const t = window.setTimeout(() => setFlash(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [location.hash, location.key]);
+
   return (
-    <section className="card" id="desktop-app">
+    <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" ref={ref} tabIndex={-1}>
       {heading && <div className="card__head"><h2>Desktop app</h2></div>}
       <div className="card__body desktop-app">
         <p className="muted small">

@@ -31,7 +31,6 @@ const pages = {
   website: () => import("./pages/WebsitePage"),
   readers: () => import("./pages/ReadersPage"),
   settings: () => import("./pages/SettingsPage"),
-  download: () => import("./pages/DownloadPage"),
 };
 const TenantsPage = lazy(pages.tenants);
 const NewTenantPage = lazy(pages.newTenant);
@@ -42,7 +41,6 @@ const FinancePage = lazy(pages.finance);
 const WebsitePage = lazy(pages.website);
 const ReadersPage = lazy(pages.readers);
 const SettingsPage = lazy(pages.settings);
-const DownloadPage = lazy(pages.download);
 
 let preloaded = false;
 function preloadPages() {
@@ -90,7 +88,7 @@ const SHOW_DOWNLOAD = showDownloadNav();
 const ALL_NAV: NavItem[] = [
   ...NAV.flatMap((g) => g.items),
   { to: "/settings", label: "Settings", icon: "gear" },
-  ...(SHOW_DOWNLOAD ? [{ to: "/download", label: "Download app", icon: "download" as const }] : []),
+  ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
 ];
 const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
 
@@ -180,7 +178,8 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           <NavLink to="/settings" className="btn btn--ghost topbar__settings"><Icon name="gear" />Settings</NavLink>
-          {SHOW_DOWNLOAD && <NavLink to="/download" className="btn btn--ghost topbar__settings"><Icon name="download" />Download app</NavLink>}
+          {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
+          {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings"><Icon name="download" />Download app</Link>}
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>
@@ -209,7 +208,6 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/settings" element={<SettingsPage email={user.email} />} />
-          <Route path="/download" element={<DownloadPage />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>

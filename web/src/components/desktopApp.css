@@ -13,3 +13,14 @@
 .desktop-app__badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #1c1918; color: #fbfaf6; }
 [data-theme="dark"] .desktop-app__badge { background: #fbfaf6; color: #1c1918; }
 .desktop-app__list .is-yours a { border-width: 1.5px; background: var(--glass-hi, rgb(251 250 246 / 0.4)); }
+/* From the menu (#desktop-app): the card lights up briefly. */
+.desktop-app-card { scroll-margin-top: 24px; }
+.desktop-app-card:focus { outline: none; }
+.desktop-app-card.is-flash { animation: desktop-app-flash 1.8s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes desktop-app-flash {
+  0%, 35% { box-shadow: 0 0 0 3px rgb(158 29 38 / 0.55), 0 18px 40px -18px rgb(28 25 24 / 0.45); }
+  100% { box-shadow: 0 0 0 0 rgb(158 29 38 / 0), 0 18px 40px -18px rgb(28 25 24 / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-app-card.is-flash { animation: none; box-shadow: 0 0 0 3px rgb(158 29 38 / 0.55); }
+}
