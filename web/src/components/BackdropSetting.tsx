@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { removeBackdropImage, uploadBackdropImage, type UploadError } from '../backdropImage'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { BackdropLibrary } from './BackdropLibrary'
+import { getLibrary, selectedItem } from '../backdropStore'
 import { isDesktopShell } from '../desktopDownloads'
 import {
   hasBackdropImage,
   readGlassBackdrop,
-  refreshBackdropImage,
   setGlassBackdrop,
   subscribeGlassBackdrop,
   SWATCHES,
@@ -12,13 +12,6 @@ import {
 } from '../glassBackdrop'
 
 const at = (e: MouseEvent) => (e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : undefined)
-
-const UPLOAD_ERRORS: Record<UploadError, string> = {
-  'not-image': 'That is not a picture. Choose a JPG, PNG, WebP or HEIC image.',
-  unreadable: 'The picture could not be read here. Try a JPG or PNG.',
-  'too-large': 'The picture is too large, even shrunk. Try another one.',
-  failed: 'The picture could not be saved. Try again.',
-}
 
 type Tab = 'clear' | 'colour' | 'image'
 
@@ -33,8 +26,6 @@ export function BackdropSetting() {
   const [hasImage, setHasImage] = useState(hasBackdropImage)
   const [lastColour, setLastColour] = useState(value.mode === 'colour' ? value.colour : SWATCHES[0].colour)
   const [tab, setTab] = useState<Tab>(value.mode === 'clear' ? (shell ? 'clear' : 'colour') : value.mode)
-  const [error, setError] = useState<string | null>(null)
-  const file = useRef<HTMLInputElement>(null)
 
   useEffect(
     () =>
@@ -44,9 +35,6 @@ export function BackdropSetting() {
       }),
     [],
   )
-  useEffect(() => {
-    if (tab === 'image' && !hasBackdropImage()) void refreshBackdropImage().then(setHasImage)
-  }, [tab])
 
   const colour = value.mode === 'colour' ? value.colour : null
   const pick = (c: string, e?: MouseEvent) => {
@@ -56,28 +44,10 @@ export function BackdropSetting() {
   const clear = (e: MouseEvent) => setGlassBackdrop({ mode: 'clear' }, at(e))
 
   const choose = (next: Tab, e: MouseEvent) => {
-    setError(null)
     setTab(next)
     if (next === 'clear') clear(e)
     else if (next === 'colour' && shell && colour === null) pick(lastColour, e)
-    else if (next === 'image' && hasBackdropImage()) setGlassBackdrop({ mode: 'image' }, at(e))
-  }
-
-  async function onFile(f: File | undefined) {
-    if (!f) return
-    setError(null)
-    const err = await uploadBackdropImage(f)
-    if (err) {
-      setError(UPLOAD_ERRORS[err])
-      file.current?.focus()
-    }
-    if (file.current) file.current.value = ''
-  }
-
-  async function onRemove(e: MouseEvent) {
-    setError(null)
-    if (!(await removeBackdropImage(at(e)))) setError('The picture could not be removed. Try again.')
-    else setTab(shell ? 'clear' : 'colour')
+    else if (next === 'image' && (hasImage || (getLibrary().loaded && selectedItem()))) setGlassBackdrop({ mode: 'image' }, at(e))
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -132,32 +102,7 @@ export function BackdropSetting() {
         </div>
       )}
 
-      {tab === 'image' && (
-        <div className="backdrop-image">
-          <label className="setting-toggle backdrop-image-choose">
-            <input
-              ref={file}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-              className="backdrop-image-input"
-              aria-describedby={error ? 'backdrop-image-error' : undefined}
-              onChange={(e) => void onFile(e.currentTarget.files?.[0])}
-            />
-            {hasImage ? 'Change picture' : 'Choose picture'}
-          </label>
-          {hasImage && (
-            <button type="button" className="row-action row-action--danger" onClick={(e) => void onRemove(e)}>
-              Remove picture
-            </button>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <p id="backdrop-image-error" className="backdrop-image-error" role="alert">
-          {error}
-        </p>
-      )}
+      {tab === 'image' && <BackdropLibrary />}
     </div>
   )
 }

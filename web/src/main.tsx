@@ -11,7 +11,7 @@ import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
-import { syncBackdropImage } from "./backdropImage";
+import { syncBackdropImage } from "./backdropStore";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
 import { DownloadRedirect } from "./components/DownloadRedirect";
@@ -147,7 +147,7 @@ function Shell() {
     if (user) preloadPages();
   }, [user]);
 
-  // Your own picture behind the glass: fetched once signed in (backdropImage.ts).
+  // Your own picture behind the glass: fetched once signed in (backdropStore.ts).
   useEffect(() => {
     if (user) syncBackdropImage();
   }, [user]);

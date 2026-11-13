@@ -7,6 +7,8 @@ import type {
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
+export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -205,11 +207,14 @@ export const api = {
   helpStatus: () => request<{ enabled: boolean; mode: "ai" | "kb" | "off" }>("GET", "/platform/help-assistant"),
   helpAnswer: (body: { question: string; history: { role: "user" | "assistant"; text: string }[] }) =>
     request<{ answer: HelpAnswer; mode: "ai" | "kb" }>("POST", "/platform/help-assistant/answers", body),
-  // Your own picture behind the glass, per operator (glassBackdrop.ts / backdropImage.ts).
-  backdrop: () => request<{ url: string | null; updatedAt: string | null }>("GET", "/platform/me/backdrop"),
-  backdropUpload: (body: { contentType: string; size: number }) =>
-    request<{ url: string; fields: Record<string, string> }>("POST", "/platform/me/backdrop/upload", body),
-  removeBackdrop: () => request<unknown>("DELETE", "/platform/me/backdrop"),
+  // Your own pictures behind the glass: a library per operator (backdropStore.ts).
+  backdrops: () => request<{ items: BackdropItem[]; selectedId: string | null; max?: number }>("GET", "/platform/me/backdrops"),
+  backdropUpload: (body: { contentType: string; size: number; width: number; height: number }) =>
+    request<{ id: string; url: string; fields: Record<string, string> }>("POST", "/platform/me/backdrops/upload", body),
+  backdropComplete: (id: string) =>
+    request<{ item: BackdropItem }>("POST", `/platform/me/backdrops/${encodeURIComponent(id)}/complete`),
+  selectBackdrop: (id: string | null) => request<{ selectedId: string | null }>("PUT", "/platform/me/backdrops/selected", { id }),
+  deleteBackdrop: (id: string) => request<unknown>("DELETE", `/platform/me/backdrops/${encodeURIComponent(id)}`),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */

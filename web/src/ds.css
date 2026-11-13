@@ -890,11 +890,6 @@ html.is-desktop-glass[data-glass-backdrop="colour"][data-theme="dark"] body::bef
 .backdrop-swatch--custom { background: var(--glass-fill); font: 600 18px/1 var(--sans); }
 .backdrop-swatch--custom input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
 @container (max-width: 520px) { .backdrop-setting, .backdrop-swatches { justify-items: start; justify-content: flex-start; } }
-.backdrop-image { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
-.backdrop-image-choose { position: relative; align-items: center; }
-.backdrop-image-input { position: absolute; inset: 0; width: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
-.backdrop-image-choose:has(.backdrop-image-input:focus-visible) { box-shadow: 0 0 0 3px var(--field-ring); }
-.backdrop-image-error { margin: 0; max-width: 34ch; color: var(--danger); font-size: 13px; }
 
 /* Background: Your image. Until the picture is decoded Booqy's backdrop shows,
    also in the desktop app (image-loading). Then the picture, under a light veil
@@ -924,5 +919,288 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     padding-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* --- Your image: the library (components/BackdropLibrary.tsx) ------------- */
+/* The row takes the full width when the library shows. */
+.setting-row:has(.bg-library) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.backdrop-setting:has(.bg-library) {
+  justify-items: stretch;
+}
+.bg-library {
+  --bg-thumb-min: 8rem;
+  --bg-chip: 1.75rem;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.bg-library-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  font-size: 13px;
+  color: var(--print-2);
+}
+.bg-library-empty,
+.bg-library-error {
+  margin: 0;
+  font-size: 13px;
+}
+.bg-library-empty {
+  color: var(--print-2);
+}
+.bg-library-error {
+  color: var(--danger);
+}
+.bg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bg-thumb-min)), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bg-cell {
+  min-width: 0;
+}
+.bg-tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-md);
+}
+.bg-thumb {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: inset 0 0 0 1px var(--glass-border);
+  cursor: default;
+}
+.bg-thumb img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.bg-thumb:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+.bg-tile.is-selected .bg-thumb {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--print);
+}
+.bg-check {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+  display: grid;
+  place-items: center;
+  inline-size: var(--bg-chip);
+  block-size: var(--bg-chip);
+  border-radius: var(--r-pill);
+  background: var(--print);
+  color: var(--paper);
+  pointer-events: none;
+}
+.bg-check svg {
+  inline-size: 60%;
+  block-size: 60%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bg-tile-menu {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bg-tile-more {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  inline-size: var(--bg-chip);
+  block-size: var(--bg-chip);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-pop);
+  color: var(--print);
+  box-shadow: var(--liquid-edge);
+  font: 600 15px/1 var(--sans);
+  pointer-events: auto;
+  cursor: default;
+}
+.bg-tile-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+/* The menu opens inside the tile, so it never sticks out of the card. */
+.bg-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  align-content: center;
+  gap: 0;
+  padding: var(--space-1);
+  padding-inline-end: calc(var(--bg-chip) + var(--space-2));
+  border-radius: inherit;
+  background: var(--glass-pop) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge);
+  -webkit-backdrop-filter: blur(var(--blur-pop)) saturate(1.5);
+  backdrop-filter: blur(var(--blur-pop)) saturate(1.5);
+  pointer-events: auto;
+}
+.bg-menu .row-action {
+  justify-content: flex-start;
+  min-block-size: 0;
+  padding-block: var(--space-1);
+  font-size: 13px;
+  white-space: normal;
+  text-align: start;
+}
+.bg-tile--upload {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: inset 0 0 0 1px var(--field-border);
+  color: var(--print);
+  text-align: center;
+  cursor: default;
+}
+.bg-tile--upload:has(.bg-upload-input:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--field-border), 0 0 0 3px var(--field-ring);
+}
+.bg-tile--upload.is-disabled {
+  opacity: 0.6;
+}
+.bg-upload-input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: default;
+}
+.bg-upload-label {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  font: 600 13px/1.25 var(--sans);
+}
+.bg-upload-plus {
+  font-size: 22px;
+  line-height: 1;
+}
+.bg-upload-progress {
+  display: grid;
+  gap: var(--space-1);
+  inline-size: 80%;
+  font: 600 12px/1 var(--sans);
+}
+.bg-upload-progress::before {
+  content: '';
+  grid-area: 1 / 1;
+  block-size: 6px;
+  border-radius: var(--r-pill);
+  background: var(--glass-border);
+}
+.bg-upload-bar {
+  grid-area: 1 / 1;
+  block-size: 6px;
+  border-radius: var(--r-pill);
+  background: var(--print);
+}
+
+/* The preview (components/BackdropPreview.tsx) */
+.bg-preview {
+  display: grid;
+  gap: var(--space-3);
+}
+.bg-preview-stage {
+  position: relative;
+  inline-size: 100%;
+  max-block-size: min(60svh, 36rem);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--glass-fill);
+  touch-action: pan-y;
+}
+.bg-preview-thumb,
+.bg-preview-full {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.bg-preview-thumb {
+  object-fit: cover;
+  filter: blur(14px);
+  transform: scale(1.06);
+}
+.bg-preview-full {
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 220ms var(--ease);
+}
+.bg-preview-full.is-loaded {
+  opacity: 1;
+}
+.bg-preview-nav {
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-pop);
+  color: var(--print);
+  box-shadow: var(--liquid-edge), var(--elev-1);
+  font: 500 24px/1 var(--sans);
+  cursor: default;
+}
+.bg-preview-nav--prev {
+  inset-inline-start: var(--space-2);
+}
+.bg-preview-nav--next {
+  inset-inline-end: var(--space-2);
+}
+.bg-preview-nav:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+.bg-preview-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--print-2);
+}
+.bg-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bg-preview-full {
+    transition: none;
   }
 }
