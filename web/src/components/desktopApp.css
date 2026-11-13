@@ -1,0 +1,11 @@
+/* Settings > Desktop app (DesktopAppCard.tsx). */
+.desktop-app > p { margin: 0 0 12px; }
+.desktop-app__list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+.desktop-app__list a { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 16px;
+  padding: 11px 14px; border-radius: var(--r-md, 12px); color: var(--fg); text-decoration: none;
+  border: 1px solid var(--glass-edge, var(--fg-line)); transition: background-color 160ms var(--ease); }
+.desktop-app__list a:hover { background: var(--glass-hi, rgb(251 250 246 / 0.4)); }
+.desktop-app__list .is-yours a { border-color: var(--fg); }
+.desktop-app__help { margin-top: 14px; }
+.desktop-app__help summary { cursor: pointer; }
+.desktop-app__help p { margin: 8px 0 0; }

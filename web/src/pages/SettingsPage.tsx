@@ -3,6 +3,7 @@ import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { Slot } from "../slots";
+import { DesktopAppCard } from "../components/DesktopAppCard";
 
 /**
  * Settings: light or dark mode and the click sound. Both are kept in this
@@ -15,7 +16,7 @@ export default function SettingsPage({ email }: { email?: string }) {
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">{email ? `Signed in as ${email}. ` : ""}How the console looks and sounds in this browser.</p>
+          <p className="muted">{email ? `Signed in as ${email}. ` : ""}How the console looks and sounds in this browser, and the desktop app.</p>
         </div>
       </div>
       <section className="card">
@@ -51,6 +52,7 @@ export default function SettingsPage({ email }: { email?: string }) {
           </div>
         </div>
       </section>
+      <DesktopAppCard />
       <Slot id="settings.metaAds" />
       <Slot id="settings.phoneAgent" />
     </>
