@@ -100,7 +100,6 @@
   --paper-focus: var(--bq-snow);
   --print-hover: #000000;
   --ink-red-hover: #7f141c;
-  --placeholder: #6f6762;
   --selected-row: #ebe7dd;
   --notice-ok-bg: #eef4ee; --notice-ok-line: #c4d8c7; --notice-ok-text: #1f4c2c;
   --notice-warn-bg: #fbf4e4; --notice-warn-line: #ead7a8; --notice-warn-text: #5c3d00;
@@ -156,7 +155,6 @@
   --paper-focus: #3a3431;
   --print-hover: var(--bq-snow);
   --ink-red-hover: #f4a3a8;
-  --placeholder: #a59b95;
   --selected-row: #3a3431;
   --notice-ok-bg: #223a2a; --notice-ok-line: #3b5f45; --notice-ok-text: #9ad6ae;
   --notice-warn-bg: #3a2f16; --notice-warn-line: #6a5526; --notice-warn-text: #e8c478;
@@ -307,10 +305,10 @@ a:hover { text-decoration-thickness: 2px; }
 .btn--small { min-height: 30px; padding: 0 10px; font-size: 12.5px; }
 .btn.danger { color: var(--danger); }
 .link { background: none; border: 0; color: var(--fg); text-decoration: underline; text-underline-offset: 0.18em; cursor: default; font: inherit; padding: 0 4px; }
-.input { width: 100%; min-height: 40px; border: 1.5px solid transparent; background: var(--glass-fill); border-radius: var(--r-md); padding: 8px 10px; font: inherit; color: var(--print); transition: border-color 160ms var(--ease), background-color 160ms var(--ease); }
-.input::placeholder { color: var(--placeholder); }
-.input:hover { border-color: var(--paper-line); }
-.input:focus { outline: none; border-color: var(--print); background: var(--paper-focus); }
+.input { width: 100%; min-height: 40px; border: 1px solid var(--field-border); background: var(--field-bg); box-shadow: var(--field-inset); border-radius: var(--r-md); padding: 8px 12px; font: inherit; color: var(--print); transition: border-color 160ms var(--ease), background-color 160ms var(--ease), box-shadow 160ms var(--ease); }
+.input::placeholder { color: var(--placeholder); opacity: 1; }
+.input:hover { border-color: var(--field-border-hover); }
+.input:focus { outline: none; border-color: var(--print); background: var(--field-bg-focus); box-shadow: var(--field-inset), 0 0 0 3px var(--field-ring); }
 textarea.input { resize: vertical; }
 select.input { appearance: none; padding-right: 30px; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 10px center; background-size: 14px; }
 .field { display: grid; gap: 5px; align-content: start; }
@@ -389,8 +387,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 
 /* --- list page --------------------------------------------------------------------- */
 .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 22px; }
-.toolbar .input { background: var(--glass-surface); border-color: transparent; }
-.toolbar .input:focus { border-color: var(--on-ox); background: var(--paper-focus); }
+.toolbar .input:focus { border-color: var(--on-ox); background: var(--field-bg-focus); }
 .search { max-width: 360px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1.5px solid var(--fg-line); background: transparent; border-radius: var(--r-md); min-height: 34px; padding: 0 10px; cursor: default; font: 560 13px/1 var(--sans); display: inline-flex; gap: 8px; align-items: center; color: var(--fg); transition: border-color 160ms var(--ease), background-color 160ms var(--ease); }
@@ -409,7 +406,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .plan--on { border-color: var(--print); box-shadow: inset 0 0 0 1px var(--print); background: var(--glass-fill); }
 .loc-row { display: flex; gap: 12px; align-items: flex-end; padding: 6px 0 12px; border-bottom: 1.5px dashed var(--paper-line); }
 .loc-row .grid { flex: 1; margin: 0; }
-.submit-bar { position: sticky; bottom: 0; display: flex; gap: 16px; justify-content: space-between; align-items: center; background: var(--glass-surface); border-top: 4px solid var(--steel); padding: 12px 18px; box-shadow: 0 -14px 18px -14px rgb(0 0 0 / 0.5); }
+.submit-bar { position: sticky; bottom: 0; z-index: 4; display: flex; gap: 16px; justify-content: space-between; align-items: center; border-top: 4px solid var(--steel); padding: 12px 18px; }
 .submit-bar__info { flex: 1; min-width: 0; }
 .submit-bar__info .notice { margin: 0; max-height: 34vh; overflow: auto; }
 .field-errors { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
@@ -473,8 +470,10 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
   box-shadow: 0 8px 16px -8px rgb(58 36 24 / 0.55);
 }
 .auth__hang > .auth__card {
-  width: 100%; animation: none; box-shadow: none;
-  background: var(--glass-text-bg);
+  width: 100%; animation: none;
+  background: var(--glass-surface) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
   padding-bottom: var(--tooth);
   -webkit-mask:
     conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x,
@@ -913,7 +912,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   --steel: #a88462; --steel-hi: #d5c4ae; --steel-lo: #6b4a2e;
   --line-soft: #e6dccd;
   --print-hover: #3a2418;
-  --placeholder: #6b6660;
   --selected-row: #efe6da;
   --fg-line: rgb(26 18 14 / 0.18);
   /* the teeth of a torn edge take the colour of the glass behind them */
@@ -948,7 +946,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   --steel: #6b4a2e; --steel-hi: #a88462; --steel-lo: #3a2418;
   --line-soft: #4a3326;
   --print-hover: var(--bq-snow);
-  --placeholder: #a89a8c;
   --selected-row: #3a2418;
   --paper-focus: #33241b;
   --fg-line: rgb(246 241 234 / 0.2);
@@ -959,7 +956,7 @@ html.is-busy .btn:disabled { opacity: .85; }
   --lift: 0 40px 80px -40px rgb(0 0 0 / 0.7), 0 2px 8px -3px rgb(0 0 0 / 0.4);
   --lift-sm: 0 14px 30px -20px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.3);
   --hang: 0 14px 18px rgb(0 0 0 / 0.5), 0 2px 3px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(213 196 174 / 0.1);
-  --backdrop-veil: rgb(26 18 14 / 0.86);
+  --backdrop-veil: rgb(26 18 14 / 0.72);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f6f1ea' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
@@ -970,14 +967,26 @@ html.is-busy .btn:disabled { opacity: .85; }
 /* the room behind everything: a blurred warm room, veiled at night */
 body { background: transparent; font-family: var(--sans); }
 :root {
+  /* Colour for the glass to bend: wine, bronze, tan and walnut pools. */
   --backdrop-blobs:
-    radial-gradient(48% 42% at 12% 16%, rgb(53 0 1 / 0.18), transparent 70%),
-    radial-gradient(42% 46% at 88% 84%, rgb(107 74 46 / 0.22), transparent 70%),
-    radial-gradient(36% 34% at 78% 12%, rgb(168 132 98 / 0.2), transparent 70%);
+    radial-gradient(40% 48% at 6% 10%, rgb(53 0 1 / 0.66), transparent 72%),
+    radial-gradient(36% 42% at 94% 90%, rgb(107 74 46 / 0.66), transparent 72%),
+    radial-gradient(32% 36% at 84% 6%, rgb(168 132 98 / 0.72), transparent 70%),
+    radial-gradient(30% 34% at 28% 96%, rgb(58 36 24 / 0.55), transparent 70%),
+    radial-gradient(26% 30% at 66% 42%, rgb(158 29 38 / 0.36), transparent 70%),
+    radial-gradient(28% 32% at 40% 60%, rgb(168 132 98 / 0.42), transparent 70%);
+}
+:root[data-theme="dark"] {
+  --backdrop-blobs:
+    radial-gradient(40% 48% at 6% 10%, rgb(158 29 38 / 0.5), transparent 72%),
+    radial-gradient(36% 42% at 94% 90%, rgb(168 132 98 / 0.4), transparent 72%),
+    radial-gradient(32% 36% at 84% 6%, rgb(107 74 46 / 0.6), transparent 70%),
+    radial-gradient(30% 34% at 28% 96%, rgb(53 0 1 / 0.6), transparent 70%),
+    radial-gradient(24% 28% at 56% 46%, rgb(213 196 174 / 0.16), transparent 70%);
 }
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(var(--backdrop-veil), var(--backdrop-veil)), var(--backdrop-blobs), var(--user-backdrop, url("./assets/backdrop.webp")) center / cover no-repeat, var(--ox-800);
+  background: var(--backdrop-blobs), linear-gradient(var(--backdrop-veil), var(--backdrop-veil)), var(--user-backdrop, url("./assets/backdrop.webp")) center / cover no-repeat, var(--ox-800);
 }
 .boot { background: transparent; }
 ::selection { background: #a88462; color: #1a120e; }
@@ -1006,7 +1015,6 @@ html.is-busy, html.is-busy * { cursor: progress; }
 }
 :root[data-theme="dark"] .topbar { background: rgb(26 18 14 / 0.72); }
 /* the search field on a card: in the dark room the card is already paper-coloured, so the field takes the next shade */
-:root[data-theme="dark"] .toolbar .input { background: var(--glass-fill); }
 .topbar::after { display: none; }
 .brand, .brand__app { color: var(--on-ox); }
 .brand__app { color: var(--on-ox-3); }
@@ -1060,7 +1068,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
 
 /* fields and choices: soft rounded wells */
 .input { border-radius: var(--r-md); }
-.input:hover { border-color: var(--paper-line); }
+.input:hover { border-color: var(--field-border-hover); }
 .chip { border-radius: var(--r-pill); min-height: 36px; padding: 0 14px; }
 .chip:hover { border-color: var(--fg); background: rgb(58 36 24 / 0.06); }
 .chip--on, .chip--on:hover { background: #1a120e; border-color: #1a120e; color: var(--bq-snow); }
@@ -1094,20 +1102,21 @@ html.is-busy, html.is-busy * { cursor: progress; }
 .modal__panel { box-shadow: var(--hang); }
 
 /* the save bar: glass at the bottom of the panel */
-.submit-bar { border-top: 0; border-radius: var(--r-lg); margin-top: 12px; background: var(--glass-hi); box-shadow: var(--rim), var(--lift-sm); -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5); }
+.submit-bar { border-top: 0; border-radius: var(--r-lg); margin-top: 12px; background: var(--glass-modal) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--liquid-depth); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); }
 .submit-bar .notice { background: var(--glass-surface); }
 
 /* sign-in: the room, the dark moment beside it is smoked glass */
 .auth { background: transparent; gap: clamp(12px, 2vw, 24px); padding: clamp(12px, 2vw, 24px); }
 .auth__brand {
-  border-radius: var(--r-panel); background: rgb(26 18 14 / 0.9); color: #f6f1ea;
-  box-shadow: inset 0 1px 0 rgb(213 196 174 / 0.22), inset 0 0 0 1px rgb(213 196 174 / 0.1), 0 40px 80px -40px rgb(26 18 14 / 0.7);
+  border-radius: var(--r-panel); background: rgb(26 18 14 / 0.66) var(--liquid-sheen-dark); color: #f6f1ea;
+  -webkit-backdrop-filter: blur(28px) saturate(1.7); backdrop-filter: blur(28px) saturate(1.7);
+  box-shadow: var(--liquid-edge-dark), var(--liquid-depth);
   --on-ox: #f6f1ea; --on-ox-2: #d5c4ae; --on-ox-3: #a88462;
 }
 .auth__lead em { color: #d5c4ae; }
 .auth__brand .env { color: #d5c4ae; }
-.auth__main { border-radius: var(--r-panel); background: var(--glass-hi); box-shadow: var(--rim), var(--lift); }
-@media (min-width: 768px) { .auth__main { background: var(--glass); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); } }
+.auth__main { border-radius: var(--r-panel); background: var(--glass-main) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--liquid-depth);
+  -webkit-backdrop-filter: blur(var(--blur-main)) saturate(1.7); backdrop-filter: blur(var(--blur-main)) saturate(1.7); }
 
 /* charts: brown instead of red where red only decorated */
 .chart__line { stroke: #a88462; }
@@ -1177,10 +1186,14 @@ html.is-busy, html.is-busy * { cursor: progress; }
 /* no backdrop-filter, or reduced transparency: solid surfaces */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .topbar, .main, .auth__main, .submit-bar { background: var(--ox-800); }
+  .auth__brand { background: #1a120e; }
+  .auth__hang > .auth__card { background: var(--paper); }
 }
 @media (prefers-reduced-transparency: reduce) {
   body::before { background: var(--ox-800); }
   .topbar, .main, .auth__main, .submit-bar { background: var(--ox-800); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .auth__brand { background: #1a120e; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .auth__hang > .auth__card { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
   :root { --ground: var(--ox-800); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1237,8 +1250,9 @@ html.is-busy, html.is-busy * { cursor: progress; }
    receipt, like admin's. Stay last in the file.
    ========================================================================== */
 :root {
-  --sheen: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.62), rgb(var(--bq-snow-rgb) / 0.12) 38%, rgb(var(--bq-snow-rgb) / 0) 60%);
-  --rim-gloss: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.95), inset 0 0 0 1px rgb(var(--bq-snow-rgb) / 0.6), inset 0 -1px 0 rgb(58 36 24 / 0.06);
+  /* liquid glass tokens live in ds.css */
+  --sheen: var(--liquid-sheen);
+  --rim-gloss: var(--liquid-edge);
   --card-shadow: 0 1px 2px rgb(58 36 24 / 0.06), 0 14px 34px -22px rgb(58 36 24 / 0.45);
   --card-shadow-hi: 0 1px 2px rgb(58 36 24 / 0.08), 0 22px 44px -24px rgb(58 36 24 / 0.55);
   --lacquer: linear-gradient(180deg, #4a3226 0%, #241812 48%, #120c09 100%);
@@ -1248,8 +1262,6 @@ html.is-busy, html.is-busy * { cursor: progress; }
   --pearl-rim: inset 0 1px 0 var(--bq-snow), inset 0 0 0 1px rgb(58 36 24 / 0.12), 0 6px 14px -12px rgb(58 36 24 / 0.5);
 }
 :root[data-theme="dark"] {
-  --sheen: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.09), rgb(var(--bq-snow-rgb) / 0.02) 38%, rgb(var(--bq-snow-rgb) / 0) 60%);
-  --rim-gloss: inset 0 1px 0 rgb(213 196 174 / 0.24), inset 0 0 0 1px rgb(213 196 174 / 0.1);
   --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 14px 34px -22px rgb(0 0 0 / 0.8);
   --card-shadow-hi: 0 1px 2px rgb(0 0 0 / 0.35), 0 22px 44px -24px rgb(0 0 0 / 0.85);
   --lacquer: linear-gradient(180deg, var(--bq-snow) 0%, #f6f1ea 50%, #e4d8c8 100%);
@@ -1262,9 +1274,8 @@ html.is-busy, html.is-busy * { cursor: progress; }
 /* glass panels catch light along the top */
 .topbar, .main, .submit-bar, .auth__main {
   background-image: var(--sheen);
-  box-shadow: var(--rim-gloss), var(--lift-sm);
+  box-shadow: var(--rim-gloss), var(--liquid-depth);
 }
-.main { box-shadow: var(--rim-gloss), var(--lift); }
 
 /* --- the shell: a floating glass side menu from 1,024 px ------------------ */
 .topbar__heading { display: none; }
@@ -1323,8 +1334,8 @@ html.is-busy, html.is-busy * { cursor: progress; }
 /* --- cards: frosted glass on the panel's glass, no rail, no torn edge ------- */
 .card, .table-wrap, .kpi {
   border-radius: var(--r-lg);
-  background: var(--glass-text-bg);
-  box-shadow: var(--rim-gloss), var(--card-shadow);
+  background: var(--glass-text-bg) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), var(--card-shadow);
 }
 .modal__panel {
   border-radius: var(--r-lg);

@@ -60,8 +60,8 @@
   --hairline-strong: rgba(58, 36, 24, 0.18);
   --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
 
-  --glass-main: rgb(var(--bq-snow-rgb) / 0.46);
-  --glass-side: rgb(var(--bq-snow-rgb) / 0.56);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.32);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.4);
   --glass-pop: rgb(var(--bq-snow-rgb) / 0.8);
   --glass-modal: rgb(var(--bq-snow-rgb) / 0.86);
 
@@ -72,10 +72,25 @@
   --glass-border: rgb(var(--bq-snow-rgb) / 0.42);
   --glass-blur: var(--blur-main);
   --glass-highlight: rgb(var(--bq-snow-rgb) / 0.85);
-  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.8);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.62);
   /* Everything that sits on a panel: cards, tables, fields, wells. */
-  --glass-surface: rgb(var(--bq-snow-rgb) / 0.58);
-  --glass-fill: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.48);
+  --glass-fill: rgb(var(--bq-snow-rgb) / 0.32);
+  /* Liquid glass: a lit top edge, a soft inner glow, a sheen that fades down
+     and depth below. Same values in admin, customer site and booqy.se. */
+  --liquid-edge: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.95), inset 0 0 0 1px rgb(var(--bq-snow-rgb) / 0.42), inset 0 -1px 0 rgb(58 36 24 / 0.1), inset 0 12px 28px -18px rgb(var(--bq-snow-rgb) / 0.7);
+  --liquid-sheen: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.46), rgb(var(--bq-snow-rgb) / 0.08) 38%, rgb(var(--bq-snow-rgb) / 0) 62%);
+  --liquid-depth: 0 28px 64px -30px rgb(26 18 14 / 0.5), 0 2px 8px -3px rgb(26 18 14 / 0.14);
+  --liquid-edge-dark: inset 0 1px 0 rgb(246 241 234 / 0.28), inset 0 0 0 1px rgb(213 196 174 / 0.16), inset 0 12px 28px -18px rgb(246 241 234 / 0.14);
+  --liquid-sheen-dark: linear-gradient(180deg, rgb(246 241 234 / 0.12), rgb(246 241 234 / 0.02) 40%, rgb(246 241 234 / 0) 62%);
+  /* Fields: a visible glass well with a 1 px line and a focus ring (AA). */
+  --field-bg: rgb(var(--bq-snow-rgb) / 0.62);
+  --field-bg-focus: rgb(var(--bq-snow-rgb) / 0.82);
+  --field-border: rgb(58 36 24 / 0.34);
+  --field-border-hover: rgb(58 36 24 / 0.52);
+  --field-ring: rgb(107 74 46 / 0.34);
+  --field-inset: inset 0 1px 2px rgb(26 18 14 / 0.1), inset 0 -1px 0 rgb(var(--bq-snow-rgb) / 0.6);
+  --placeholder: #5f5751;
   --glass-well: rgb(246 241 234 / 0.36);
   --glass-saturate: 1.6;
   --blur-main: 18px;
@@ -102,15 +117,25 @@
   --hairline: rgba(213, 196, 174, 0.12);
   --hairline-strong: rgba(213, 196, 174, 0.22);
   --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
-  --glass-main: rgba(26, 18, 14, 0.56);
-  --glass-side: rgba(30, 21, 16, 0.66);
+  --glass-main: rgba(26, 18, 14, 0.44);
+  --glass-side: rgba(30, 21, 16, 0.52);
   --glass-pop: rgba(36, 25, 19, 0.86);
   --glass-modal: rgba(36, 25, 19, 0.9);
   --glass-border: rgba(213, 196, 174, 0.14);
   --glass-highlight: rgba(213, 196, 174, 0.22);
-  --glass-text-bg: rgba(26, 18, 14, 0.82);
-  --glass-surface: rgba(42, 29, 22, 0.58);
-  --glass-fill: rgba(58, 36, 24, 0.5);
+  --glass-text-bg: rgba(26, 18, 14, 0.66);
+  --glass-surface: rgba(42, 29, 22, 0.5);
+  --glass-fill: rgba(58, 36, 24, 0.42);
+  --liquid-edge: var(--liquid-edge-dark);
+  --liquid-sheen: var(--liquid-sheen-dark);
+  --liquid-depth: 0 30px 70px -30px rgb(0 0 0 / 0.75), 0 2px 8px -3px rgb(0 0 0 / 0.4);
+  --field-bg: rgba(26, 18, 14, 0.5);
+  --field-bg-focus: rgba(26, 18, 14, 0.72);
+  --field-border: rgba(213, 196, 174, 0.34);
+  --field-border-hover: rgba(213, 196, 174, 0.52);
+  --field-ring: rgba(213, 196, 174, 0.3);
+  --field-inset: inset 0 1px 2px rgb(0 0 0 / 0.3), inset 0 -1px 0 rgb(246 241 234 / 0.06);
+  --placeholder: #b3a79f;
   --glass-well: rgba(26, 18, 14, 0.4);
   --dim: rgba(0, 0, 0, 0.55);
 }
@@ -710,3 +735,18 @@ html[data-user-backdrop][data-theme='dark'] { --backdrop-veil: rgb(26 18 14 / 0.
 .backdrop-picker__choose:has(.backdrop-picker__input:focus-visible) { box-shadow: 0 0 0 3px var(--focus); }
 .backdrop-picker .error-text { margin: 0; }
 @media (max-width: 600px) { .backdrop-picker { justify-items: start; } }
+
+/* Liquid refraction, Chromium and Electron only (glassFilter.ts sets
+   .glass-refract there). Safari keeps the plain -webkit- blur above. */
+.glass-refract .main,
+.glass-refract .topbar,
+.glass-refract .auth__main,
+.glass-refract .auth__brand {
+  backdrop-filter: url(#booqy-glass) blur(var(--blur-main)) saturate(1.7);
+}
+html.is-desktop-glass.glass-refract .main,
+html.is-desktop-glass.glass-refract .topbar,
+html.is-desktop-glass.glass-refract .auth__main { backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) {
+  .glass-refract .main, .glass-refract .topbar, .glass-refract .auth__main, .glass-refract .auth__brand { backdrop-filter: none; }
+}
