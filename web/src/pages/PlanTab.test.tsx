@@ -5,11 +5,6 @@ import type { Tenant, TenantDetail } from "../types";
 
 const mocks = vi.hoisted(() => ({ plans: vi.fn(), setPlan: vi.fn(), tenant: vi.fn(), site: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
-// The contract without the retired "terminal" key, whether or not contracts.ts is regenerated yet.
-vi.mock("../contracts", async (load) => {
-  const m = await load<typeof import("../contracts")>();
-  return { ...m, FEATURE_KEYS: m.FEATURE_KEYS.filter((k) => k !== "terminal") };
-});
 
 import TenantPage, { PlanTab } from "./TenantPage";
 
