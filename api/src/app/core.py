@@ -121,6 +121,8 @@ def _default(o):
 
 
 def respond(status: int, body) -> dict:
+    if status == 204:
+        return {"statusCode": 204, "headers": {"Cache-Control": "no-store"}, "body": ""}
     return {
         "statusCode": status,
         "headers": {"Content-Type": "application/json", "Cache-Control": "no-store"},

@@ -10,7 +10,7 @@ Accounts listed in the infrastructure tfvars (platform_operator_emails) are
 created by Terraform; deleting one here works, but the next infrastructure
 apply creates it again (with a new invite)."""
 
-from . import validation as v
+from . import backdrop, validation as v
 from .core import ApiError, client, env, log, not_found
 
 FIELDS = ("username", "email", "name", "status", "enabled", "createdAt", "updatedAt")
@@ -123,6 +123,9 @@ def delete_operator(req) -> tuple[int, dict]:
     _get(username)
     _guard_lockout(req, username, "delete")
     idp, pool = client("cognito-idp"), _pool()
+    # Their own background image first: a failure leaves the account for a retry.
+    sub = _attrs(idp.admin_get_user(UserPoolId=pool, Username=username)).get("sub")
+    backdrop.delete_for(sub)
     idp.admin_user_global_sign_out(UserPoolId=pool, Username=username)
     idp.admin_delete_user(UserPoolId=pool, Username=username)
     log.info("operator %s deleted by %s", username, req.actor)
