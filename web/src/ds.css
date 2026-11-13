@@ -754,3 +754,33 @@ html.is-desktop-glass.glass-refract .auth__main { backdrop-filter: none; }
 /* Disabled fields look disabled: flat, dashed edge, dimmed. */
 .input:disabled, .input[readonly] { background: transparent; border-style: dashed; box-shadow: none; }
 .input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Every field, with or without the .input class (feature slices such as
+   Meta ads and the phone agent render bare inputs): the same glass well.
+   :where() keeps the weight at zero so .input and small pills still win. */
+:where(
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="submit"], [type="button"], [type="reset"], [type="hidden"], [type="image"]),
+  select,
+  textarea
+) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  background-color: var(--field-bg);
+  box-shadow: var(--field-inset);
+  font: inherit;
+  color: var(--print);
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+:where(input, textarea)::placeholder { color: var(--placeholder); opacity: 1; }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):hover { border-color: var(--field-border-hover); }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):focus-visible {
+  outline: none; border-color: var(--print); background-color: var(--field-bg-focus);
+  box-shadow: var(--field-inset), 0 0 0 3px var(--field-ring);
+}
+:where(input, select, textarea):disabled { border-style: dashed; background-color: transparent; box-shadow: none; opacity: 0.6; cursor: not-allowed; }
+/* Number fields: no native spinner, digits line up. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
