@@ -288,7 +288,7 @@ function SourcesTable({ data }: { data: WebsiteOverview }) {
                   {tr.text && <div className={`web-delta${toneClass(tr.tone)}`}>{tr.text}<span className="sr-only"> {tr.spoken}</span></div>}
                 </td>
                 <td className="num">{fmtInt(r.visits)}</td>
-                <td className="num web-col-share"><Bar pct={share(r.visits, total)} /></td>
+                <td className="num web-col-share">{fmtPct(share(r.visits, total))}</td>
                 <td className="num">{fmtInt(r.conversions)}</td>
                 <td className="num">{fmtPct(share(r.conversions, r.visits))}</td>
                 <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
@@ -315,15 +315,6 @@ function HourStrip({ hours }: { hours: number[] }) {
       </div>
       <figcaption className="web-hours__axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></figcaption>
     </figure>
-  );
-}
-
-function Bar({ pct }: { pct: number | null }) {
-  return (
-    <span className="web-bar">
-      <span className="web-bar__fill" style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
-      <span className="web-bar__text">{fmtPct(pct)}</span>
-    </span>
   );
 }
 
@@ -366,7 +357,7 @@ function VisitTable({ title, rows, label, mono }: { title: string; rows: VisitRo
             <tr key={r.key}>
               <td className={`web-key${mono ? " mono" : ""}`}>{label ? label(r.key) : r.key}</td>
               <td className="num">{fmtInt(r.visits)}</td>
-              <td className="num web-col-share"><Bar pct={share(r.visits, total)} /></td>
+              <td className="num web-col-share">{fmtPct(share(r.visits, total))}</td>
               <td className="num">{fmtInt(r.conversions)}</td>
               <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
             </tr>
