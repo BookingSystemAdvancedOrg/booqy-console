@@ -180,7 +180,7 @@ app.on('web-contents-created', (_e, contents) => {
         action: 'allow',
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
-          backgroundColor: '#ffffff',
+          backgroundColor: '#fdfaf6',
           webPreferences: secureWebPreferences,
         },
       }

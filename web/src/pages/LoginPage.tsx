@@ -364,7 +364,7 @@ function Input(props: {
 function Qr({ uri }: { uri: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fffdf8" } }).then(setSrc);
+    QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fdfaf6" } }).then(setSrc);
   }, [uri]);
   return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : <Printing inline label="Making the code" />}</div>;
 }
