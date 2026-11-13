@@ -9,7 +9,7 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import (backdrop, billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
+from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
                users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
@@ -82,8 +82,10 @@ ROUTES = {
     "POST /platform/finance/invoicing": billing.invoicing,
     # Website page: booqy.se's cookieless statistics
     "GET /platform/website": website.overview,
-    # The signed-in operator's own background image (user-backdrops bucket)
+    # The signed-in operator's background image library (user-backdrops)
     **backdrop.ROUTES,
+    # The signed-in operator's profile picture
+    **avatar.ROUTES,
 }
 
 
