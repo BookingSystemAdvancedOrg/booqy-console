@@ -74,7 +74,7 @@ const NAV: { label: string; items: NavItem[] }[] = [
     { to: "/readers", label: "Card readers", icon: "terminal" },
   ] },
   { label: "Platform", items: [
-    { to: "/operators", label: "Operators", icon: "badge" },
+    { to: "/operators", label: "Operators", icon: "staff" },
     { to: "/mail", label: "Mail", icon: "mail" },
   ] },
   { label: "Numbers", items: [

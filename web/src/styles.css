@@ -415,8 +415,10 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .input:disabled { color: var(--print-2); }
 
 /* --- modal: a ticket dropped on the wall ----------------------------------------------- */
-.modal { position: fixed; inset: 0; background: rgb(31 0 2 / 72%); display: grid; place-items: center; padding: 16px; z-index: 20; animation: page-in 200ms var(--ease) both; }
-.modal__panel { background: var(--glass-surface); padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; animation: drop 480ms var(--ease) both;
+.modal { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 16px; overflow-y: auto; animation: page-in 200ms var(--ease) both;
+  /* one even tint and blur over the whole viewport */
+  background: rgb(26 18 14 / 0.36); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); }
+.modal__panel { padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; animation: drop 480ms var(--ease) both;
   -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
           mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat; }
 .modal__panel--wide { width: min(980px, 100%); }
@@ -1097,9 +1099,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
 .table tbody tr:hover td { background: var(--glass-fill); }
 
 /* modal: the room dims and blurs, the receipt drops in */
-.modal { background: rgb(26 18 14 / 0.42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 :root[data-theme="dark"] .modal { background: rgb(0 0 0 / 0.6); }
-.modal__panel { box-shadow: var(--hang); }
 
 /* the save bar: glass at the bottom of the panel */
 .submit-bar { border-top: 0; border-radius: var(--r-lg); margin-top: 12px; background: var(--glass-modal) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--liquid-depth); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); }
@@ -1337,10 +1337,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
   background: var(--glass-text-bg) var(--liquid-sheen);
   box-shadow: var(--liquid-edge), var(--card-shadow);
 }
-.modal__panel {
-  border-radius: var(--r-lg);
-  box-shadow: var(--rim-gloss), var(--card-shadow);
-}
+.modal__panel { border-radius: var(--r-lg); }
 .card, .table-wrap { overflow: hidden; }
 .table-wrap { overflow-x: auto; }
 .card::before, .table-wrap::before, .kpi::before,

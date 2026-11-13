@@ -1,4 +1,5 @@
 import { ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ApiError } from "../api";
 import { CheckMark, useFlash } from "./save";
 
@@ -139,7 +140,9 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [props]);
-  return (
+  // Portalled to <body>: the glass panels use backdrop-filter, which would
+  // otherwise trap position: fixed and leave the backdrop as a rectangle.
+  return createPortal(
     <div className="modal" role="dialog" aria-modal aria-label={props.title} onMouseDown={props.onClose}>
       <div className={`modal__panel${props.wide ? " modal__panel--wide" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal__head">
@@ -148,7 +151,8 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
         </header>
         {props.children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

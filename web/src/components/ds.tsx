@@ -6,18 +6,19 @@ import { createPortal } from "react-dom";
    one stroke icon set, the command palette (Cmd/Ctrl+K), the primary CTA and the
    accordion. Styles in src/ds.css. */
 
-export type IconName = "users" | "plus" | "terminal" | "badge" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
+export type IconName = "users" | "plus" | "terminal" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
 
 // 24x24, 1.8 px stroke: the same drawings as admin's Icon.tsx.
 const PATHS: Record<IconName, string> = {
   users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.2a5.5 5.5 0 0 1 3 5.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   terminal: '<rect x="6" y="3.5" width="12" height="17" rx="2"/><path d="M9 7.5h6M9 11.5h.01M12 11.5h.01M15 11.5h.01M9 15h.01M12 15h.01M15 15h.01"/>',
+  staff: '<circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5a7 7 0 0 1 14 0M9.5 14.5l2.5 3 2.5-3"/>',
   badge: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M9.5 3v4h5V3M9 14.5a3 3 0 0 1 6 0M12 11.5h.01"/>',
   mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/>',
   chart: '<path d="M4 20h16M6.5 20v-6M11 20V9M15.5 20v-8M20 20V5"/>',
   globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4L6 18M18 18l-1.6-1.6M7.6 7.6L6 6"/>',
+  gear: '<path d="M19.3 13.3 L21.5 14.5 L20.4 17.0 L18.1 16.2 L16.2 18.1 L17.0 20.4 L14.5 21.5 L13.3 19.3 L10.7 19.3 L9.5 21.5 L7.0 20.4 L7.8 18.1 L5.9 16.2 L3.6 17.0 L2.5 14.5 L4.7 13.3 L4.7 10.7 L2.5 9.5 L3.6 7.0 L5.9 7.8 L7.8 5.9 L7.0 3.6 L9.5 2.5 L10.7 4.7 L13.3 4.7 L14.5 2.5 L17.0 3.6 L16.2 5.9 L18.1 7.8 L20.4 7.0 L21.5 9.5 L19.3 10.7Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/>',
   logout: '<path d="M14 4.5H6.5a1.5 1.5 0 0 0-1.5 1.5v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M16.5 8.5L20 12l-3.5 3.5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   send: '<path d="M20.5 3.5L3.5 10.8l6.6 2.6 2.6 6.6zM20.5 3.5l-10.4 9.9"/>',
