@@ -10,6 +10,7 @@ import { BusyBar } from "./components/BusyBar";
 import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
+import { installDesktopGlass } from "./desktopGlass";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
@@ -51,6 +52,7 @@ function preloadPages() {
 installPress();
 installGlide();
 installGlassFilter();
+installDesktopGlass();
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";

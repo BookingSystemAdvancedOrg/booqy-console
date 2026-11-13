@@ -1,12 +1,13 @@
 // Booqys skrivbordsskal (Electron). Fönstret visar den deployade webbappen
 // (dev eller prod) på dess riktiga https-adress, så inloggning, cookies,
 // CORS och CloudFronts CSP fungerar exakt som i webbläsaren. Skalet lägger
-// bara till fönster, meny och spärrar: ingen Node i sidan, ingen egen
-// preload, inga hemligheter. Se README.md i den här mappen.
+// bara till fönster (genomskinligt glas), meny och spärrar: ingen Node i
+// sidan, ingen egen preload, inga hemligheter. Se README.md i den här mappen.
 'use strict'
 
-const { app, BrowserWindow, Menu, net, session, shell, systemPreferences } = require('electron')
+const { app, BrowserWindow, Menu, nativeTheme, net, session, shell, systemPreferences } = require('electron')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 const config = require('./desktop.config.json')
@@ -74,6 +75,58 @@ const secureWebPreferences = {
   spellcheck: true,
 }
 
+// ---- Genomskinligt fönster (glas) ----------------------------------------
+// Skrivbordet bakom fönstret syns igenom, mjukt suddigt:
+// - macOS: systemets vibrancy (under-window), alltid aktiv.
+// - Windows 11 22H2 och senare: akryl. Äldre Windows: helt fönster.
+// - Linux: ingen pålitlig oskärpa, så ett genomskinligt fönster där webbsidan
+//   lägger en tät ton bakom texten.
+// Webbsidan får läget i user agent (BooqyGlass/<läge>) och sätter då
+// .is-desktop-glass på <html>. Minskad genomskinlighet i systemet eller
+// BOOQY_GLASS=off ger det vanliga, hela fönstret.
+function glassMode() {
+  if (process.env.BOOQY_GLASS === 'off') return 'none'
+  if (nativeTheme.prefersReducedTransparency) return 'none'
+  if (process.platform === 'darwin') return 'vibrancy'
+  if (process.platform === 'win32') {
+    const build = Number(os.release().split('.')[2] ?? 0)
+    return build >= 22621 ? 'acrylic' : 'none'
+  }
+  if (process.platform === 'linux') return 'tint'
+  return 'none'
+}
+const GLASS = glassMode()
+const CLEAR = '#00000000'
+
+function glassWindowOptions() {
+  if (GLASS === 'vibrancy') {
+    return { vibrancy: 'under-window', visualEffectState: 'active', backgroundColor: CLEAR }
+  }
+  if (GLASS === 'acrylic') return { backgroundMaterial: 'acrylic', backgroundColor: CLEAR }
+  if (GLASS === 'tint') return { transparent: true, backgroundColor: CLEAR }
+  return { backgroundColor: config.background }
+}
+
+// Systemets glas följer appens ljusa eller mörka läge (data-theme på <html>),
+// inte systemets, så att tonen och texten ovanpå alltid passar ihop. Läses
+// bara, inget skrivs till sidan.
+function followPageTheme(win) {
+  if (GLASS !== 'vibrancy' && GLASS !== 'acrylic') return
+  const read = () => {
+    if (win.isDestroyed() || !isAppUrl(win.webContents.getURL())) return
+    win.webContents
+      .executeJavaScript('document.documentElement.dataset.theme || ""', false)
+      .then((theme) => {
+        const next = theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system'
+        if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next
+      })
+      .catch(() => {})
+  }
+  win.webContents.on('did-finish-load', read)
+  const timer = setInterval(() => win.isFocused() && read(), 1500)
+  win.on('closed', () => clearInterval(timer))
+}
+
 // ---- Fönstrets storlek och läge sparas mellan körningar -----------------
 const boundsFile = () => path.join(app.getPath('userData'), 'window.json')
 function loadBounds() {
@@ -139,13 +192,14 @@ function createWindow() {
     minHeight: 560,
     show: false,
     title: APP_NAME,
-    backgroundColor: config.background,
+    ...glassWindowOptions(),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: secureWebPreferences,
   })
   if (saved.maximized) win.maximize()
   win.once('ready-to-show', () => win.show())
   win.on('close', () => saveBounds(win))
+  followPageTheme(win)
 
   win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
     // -3 = avbruten (t.ex. ny navigering), inget fel att visa.
@@ -208,7 +262,7 @@ function setUpPermissions() {
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
     return ALLOWED_PERMISSIONS.has(permission) && requestingOrigin === ORIGIN
   })
-  ses.setUserAgent(`${ses.getUserAgent()} BooqyDesktop/${app.getVersion()}`)
+  ses.setUserAgent(`${ses.getUserAgent()} BooqyDesktop/${app.getVersion()} BooqyGlass/${GLASS}`)
 }
 
 // ---- Meny på svenska ------------------------------------------------------

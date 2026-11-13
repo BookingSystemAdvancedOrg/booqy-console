@@ -58,12 +58,22 @@
 
   --hairline: rgba(58, 36, 24, 0.1);
   --hairline-strong: rgba(58, 36, 24, 0.18);
-  --glass-edge: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.75), inset 0 0 0 1px rgb(var(--bq-snow-rgb) / 0.4);
+  --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
 
-    --glass-main: rgb(var(--bq-snow-rgb) / 0.56);
-  --glass-side: rgb(var(--bq-snow-rgb) / 0.66);
-  --glass-pop: rgba(255, 252, 248, 0.8);
-  --glass-modal: rgba(255, 252, 248, 0.88);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.46);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.56);
+  --glass-pop: rgb(var(--bq-snow-rgb) / 0.8);
+  --glass-modal: rgb(var(--bq-snow-rgb) / 0.86);
+
+  /* Shared glass tokens (same names in admin, customer site and booqy.se):
+     tint, border, blur, the lit top edge and a denser tint behind body text
+     and tables (WCAG AA). */
+  --glass-bg: var(--glass-main);
+  --glass-border: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-blur: var(--blur-main);
+  --glass-highlight: rgb(var(--bq-snow-rgb) / 0.85);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.8);
+  --glass-saturate: 1.6;
   --blur-main: 18px;
   --blur-side: 22px;
   --blur-pop: 24px;
@@ -87,11 +97,14 @@
   --elev-3: 0 4px 12px -4px rgba(0, 0, 0, 0.5), 0 40px 80px -32px rgba(0, 0, 0, 0.8);
   --hairline: rgba(213, 196, 174, 0.12);
   --hairline-strong: rgba(213, 196, 174, 0.22);
-  --glass-edge: inset 0 1px 0 rgba(213, 196, 174, 0.14), inset 0 0 0 1px rgba(213, 196, 174, 0.08);
-  --glass-main: rgba(26, 18, 14, 0.66);
-  --glass-side: rgba(30, 21, 16, 0.74);
+  --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
+  --glass-main: rgba(26, 18, 14, 0.56);
+  --glass-side: rgba(30, 21, 16, 0.66);
   --glass-pop: rgba(36, 25, 19, 0.86);
-  --glass-modal: rgba(36, 25, 19, 0.92);
+  --glass-modal: rgba(36, 25, 19, 0.9);
+  --glass-border: rgba(213, 196, 174, 0.14);
+  --glass-highlight: rgba(213, 196, 174, 0.22);
+  --glass-text-bg: rgba(26, 18, 14, 0.82);
   --dim: rgba(0, 0, 0, 0.55);
 }
 
@@ -565,4 +578,93 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .palette, .palette-backdrop { animation: none; }
+}
+
+/* ============================================================================
+   See-through glass (2026-11-13). Glass layers are almost clear and blur what
+   is behind: the room (photo plus soft brown and wine blobs, styles.css) in a
+   browser, the operator's own desktop in the desktop app (html.is-desktop-glass,
+   desktopGlass.ts). At most three stacked blur layers; blur is never animated.
+   ========================================================================== */
+
+/* Glass toggle: clear track, lit edge, raised knob. */
+.switch input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--wall-tint-2, rgba(58, 36, 24, 0.14));
+  box-shadow: inset 0 1px 2px rgba(26, 18, 14, 0.22), inset 0 0 0 1px var(--glass-border);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bq-snow);
+  box-shadow: 0 2px 6px rgba(26, 18, 14, 0.3);
+  transition: translate var(--dur-base) var(--ease-out);
+}
+.switch input:checked { background: var(--success, #2c6a3f); }
+.switch input:checked::after { translate: 16px 0; }
+.switch input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--glass-border), 0 0 0 3px var(--focus); }
+.switch input:disabled { opacity: 0.5; }
+
+/* --- desktop app: the desktop shows through ------------------------------- */
+html.is-desktop-glass {
+  --desk-veil: rgb(var(--bq-snow-rgb) / 0.16);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.55);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.62);
+}
+html.is-desktop-glass[data-theme='dark'] {
+  --desk-veil: rgba(26, 18, 14, 0.3);
+  --glass-main: rgba(26, 18, 14, 0.58);
+  --glass-side: rgba(30, 21, 16, 0.66);
+}
+/* Linux: no blur behind the window, the tint carries legibility alone. */
+html.is-desktop-glass[data-desktop-glass='tint'] {
+  --desk-veil: rgb(var(--bq-snow-rgb) / 0.55);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.86);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.9);
+}
+html.is-desktop-glass[data-desktop-glass='tint'][data-theme='dark'] {
+  --desk-veil: rgba(26, 18, 14, 0.6);
+  --glass-main: rgba(26, 18, 14, 0.88);
+  --glass-side: rgba(30, 21, 16, 0.9);
+}
+html.is-desktop-glass,
+html.is-desktop-glass body,
+html.is-desktop-glass .boot { background: transparent; }
+html.is-desktop-glass body::before {
+  background: linear-gradient(var(--desk-veil), var(--desk-veil)), var(--backdrop-blobs);
+}
+/* The OS already blurs the desktop; the page's own blur would only blur the
+   clear window. Modals and the palette keep theirs (they sit over content). */
+html.is-desktop-glass .topbar,
+html.is-desktop-glass .topbar.is-open,
+html.is-desktop-glass .main,
+html.is-desktop-glass .auth__main {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (min-width: 768px) {
+  html.is-desktop-glass .main { background: var(--glass-main); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html.is-desktop-glass,
+  html.is-desktop-glass body { background: var(--ox-800); }
+  html.is-desktop-glass .topbar,
+  html.is-desktop-glass .main { background: var(--paper); }
+  .switch input::after { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch input, .switch input::after { transition: none; }
 }

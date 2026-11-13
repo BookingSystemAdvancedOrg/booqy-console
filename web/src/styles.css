@@ -970,9 +970,15 @@ html.is-busy .btn:disabled { opacity: .85; }
 
 /* the room behind everything: a blurred warm room, veiled at night */
 body { background: transparent; font-family: var(--sans); }
+:root {
+  --backdrop-blobs:
+    radial-gradient(48% 42% at 12% 16%, rgb(53 0 1 / 0.18), transparent 70%),
+    radial-gradient(42% 46% at 88% 84%, rgb(107 74 46 / 0.22), transparent 70%),
+    radial-gradient(36% 34% at 78% 12%, rgb(168 132 98 / 0.2), transparent 70%);
+}
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(var(--backdrop-veil), var(--backdrop-veil)), url("./assets/backdrop.webp") center / cover no-repeat, var(--ox-800);
+  background: linear-gradient(var(--backdrop-veil), var(--backdrop-veil)), var(--backdrop-blobs), url("./assets/backdrop.webp") center / cover no-repeat, var(--ox-800);
 }
 .boot { background: transparent; }
 ::selection { background: #a88462; color: #1a120e; }

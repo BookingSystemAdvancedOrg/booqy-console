@@ -47,6 +47,24 @@ app and persist in the app's own profile. Data stays per environment: the dev
 build is "Booqy Console Dev" with its own app id and profile, so both can be
 installed side by side.
 
+## See-through glass window
+
+The window is translucent and the desktop behind it shows through, blurred:
+
+| Platform | How | Notes |
+| --- | --- | --- |
+| macOS | `vibrancy: 'under-window'`, `visualEffectState: 'active'`, clear background | Native blur of everything behind the window, also when it is not focused. |
+| Windows 11 22H2+ | `backgroundMaterial: 'acrylic'`, clear background | Acrylic blurs the desktop. Windows 10 and older 11 builds get the normal solid window. |
+| Linux | `transparent: true`, clear background | No reliable native blur: the page lays a dense tint behind all text instead. |
+
+The shell adds `BooqyGlass/<vibrancy|acrylic|tint|none>` to the user agent;
+the web app reads it and puts `is-desktop-glass` (and `data-desktop-glass`) on
+`<html>`, makes `html, body` transparent and gives every glass layer a tint
+dense enough for WCAG AA. In a browser nothing changes. macOS "Reduce
+transparency", `prefers-reduced-transparency`, or `BOOQY_GLASS=off npm start`
+give the solid window. The native material follows the app's own light/dark
+theme (the shell reads `data-theme` on `<html>`, it never writes to the page).
+
 ## Build locally
 
 ```bash
