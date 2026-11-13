@@ -11,6 +11,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const config = require('./desktop.config.json')
+const { setUpUpdates } = require('./updates.cjs')
 const target = readTarget()
 const START_URL = new URL(target.url)
 const ORIGIN = START_URL.origin
@@ -178,6 +179,8 @@ function showOffline(win) {
   }, 5000)
 }
 
+let updates = null
+
 // ---- Huvudfönstret --------------------------------------------------------
 let mainWindow = null
 
@@ -317,7 +320,10 @@ function buildMenu() {
     },
     {
       label: 'Hjälp',
-      submenu: [{ label: 'Öppna i webbläsaren', click: () => openOutside(mainWindow?.webContents.getURL() || START_URL.href) }],
+      submenu: [
+        { label: 'Sök efter uppdateringar...', click: () => void updates?.checkNow() },
+        { label: 'Öppna i webbläsaren', click: () => openOutside(mainWindow?.webContents.getURL() || START_URL.href) },
+      ],
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
@@ -340,6 +346,8 @@ if (!app.requestSingleInstanceLock()) {
     setUpPermissions()
     buildMenu()
     mainWindow = createWindow()
+    // Nya versioner av skalet (latest.json bredvid installationsfilerna).
+    updates = setUpUpdates({ baseUrl: config.downloads?.[target.env], getWindow: () => mainWindow })
     mainWindow.on('closed', () => (mainWindow = null))
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

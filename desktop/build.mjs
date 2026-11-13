@@ -69,7 +69,7 @@ const builderConfig = {
   copyright: 'Booqy',
   artifactName: `${fileBase}-\${version}-\${os}-\${arch}.\${ext}`,
   directories: { output: `release/${env}`, buildResources: 'build' },
-  files: ['main.cjs', 'desktop.config.json', 'env.json', 'package.json'],
+  files: ['main.cjs', 'updates.cjs', 'desktop.config.json', 'env.json', 'package.json'],
   extraMetadata: { name: fileBase, productName },
   asar: true,
   // Härdning av själva Electron-binären.

@@ -7,5 +7,9 @@
   "urls": {
     "dev": "https://admin.dev.booqy.se/",
     "prod": "https://admin.booqy.se/"
+  },
+  "downloads": {
+    "dev": "https://dev.booqy.se/downloads/console",
+    "prod": "https://booqy.se/downloads/console"
   }
 }

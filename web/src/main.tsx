@@ -11,6 +11,7 @@ import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
+import { startUpdateNotice } from "./updateNotice";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
@@ -53,6 +54,12 @@ installPress();
 installGlide();
 installGlassFilter();
 installDesktopGlass();
+// "A new version is available" after a deploy (built app only, not npm run dev).
+if (import.meta.env.PROD) {
+  startUpdateNotice({
+    labels: { text: "A new version is available", reload: "Reload", reloading: "Reloading...", later: "Not now", hint: "Loads the new version. Save what you are working on first." },
+  });
+}
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
