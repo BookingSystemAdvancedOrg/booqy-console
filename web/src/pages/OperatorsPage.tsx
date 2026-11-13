@@ -1,5 +1,7 @@
 import { Avatar } from "../components/Avatar";
-import { getMyAvatar, subscribeMyAvatar } from "../avatar";
+import { emailName, getMyAvatar, subscribeMyAvatar } from "../avatar";
+import { AvatarLightbox } from "../components/AvatarLightbox";
+import { rowAction } from "../components/rowLink";
 import { RowActions } from "../components/RowActions";
 import { FormEvent, useState, useSyncExternalStore } from "react";
 import { api } from "../api";
@@ -20,11 +22,13 @@ export default function OperatorsPage({ me }: { me: string }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<OperatorAccount | null>(null);
   const [deleting, setDeleting] = useState<OperatorAccount | null>(null);
+  const [viewing, setViewing] = useState<OperatorAccount | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const row = useAction();
 
   const rows = [...(data ?? [])].sort((a, b) => (a.username === me ? -1 : b.username === me ? 1 : a.email.localeCompare(b.email)));
   const activeCount = (data ?? []).filter((o) => o.enabled).length;
+  const avatarFor = (o: OperatorAccount) => (o.username === me ? (myAvatar.url ?? o.avatarUrl) : o.avatarUrl);
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     setDone(null);
@@ -65,8 +69,19 @@ export default function OperatorsPage({ me }: { me: string }) {
                 const self = o.username === me;
                 const lastActive = o.enabled && activeCount <= 1;
                 return (
-                  <tr key={o.username}>
-                    <td className="strong"><span className="operator-name"><Avatar url={self ? (myAvatar.url ?? o.avatarUrl) : o.avatarUrl} name={o.name} email={o.email} size="sm" />{o.name || "-"}{self && <span className="tag">you</span>}</span></td>
+                  // Every operator may edit every operator: the whole row opens Edit
+                  // (click, Enter or Space). The picture opens the lightbox and the
+                  // action buttons do their own thing (rowLink.ts skips buttons).
+                  <tr key={o.username} className="row-link operator-row" aria-label={`${o.name || o.email}, open to edit`} {...rowAction(() => setEditing(o))}>
+                    <td className="strong">
+                      <span className="operator-name">
+                        <button type="button" className="avatar-btn" aria-label={`Show the profile picture of ${o.name || o.email}`} onClick={() => setViewing(o)}>
+                          <Avatar url={avatarFor(o)} name={o.name} email={o.email} size="sm" />
+                        </button>
+                        {o.name || <span className="operator-name__fallback" title="No name yet">{emailName(o.email)}</span>}
+                        {self && <span className="tag">you</span>}
+                      </span>
+                    </td>
                     <td>{o.email}</td>
                     <td><span className={`status status--${s.cls}`}>{s.label}</span></td>
                     <td className="muted small">{fmtDate(o.createdAt)}</td>
@@ -115,6 +130,9 @@ export default function OperatorsPage({ me }: { me: string }) {
       {editing && (
         <EditOperator op={editing} onClose={() => setEditing(null)}
                       onSaved={async () => { setEditing(null); setDone("Saved."); await reload(); }} />
+      )}
+      {viewing && (
+        <AvatarLightbox url={avatarFor(viewing)} name={viewing.name} email={viewing.email} onClose={() => setViewing(null)} />
       )}
       {deleting && (
         <DeleteOperator op={deleting} onClose={() => setDeleting(null)}
@@ -169,8 +187,10 @@ function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: 
     <Modal title="Edit operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
-        <Field label="Name" required changed={dirty.dirty} error={a.fields.name}>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100} />
+        <Field label="Name" required changed={dirty.dirty} error={a.fields.name}
+               hint={op.name ? undefined : "No name yet. Add one so everyone sees who this is."}>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100}
+                 placeholder={op.name ? undefined : "Add a name"} />
         </Field>
         <Field label="Email" hint="The email is the sign-in name and can't be changed. Add a new operator instead.">
           <input className="input" value={op.email} disabled />

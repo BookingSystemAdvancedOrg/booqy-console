@@ -8,7 +8,11 @@ import type { KeyboardEvent, MouseEvent } from "react";
  * name stays a real link so keyboards and screen readers work as before.
  */
 function ignore(e: MouseEvent): boolean {
-  return Boolean((e.target as HTMLElement).closest("a, button, input, select, label, textarea")) || Boolean(window.getSelection()?.toString());
+  const target = e.target;
+  // A click from a portal (a dialog, a lightbox) bubbles up the React tree
+  // but is not inside the row on the page: never treat it as a row click.
+  if (!(target instanceof Element) || !(e.currentTarget as Element).contains(target)) return true;
+  return Boolean(target.closest("a, button, input, select, label, textarea, .row-actions-box, [data-row-stop]")) || Boolean(window.getSelection()?.toString());
 }
 
 /** For rows that open a page: Cmd or Ctrl opens it in a new tab, like a link. */

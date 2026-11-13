@@ -39,6 +39,11 @@ export function initials(name?: string | null, email?: string | null): string {
   return (email ?? "?").trim().charAt(0).toUpperCase() || "?";
 }
 
+/** The part of an email before the @, shown for operators who have no name yet. */
+export function emailName(email?: string | null): string {
+  return (email ?? "").trim().split("@")[0] ?? "";
+}
+
 export type Crop = { x: number; y: number; scale: number };
 
 /**
