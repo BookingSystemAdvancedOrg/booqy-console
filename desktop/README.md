@@ -119,17 +119,29 @@ With an identity set, hardened runtime and the entitlements in
 
 ## Where users download it
 
-Operators are Booqy staff with GitHub access, so the console installers fit
-GitHub Releases on this (private) repo: only org members can download them.
-The restaurant admin app needs a public location instead (see the admin
-repo's `desktop/README.md`).
+`https://dev.booqy.se/downloads/console/latest/` (dev) and
+`https://booqy.se/downloads/console/latest/` (prod), stable names:
+`Booqy-Console-mac-arm64.dmg`, `Booqy-Console-mac-x64.dmg`, `Booqy-Console-Setup.exe`,
+`Booqy-Console.AppImage`, `Booqy-Console.deb`. Each build also keeps an immutable copy
+under `/downloads/versions/console/<version>-<sha7>/`, and `latest.json` lists
+them. The download card in settings (and booqy.se/ladda-ner for the admin)
+picks the file for the visitor's computer.
 
-CI: `desktop-installers.workflow.yml` here is a ready workflow. `.github/` is
-the owner's, so copy it to `.github/workflows/desktop-installers.yml`. Run it
-by hand (dev or prod), or push a tag `desktop-v<version>` (match `version` in
-`package.json`) to build prod on macOS, Windows and Linux runners and attach
-the installers to a GitHub Release.
+## Updates
 
-Auto-update is not set up: the content updates with every web deploy, so the
-shell rarely needs a new version. If wanted later, `electron-updater` works
-from the same S3 location (and needs signed builds on macOS).
+- **The web app** (what the window shows) updates with every web deploy. The
+  page compares `index.html`'s ETag every 60 s and on focus and shows
+  "Ny version finns" with a Ladda om button. It never reloads by itself.
+- **The shell** (this folder) checks `latest.json` 15 s after start and every
+  6 hours, and from Hjälp > Sök efter uppdateringar. When `version` in
+  `package.json` is higher than the installed one it offers Uppdatera, which
+  downloads the installer to Hämtade filer and opens it. Bump `version` when
+  you change the shell, or nobody is offered the new build.
+
+## CI
+
+`.github/workflows/desktop-installers.yml` builds on macOS, Windows and Linux
+runners whenever `desktop/` changes on `dev` (publishes to dev) or `main`
+(prod), or by hand. `publish.mjs` uploads through `desktop-release-role`
+(Terraform: `network/platform-domain/downloads.tf` and
+`security/iam/oidc/desktop-release-role` in infrastructure).

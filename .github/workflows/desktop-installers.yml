@@ -1,5 +1,5 @@
-# .github/workflows/desktop-installers.yml (copy kept in desktop/ next to the
-# code it builds). Builds the installers on each OS's own runner and publishes
+# Desktop installers (desktop/ in this repo).
+# Builds the installers on each OS's own runner and publishes
 # them to https://<domain>/downloads/ (dev: dev.booqy.se, prod: booqy.se)
 # through desktop-release-role (s3:PutObject only). Runs when desktop/
 # changes: the window shows the deployed web app, so web deploys need no new
