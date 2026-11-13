@@ -1694,3 +1694,10 @@ html.is-busy, html.is-busy * { cursor: progress; }
   animation: none;
   mix-blend-mode: normal;
 }
+
+/* During the switch (switchTheme) nothing fades: no transitions on background,
+   tint or blur, so no in-between frame turns grey. */
+.theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after { transition: none !important; }
+/* The crossfade (desktop app): plus-lighter keeps the same coverage through the
+   switch, so the see-through window does not wash out half-way. */
+html.theme-crossfade::view-transition-old(root), html.theme-crossfade::view-transition-new(root) { mix-blend-mode: plus-lighter; }

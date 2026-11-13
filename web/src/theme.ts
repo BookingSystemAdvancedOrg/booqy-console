@@ -75,23 +75,42 @@ function subscribe(listener: () => void) {
 }
 
 /**
- * Switches mode with a sweep: the new colours grow out of the button
- * (origin) in a circle until they cover the page (View Transitions).
- * Without browser support, without an origin or with reduced motion it
- * just switches.
+ * Switches the theme smoothly. During the switch every transition is off
+ * (.theme-switching), so no surface fades through grey. In a browser the new
+ * colours sweep out in a circle from the button; in the desktop app (and
+ * without a button) the page crossfades in 240 ms while the shell switches
+ * the system glass in the same frame. Reduced motion or no View Transitions:
+ * an instant switch.
  */
 export function switchTheme(theme: Theme, origin?: { x: number; y: number }) {
-  const doc = document as Document & { startViewTransition?: (update: () => void) => { ready: Promise<void> } };
+  const root = document.documentElement;
+  const doc = document as Document & {
+    startViewTransition?: (update: () => void) => { ready: Promise<void>; finished: Promise<void> }
+  };
   const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!origin || reduce || typeof doc.startViewTransition !== "function") {
+  root.classList.add("theme-switching");
+  const done = () => requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
+  if (reduce || typeof doc.startViewTransition !== "function") {
     setTheme(theme);
+    done();
+    return;
+  }
+  const transition = doc.startViewTransition(() => setTheme(theme));
+  transition.finished.then(done, done);
+  if (!origin || root.classList.contains("is-desktop-glass")) {
+    root.classList.add("theme-crossfade");
+    transition.finished.then(() => root.classList.remove("theme-crossfade"), () => root.classList.remove("theme-crossfade"));
+    transition.ready.then(() => {
+      const fade = { duration: 240, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+      root.animate({ opacity: [0, 1] }, { ...fade, pseudoElement: "::view-transition-new(root)" });
+      root.animate({ opacity: [1, 0] }, { ...fade, pseudoElement: "::view-transition-old(root)" });
+    }, () => {});
     return;
   }
   const { x, y } = origin;
   const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
-  const transition = doc.startViewTransition(() => setTheme(theme));
   transition.ready.then(() => {
-    document.documentElement.animate(
+    root.animate(
       { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
       { duration: 700, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
     );

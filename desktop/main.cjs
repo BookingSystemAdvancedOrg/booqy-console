@@ -109,23 +109,46 @@ function glassWindowOptions() {
 }
 
 // Systemets glas följer appens ljusa eller mörka läge (data-theme på <html>),
-// inte systemets, så att tonen och texten ovanpå alltid passar ihop. Läses
-// bara, inget skrivs till sidan.
+// inte systemets, så att tonen och texten ovanpå alltid passar ihop. En
+// MutationObserver i sidan svarar så fort attributet byts, så glaset byter i
+// samma bildruta som sidan (förr var det en avläsning var 1,5 s, och då syntes
+// den nya tonen en stund över det gamla glaset: grått, sedan ett ryck).
+// Läses bara, inget skrivs till sidan.
+const WAIT_FOR_THEME = `new Promise((resolve) => {
+  const el = document.documentElement
+  const start = el.dataset.theme || ''
+  const done = () => { o.disconnect(); clearTimeout(t); resolve(el.dataset.theme || '') }
+  const o = new MutationObserver(() => { if ((el.dataset.theme || '') !== start) done() })
+  o.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+  const t = setTimeout(done, 20000)
+})`
 function followPageTheme(win) {
   if (GLASS !== 'vibrancy' && GLASS !== 'acrylic') return
-  const read = () => {
-    if (win.isDestroyed() || !isAppUrl(win.webContents.getURL())) return
+  const apply = (theme) => {
+    const next = theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system'
+    if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next
+  }
+  const ready = () => !win.isDestroyed() && isAppUrl(win.webContents.getURL())
+  // Varje ny sidladdning startar en ny bevakning; en äldre slutar av sig själv.
+  let generation = 0
+  const watch = async () => {
+    const mine = ++generation
+    while (mine === generation && ready()) {
+      try {
+        const theme = await win.webContents.executeJavaScript(WAIT_FOR_THEME, false)
+        if (mine === generation) apply(theme)
+      } catch {
+        await new Promise((r) => setTimeout(r, 500))
+      }
+    }
+  }
+  win.webContents.on('did-finish-load', () => {
+    if (!ready()) return
     win.webContents
       .executeJavaScript('document.documentElement.dataset.theme || ""', false)
-      .then((theme) => {
-        const next = theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system'
-        if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next
-      })
-      .catch(() => {})
-  }
-  win.webContents.on('did-finish-load', read)
-  const timer = setInterval(() => win.isFocused() && read(), 1500)
-  win.on('closed', () => clearInterval(timer))
+      .then(apply, () => {})
+    void watch()
+  })
 }
 
 // ---- Fönstrets storlek och läge sparas mellan körningar -----------------
