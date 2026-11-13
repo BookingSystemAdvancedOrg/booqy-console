@@ -10,7 +10,7 @@ import TenantPage, { PlanTab } from "./TenantPage";
 
 const tenant: Tenant = {
   tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", status: "active", planId: "starter",
-  entitlements: { maxLocations: 1, features: { reservations: true, ordering: true, kassa: false } }, locationCount: 1,
+  entitlements: { maxLocations: 1, features: { reservations: true, ordering: true, marketing: false } }, locationCount: 1,
 };
 const STARTER = { planId: "starter", name: "Starter", maxLocations: 1, features: { reservations: true, ordering: true }, priceSek: 3950 };
 
@@ -25,7 +25,7 @@ describe("Plan tab", () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");
     expect(screen.getByLabelText("Reservations")).toBeChecked();
-    expect(screen.getByLabelText("Kassa (cash register)")).not.toBeChecked();
+    expect(screen.getByLabelText("Marketing")).not.toBeChecked();
     for (const label of ["Meta ads", "Site builder", "Guest CRM", "Google Business Profile", "Gift cards", "Waitlist",
       "Social posting", "Staff ledger (personalliggare)", "Fortnox/Visma posting", "Margin per dish"]) {
       expect(screen.getByLabelText(label)).not.toBeChecked();
@@ -41,7 +41,7 @@ describe("Plan tab", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
-      overrides: { features: { kassa: false, siteBuilder: true }, limits: { siteBuilderAiEditsPerMonth: 25 } },
+      overrides: { features: { marketing: false, siteBuilder: true }, limits: { siteBuilderAiEditsPerMonth: 25 } },
     });
   });
 
@@ -65,7 +65,7 @@ describe("Plan tab", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
-      overrides: { features: { kassa: false, phoneAgent: true },
+      overrides: { features: { marketing: false, phoneAgent: true },
                    limits: { siteBuilderAiEditsPerMonth: 25, phoneAgentMinutesPerMonth: 300 } },
     });
   });
@@ -89,7 +89,7 @@ describe("Plan tab", () => {
     expect(screen.queryByText(/terminal/i)).toBeNull();
     fireEvent.click(screen.getByLabelText("Site builder"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
-    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ kassa: false, siteBuilder: true });
+    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ marketing: false, siteBuilder: true });
   });
 
   it("sends no limit when it equals the plan's", async () => {

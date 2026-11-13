@@ -536,7 +536,6 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
           </div>
         </div>
       </div>
-      {features.kassa && <Notice kind="warn">Kassa: turn it on for a paying restaurant only once fiskaly LIVE is on and the SKV 1509 declaration was sent at least 2 weeks ago.</Notice>}
       {belowCount ? (
         <Notice kind="warn">
           {(a.error as ApiError).message}

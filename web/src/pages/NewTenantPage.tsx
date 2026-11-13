@@ -379,7 +379,6 @@ export default function NewTenantPage() {
             ) : <span className="field__hint">Pick a plan first</span>}
           </div>
         </div>
-        {features.kassa && <Notice kind="warn">Kassa: turn it on for a paying restaurant only once fiskaly LIVE is on and the SKV 1509 declaration was sent at least 2 weeks ago.</Notice>}
       </Card>
 
       <Card title="4b · Invoicing">
