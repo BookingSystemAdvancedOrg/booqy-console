@@ -1,6 +1,6 @@
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import { Logo } from "./components/Logo";
@@ -224,7 +224,8 @@ function Shell() {
           <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
-          <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
+          {/* Unknown address (old bookmark, /index.html from the home-screen app, a link from admin): straight to Customers instead of a dead end. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>
         </div>
