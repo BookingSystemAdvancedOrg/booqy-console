@@ -1260,16 +1260,16 @@ html.is-busy, html.is-busy * { cursor: progress; }
   --card-shadow-hi: 0 1px 2px rgb(58 36 24 / 0.08), 0 22px 44px -24px rgb(58 36 24 / 0.55);
   --lacquer: linear-gradient(180deg, #4a3226 0%, #241812 48%, #120c09 100%);
   --lacquer-hi: linear-gradient(180deg, #5c3f30 0%, #2e1f17 48%, #1a120e 100%);
-  --lacquer-rim: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.24), inset 0 -1px 0 rgb(0 0 0 / 0.35), 0 10px 24px -14px rgb(26 18 14 / 0.75);
+  --lacquer-rim: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.24), 0 8px 20px -12px rgb(26 18 14 / 0.6);
   --pearl: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.96), rgb(var(--bq-snow-rgb) / 0.66));
   --pearl-rim: inset 0 1px 0 var(--bq-snow), inset 0 0 0 1px rgb(58 36 24 / 0.12), 0 6px 14px -12px rgb(58 36 24 / 0.5);
 }
 :root[data-theme="dark"] {
   --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 14px 34px -22px rgb(0 0 0 / 0.8);
   --card-shadow-hi: 0 1px 2px rgb(0 0 0 / 0.35), 0 22px 44px -24px rgb(0 0 0 / 0.85);
-  --lacquer: linear-gradient(180deg, var(--bq-snow) 0%, #f6f1ea 50%, #e4d8c8 100%);
-  --lacquer-hi: linear-gradient(180deg, var(--bq-snow) 0%, #fbf8f4 50%, #ece2d4 100%);
-  --lacquer-rim: inset 0 1px 0 var(--bq-snow), inset 0 -1px 0 rgb(58 36 24 / 0.25), 0 10px 24px -14px rgb(0 0 0 / 0.8);
+  --lacquer: linear-gradient(180deg, var(--bq-snow) 0%, #f3ede5 100%);
+  --lacquer-hi: linear-gradient(180deg, var(--bq-snow) 0%, #f8f4ee 100%);
+  --lacquer-rim: inset 0 1px 0 var(--bq-snow), 0 8px 20px -12px rgb(0 0 0 / 0.6);
   --pearl: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.1), rgb(var(--bq-snow-rgb) / 0.03));
   --pearl-rim: inset 0 1px 0 rgb(213 196 174 / 0.2), inset 0 0 0 1px rgb(213 196 174 / 0.16);
 }
