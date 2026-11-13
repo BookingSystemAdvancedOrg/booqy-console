@@ -9,3 +9,7 @@
 .desktop-app__help { margin-top: 14px; }
 .desktop-app__help summary { cursor: pointer; }
 .desktop-app__help p { margin: 8px 0 0; }
+.desktop-app__title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.desktop-app__badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #1c1918; color: #fbfaf6; }
+[data-theme="dark"] .desktop-app__badge { background: #fbfaf6; color: #1c1918; }
+.desktop-app__list .is-yours a { border-width: 1.5px; background: var(--glass-hi, rgb(251 250 246 / 0.4)); }
