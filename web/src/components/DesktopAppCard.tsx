@@ -1,7 +1,7 @@
 import "./desktopApp.css";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { desktopAppVersion, desktopFiles, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
+import { desktopFiles, isDesktopShell, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
 
 /** Labels in the console's language; URLs from desktopDownloads (shared with admin). */
 const LABELS: Record<DesktopOs, { title: string; detail: string; button: string }> = {
@@ -23,8 +23,13 @@ function badge(rec: Recommendation): string {
 }
 
 export function DesktopAppCard({ heading = true }: { heading?: boolean }) {
+  // Inside the desktop app there is nothing to download: no card at all.
+  if (isDesktopShell()) return null;
+  return <DesktopAppCardBody heading={heading} />;
+}
+
+function DesktopAppCardBody({ heading }: { heading: boolean }) {
   const files = desktopFiles("console", "Booqy-Console");
-  const inApp = desktopAppVersion();
   // undefined = still reading, null = no safe recommendation (show the list only).
   const [rec, setRec] = useState<Recommendation | null | undefined>(undefined);
   useEffect(() => {
@@ -58,9 +63,7 @@ export function DesktopAppCard({ heading = true }: { heading?: boolean }) {
           Booqy Console in its own window: same sign-in and features as here, always the latest console. The app asks when
           the app itself has a new version.
         </p>
-        {inApp ? (
-          <p className="strong">You are using the desktop app, version {inApp}. The Help menu has Check for updates.</p>
-        ) : mine && rec ? (
+        {mine && rec ? (
           <p><a className="btn btn--primary" href={mine.url} download>{LABELS[rec.os].button}</a></p>
         ) : rec === null ? (
           <p className="muted small">Pick the file for your computer from the list.</p>

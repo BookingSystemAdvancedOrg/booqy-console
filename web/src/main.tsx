@@ -13,6 +13,7 @@ import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
+import { DownloadRedirect } from "./components/DownloadRedirect";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
@@ -208,6 +209,7 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/settings" element={<SettingsPage email={user.email} />} />
+          <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           <Route path="*" element={<p>Not found. <Link to="/">Back to customers</Link></p>} />
         </Routes>

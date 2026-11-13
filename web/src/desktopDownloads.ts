@@ -140,8 +140,17 @@ export function desktopAppVersion(ua: string = navigator.userAgent): string | nu
   return ua.match(/BooqyDesktop\/([\d.]+)/)?.[1] ?? null
 }
 
+/**
+ * Körs sidan i Booqys skrivbordsapp? Skalet (desktop/main.cjs) lägger
+ * BooqyDesktop/<version> i user agent. Inget om nedladdning visas där:
+ * menyvalet, kortet och /ladda-ner (/download i konsolen) kollar den här.
+ */
+export function isDesktopShell(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): boolean {
+  return desktopAppVersion(ua) !== null
+}
+
 /** Menyvalet "Ladda ner appen": bara i en webbläsare på en dator. */
 export function showDownloadNav(nav: Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints'> = navigator): boolean {
-  if (desktopAppVersion(nav.userAgent)) return false
+  if (isDesktopShell(nav.userAgent)) return false
   return !isPhoneOrTablet({ ua: nav.userAgent, platform: nav.platform, maxTouchPoints: nav.maxTouchPoints })
 }
