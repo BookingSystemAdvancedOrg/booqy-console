@@ -56,4 +56,17 @@ describe('updateNotice', () => {
     await flush()
     expect(document.querySelector('.booqy-update')).not.toBeNull()
   })
+  it('combines several files, so a css-only deploy also counts', async () => {
+    let round = 0
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      const etag = u.endsWith('.css') && round > 0 ? '"css2"' : `"${u}"`
+      return new Response(null, { status: 200, headers: { etag } })
+    }))
+    stop = startUpdateNotice({ url: ['/', '/assets/booqy.css'], intervalMs: 60_000 })
+    await flush()
+    round = 1
+    window.dispatchEvent(new Event('focus'))
+    await flush()
+    expect(document.querySelector('.booqy-update')).not.toBeNull()
+  })
 })

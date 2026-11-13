@@ -53,17 +53,23 @@ const SV: UpdateNoticeLabels = {
 }
 
 export type UpdateNoticeOptions = {
-  /** Filen vars ETag jämförs. */
-  url?: string
+  /** Filen (eller filerna) vars ETag jämförs. booqy.se skickar sidan, css och js. */
+  url?: string | string[]
   intervalMs?: number
   labels?: UpdateNoticeLabels
 }
 
 /** Läser versionen (ETag, annars Last-Modified) förbi alla cacher. */
-export async function readVersion(url: string): Promise<string | null> {
-  const res = await fetch(url, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
-  if (!res.ok) return null
-  return res.headers.get('etag') ?? res.headers.get('last-modified')
+export async function readVersion(url: string | string[]): Promise<string | null> {
+  const urls = Array.isArray(url) ? url : [url]
+  const parts = await Promise.all(
+    urls.map(async (u) => {
+      const res = await fetch(u, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
+      if (!res.ok) return null
+      return res.headers.get('etag') ?? res.headers.get('last-modified')
+    }),
+  )
+  return parts.some((p) => p === null) ? null : parts.join('|')
 }
 
 /**
