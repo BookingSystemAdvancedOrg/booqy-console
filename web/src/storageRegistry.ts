@@ -6,7 +6,7 @@
 // Swedish Electronic Communications Act, LEK 9 kap. 28 §). Add anything
 // for analytics or marketing and that has to be revisited first.
 //
-// Tokens live in sessionStorage (Amplify, auth.ts): readable by script on
+// Tokens live in localStorage (Amplify, auth.ts): readable by script on
 // this page, which is why the Console's CloudFront sends a strict CSP
 // (infrastructure network/cloudfront/platform-admin). A cookie-based
 // session would need a backend in front of the operator pool's SRP + MFA
@@ -27,9 +27,9 @@ export const BACKDROP_KEY = "booqy-backdrop";
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: "CognitoIdentityServiceProvider.<client>.*",
-    kind: "sessionStorage",
+    kind: "localStorage",
     purpose: "Your sign-in (access, ID and refresh token, last user, clock drift), set by AWS Amplify.",
-    lifetime: "Until the tab closes; the refresh token expires after 8 hours",
+    lifetime: "30 days, removed when you sign out",
   },
   {
     name: THEME_KEY,

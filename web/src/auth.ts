@@ -2,14 +2,15 @@
 // OPERATOR user pool directly with SRP - the password never leaves the
 // browser in plain form - and handles the pool's challenges: first-login
 // password change, TOTP MFA setup and TOTP codes. Tokens live in
-// sessionStorage (gone when the tab closes); the refresh token lasts 8 h.
+// localStorage, so closing the tab keeps you signed in; the refresh token
+// lasts 30 days (owner 2026-11-13: sign in about once a month).
 //
 // The API takes the ACCESS token. Authorization = token from this pool for
 // this app client (API Gateway) + member of platform_admin (the Lambda).
 import { Amplify } from "aws-amplify";
 import { fetchAuthSession, signOut as amplifySignOut } from "aws-amplify/auth";
 import { cognitoUserPoolsTokenProvider } from "aws-amplify/auth/cognito";
-import { Hub, sessionStorage } from "aws-amplify/utils";
+import { Hub, defaultStorage } from "aws-amplify/utils";
 
 // VITE_COGNITO_AUTHORITY is https://cognito-idp.<region>.amazonaws.com/<poolId>
 const userPoolId = import.meta.env.VITE_COGNITO_AUTHORITY.replace(/\/$/, "").split("/").pop()!;
@@ -17,7 +18,7 @@ const userPoolId = import.meta.env.VITE_COGNITO_AUTHORITY.replace(/\/$/, "").spl
 Amplify.configure({
   Auth: { Cognito: { userPoolId, userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID } },
 });
-cognitoUserPoolsTokenProvider.setKeyValueStorage(sessionStorage);
+cognitoUserPoolsTokenProvider.setKeyValueStorage(defaultStorage);
 
 export interface Operator {
   username: string;
