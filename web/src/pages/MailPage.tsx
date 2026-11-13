@@ -8,6 +8,7 @@ import OutboxPage from "./OutboxPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
 import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
+import { helpSlug } from "../features/help/helpId";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -65,7 +66,7 @@ export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
       </div>
       <nav className="tabs">
         {TABS.filter((name) => name !== "Outbox" || IS_DEV).map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}`} onClick={() => { if (name === tab || confirmLeave()) setTab(name); }}>{name}</button>
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}`} data-help={`mail-tab:${helpSlug(name)}`} onClick={() => { if (name === tab || confirmLeave()) setTab(name); }}>{name}</button>
         ))}
       </nav>
       {sentNotice && <Notice kind="ok">{sentNotice} <button className="link" onClick={() => setSentNotice(null)}>Dismiss</button></Notice>}

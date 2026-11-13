@@ -14,6 +14,7 @@ import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types"
 import { RefreshButton, SaveButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
 import { useRowOpen } from "../components/rowLink";
+import { helpSlug } from "../features/help/helpId";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -119,7 +120,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
 
       <nav className="tabs">
         {VIEWS.map((name) => (
-          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} onClick={() => setView(name)}>{name}</button>
+          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} data-help={`finance-tab:${helpSlug(name)}`} onClick={() => setView(name)}>{name}</button>
         ))}
       </nav>
 
@@ -398,7 +399,7 @@ function Kpi({ label, value, sub, tone, trend, deltaLabel, valueTone }: {
   const shade: TrendTone = valueTone ?? trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
-    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
+    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
       <span className="kpi__label">{label}</span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
       {sub && <span className="kpi__sub">{sub}</span>}

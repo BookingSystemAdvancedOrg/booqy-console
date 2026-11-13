@@ -7,6 +7,7 @@ import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 import { useRowOpen } from "./rowLink";
+import { helpSlug } from "../features/help/helpId";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -184,7 +185,7 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
 
 function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" }) {
   return (
-    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
+    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
       <span className="kpi__label">{label}</span>
       <strong className="kpi__value">{value}</strong>
       {sub && <span className="kpi__sub">{sub}</span>}

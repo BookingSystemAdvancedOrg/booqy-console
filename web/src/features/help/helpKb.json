@@ -1,0 +1,1270 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "new-customer",
+      "route": "/tenants/new",
+      "title": "Create a new customer",
+      "audience": "all",
+      "keywords": [
+        "new customer",
+        "add a customer",
+        "add customer",
+        "onboard",
+        "onboarding a restaurant",
+        "new restaurant",
+        "sign up a restaurant",
+        "new tenant",
+        "create customer"
+      ],
+      "answer": "New customer creates the restaurant in Booqy: it invites the owner, opens their Stripe account and sets up their website, with no deploy needed.",
+      "steps": [
+        "Open New customer in the menu (or press + New customer on Customers).",
+        "Fill in 1 Restaurant company: name, slug, legal name, org. number and address.",
+        "Fill in 2 Owner login: the owner gets an email with a temporary password for the restaurant admin app.",
+        "Fill in 3 Contact & communication, then pick the plan under 4 Plan and the terms under 4b Invoicing.",
+        "Add the locations, then press Create customer. The page follows the setup until it is done."
+      ],
+      "actions": [
+        {
+          "id": "new-customer-open",
+          "label": "Open New customer",
+          "to": "/tenants/new",
+          "highlight": [
+            "help:nav:/tenants/new"
+          ]
+        }
+      ],
+      "suggestion": "How do I add a new customer?"
+    },
+    {
+      "id": "find-customer",
+      "route": "/",
+      "title": "Find a customer",
+      "audience": "all",
+      "keywords": [
+        "find a customer",
+        "search customers",
+        "customer list",
+        "customers list",
+        "look up a restaurant",
+        "filter customers",
+        "offboarded customers"
+      ],
+      "answer": "Customers lists every restaurant on the platform. Search by name, slug, owner email or domain, and use the status chips (Active is chosen first) to see offboarded or suspended customers.",
+      "steps": [
+        "Open Customers in the menu.",
+        "Type in the search field, or press a status chip such as All, Suspended or Offboarded.",
+        "Click a row to open the customer's page."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plan-change",
+      "route": "/tenants/:tenantId",
+      "title": "Change a customer's plan, price or features",
+      "audience": "all",
+      "keywords": [
+        "plan",
+        "change plan",
+        "upgrade",
+        "downgrade",
+        "features",
+        "feature",
+        "turn on a feature",
+        "limits",
+        "monthly price",
+        "price",
+        "plan & limits",
+        "edit plan",
+        "entitlements"
+      ],
+      "answer": "A customer's plan, monthly price, limits and features are on the Plan tab of their page. Limits take effect at once; a changed plan or price is invoiced from the next month.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Plan tab.",
+        "Pick the plan, and change Locations allowed, Monthly price, SEK ex VAT, the limits or the Features checkboxes if needed.",
+        "Press Save plan."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ],
+      "highlight": [
+        "help:tenant-tab:plan",
+        "help:card:plan-limits"
+      ]
+    },
+    {
+      "id": "location-add",
+      "route": "/tenants/:tenantId",
+      "title": "Add a location",
+      "audience": "all",
+      "keywords": [
+        "location",
+        "locations",
+        "add location",
+        "second restaurant",
+        "new location",
+        "another restaurant",
+        "locations allowed",
+        "raise limit"
+      ],
+      "answer": "Locations are on the Locations tab of the customer's page. When the plan's limit is reached, adding one offers to raise the limit by one, or you change the plan on the Plan tab.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Locations tab, then + Add location.",
+        "Fill in Name, Address, Phone and Email and save.",
+        "At the limit: press Raise limit and add, or raise Locations allowed on the Plan tab."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "owner-invite",
+      "route": "/tenants/:tenantId",
+      "title": "Invite another owner",
+      "audience": "all",
+      "keywords": [
+        "owner",
+        "owners",
+        "invite owner",
+        "another owner",
+        "new owner",
+        "users",
+        "sign-in accounts",
+        "staff",
+        "login for the restaurant"
+      ],
+      "answer": "Owners are invited on the Users tab of the customer's page. The new owner gets a temporary password by email. Owners invite their own staff from the restaurant admin app.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Users tab.",
+        "Under Invite another owner, fill in Name and Business email.",
+        "Press Send invite."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stripe-onboarding",
+      "route": "/tenants/:tenantId",
+      "title": "Stripe onboarding link for a restaurant",
+      "audience": "all",
+      "keywords": [
+        "stripe",
+        "stripe connect",
+        "onboarding link",
+        "connected account",
+        "stripe account",
+        "take payments",
+        "payouts",
+        "card payments",
+        "stripe link",
+        "payments tab"
+      ],
+      "answer": "Each restaurant has its own Stripe account connected to the platform. On the Payments tab you see whether it can take payments, create an onboarding link for the owner and check the status with Stripe. No keys are exchanged.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Payments tab.",
+        "Press Create onboarding link, then Copy or Open it (it expires within minutes).",
+        "When the owner is done, press Check status with Stripe: Can take payments turns to Yes."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "live-waiting-stripe",
+      "route": "/",
+      "title": "Customers waiting for Stripe",
+      "audience": "all",
+      "keywords": [
+        "waiting for stripe",
+        "stripe not ready",
+        "not ready",
+        "can't take payments",
+        "cannot take payments",
+        "stripe setup",
+        "payments not ready"
+      ],
+      "answer": "The Payments column on Customers shows Ready or Not ready for each customer.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-waiting-stripe-open",
+          "label": "Show on Customers",
+          "to": "/",
+          "highlight": [
+            "help:customers:payments"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "waitingForStripe",
+        "text": "{value} active customers can't take card payments yet: their Stripe setup isn't finished. The Payments column on Customers shows which."
+      }
+    },
+    {
+      "id": "live-customers",
+      "route": "/",
+      "title": "Number of customers",
+      "audience": "all",
+      "keywords": [
+        "how many customers",
+        "number of customers",
+        "customers do we have",
+        "total customers",
+        "customer count",
+        "restaurants on the platform",
+        "how many restaurants"
+      ],
+      "answer": "The number of customers stands under the heading on Customers.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-customers-open",
+          "label": "Show on Customers",
+          "to": "/",
+          "highlight": [
+            "help:customers:count"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "customers",
+        "text": "There are {value} customers on the platform, counting every status."
+      }
+    },
+    {
+      "id": "live-active-customers",
+      "route": "/",
+      "title": "Active customers",
+      "audience": "all",
+      "keywords": [
+        "active customers",
+        "how many active",
+        "active restaurants",
+        "customers are active"
+      ],
+      "answer": "The Active chip on Customers counts the active customers.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-active-customers-open",
+          "label": "Show on Customers",
+          "to": "/",
+          "highlight": [
+            "help:customers:filter:active"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "activeCustomers",
+        "text": "{value} customers are active right now."
+      }
+    },
+    {
+      "id": "live-setup-failed",
+      "route": "/",
+      "title": "Customers whose setup failed",
+      "audience": "all",
+      "keywords": [
+        "setup failed",
+        "failed setup",
+        "provisioning failed",
+        "setup errors"
+      ],
+      "answer": "The Setup failed chip on Customers lists them. On the customer's page, Retry setup (or Fix) runs it again.",
+      "steps": [
+        "Open Customers and press the Setup failed chip.",
+        "Click the customer and press Retry setup, or Fix to correct the field that stopped it."
+      ],
+      "actions": [
+        {
+          "id": "live-setup-failed-open",
+          "label": "Show on Customers",
+          "to": "/",
+          "highlight": [
+            "help:customers:filter:provisioning_failed"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "setupFailed",
+        "text": "{value} customers have a failed setup."
+      }
+    },
+    {
+      "id": "domain-add",
+      "route": "/tenants/:tenantId",
+      "title": "Add a domain for a restaurant",
+      "audience": "all",
+      "keywords": [
+        "domain",
+        "domains",
+        "own domain",
+        "add domain",
+        "buy domain",
+        "connect domain",
+        "cname",
+        "dns",
+        "name servers",
+        "route 53",
+        "transfer domain"
+      ],
+      "answer": "Domains are added on the Domains tab of the customer's page: buy a new domain in the restaurant's name, connect one they already have (they switch the name servers) or add just a CNAME for www. Until then the site answers on its booqy.se address.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Domains tab, then Add domain.",
+        "Choose Buy a new domain, Connect a domain they already have or Just a CNAME, and follow the steps."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "website-repo",
+      "route": "/tenants/:tenantId",
+      "title": "A restaurant's website",
+      "audience": "all",
+      "keywords": [
+        "website",
+        "site",
+        "website repo",
+        "github",
+        "give access",
+        "redeploy",
+        "site address",
+        "where the site answers",
+        "booqy.se address",
+        "archive website"
+      ],
+      "answer": "Each restaurant's website has its own repo. The Website tab of the customer's page shows the repo and deploys, where the site answers, how to run it locally, gives a GitHub user access and archives the repo.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Website tab.",
+        "Under Give access, type the GitHub username and press Invite."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "website-stats",
+      "route": "/website",
+      "title": "Website visitors (booqy.se)",
+      "audience": "all",
+      "keywords": [
+        "visitors",
+        "traffic",
+        "website statistics",
+        "analytics",
+        "booqy.se visitors",
+        "page views",
+        "website numbers"
+      ],
+      "answer": "Website under Numbers shows the visitors to booqy.se, counted without cookies: countries, devices, sources and more for the period you pick.",
+      "steps": [
+        "Open Website in the menu.",
+        "Pick a period, or set your own dates."
+      ],
+      "actions": [
+        {
+          "id": "website-stats-open",
+          "label": "Open Website",
+          "to": "/website",
+          "highlight": [
+            "help:nav:/website"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "card-reader-pair",
+      "route": "/tenants/:tenantId",
+      "title": "Pair a card reader",
+      "audience": "all",
+      "keywords": [
+        "card reader",
+        "pair reader",
+        "register reader",
+        "pairing code",
+        "card terminal",
+        "terminal",
+        "enable card terminals",
+        "new reader"
+      ],
+      "answer": "Card readers are paired per location: on the customer's Locations tab, Manage under Card terminals opens the terminal settings. Readers take payments into the restaurant's own Stripe account.",
+      "steps": [
+        "Open Customers, click the customer and press the Locations tab.",
+        "Press Manage on the location.",
+        "The first time: check the address and press Enable card terminals.",
+        "On the reader: Settings, then Generate pairing code.",
+        "Type the Pairing code and a Name (e.g. Counter 1) and press Register reader."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        },
+        {
+          "id": "card-reader-pair-readers",
+          "label": "Open Card readers",
+          "to": "/readers",
+          "highlight": [
+            "help:nav:/readers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "card-readers",
+      "route": "/readers",
+      "title": "All card readers",
+      "audience": "all",
+      "keywords": [
+        "card readers",
+        "readers",
+        "reader status",
+        "offline readers",
+        "online readers",
+        "serial number",
+        "no reader paired"
+      ],
+      "answer": "Card readers lists every reader across all customers, online or offline, with the customer, location and when it was last seen. Below it: locations with card terminals on but no reader paired yet.",
+      "steps": [
+        "Open Card readers in the menu.",
+        "Search, or use the chips to filter."
+      ],
+      "actions": [
+        {
+          "id": "card-readers-open",
+          "label": "Open Card readers",
+          "to": "/readers",
+          "highlight": [
+            "help:nav:/readers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "live-readers",
+      "route": "/readers",
+      "title": "Number of card readers",
+      "audience": "all",
+      "keywords": [
+        "how many readers",
+        "how many card readers",
+        "number of readers",
+        "readers do we have",
+        "reader count"
+      ],
+      "answer": "The count stands under the heading on Card readers.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-readers-open",
+          "label": "Show on Card readers",
+          "to": "/readers",
+          "highlight": [
+            "help:readers:count"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "readers",
+        "text": "There are {value} card readers paired across all customers."
+      }
+    },
+    {
+      "id": "operator-add",
+      "route": "/operators",
+      "title": "Add an operator",
+      "audience": "all",
+      "keywords": [
+        "operator",
+        "operators",
+        "add operator",
+        "add another operator",
+        "another operator",
+        "invite operator",
+        "new operator",
+        "colleague",
+        "console access",
+        "admin access"
+      ],
+      "answer": "Operators are the people who can sign in to Booqy Console; everyone has the same rights. A new operator gets an email with a temporary password (valid for 3 days), chooses their own password on first sign-in and sets up an authenticator app.",
+      "steps": [
+        "Open Operators in the menu.",
+        "Press + Add operator.",
+        "Fill in Name and Email and press Send invite."
+      ],
+      "actions": [
+        {
+          "id": "operator-add-open",
+          "label": "Open Operators",
+          "to": "/operators",
+          "highlight": [
+            "help:nav:/operators"
+          ]
+        }
+      ],
+      "suggestion": "How do I add another operator?"
+    },
+    {
+      "id": "operator-mfa",
+      "route": "/operators",
+      "title": "Two-step sign-in with an authenticator app",
+      "audience": "all",
+      "keywords": [
+        "mfa",
+        "two-step",
+        "two factor",
+        "2fa",
+        "authenticator",
+        "authenticator app",
+        "6-digit code",
+        "totp",
+        "qr code",
+        "sign in code"
+      ],
+      "answer": "Every operator signs in with an email, a password and a 6-digit code from an authenticator app (Google Authenticator, 1Password, Microsoft Authenticator). The app is set up on the first sign-in by scanning a QR code.",
+      "steps": [
+        "Sign in with your email and password.",
+        "The first time: choose your password, scan the QR code with the authenticator app and enter the 6-digit code it shows.",
+        "After that: enter the 6-digit code for Booqy Console at each sign-in."
+      ],
+      "actions": [
+        {
+          "id": "operator-mfa-open",
+          "label": "Open Operators",
+          "to": "/operators",
+          "highlight": [
+            "help:nav:/operators"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "operator-manage",
+      "route": "/operators",
+      "title": "Disable, delete or re-invite an operator",
+      "audience": "all",
+      "keywords": [
+        "disable operator",
+        "enable operator",
+        "delete operator",
+        "remove operator",
+        "resend invite",
+        "invite expired",
+        "edit operator"
+      ],
+      "answer": "Each operator's row on Operators has Edit, Resend invite, Disable or Enable, and Delete. You can't disable or delete yourself or the last active operator.",
+      "steps": [
+        "Open Operators in the menu.",
+        "Use the buttons on the operator's row."
+      ],
+      "actions": [
+        {
+          "id": "operator-manage-open",
+          "label": "Open Operators",
+          "to": "/operators",
+          "highlight": [
+            "help:nav:/operators"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "newsletter-send",
+      "route": "/mail",
+      "title": "Send news to the restaurant owners",
+      "audience": "all",
+      "keywords": [
+        "newsletter",
+        "news",
+        "email the owners",
+        "mail to owners",
+        "send mail",
+        "announcement",
+        "mail every owner",
+        "compose"
+      ],
+      "answer": "Mail sends news to every active customer's owner, from Booqy with replies to support. Send yourself a test first; a send can't be recalled.",
+      "steps": [
+        "Open Mail in the menu (Compose is open).",
+        "Write the Subject and the Message.",
+        "Press Send me a test and check it.",
+        "Press Send to N owners and confirm."
+      ],
+      "actions": [
+        {
+          "id": "newsletter-send-open",
+          "label": "Open Mail",
+          "to": "/mail",
+          "highlight": [
+            "help:mail-tab:compose"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mail-template",
+      "route": "/mail",
+      "title": "The mail brand template",
+      "audience": "all",
+      "keywords": [
+        "brand template",
+        "template",
+        "logo",
+        "signature",
+        "footer",
+        "sender name",
+        "reply-to",
+        "accent colour",
+        "email design"
+      ],
+      "answer": "The Brand template tab on Mail sets how the news looks: sender name, reply-to address, accent colour, logo, signature and footer line.",
+      "steps": [
+        "Open Mail and press Brand template.",
+        "Change what you need and press Save template."
+      ],
+      "actions": [
+        {
+          "id": "mail-template-open",
+          "label": "Open Mail",
+          "to": "/mail",
+          "highlight": [
+            "help:mail-tab:brand-template"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mail-sent",
+      "route": "/mail",
+      "title": "Sent news",
+      "audience": "all",
+      "keywords": [
+        "sent",
+        "sent mail",
+        "sent newsletters",
+        "who got",
+        "delivery",
+        "history"
+      ],
+      "answer": "The Sent tab on Mail lists every send, who it went to and what happened.",
+      "steps": [
+        "Open Mail and press Sent.",
+        "Click a send to see its recipients."
+      ],
+      "actions": [
+        {
+          "id": "mail-sent-open",
+          "label": "Open Mail",
+          "to": "/mail",
+          "highlight": [
+            "help:mail-tab:sent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "outbox",
+      "route": "/outbox",
+      "title": "The mail outbox (dev)",
+      "audience": "all",
+      "keywords": [
+        "outbox",
+        "mail outbox",
+        "emails in dev",
+        "sms copy",
+        "magic link",
+        "test emails",
+        "saved emails"
+      ],
+      "answer": "In dev the Outbox keeps what the platform would have emailed, plus a copy of every SMS, instead of sending it, for 30 days. Click a message to read it as HTML or text, with its links.",
+      "steps": [
+        "Open Outbox from Cmd K, or Mail and then Outbox.",
+        "Click a message; Load older shows more."
+      ],
+      "actions": [
+        {
+          "id": "outbox-open",
+          "label": "Open Outbox",
+          "to": "/outbox",
+          "highlight": [
+            "help:outbox:list"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "live-outbox",
+      "route": "/outbox",
+      "title": "Emails in the outbox",
+      "audience": "all",
+      "keywords": [
+        "how many emails",
+        "emails in the outbox",
+        "messages in the outbox",
+        "outbox count",
+        "number of emails"
+      ],
+      "answer": "The Outbox lists the messages of the last 30 days, newest first.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-outbox-open",
+          "label": "Show the Outbox",
+          "to": "/outbox",
+          "highlight": [
+            "help:outbox:list"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "outboxMessages",
+        "text": "The outbox has {value} messages from the last 30 days."
+      }
+    },
+    {
+      "id": "finance-overview",
+      "route": "/finance",
+      "title": "Finance overview",
+      "audience": "all",
+      "keywords": [
+        "finance",
+        "revenue",
+        "margin",
+        "gross margin",
+        "aws cost",
+        "arpu",
+        "cost per booking",
+        "billing period",
+        "numbers",
+        "profit",
+        "export csv"
+      ],
+      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (25th to 24th), in SEK ex VAT. Pick a customer to see just them, and export the rows as CSV.",
+      "steps": [
+        "Open Finance in the menu.",
+        "Pick the Billing period and how many periods.",
+        "Use Export customers (CSV) or Export daily (CSV) for the rows."
+      ],
+      "actions": [
+        {
+          "id": "finance-overview-open",
+          "label": "Open Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:nav:/finance"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "live-mrr",
+      "route": "/finance",
+      "title": "MRR",
+      "audience": "all",
+      "keywords": [
+        "mrr",
+        "monthly recurring revenue",
+        "recurring revenue",
+        "what is our mrr",
+        "our mrr"
+      ],
+      "answer": "MRR is the first figure on Finance.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-mrr-open",
+          "label": "Show on Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:kpi:mrr"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "mrr",
+        "text": "MRR is {value} right now (SEK ex VAT, this billing period)."
+      },
+      "suggestion": "What is our MRR?"
+    },
+    {
+      "id": "live-paying",
+      "route": "/finance",
+      "title": "Paying customers",
+      "audience": "all",
+      "keywords": [
+        "paying customers",
+        "how many paying",
+        "customers pay",
+        "subscribers"
+      ],
+      "answer": "Paying customers stands next to MRR on Finance.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-paying-open",
+          "label": "Show on Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:kpi:paying-customers"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "payingCustomers",
+        "text": "{value} customers are paying this billing period."
+      }
+    },
+    {
+      "id": "live-outstanding",
+      "route": "/finance",
+      "title": "Outstanding money",
+      "audience": "all",
+      "keywords": [
+        "outstanding",
+        "unpaid",
+        "not paid",
+        "open invoices",
+        "owed",
+        "money owed",
+        "how much is outstanding"
+      ],
+      "answer": "Outstanding is on Finance, next to Collected.",
+      "steps": [],
+      "actions": [
+        {
+          "id": "live-outstanding-open",
+          "label": "Show on Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:kpi:outstanding"
+          ]
+        }
+      ],
+      "live": {
+        "metric": "outstanding",
+        "text": "{value} is invoiced but not paid yet this billing period."
+      }
+    },
+    {
+      "id": "invoicing-run",
+      "route": "/finance",
+      "title": "Run invoicing",
+      "audience": "all",
+      "keywords": [
+        "run invoicing",
+        "invoicing",
+        "create invoices",
+        "invoice run",
+        "missed invoices",
+        "invoices on the 25th"
+      ],
+      "answer": "Invoices are created on the 25th for the period from the 25th to the 24th (monthly price plus SMS parts). After a missed 25th you run it by hand on Finance, Payments, with a preview first.",
+      "steps": [
+        "Open Finance and press Payments.",
+        "Press Run invoicing and check the preview.",
+        "Press Create these invoices."
+      ],
+      "actions": [
+        {
+          "id": "invoicing-run-open",
+          "label": "Open Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:finance-tab:payments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dunning",
+      "route": "/finance",
+      "title": "Overdue invoices and reminders",
+      "audience": "all",
+      "keywords": [
+        "overdue",
+        "reminder",
+        "reminders",
+        "send reminder",
+        "dunning",
+        "late payment",
+        "late fee",
+        "past due",
+        "collect payment",
+        "who has paid"
+      ],
+      "answer": "Finance, Payments shows who has paid for a month, with reminders and fees. Unpaid invoices get weekly reminders by themselves, the statutory late fee after the grace period and interest when paid; past due too long means suspension until paid. Send reminder sends one at once.",
+      "steps": [
+        "Open Finance and press Payments.",
+        "Pick the month and press the Overdue chip.",
+        "Press Send reminder on the invoice's row."
+      ],
+      "actions": [
+        {
+          "id": "dunning-open",
+          "label": "Open Finance",
+          "to": "/finance",
+          "highlight": [
+            "help:finance-tab:payments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agreement",
+      "route": "/tenants/:tenantId",
+      "title": "Start or end a customer's agreement",
+      "audience": "all",
+      "keywords": [
+        "agreement",
+        "subscription",
+        "start agreement",
+        "try-out",
+        "trial",
+        "card link",
+        "charge the card",
+        "cancel agreement",
+        "convert to subscription",
+        "billing",
+        "invoices for a customer"
+      ],
+      "answer": "A customer's agreement and invoices are on the Billing tab of their page: start it, send a card link (Stripe Checkout, valid 24 hours), charge a saved card, convert a try-out to a subscription or cancel it.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Billing tab.",
+        "Press Start agreement and choose Try-out period or Subscription, or use Create card link, Charge the card or Cancel agreement."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "suspend",
+      "route": "/tenants/:tenantId",
+      "title": "Suspend or resume a customer",
+      "audience": "all",
+      "keywords": [
+        "suspend",
+        "suspend a customer",
+        "suspend customer",
+        "hasn't paid",
+        "suspension",
+        "resume",
+        "block",
+        "unpaid",
+        "abuse",
+        "pause customer"
+      ],
+      "answer": "Suspending signs out and blocks every user and shows the website as unavailable; nothing is deleted, and Resume undoes it at any time.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Suspend or offboard tab.",
+        "Write a Reason (kept in the activity log) and press Suspend customer. Resume customer brings them back."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "offboard",
+      "route": "/tenants/:tenantId",
+      "title": "Offboard, restore or delete a customer",
+      "audience": "all",
+      "keywords": [
+        "offboard",
+        "offboard a customer",
+        "offboard customer",
+        "offboarding",
+        "danger zone",
+        "cancel customer",
+        "customer leaves",
+        "delete customer",
+        "restore customer",
+        "remove customer",
+        "purge",
+        "delete data"
+      ],
+      "answer": "Offboarding signs out and blocks every user, takes the website and its domains offline, archives the website repo and ends the subscription. Restore brings everything back until the retention period is over (90 days in production); after that, or at once with Delete customer, the data and the website repo are deleted for good.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Suspend or offboard tab.",
+        "Type the customer's slug to confirm and press Offboard customer.",
+        "To undo: Restore customer on the same tab, while it is still restorable."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "activity",
+      "route": "/tenants/:tenantId",
+      "title": "A customer's activity log",
+      "audience": "all",
+      "keywords": [
+        "activity",
+        "activity log",
+        "history",
+        "audit",
+        "who changed"
+      ],
+      "answer": "The Activity tab on the customer's page lists the latest 25 events.",
+      "steps": [
+        "Open Customers, click the customer and press Activity."
+      ],
+      "actions": [
+        {
+          "id": "customers-open",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "theme",
+      "route": "/settings",
+      "title": "Light or dark mode",
+      "audience": "all",
+      "keywords": [
+        "dark mode",
+        "light mode",
+        "dark",
+        "light",
+        "theme",
+        "night mode",
+        "appearance",
+        "colours"
+      ],
+      "answer": "Light or dark is under Settings, Appearance and sound. Press to switch; light is the default. It is kept in this browser.",
+      "steps": [
+        "Open Settings.",
+        "Under Appearance and sound, press Light or dark."
+      ],
+      "actions": [
+        {
+          "id": "theme-open",
+          "label": "Open Settings",
+          "to": "/settings",
+          "highlight": [
+            "help:settings:theme"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "background",
+      "route": "/settings",
+      "title": "Background behind the glass",
+      "audience": "all",
+      "keywords": [
+        "background",
+        "backdrop",
+        "wallpaper",
+        "see-through",
+        "transparent",
+        "colour",
+        "swatch",
+        "your image",
+        "own picture",
+        "background colour",
+        "picture behind the glass"
+      ],
+      "answer": "Background under Settings sets what sits behind the glass: Colour (the Booqy backdrop, the swatches Wine, Walnut, Sand, Sage, Slate and Plum, or your own colour with +) or Your image, a picture you upload. In the desktop app there is also See-through, the default, with your desktop showing through.",
+      "steps": [
+        "Open Settings.",
+        "Under Background, press Colour, Your image (or See-through in the desktop app).",
+        "Pick a swatch or + for your own colour, or press Choose picture and pick a JPG, PNG, WebP or HEIC image."
+      ],
+      "actions": [
+        {
+          "id": "background-open",
+          "label": "Open Settings",
+          "to": "/settings",
+          "highlight": [
+            "help:settings:background"
+          ]
+        }
+      ],
+      "suggestion": "How do I change the background?"
+    },
+    {
+      "id": "sound",
+      "route": "/settings",
+      "title": "Click sound and volume",
+      "audience": "all",
+      "keywords": [
+        "sound",
+        "click sound",
+        "mute",
+        "volume",
+        "silent",
+        "noise",
+        "turn off sound"
+      ],
+      "answer": "Click sound and Volume are under Settings, Appearance and sound. The click is on by default; 40 % is the standard volume and 0 % is silent.",
+      "steps": [
+        "Open Settings.",
+        "Press Click sound to turn it off or on, or move Volume."
+      ],
+      "actions": [
+        {
+          "id": "sound-open",
+          "label": "Open Settings",
+          "to": "/settings",
+          "highlight": [
+            "help:settings:sound",
+            "help:settings:volume"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desktop-app",
+      "route": "/settings",
+      "title": "Download the desktop app",
+      "audience": "all",
+      "keywords": [
+        "desktop app",
+        "download app",
+        "download",
+        "install",
+        "mac app",
+        "windows app",
+        "linux",
+        "dmg",
+        "exe",
+        "appimage",
+        "app"
+      ],
+      "answer": "Booqy Console is also an app in its own window, with the same sign-in and features. Settings, Desktop app (Download app in the menu) suggests the file for your computer and lists the rest for Mac, Windows and Linux. It isn't signed yet, so the computer warns once: Opening it the first time explains what to press.",
+      "steps": [
+        "Press Download app in the menu, or open Settings and go to Desktop app.",
+        "Press the recommended download, or pick the file for your computer from the list.",
+        "Open it; on a Mac, use Open Anyway in System Settings, Privacy & Security the first time."
+      ],
+      "actions": [
+        {
+          "id": "desktop-app-open",
+          "label": "Open Desktop app",
+          "to": "/settings",
+          "hash": "desktop-app",
+          "highlight": [
+            "help:settings:desktop-app"
+          ]
+        },
+        {
+          "id": "desktop-app-settings",
+          "label": "Open Settings",
+          "to": "/settings",
+          "highlight": [
+            "help:settings:desktop-app"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "palette",
+      "route": "/",
+      "title": "Search and commands",
+      "audience": "all",
+      "keywords": [
+        "search",
+        "command palette",
+        "shortcut",
+        "cmd k",
+        "ctrl k",
+        "keyboard",
+        "jump to page",
+        "go to page"
+      ],
+      "answer": "Cmd K (Ctrl K on Windows and Linux) or the Search field opens the command palette: actions, every page and your recent pages. Arrows choose, Enter opens, Esc closes.",
+      "steps": []
+    }
+  ]
+}

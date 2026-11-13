@@ -16,6 +16,7 @@ import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
 import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
+import { helpSlug } from "../features/help/helpId";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -90,7 +91,7 @@ export default function TenantPage() {
 
       <nav className="tabs">
         {TABS.filter((name) => name !== "Integrations" || hasIntegrations(t)).map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`}
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`} data-help={`tenant-tab:${helpSlug(name)}`}
                   onClick={() => goTab(name)}>
             {name}
             {name === "Locations" && <span className="tab__n">{t.locationCount}/{t.entitlements.maxLocations}</span>}

@@ -19,6 +19,8 @@ import "./styles.css";
 import "./ds.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
+import { HelpChat } from "./features/help/HelpChat";
+import { helpChatEnabled, openHelpChat } from "./features/help/chatState";
 
 // Each page loads when it is opened, so the first load only fetches the shell
 // and the page in view; the rest follow in the background once signed in.
@@ -107,6 +109,7 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
     return [
       { id: "a-new", group: "Actions", label: "New customer", icon: "plus", keywords: "tenant restaurant onboard", run: () => go("/tenants/new") },
       { id: "a-outbox", group: "Actions", label: "Outbox", hint: "Mail", icon: "mail", keywords: "sent email", run: () => go("/outbox") },
+      ...(helpChatEnabled() ? [{ id: "a-help", group: "Actions" as const, label: "Ask the help assistant", icon: "search" as const, keywords: "help assistant question how ask booqy", run: openHelpChat }] : []),
       { id: "a-signout", group: "Actions", label: "Sign out", icon: "logout", run: onSignOut },
       ...ALL_NAV.map((n): PaletteItem => ({ id: `n-${n.to}`, group: "Go to", label: n.label, icon: n.icon, run: () => go(n.to) })),
       ...recent
@@ -169,7 +172,7 @@ function Shell() {
             <Fragment key={group.label}>
               <p className="topbar__heading" aria-hidden="true">{group.label}</p>
               {group.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end}>
+                <NavLink key={item.to} to={item.to} end={item.end} data-help={`nav:${item.to}`}>
                   <Icon name={item.icon} className="nav-icon" />
                   {item.label}
                 </NavLink>
@@ -178,13 +181,14 @@ function Shell() {
           ))}
         </nav>
         <div className="topbar__user">
-          <NavLink to="/settings" className="btn btn--ghost topbar__settings"><Icon name="gear" />Settings</NavLink>
+          <NavLink to="/settings" className="btn btn--ghost topbar__settings" data-help="nav:/settings"><Icon name="gear" />Settings</NavLink>
           {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
-          {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings"><Icon name="download" />Download app</Link>}
+          {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Download app</Link>}
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>
       <ConsolePalette onSignOut={() => setConfirmSignOut(true)} />
+      <HelpChat />
       {confirmSignOut && (
         <Modal title="Sign out?" onClose={() => setConfirmSignOut(false)}>
           <div className="stack">

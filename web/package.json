@@ -9,7 +9,12 @@
     "preview": "vite preview --port 5173",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "brand-lint": "node node_modules/@booqy/brand/scripts/brand-lint.mjs --config brand-lint.config.json"
+    "brand-lint": "node node_modules/@booqy/brand/scripts/brand-lint.mjs --config brand-lint.config.json",
+    "help-corpus": "node scripts/help-corpus.mjs",
+    "help-kb:sync": "node scripts/sync-help-kb.mjs",
+    "predev": "node scripts/help-corpus.mjs",
+    "prebuild": "node scripts/help-corpus.mjs",
+    "pretest": "node scripts/help-corpus.mjs"
   },
   "dependencies": {
     "@booqy/brand": "file:vendor/booqy-brand-0.1.0.tgz",

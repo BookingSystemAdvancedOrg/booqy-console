@@ -47,7 +47,7 @@ export default function TenantsPage() {
       <div className="page-head">
         <div>
           <h1>Customers</h1>
-          <p className="muted">{data ? `${data.length} restaurants on the platform` : " "}</p>
+          <p className="muted" data-help="customers:count">{data ? `${data.length} restaurants on the platform` : " "}</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
@@ -60,7 +60,7 @@ export default function TenantsPage() {
                onChange={(e) => setQ(e.target.value)} />
         <div className="chips">
           {FILTERS.map((f) => (
-            <button key={f} className={`chip${filter === f ? " chip--on" : ""}`} onClick={() => setFilter(f)}>
+            <button key={f} className={`chip${filter === f ? " chip--on" : ""}`} data-help={`customers:filter:${f}`} onClick={() => setFilter(f)}>
               {f === "all" ? "All" : <Status value={f} />}
               {f !== "all" && counts[f] ? <span className="chip__n">{counts[f]}</span> : null}
             </button>
@@ -74,7 +74,7 @@ export default function TenantsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th>Payments</th><th>Site</th><th>Created</th>
+                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
               </tr>
             </thead>
             <tbody>

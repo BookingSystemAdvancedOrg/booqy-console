@@ -58,7 +58,7 @@ export default function ReadersPage() {
       <div className="page-head">
         <div>
           <h1>Card readers</h1>
-          <p className="muted">
+          <p className="muted" data-help="readers:count">
             {data ? `${data.readers.length} readers at ${data.locations.length} locations with card terminals` : " "}
           </p>
         </div>

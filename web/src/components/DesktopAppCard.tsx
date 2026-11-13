@@ -56,7 +56,7 @@ function DesktopAppCardBody({ heading }: { heading: boolean }) {
   }, [location.hash, location.key]);
 
   return (
-    <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" ref={ref} tabIndex={-1}>
+    <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" data-help="settings:desktop-app" ref={ref} tabIndex={-1}>
       {heading && <div className="card__head"><h2>Desktop app</h2></div>}
       <div className="card__body desktop-app">
         <p className="muted small">

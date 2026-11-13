@@ -2,6 +2,7 @@ import { ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId,
 import { createPortal } from "react-dom";
 import { ApiError } from "../api";
 import { CheckMark, useFlash } from "./save";
+import { helpSlug } from "../features/help/helpId";
 
 export function Field(props: {
   label: string;
@@ -119,7 +120,7 @@ function focusFirstInvalid() {
 /** `saved`: flash the card and stamp "Saved" in its head for a moment. */
 export function Card(props: { title: string; actions?: ReactNode; children: ReactNode; tone?: "danger"; saved?: boolean; savedLabel?: string }) {
   return (
-    <section className={`card${props.tone ? ` card--${props.tone}` : ""}${props.saved ? " card--saved" : ""}`}>
+    <section className={`card${props.tone ? ` card--${props.tone}` : ""}${props.saved ? " card--saved" : ""}`} data-help={`card:${helpSlug(props.title)}`}>
       <header className="card__head">
         <h2>{props.title}</h2>
         {(props.actions || props.saved) && (

@@ -119,7 +119,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
 
       {loading && !data ? <SkelPage label="Loading the outbox"><SkelTable rows={6} cols={4} /></SkelPage> : data?.enabled && (
         <div className={`outbox${selected ? " outbox--reading" : ""}`}>
-          <div className="table-wrap">
+          <div className="table-wrap" data-help="outbox:list">
             <table className="table">
               <thead>
                 <tr><th>Saved</th><th>Type</th><th>To</th><th>Subject / text</th></tr>

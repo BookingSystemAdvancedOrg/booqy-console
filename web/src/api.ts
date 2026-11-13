@@ -1,6 +1,7 @@
 import { accessToken, notifySignedOut, signOut } from "./auth";
 import { withBusy } from "./busy";
 import type { WebsiteOverview } from "./website";
+import type { HelpAnswer } from "./features/help/kb";
 import type {
   BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
@@ -213,6 +214,10 @@ export const api = {
     request<{ newsletter: Newsletter; recipients: NewsletterRecipient[] }>("GET", `/platform/mail/newsletters/${encodeURIComponent(id)}`),
   sendNewsletter: (body: { subject: string; body: string; test?: boolean }) =>
     request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
+  // The help assistant (features/help): status, and an answer grounded in the console's corpus.
+  helpStatus: () => request<{ enabled: boolean; mode: "ai" | "kb" | "off" }>("GET", "/platform/help-assistant"),
+  helpAnswer: (body: { question: string; history: { role: "user" | "assistant"; text: string }[] }) =>
+    request<{ answer: HelpAnswer; mode: "ai" | "kb" }>("POST", "/platform/help-assistant/answers", body),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */
