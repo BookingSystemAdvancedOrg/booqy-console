@@ -1,7 +1,8 @@
 import "./desktopApp.css";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { desktopFiles, isDesktopShell, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
+import { phoneKind, usePwaInstall } from "../pwa";
+import { desktopFiles, isDesktopShell, isPhoneOrTablet, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
 
 /** Labels in the console's language; URLs from desktopDownloads (shared with admin). */
 const LABELS: Record<DesktopOs, { title: string; detail: string; button: string }> = {
@@ -25,22 +26,15 @@ function badge(rec: Recommendation): string {
 export function DesktopAppCard({ heading = true }: { heading?: boolean }) {
   // Inside the desktop app there is nothing to download: no card at all.
   if (isDesktopShell()) return null;
+  // Phones and tablets: no file list, the console installs from the browser.
+  if (isPhoneOrTablet({ ua: navigator.userAgent, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints })) {
+    return <PhoneInstallBody />;
+  }
   return <DesktopAppCardBody heading={heading} />;
 }
 
-function DesktopAppCardBody({ heading }: { heading: boolean }) {
-  const files = desktopFiles("console", "Booqy-Console");
-  // undefined = still reading, null = no safe recommendation (show the list only).
-  const [rec, setRec] = useState<Recommendation | null | undefined>(undefined);
-  useEffect(() => {
-    let alive = true;
-    void readSignals().then((s) => alive && setRec(recommend(s))).catch(() => alive && setRec(null));
-    return () => { alive = false; };
-  }, []);
-  const mine = rec ? files.find((f) => f.os === rec.os) : undefined;
-
-  // The menu's "Download app" goes to /settings#desktop-app: scroll here, move
-  // focus and light the card up briefly, on every click (location.key).
+/** The menu's "Download app" / "Install app" goes to /settings#desktop-app: scroll here, focus, light up briefly (every click). */
+function useFlashOnHash() {
   const location = useLocation();
   const ref = useRef<HTMLElement>(null);
   const [flash, setFlash] = useState(false);
@@ -54,6 +48,73 @@ function DesktopAppCardBody({ heading }: { heading: boolean }) {
     const t = window.setTimeout(() => setFlash(false), 1800);
     return () => window.clearTimeout(t);
   }, [location.hash, location.key]);
+  return { ref, flash };
+}
+
+function ShareGlyph() {
+  return (
+    <svg className="phone-install__glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3.5v11M8 7.5l4-4 4 4M7.5 10.5H6a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 6 20.5h12a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5" />
+    </svg>
+  );
+}
+function AddGlyph() {
+  return (
+    <svg className="phone-install__glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <path d="M12 8.5v7M8.5 12h7" />
+    </svg>
+  );
+}
+
+/** Phones: install Booqy Console on the home screen. */
+function PhoneInstallBody() {
+  const { ref, flash } = useFlashOnHash();
+  const { canPrompt, installed, prompt } = usePwaInstall();
+  const kind = phoneKind();
+  return (
+    <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" ref={ref} tabIndex={-1}>
+      <div className="card__head"><h2>App on your phone</h2></div>
+      <div className="card__body desktop-app">
+        {installed ? (
+          <p className="strong">The app is installed. Open Booqy Console from your home screen.</p>
+        ) : (
+          <>
+            <p className="muted small">Add Booqy Console to your home screen and it opens as its own full-screen app, with the same sign-in and features as here.</p>
+            {kind === "ios" ? (
+              <ol className="phone-install__steps">
+                <li><span className="phone-install__icon"><ShareGlyph /></span><span>Tap <span className="strong">Share</span> in Safari (at the bottom; top right on iPad).</span></li>
+                <li><span className="phone-install__icon"><AddGlyph /></span><span>Scroll and choose <span className="strong">Add to Home Screen</span>.</span></li>
+                <li><span className="phone-install__icon phone-install__icon--text">Add</span><span>Tap <span className="strong">Add</span> at the top right.</span></li>
+              </ol>
+            ) : canPrompt ? (
+              <p><button type="button" className="btn btn--primary" onClick={() => void prompt()}>Install app</button></p>
+            ) : (
+              <ol className="phone-install__steps">
+                <li><span className="phone-install__icon phone-install__icon--text">⋮</span><span>Tap the <span className="strong">⋮</span> menu at the top right in Chrome.</span></li>
+                <li><span className="phone-install__icon"><AddGlyph /></span><span>Choose <span className="strong">Install app</span> or <span className="strong">Add to Home screen</span>.</span></li>
+              </ol>
+            )}
+            {kind === "ios" && <p className="muted small">The first time in the app you sign in once more; the home screen app has its own sign-in.</p>}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DesktopAppCardBody({ heading }: { heading: boolean }) {
+  const files = desktopFiles("console", "Booqy-Console");
+  // undefined = still reading, null = no safe recommendation (show the list only).
+  const [rec, setRec] = useState<Recommendation | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    void readSignals().then((s) => alive && setRec(recommend(s))).catch(() => alive && setRec(null));
+    return () => { alive = false; };
+  }, []);
+  const mine = rec ? files.find((f) => f.os === rec.os) : undefined;
+
+  const { ref, flash } = useFlashOnHash();
 
   return (
     <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" data-help="settings:desktop-app" ref={ref} tabIndex={-1}>

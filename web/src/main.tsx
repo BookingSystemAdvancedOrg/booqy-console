@@ -15,6 +15,7 @@ import { syncBackdropImage } from "./backdropImage";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
 import { DownloadRedirect } from "./components/DownloadRedirect";
+import { installPwa, showPhoneInstallNav } from "./pwa";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
@@ -57,6 +58,8 @@ installPress();
 installGlide();
 installGlassFilter();
 installDesktopGlass();
+// Installable on phones: service worker and the install button (built app only).
+if (import.meta.env.PROD) installPwa();
 // "A new version is available" after a deploy (built app only, not npm run dev).
 if (import.meta.env.PROD) {
   startUpdateNotice({
@@ -86,10 +89,13 @@ const NAV: { label: string; items: NavItem[] }[] = [
 ];
 // "Download app" only in a desktop browser: not inside the desktop app, not on phones.
 const SHOW_DOWNLOAD = showDownloadNav();
+// "Install app" on phones and tablets in the browser (home screen app, not yet installed).
+const SHOW_INSTALL = showPhoneInstallNav();
 const ALL_NAV: NavItem[] = [
   ...NAV.flatMap((g) => g.items),
   { to: "/settings", label: "Settings", icon: "gear" },
   ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
+  ...(SHOW_INSTALL ? [{ to: "/settings#desktop-app", label: "Install app", icon: "download" as const }] : []),
 ];
 const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
 
@@ -187,6 +193,7 @@ function Shell() {
           <NavLink to="/settings" className="btn btn--ghost topbar__settings" data-help="nav:/settings"><Icon name="gear" />Settings</NavLink>
           {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
           {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Download app</Link>}
+          {SHOW_INSTALL && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Install app</Link>}
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>

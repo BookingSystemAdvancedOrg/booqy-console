@@ -46,3 +46,12 @@
 
 /* A long button label wraps inside the card instead of sticking out. */
 .desktop-app-card .btn { max-width: 100%; white-space: normal; text-align: center; }
+
+/* Phones: install on the home screen (PhoneInstallBody). */
+.phone-install__steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.phone-install__steps li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md, 12px);
+  border: 1px solid var(--glass-edge, var(--fg-line)); color: var(--fg); }
+.phone-install__icon { flex: none; display: grid; place-items: center; min-width: 40px; height: 40px; padding: 0 8px; border-radius: 10px;
+  background: var(--glass-pop, rgb(251 250 246 / 0.8)); color: #0a7aff; font-weight: 700; font-size: 13px; }
+.phone-install__icon--text { color: var(--fg); font-size: 15px; }
+.phone-install__glyph { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

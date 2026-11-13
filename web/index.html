@@ -8,6 +8,16 @@
     <link rel="icon" type="image/svg+xml" href="/src/assets/favicon.svg" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/src/assets/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f6f1ea" />
+    <!-- Installable on phones (PWA): manifest, home screen icon, standalone mode.
+         Versioned file names (v1) because the deploy caches them for a year;
+         bump the name here and in public/ when a file changes. See src/pwa.ts. -->
+    <link rel="manifest" href="/app.v1.webmanifest" />
+    <link rel="apple-touch-icon" href="/pwa/icon-180.v1.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Booqy Console" />
+    <!-- default: the status bar keeps its own space, nothing sits under the clock. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <!-- Light or dark mode before the first paint (public/theme.v2.js). -->
     <script src="/theme.v2.js"></script>
   </head>
