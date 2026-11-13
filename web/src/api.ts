@@ -213,6 +213,11 @@ export const api = {
     request<{ newsletter: Newsletter; recipients: NewsletterRecipient[] }>("GET", `/platform/mail/newsletters/${encodeURIComponent(id)}`),
   sendNewsletter: (body: { subject: string; body: string; test?: boolean }) =>
     request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
+  // Your own picture behind the glass, per operator (glassBackdrop.ts / backdropImage.ts).
+  backdrop: () => request<{ url: string | null; updatedAt: string | null }>("GET", "/platform/me/backdrop"),
+  backdropUpload: (body: { contentType: string; size: number }) =>
+    request<{ url: string; fields: Record<string, string> }>("POST", "/platform/me/backdrop/upload", body),
+  removeBackdrop: () => request<unknown>("DELETE", "/platform/me/backdrop"),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */

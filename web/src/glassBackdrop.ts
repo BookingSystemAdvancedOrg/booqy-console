@@ -8,12 +8,16 @@ import { GLASS_BACKDROP_KEY } from './storageRegistry'
  * - Colour (only when chosen): the glass sits over a soft field in the chosen
  *   colour. In the desktop app the field covers the system glass completely,
  *   so nothing changes in the shell and nothing can flash.
+ * - Your image (only when chosen): the glass sits over the operator's own
+ *   picture, stored on the server so it follows them to other devices. The
+ *   choice of mode is per device ("image"); the picture comes from the server.
+ *   Until it is decoded Booqy's backdrop shows, so nothing flashes.
  *
  * An unknown or broken stored value counts as no choice: nobody is ever moved
- * to Colour without choosing it. Same key and values as Booqy Admin.
+ * to Colour or Your image without choosing it. Same key and values as Booqy Admin.
  */
 
-export type GlassBackdrop = { mode: 'clear' } | { mode: 'colour'; colour: string }
+export type GlassBackdrop = { mode: 'clear' } | { mode: 'colour'; colour: string } | { mode: 'image' }
 
 export const SWATCHES: readonly { name: string; colour: string }[] = [
   { name: 'Wine', colour: '#6b1d24' },
@@ -27,7 +31,29 @@ export const SWATCHES: readonly { name: string; colour: string }[] = [
 const HEX = /^#[0-9a-f]{6}$/i
 
 export function parseGlassBackdrop(value: string | null | undefined): GlassBackdrop {
+  if (value === 'image') return { mode: 'image' }
   return value && HEX.test(value) ? { mode: 'colour', colour: value.toLowerCase() } : { mode: 'clear' }
+}
+
+/** Where the picture is: set by the app (the API). Gives a URL, or null when there is none. */
+type ImageSource = () => Promise<string | null>
+let imageSource: ImageSource = async () => null
+let imageUrl: string | null = null
+export function setBackdropImageSource(fn: ImageSource): void {
+  imageSource = fn
+}
+
+/** Fetches and decodes the picture before it shows, so it is never drawn half-loaded. */
+async function decoded(url: string): Promise<boolean> {
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = url
+    await img.decode()
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function readGlassBackdrop(): GlassBackdrop {
@@ -39,12 +65,21 @@ export function readGlassBackdrop(): GlassBackdrop {
 }
 
 export function applyGlassBackdrop(b: GlassBackdrop, root: HTMLElement = document.documentElement): void {
+  root.style.removeProperty('--user-colour')
+  root.style.removeProperty('--user-image')
   if (b.mode === 'colour') {
     root.dataset.glassBackdrop = 'colour'
     root.style.setProperty('--user-colour', b.colour)
+  } else if (b.mode === 'image') {
+    // No decoded picture yet: Booqy's backdrop (also in the desktop app) until there is one.
+    if (imageUrl) {
+      root.dataset.glassBackdrop = 'image'
+      root.style.setProperty('--user-image', `url("${imageUrl.replace(/"/g, '%22')}")`)
+    } else {
+      root.dataset.glassBackdrop = 'image-loading'
+    }
   } else {
     delete root.dataset.glassBackdrop
-    root.style.removeProperty('--user-colour')
   }
 }
 
@@ -57,6 +92,7 @@ export function subscribeGlassBackdrop(fn: () => void): () => void {
 function store(b: GlassBackdrop) {
   try {
     if (b.mode === 'colour') localStorage.setItem(GLASS_BACKDROP_KEY, b.colour)
+    else if (b.mode === 'image') localStorage.setItem(GLASS_BACKDROP_KEY, 'image')
     else localStorage.removeItem(GLASS_BACKDROP_KEY)
   } catch {
     // without storage the choice lasts until the page reloads
@@ -95,9 +131,37 @@ export function setGlassBackdrop(b: GlassBackdrop, origin?: { x: number; y: numb
   }, () => {})
 }
 
+/** (Re)fetches the picture; sweeps it in once decoded. True when there is one. */
+export async function refreshBackdropImage(origin?: { x: number; y: number }): Promise<boolean> {
+  let url: string | null = null
+  try {
+    url = await imageSource()
+  } catch {
+    url = null
+  }
+  if (!url || !(await decoded(url))) {
+    imageUrl = null
+    for (const fn of listeners) fn()
+    return false
+  }
+  imageUrl = url
+  if (readGlassBackdrop().mode === 'image') setGlassBackdrop({ mode: 'image' }, origin)
+  else for (const fn of listeners) fn()
+  return true
+}
+
+export function hasBackdropImage(): boolean {
+  return imageUrl !== null
+}
+
+export function forgetBackdropImage(): void {
+  imageUrl = null
+}
+
 export function installGlassBackdrop(): void {
   if (typeof document === 'undefined') return
-  applyGlassBackdrop(readGlassBackdrop())
+  const choice = readGlassBackdrop()
+  applyGlassBackdrop(choice)
   window.addEventListener('storage', (e) => {
     if (e.key === GLASS_BACKDROP_KEY) {
       applyGlassBackdrop(readGlassBackdrop())

@@ -35,8 +35,8 @@ export default function SettingsPage({ email }: { email?: string }) {
               <p className="strong">Background</p>
               <p className="muted small">
                 {isDesktopShell()
-                  ? "See-through shows whatever is behind the window. Colour puts the glass over a colour you pick."
-                  : "The colour behind the glass in this browser. See-through, with your desktop showing through, is in the desktop app."}
+                  ? "See-through shows whatever is behind the window. Colour puts the glass over a colour you pick, Your image over a picture you upload."
+                  : "What sits behind the glass: a colour or your own picture. See-through, with your desktop showing through, is in the desktop app."}
               </p>
             </div>
             <BackdropSetting />
