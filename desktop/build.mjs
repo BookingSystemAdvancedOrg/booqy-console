@@ -117,7 +117,9 @@ const builderConfig = {
       { target: 'AppImage', arch: ['x64'] },
       { target: 'deb', arch: ['x64'] },
     ],
-    icon: 'build/icon.png',
+    // Linux vill ha en hel uppsättning (hicolor 16 till 1024), annars visar
+    // vissa skrivbord ingen ikon. Skapad ur build/icon.png, se README.md.
+    icon: 'build/icons',
     category: 'Office',
     maintainer: 'Booqy <ops@booqy.se>',
     synopsis: config.description,

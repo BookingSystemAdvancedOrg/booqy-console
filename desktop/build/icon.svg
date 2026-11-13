@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- b-märket på en ruta med macOS-marginal (824 av 1024). Källa: src/shared/BrandMark.tsx -->
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="#350001"/>
-  <svg x="100" y="100" width="824" height="824" viewBox="300 115 1400 1400"><path fill="#fdfaf6" d="M620.5 937.5A379.5 379.5 0 1 1 1379.5 937.5A379.5 379.5 0 1 1 620.5 937.5ZM727 937.5A273 286.5 0 1 0 1273 937.5A273 286.5 0 1 0 727 937.5ZM620 368A55 55 0 0 1 730 368V937.5H620ZM814 937.5A186 163.5 0 0 1 1186 937.5ZM729.2 972H1270.8L1257.2 1029H742.8Z"/></svg>
+  <!-- b-märket (svart b på benvit ruta, Booqy Console) med macOS-marginal (824 av 1024). Källa: src/shared/BrandMark.tsx -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#fdfaf6"/>
+  <svg x="100" y="100" width="824" height="824" viewBox="300 115 1400 1400"><path fill="#1a120e" d="M620.5 937.5A379.5 379.5 0 1 1 1379.5 937.5A379.5 379.5 0 1 1 620.5 937.5ZM727 937.5A273 286.5 0 1 0 1273 937.5A273 286.5 0 1 0 727 937.5ZM620 368A55 55 0 0 1 730 368V937.5H620ZM814 937.5A186 163.5 0 0 1 1186 937.5ZM729.2 972H1270.8L1257.2 1029H742.8Z"/></svg>
 </svg>

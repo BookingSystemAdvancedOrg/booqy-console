@@ -149,3 +149,16 @@ runners whenever `desktop/` changes on `dev` (publishes to dev) or `main`
 (prod), or by hand. `publish.mjs` uploads through `desktop-release-role`
 (Terraform: `network/platform-domain/downloads.tf` and
 `security/iam/oidc/desktop-release-role` in infrastructure).
+
+## App icon
+
+off-white square, black b (`icon.png` is a copy of `icon-light.png`). Only two square logos are allowed: black square with an off-white b, or
+off-white square with a black b (never a wine-red square). Booqy Admin uses the
+black one, Booqy Console the off-white one, so they differ in the Dock and
+taskbar. electron-builder makes the `.icns` (macOS) and `.ico` (Windows) from
+`build/icon.png`; Linux uses the PNG set in `build/icons/`. After changing
+`icon.png`, regenerate that set:
+
+```bash
+for s in 16 24 32 48 64 128 256 512 1024; do sips -z $s $s build/icon.png --out build/icons/${s}x${s}.png; done
+```
