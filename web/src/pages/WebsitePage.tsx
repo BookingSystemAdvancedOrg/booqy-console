@@ -1,4 +1,5 @@
 import { ReactNode, useMemo, useState } from "react";
+import { CtaButton, Disclosure } from "../components/ds";
 import { api } from "../api";
 import { BarLineChart, HBarChart, countTick } from "../components/charts";
 import { CountUp, Delta, useTrendPop } from "../components/motion";
@@ -146,57 +147,65 @@ export default function WebsitePage() {
             )}
           </Card>
 
-          <div className="charts">
-            <Card title="Landing pages">
-              <VisitTable title="Page" rows={data.breakdowns.landing} mono />
-            </Card>
-            <Card title="Top pages">
-              <PageTable rows={data.breakdowns.pages} />
-            </Card>
-          </div>
+          <Disclosure title="Pages">
+            <div className="charts">
+              <Card title="Landing pages">
+                <VisitTable title="Page" rows={data.breakdowns.landing} mono />
+              </Card>
+              <Card title="Top pages">
+                <PageTable rows={data.breakdowns.pages} />
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Where visitors are">
-              <Tabs names={PLACES} on={places} set={setPlaces} />
-              {places === "Countries" && (
-                <VisitTable title="Country" rows={data.breakdowns.countries} label={(key) => `${countryName(key)} (${key})`} />
-              )}
-              {places === "Regions" && <VisitTable title="Region" rows={data.breakdowns.regions} label={placeLabel} />}
-              {places === "Cities" && <VisitTable title="City" rows={data.breakdowns.cities} label={placeLabel} />}
-            </Card>
-            <Card title="Devices and browsers">
-              <Tabs names={TECH} on={tech} set={setTech} />
-              {tech === "Devices" && <VisitTable title="Device" rows={data.breakdowns.devices} label={(key) => DEVICE_LABEL[key] ?? key} />}
-              {tech === "Browsers" && <VisitTable title="Browser" rows={data.breakdowns.browsers} />}
-              {tech === "Operating systems" && <VisitTable title="System" rows={data.breakdowns.os} />}
-              {tech === "Languages" && <VisitTable title="Language" rows={data.breakdowns.languages} />}
-            </Card>
-          </div>
+          <Disclosure title="Audience">
+            <div className="charts">
+              <Card title="Where visitors are">
+                <Tabs names={PLACES} on={places} set={setPlaces} />
+                {places === "Countries" && (
+                  <VisitTable title="Country" rows={data.breakdowns.countries} label={(key) => `${countryName(key)} (${key})`} />
+                )}
+                {places === "Regions" && <VisitTable title="Region" rows={data.breakdowns.regions} label={placeLabel} />}
+                {places === "Cities" && <VisitTable title="City" rows={data.breakdowns.cities} label={placeLabel} />}
+              </Card>
+              <Card title="Devices and browsers">
+                <Tabs names={TECH} on={tech} set={setTech} />
+                {tech === "Devices" && <VisitTable title="Device" rows={data.breakdowns.devices} label={(key) => DEVICE_LABEL[key] ?? key} />}
+                {tech === "Browsers" && <VisitTable title="Browser" rows={data.breakdowns.browsers} />}
+                {tech === "Operating systems" && <VisitTable title="System" rows={data.breakdowns.os} />}
+                {tech === "Languages" && <VisitTable title="Language" rows={data.breakdowns.languages} />}
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Scroll depth">
-              <p className="insight">How far down the page readers got, of the page views that reported it.</p>
-              <HBarChart rows={scrollReach(data.scroll).map((r) => ({ key: r.band, label: `${r.band} % of the page`, value: r.pct ?? 0 }))}
-                         ariaLabel="Share of page views reaching each scroll depth" valueLabel="Page views"
-                         format={(n) => fmtPct(n)} />
-            </Card>
-            <Card title="Clicks">
-              <div className="web-pair">
-                <EventTable title="Call to action" rows={data.events.cta ?? []} />
-                <EventTable title="Showcase tab" rows={data.events.tab ?? []} />
-              </div>
-            </Card>
-          </div>
+          <Disclosure title="Engagement">
+            <div className="charts">
+              <Card title="Scroll depth">
+                <p className="insight">How far down the page readers got, of the page views that reported it.</p>
+                <HBarChart rows={scrollReach(data.scroll).map((r) => ({ key: r.band, label: `${r.band} % of the page`, value: r.pct ?? 0 }))}
+                           ariaLabel="Share of page views reaching each scroll depth" valueLabel="Page views"
+                           format={(n) => fmtPct(n)} />
+              </Card>
+              <Card title="Clicks">
+                <div className="web-pair">
+                  <EventTable title="Call to action" rows={data.events.cta ?? []} />
+                  <EventTable title="Showcase tab" rows={data.events.tab ?? []} />
+                </div>
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Referring sites">
-              <VisitTable title="Site" rows={data.breakdowns.referrers} mono />
-            </Card>
-            <Card title="Time of day">
-              <p className="insight">Visits by the hour they started, Stockholm time.</p>
-              <HourStrip hours={data.hours} />
-            </Card>
-          </div>
+          <Disclosure title="Referrers and time of day">
+            <div className="charts">
+              <Card title="Referring sites">
+                <VisitTable title="Site" rows={data.breakdowns.referrers} mono />
+              </Card>
+              <Card title="Time of day">
+                <p className="insight">Visits by the hour they started, Stockholm time.</p>
+                <HourStrip hours={data.hours} />
+              </Card>
+            </div>
+          </Disclosure>
         </>
       )}
     </>
@@ -219,13 +228,13 @@ function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => Pr
             <i aria-hidden="true" /> {fmtInt(data.live.visitors)} {data.live.visitors === 1 ? "visitor" : "visitors"} in the last {data.live.minutes} min
           </span>
         )}
-        <button className="btn btn--ghost" disabled={!data?.series?.length}
-                title="One row per day for the chosen period"
-                onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data))}>Export daily (CSV)</button>
+        <RefreshButton reload={reload} />
         <button className="btn btn--ghost" disabled={!data?.breakdowns}
                 title="Sources, campaigns, pages, places and devices for the chosen period"
                 onClick={() => data && downloadCsv(csvName("breakdowns", data.period), breakdownsCsv(data))}>Export breakdowns (CSV)</button>
-        <RefreshButton reload={reload} />
+        <CtaButton label="Export daily (CSV)" win="Klart!" disabled={!data?.series?.length}
+                   title="One row per day for the chosen period"
+                   onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data))} />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import { StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import { Logo } from "./components/Logo";
@@ -12,6 +12,8 @@ import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import "@booqy/brand/styles.css";
 import "./styles.css";
+import "./ds.css";
+import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 
 // Each page loads when it is opened, so the first load only fetches the shell
@@ -53,6 +55,54 @@ installGlassFilter();
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
 
+// The side menu: short groups, one icon each from the shared stroke set. The
+// command palette's "Go to" is the same list.
+type NavItem = { to: string; label: string; icon: IconName; end?: boolean };
+const NAV: { label: string; items: NavItem[] }[] = [
+  { label: "Restaurants", items: [
+    { to: "/", label: "Customers", icon: "users", end: true },
+    { to: "/tenants/new", label: "New customer", icon: "plus" },
+    { to: "/readers", label: "Card readers", icon: "terminal" },
+  ] },
+  { label: "Platform", items: [
+    { to: "/operators", label: "Operators", icon: "badge" },
+    { to: "/mail", label: "Mail", icon: "mail" },
+  ] },
+  { label: "Numbers", items: [
+    { to: "/finance", label: "Finance", icon: "chart" },
+    { to: "/website", label: "Website", icon: "globe" },
+  ] },
+];
+const ALL_NAV: NavItem[] = [...NAV.flatMap((g) => g.items), { to: "/settings", label: "Settings", icon: "gear" }];
+const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
+
+// Pages visited in this tab (memory only): the palette's "Recent".
+let recent: string[] = [];
+
+function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  useEffect(() => { recent = [pathname, ...recent.filter((p) => p !== pathname)].slice(0, 6); }, [pathname]);
+  const go = useCallback((to: string) => { if (confirmLeave()) navigate(to); }, [navigate]);
+  const items = useCallback((): PaletteItem[] => {
+    const here = window.location.pathname;
+    const seen = new Set<string>();
+    return [
+      { id: "a-new", group: "Actions", label: "New customer", icon: "plus", keywords: "tenant restaurant onboard", run: () => go("/tenants/new") },
+      { id: "a-outbox", group: "Actions", label: "Outbox", hint: "Mail", icon: "mail", keywords: "sent email", run: () => go("/outbox") },
+      { id: "a-signout", group: "Actions", label: "Sign out", icon: "logout", run: onSignOut },
+      ...ALL_NAV.map((n): PaletteItem => ({ id: `n-${n.to}`, group: "Go to", label: n.label, icon: n.icon, run: () => go(n.to) })),
+      ...recent
+        .filter((p) => p !== here)
+        .map(navFor)
+        .filter((n): n is NavItem => !!n && !seen.has(n.to) && !!seen.add(n.to))
+        .slice(0, 4)
+        .map((n): PaletteItem => ({ id: `r-${n.to}`, group: "Recent", label: n.label, icon: n.icon, run: () => go(n.to) })),
+    ];
+  }, [go, onSignOut]);
+  return <CommandPalette items={items} />;
+}
+
 function Shell() {
   const location = useLocation();
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
@@ -85,6 +135,7 @@ function Shell() {
       <header className={menuOpen ? "topbar is-open" : "topbar"} onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         {IS_DEV && <span className="env">dev</span>}
+        <PaletteTrigger />
         <button
           type="button"
           className="topbar__menu"
@@ -97,22 +148,24 @@ function Shell() {
         </button>
         <nav className="topbar__nav" id="topbar-menu">
           {/* The headings only show in the side menu on wide screens. */}
-          <p className="topbar__heading" aria-hidden="true">Restaurants</p>
-          <NavLink to="/" end>Customers</NavLink>
-          <NavLink to="/tenants/new">New customer</NavLink>
-          <NavLink to="/readers">Card readers</NavLink>
-          <p className="topbar__heading" aria-hidden="true">Platform</p>
-          <NavLink to="/operators">Operators</NavLink>
-          <NavLink to="/mail">Mail</NavLink>
-          <p className="topbar__heading" aria-hidden="true">Numbers</p>
-          <NavLink to="/finance">Finance</NavLink>
-          <NavLink to="/website">Website</NavLink>
+          {NAV.map((group) => (
+            <Fragment key={group.label}>
+              <p className="topbar__heading" aria-hidden="true">{group.label}</p>
+              {group.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.end}>
+                  <Icon name={item.icon} className="nav-icon" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </Fragment>
+          ))}
         </nav>
         <div className="topbar__user">
-          <NavLink to="/settings" className="btn btn--ghost topbar__settings">Settings</NavLink>
-          <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}>Sign out</button>
+          <NavLink to="/settings" className="btn btn--ghost topbar__settings"><Icon name="gear" />Settings</NavLink>
+          <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>
+      <ConsolePalette onSignOut={() => setConfirmSignOut(true)} />
       {confirmSignOut && (
         <Modal title="Sign out?" onClose={() => setConfirmSignOut(false)}>
           <div className="stack">

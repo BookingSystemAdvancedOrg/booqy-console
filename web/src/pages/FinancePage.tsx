@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { CtaButton, Disclosure } from "../components/ds";
 import { BarLineChart, HBarChart, LineChart } from "../components/charts";
 import { CountUp, Delta, deltaPct, useTrendPop } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
@@ -112,7 +113,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           <RefreshButton reload={reload} />
           <SaveButton kind="ghost" type="button" label="Import from Stripe" busy={sync.busy} busyLabel="Reading Stripe…" done={sync.done} doneLabel="Imported"
                       onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }} />
-          <button className="btn btn--primary" onClick={() => setRebuild(true)}>Rebuild</button>
+          <CtaButton label="Rebuild" win="Kör!" onClick={() => setRebuild(true)} />
         </div>
       </div>
 
@@ -302,23 +303,25 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           ) : null}
 
           {/* 4. Revenue and unit economics, then the charts and the per-customer detail. */}
-          <section className="kpis kpis--units" aria-label="Revenue and unit economics">
-            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub="invoiced in the period"
-                 trend={trends.revenue} />
-            <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
-                 sub={wholeBill
-                   ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
-                   : `${fmtInt(k.requests)} requests`}
-                 trend={trends.cost} />
-            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
-            <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
-                 trend={trends.costPerBooking} />
-            <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
-                 trend={trends.costPerOrder} />
-            <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
-                 sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
-                 trend={trends.sms} valueTone={smsTone} />
-          </section>
+          <Disclosure title="Revenue and unit economics" meta="ARPU, cost per booking and order, SMS">
+            <section className="kpis kpis--units" aria-label="Revenue and unit economics">
+              <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub="invoiced in the period"
+                   trend={trends.revenue} />
+              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
+                   sub={wholeBill
+                     ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
+                     : `${fmtInt(k.requests)} requests`}
+                   trend={trends.cost} />
+              <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
+              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
+                   trend={trends.costPerBooking} />
+              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
+                   trend={trends.costPerOrder} />
+              <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
+                   sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
+                   trend={trends.sms} valueTone={smsTone} />
+            </section>
+          </Disclosure>
 
           <div className="charts">
             <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
