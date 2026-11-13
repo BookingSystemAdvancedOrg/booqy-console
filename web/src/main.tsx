@@ -12,6 +12,7 @@ import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
 import { syncBackdropImage } from "./backdropStore";
+import { MyAvatar } from "./components/MyAvatar";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
 import { DownloadRedirect } from "./components/DownloadRedirect";
@@ -190,6 +191,10 @@ function Shell() {
           ))}
         </nav>
         <div className="topbar__user">
+          <div className="topbar__me">
+            <MyAvatar email={user.email} />
+            <span className="topbar__me-name">{user.email ?? user.username}</span>
+          </div>
           <NavLink to="/settings" className="btn btn--ghost topbar__settings" data-help="nav:/settings"><Icon name="gear" />Settings</NavLink>
           {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
           {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Download app</Link>}

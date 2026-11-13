@@ -1,5 +1,6 @@
 import { BackdropSetting } from "../components/BackdropSetting";
 import { isDesktopShell } from "../desktopDownloads";
+import { AvatarSetting } from "../components/AvatarSetting";
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -20,6 +21,12 @@ export default function SettingsPage({ email }: { email?: string }) {
           <p className="muted">{email ? `Signed in as ${email}. ` : ""}How the console looks and sounds in this browser, and the desktop app.</p>
         </div>
       </div>
+      <section className="card">
+        <div className="card__head"><h2>Your profile</h2></div>
+        <div className="card__body">
+          <AvatarSetting email={email} />
+        </div>
+      </section>
       <section className="card">
         <div className="card__head"><h2>Appearance and sound</h2></div>
         <div className="card__body">

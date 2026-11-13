@@ -260,6 +260,8 @@ export interface OperatorAccount {
   enabled: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Presigned link to the operator's profile picture (1 h), or null. */
+  avatarUrl?: string | null;
 }
 
 /** Dev mail outbox (GET /platform/outbox) - dev only. */

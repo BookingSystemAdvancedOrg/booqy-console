@@ -177,6 +177,12 @@ export const api = {
       "POST", "/platform/finance/stripe-sync", {}),
 
   operators: () => request<{ operators: OperatorAccount[] }>("GET", "/platform/operators").then((r) => r.operators),
+  // Your profile picture (avatar.ts): only your own can be changed.
+  myAvatar: () => request<{ url: string | null }>("GET", "/platform/me/avatar"),
+  avatarUpload: (body: { contentType: string; size: number }) =>
+    request<{ url: string; fields: Record<string, string> }>("POST", "/platform/me/avatar/upload", body),
+  avatarComplete: () => request<{ url: string }>("POST", "/platform/me/avatar/complete"),
+  deleteAvatar: () => request<unknown>("DELETE", "/platform/me/avatar"),
   createOperator: (email: string, name: string) =>
     request<{ operator: OperatorAccount }>("POST", "/platform/operators", { email, name }),
   updateOperator: (username: string, patch: { name?: string; enabled?: boolean }) =>

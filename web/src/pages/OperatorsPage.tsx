@@ -1,5 +1,7 @@
+import { Avatar } from "../components/Avatar";
+import { getMyAvatar, subscribeMyAvatar } from "../avatar";
 import { RowActions } from "../components/RowActions";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useSyncExternalStore } from "react";
 import { api } from "../api";
 import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
 import type { OperatorAccount } from "../types";
@@ -13,6 +15,7 @@ function state(o: OperatorAccount): { label: string; cls: string } {
 }
 
 export default function OperatorsPage({ me }: { me: string }) {
+  const myAvatar = useSyncExternalStore(subscribeMyAvatar, getMyAvatar, getMyAvatar);
   const { data, error, loading, reload } = useLoad(() => api.operators());
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<OperatorAccount | null>(null);
@@ -63,7 +66,7 @@ export default function OperatorsPage({ me }: { me: string }) {
                 const lastActive = o.enabled && activeCount <= 1;
                 return (
                   <tr key={o.username}>
-                    <td className="strong">{o.name || "-"}{self && <span className="tag">you</span>}</td>
+                    <td className="strong"><span className="operator-name"><Avatar url={self ? (myAvatar.url ?? o.avatarUrl) : o.avatarUrl} name={o.name} email={o.email} size="sm" />{o.name || "-"}{self && <span className="tag">you</span>}</span></td>
                     <td>{o.email}</td>
                     <td><span className={`status status--${s.cls}`}>{s.label}</span></td>
                     <td className="muted small">{fmtDate(o.createdAt)}</td>

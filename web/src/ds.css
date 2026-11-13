@@ -1204,3 +1204,52 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
     transition: none;
   }
 }
+
+/* --- Profile pictures (components/Avatar.tsx, AvatarSetting.tsx) ----------- */
+:root {
+  --avatar-sm: 1.75rem;
+  --avatar-md: 2.25rem;
+  --avatar-lg: 3.5rem;
+  --avatar-crop: 15rem;
+}
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--avatar-md);
+  block-size: var(--avatar-md);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--glass-fill) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), inset 0 0 0 1px var(--glass-border);
+  color: var(--print);
+  font: 700 0.8125rem/1 var(--sans);
+  letter-spacing: 0.02em;
+}
+.avatar--sm { inline-size: var(--avatar-sm); block-size: var(--avatar-sm); font-size: 0.6875rem; }
+.avatar--lg { inline-size: var(--avatar-lg); block-size: var(--avatar-lg); font-size: 1.125rem; }
+.avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.operator-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.topbar__me { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-3); color: var(--print-2); font-size: 0.8125rem; }
+.topbar__me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar-setting__who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.avatar-setting__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.avatar-setting__choose { position: relative; align-items: center; }
+.avatar-setting__input { position: absolute; inset: 0; inline-size: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
+.avatar-setting__choose:has(.avatar-setting__input:focus-visible) { box-shadow: 0 0 0 3px var(--field-ring); }
+.avatar-crop { display: grid; justify-items: center; gap: var(--space-3); }
+.avatar-crop__view {
+  position: relative;
+  max-inline-size: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: var(--liquid-edge), 0 0 0 1px var(--glass-border);
+  touch-action: none;
+  cursor: grab;
+}
+.avatar-crop__view:active { cursor: grabbing; }
+.avatar-crop__view:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.avatar-crop__view img { position: absolute; inset-block-start: 0; inset-inline-start: 0; max-inline-size: none; transform-origin: 0 0; user-select: none; -webkit-user-select: none; }
+.avatar-crop__zoom { display: grid; gap: var(--space-1); inline-size: min(100%, var(--avatar-crop)); }
+.avatar-crop__actions { justify-content: flex-end; inline-size: 100%; }
