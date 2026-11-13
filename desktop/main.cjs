@@ -108,18 +108,22 @@ function glassWindowOptions() {
   return { backgroundColor: config.background }
 }
 
-// Systemets glas följer appens ljusa eller mörka läge (data-theme på <html>),
-// inte systemets, så att tonen och texten ovanpå alltid passar ihop. En
+// Systemets glas följer appens ljusa eller mörka läge (data-glass-theme på
+// <html>, annars data-theme), inte systemets, så att tonen och texten ovanpå
+// alltid passar ihop. Sidan håller data-glass-theme kvar på det gamla läget
+// tills svepet vid ett byte är klart (theme.ts). En
 // MutationObserver i sidan svarar så fort attributet byts, så glaset byter i
 // samma bildruta som sidan (förr var det en avläsning var 1,5 s, och då syntes
 // den nya tonen en stund över det gamla glaset: grått, sedan ett ryck).
 // Läses bara, inget skrivs till sidan.
+const READ_THEME = `(document.documentElement.dataset.glassTheme || document.documentElement.dataset.theme || '')`
 const WAIT_FOR_THEME = `new Promise((resolve) => {
   const el = document.documentElement
-  const start = el.dataset.theme || ''
-  const done = () => { o.disconnect(); clearTimeout(t); resolve(el.dataset.theme || '') }
-  const o = new MutationObserver(() => { if ((el.dataset.theme || '') !== start) done() })
-  o.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+  const read = () => el.dataset.glassTheme || el.dataset.theme || ''
+  const start = read()
+  const done = () => { o.disconnect(); clearTimeout(t); resolve(read()) }
+  const o = new MutationObserver(() => { if (read() !== start) done() })
+  o.observe(el, { attributes: true, attributeFilter: ['data-theme', 'data-glass-theme'] })
   const t = setTimeout(done, 20000)
 })`
 function followPageTheme(win) {
@@ -145,7 +149,7 @@ function followPageTheme(win) {
   win.webContents.on('did-finish-load', () => {
     if (!ready()) return
     win.webContents
-      .executeJavaScript('document.documentElement.dataset.theme || ""', false)
+      .executeJavaScript(READ_THEME, false)
       .then(apply, () => {})
     void watch()
   })

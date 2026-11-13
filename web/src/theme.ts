@@ -42,9 +42,17 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
+/**
+ * The desktop app reads data-glass-theme (not data-theme) for the system
+ * glass. During a switch it stays on the old theme until the sweep is done,
+ * so the old frame never sits over the new glass.
+ */
+let holdGlass = false;
+
 /** Sets the mode on the page (attribute and frame colour) without storing it. */
 export function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
+  if (!holdGlass) document.documentElement.dataset.glassTheme = theme;
   for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
     meta.content = THEME_COLOR[theme];
   }
@@ -75,12 +83,15 @@ function subscribe(listener: () => void) {
 }
 
 /**
- * Switches the theme smoothly. During the switch every transition is off
- * (.theme-switching), so no surface fades through grey. In a browser the new
- * colours sweep out in a circle from the button; in the desktop app (and
- * without a button) the page crossfades in 240 ms while the shell switches
- * the system glass in the same frame. Reduced motion or no View Transitions:
- * an instant switch.
+ * Switches the theme with a sweep: the new colours grow in a circle from the
+ * click point (View Transitions, 480 ms). During the switch every transition
+ * is off (.theme-switching), so no surface fades through grey.
+ *
+ * Desktop app: the system glass cannot be in two themes at once. The old frame
+ * therefore stays on the old glass for the whole sweep, and the new frame gets
+ * a dense backing in roughly the new glass colour (.theme-settling). When the
+ * sweep is done the shell switches the glass (data-glass-theme) and the backing
+ * fades out in 200 ms. Reduced motion or no View Transitions: instant switch.
  */
 export function switchTheme(theme: Theme, origin?: { x: number; y: number }) {
   const root = document.documentElement;
@@ -88,32 +99,41 @@ export function switchTheme(theme: Theme, origin?: { x: number; y: number }) {
     startViewTransition?: (update: () => void) => { ready: Promise<void>; finished: Promise<void> }
   };
   const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  root.classList.add("theme-switching");
-  const done = () => requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
   if (reduce || typeof doc.startViewTransition !== "function") {
     setTheme(theme);
-    done();
     return;
   }
-  const transition = doc.startViewTransition(() => setTheme(theme));
-  transition.finished.then(done, done);
-  if (!origin || root.classList.contains("is-desktop-glass")) {
-    root.classList.add("theme-crossfade");
-    transition.finished.then(() => root.classList.remove("theme-crossfade"), () => root.classList.remove("theme-crossfade"));
-    transition.ready.then(() => {
-      const fade = { duration: 240, easing: "cubic-bezier(0.2, 0, 0, 1)" };
-      root.animate({ opacity: [0, 1] }, { ...fade, pseudoElement: "::view-transition-new(root)" });
-      root.animate({ opacity: [1, 0] }, { ...fade, pseudoElement: "::view-transition-old(root)" });
-    }, () => {});
-    return;
+  const desktop = root.classList.contains("is-desktop-glass");
+  root.classList.add("theme-switching");
+  if (desktop) {
+    root.dataset.glassTheme = currentTheme();
+    holdGlass = true;
   }
-  const { x, y } = origin;
+  const x = origin?.x ?? window.innerWidth / 2;
+  const y = origin?.y ?? window.innerHeight / 2;
   const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const transition = doc.startViewTransition(() => setTheme(theme));
+  const done = () => {
+    if (desktop) {
+      holdGlass = false;
+      root.dataset.glassTheme = theme;
+      // The shell switches the glass within a couple of frames; then the backing fades.
+      window.setTimeout(() => {
+        root.classList.remove("theme-switching");
+        requestAnimationFrame(() => root.classList.remove("theme-settling"));
+      }, 120);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
+  };
+  transition.finished.then(done, done);
   transition.ready.then(() => {
-    root.animate(
+    const sweep = root.animate(
       { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-      { duration: 700, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
+      { duration: 480, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
     );
+    // The circle covers everything: now the page gets the new backing.
+    if (desktop) sweep.finished.then(() => root.classList.add("theme-settling"), () => root.classList.add("theme-settling"));
   }, () => {});
 }
 

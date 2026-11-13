@@ -1698,6 +1698,9 @@ html.is-busy, html.is-busy * { cursor: progress; }
 /* During the switch (switchTheme) nothing fades: no transitions on background,
    tint or blur, so no in-between frame turns grey. */
 .theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after { transition: none !important; }
-/* The crossfade (desktop app): plus-lighter keeps the same coverage through the
-   switch, so the see-through window does not wash out half-way. */
-html.theme-crossfade::view-transition-old(root), html.theme-crossfade::view-transition-new(root) { mix-blend-mode: plus-lighter; }
+/* Desktop app: during the sweep the new frame has a dense backing in roughly the
+   new glass colour (switchTheme in theme.ts). Once the shell has switched the
+   glass the backing fades out, so the live glass takes over without a snap. */
+html.is-desktop-glass { transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1); }
+html.is-desktop-glass.theme-settling[data-theme="light"], html.is-desktop-glass[data-theme="light"]::view-transition-new(root) { background-color: rgb(236 232 227); }
+html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[data-theme="dark"]::view-transition-new(root) { background-color: rgb(40 33 29); }
