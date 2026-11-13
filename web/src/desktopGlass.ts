@@ -6,6 +6,7 @@
  * the page clear so the desktop shows through. In a browser nothing happens.
  */
 import { showDesktopHint } from './desktopHint'
+import { installGlassBackdrop } from './glassBackdrop'
 
 export type DesktopGlass = 'vibrancy' | 'acrylic' | 'tint'
 
@@ -15,6 +16,7 @@ export function desktopGlassMode(userAgent: string): DesktopGlass | null {
 }
 
 export function installDesktopGlass(): DesktopGlass | null {
+  installGlassBackdrop()
   // The removed Background setting kept a picture here; clean it up.
   try {
     localStorage.removeItem('booqy-backdrop')

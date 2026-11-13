@@ -23,6 +23,7 @@ export const THEME_KEY = "booqy-theme";
 export const SOUND_KEY = "booqy-sound";
 export const SOUND_VOLUME_KEY = "booqy-sound-volume";
 export const APP_HINT_KEY = "booqy-app-hint";
+export const GLASS_BACKDROP_KEY = "booqy-glass-backdrop";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
@@ -48,6 +49,12 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
     kind: "localStorage",
     purpose: "How loud the click sound is, 0-100 (Settings). Set only when you change it.",
     lifetime: "Until you clear the browser",
+  },
+  {
+    name: GLASS_BACKDROP_KEY,
+    kind: "localStorage",
+    purpose: "The colour behind the glass, if you chose one (Settings, Appearance and sound). Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
+    lifetime: "Until you switch back or clear the browser",
   },
   {
     name: APP_HINT_KEY,

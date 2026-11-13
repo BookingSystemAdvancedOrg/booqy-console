@@ -1,3 +1,5 @@
+import { BackdropSetting } from "../components/BackdropSetting";
+import { isDesktopShell } from "../desktopDownloads";
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -27,6 +29,17 @@ export default function SettingsPage({ email }: { email?: string }) {
               <p className="muted small">Press to switch: dark surfaces are easier on the eyes at night. Light is the default.</p>
             </div>
             <ThemeToggle className="setting-toggle" label />
+          </div>
+          <div className="setting-row">
+            <div>
+              <p className="strong">Background</p>
+              <p className="muted small">
+                {isDesktopShell()
+                  ? "See-through shows whatever is behind the window. Colour puts the glass over a colour you pick."
+                  : "The colour behind the glass in this browser. See-through, with your desktop showing through, is in the desktop app."}
+              </p>
+            </div>
+            <BackdropSetting />
           </div>
           <div className="setting-row">
             <div>
