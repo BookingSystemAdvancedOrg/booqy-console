@@ -73,6 +73,10 @@
   --glass-blur: var(--blur-main);
   --glass-highlight: rgb(var(--bq-snow-rgb) / 0.85);
   --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.8);
+  /* Everything that sits on a panel: cards, tables, fields, wells. */
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.58);
+  --glass-fill: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-well: rgb(246 241 234 / 0.36);
   --glass-saturate: 1.6;
   --blur-main: 18px;
   --blur-side: 22px;
@@ -105,6 +109,9 @@
   --glass-border: rgba(213, 196, 174, 0.14);
   --glass-highlight: rgba(213, 196, 174, 0.22);
   --glass-text-bg: rgba(26, 18, 14, 0.82);
+  --glass-surface: rgba(42, 29, 22, 0.58);
+  --glass-fill: rgba(58, 36, 24, 0.5);
+  --glass-well: rgba(26, 18, 14, 0.4);
   --dim: rgba(0, 0, 0, 0.55);
 }
 
@@ -218,7 +225,7 @@
   height: 22px;
   padding: 0 var(--space-2);
   border-radius: var(--space-2);
-  background: var(--surface);
+  background: var(--glass-surface);
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   font: var(--fw-strong) 11px/1 var(--mono);
   color: var(--muted);
@@ -619,26 +626,36 @@
 .switch input:disabled { opacity: 0.5; }
 
 /* --- desktop app: the desktop shows through ------------------------------- */
+/* A light tint and thin glass so the wallpaper reads (shapes and edges);
+   the cards carry the text on denser glass (AA). */
 html.is-desktop-glass {
-  --desk-veil: rgb(var(--bq-snow-rgb) / 0.16);
-  --glass-main: rgb(var(--bq-snow-rgb) / 0.55);
-  --glass-side: rgb(var(--bq-snow-rgb) / 0.62);
+  --desk-veil: rgb(var(--bq-snow-rgb) / 0.04);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.34);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.5);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.72);
 }
 html.is-desktop-glass[data-theme='dark'] {
-  --desk-veil: rgba(26, 18, 14, 0.3);
-  --glass-main: rgba(26, 18, 14, 0.58);
-  --glass-side: rgba(30, 21, 16, 0.66);
+  --desk-veil: rgba(26, 18, 14, 0.14);
+  --glass-main: rgba(26, 18, 14, 0.42);
+  --glass-side: rgba(30, 21, 16, 0.5);
+  --glass-surface: rgba(42, 29, 22, 0.52);
+  --glass-text-bg: rgba(26, 18, 14, 0.74);
 }
 /* Linux: no blur behind the window, the tint carries legibility alone. */
 html.is-desktop-glass[data-desktop-glass='tint'] {
   --desk-veil: rgb(var(--bq-snow-rgb) / 0.55);
   --glass-main: rgb(var(--bq-snow-rgb) / 0.86);
   --glass-side: rgb(var(--bq-snow-rgb) / 0.9);
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.86);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.9);
 }
 html.is-desktop-glass[data-desktop-glass='tint'][data-theme='dark'] {
   --desk-veil: rgba(26, 18, 14, 0.6);
   --glass-main: rgba(26, 18, 14, 0.88);
   --glass-side: rgba(30, 21, 16, 0.9);
+  --glass-surface: rgba(42, 29, 22, 0.88);
+  --glass-text-bg: rgba(26, 18, 14, 0.9);
 }
 html.is-desktop-glass,
 html.is-desktop-glass body,
@@ -668,3 +685,28 @@ html.is-desktop-glass .auth__main {
 @media (prefers-reduced-motion: reduce) {
   .switch input, .switch input::after { transition: none; }
 }
+
+/* Your own backdrop (backdrop.ts): your picture without the blobs and with a
+   light evening veil, so it reads clearly through the glass. */
+html[data-user-backdrop] { --backdrop-blobs: linear-gradient(transparent, transparent); }
+html[data-user-backdrop][data-theme='dark'] { --backdrop-veil: rgb(26 18 14 / 0.36); }
+
+/* Less transparency wanted: the glass surfaces turn back into solid paper.
+   !important wins over the desktop app's tints above. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-surface: var(--paper) !important;
+    --glass-fill: var(--paper-2) !important;
+    --glass-well: var(--ox-800) !important;
+    --glass-text-bg: var(--paper) !important;
+  }
+}
+
+/* Background (components/BackdropPicker.tsx): the file input looks like the other toggles. */
+.backdrop-picker { display: grid; gap: 8px; justify-items: end; }
+.backdrop-picker__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.backdrop-picker__choose { position: relative; align-items: center; cursor: pointer; }
+.backdrop-picker__input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.backdrop-picker__choose:has(.backdrop-picker__input:focus-visible) { box-shadow: 0 0 0 3px var(--focus); }
+.backdrop-picker .error-text { margin: 0; }
+@media (max-width: 600px) { .backdrop-picker { justify-items: start; } }

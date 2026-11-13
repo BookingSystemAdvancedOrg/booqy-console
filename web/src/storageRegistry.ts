@@ -22,6 +22,7 @@ export interface StorageEntry {
 export const THEME_KEY = "booqy-theme";
 export const SOUND_KEY = "booqy-sound";
 export const SOUND_VOLUME_KEY = "booqy-sound-volume";
+export const BACKDROP_KEY = "booqy-backdrop";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
@@ -47,5 +48,11 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
     kind: "localStorage",
     purpose: "How loud the click sound is, 0-100 (Settings). Set only when you change it.",
     lifetime: "Until you clear the browser",
+  },
+  {
+    name: BACKDROP_KEY,
+    kind: "localStorage",
+    purpose: "The picture you chose as the background behind the glass (Settings), shrunk. It never leaves this browser. Same key as in admin.",
+    lifetime: "Until you remove the picture or clear the browser",
   },
 ];
