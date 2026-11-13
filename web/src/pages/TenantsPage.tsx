@@ -6,6 +6,7 @@ import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } 
 import type { PaymentRow } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
+import { CtaAddLink } from "../components/ds";
 import { useRowOpen } from "../components/rowLink";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
@@ -51,7 +52,7 @@ export default function TenantsPage() {
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
-          <Link className="btn btn--primary" to="/tenants/new">+ New customer</Link>
+          <CtaAddLink to="/tenants/new" label="New customer" win="Welcome aboard" />
         </div>
       </div>
 

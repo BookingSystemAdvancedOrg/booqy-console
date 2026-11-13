@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -6,12 +7,13 @@ import { createPortal } from "react-dom";
    one stroke icon set, the command palette (Cmd/Ctrl+K), the primary CTA and the
    accordion. Styles in src/ds.css. */
 
-export type IconName = "users" | "plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
+export type IconName = "users" | "plus" | "user-plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
 
 // 24x24, 1.8 px stroke: the same drawings as admin's Icon.tsx.
 const PATHS: Record<IconName, string> = {
   users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.2a5.5 5.5 0 0 1 3 5.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  "user-plus": '<circle cx="9.5" cy="8" r="3.5"/><path d="M3 19.5a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>',
   staff: '<circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5a7 7 0 0 1 14 0M9.5 14.5l2.5 3 2.5-3"/>',
   badge: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M9.5 3v4h5V3M9 14.5a3 3 0 0 1 6 0M12 11.5h.01"/>',
   mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/>',
@@ -62,6 +64,25 @@ export function CtaButton({ label, win = "Kör!", className = "", onPointerEnter
         <span className="cta-win" aria-hidden="true">{win}</span>
       </span>
     </button>
+  );
+}
+
+/* --- Add CTA ------------------------------------------------------------------
+   The paper plane's sibling for adding something new: on hover the "+" turns
+   and fades while a person with a plus pops in, and the label swaps to a short
+   welcome. Transform and opacity only; reduced motion: no movement. */
+export function CtaAddLink({ to, label, win, className = "" }: { to: string; label: ReactNode; win: string; className?: string }) {
+  return (
+    <Link to={to} className={`btn btn--primary cta cta--add ${className}`.trim()}>
+      <span className="cta-add" aria-hidden="true">
+        <Icon name="plus" size={16} className="cta-add-plus" />
+        <Icon name="user-plus" size={16} className="cta-add-person" />
+      </span>
+      <span className="cta-label">
+        <span className="cta-text">{label}</span>
+        <span className="cta-win" aria-hidden="true">{win}</span>
+      </span>
+    </Link>
   );
 }
 

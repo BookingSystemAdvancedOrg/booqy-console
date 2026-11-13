@@ -103,6 +103,7 @@
   --dur-base: var(--bq-duration-base, 200ms);
   --dur-slow: var(--bq-duration-slow, 360ms);
   --dur-cta: 780ms;
+  --dur-add: 520ms;
   --ease-out: var(--bq-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   --ease-std: var(--bq-ease-std, cubic-bezier(0.2, 0, 0, 1));
 
@@ -332,12 +333,62 @@
   }
 }
 
+/* Add CTA (CtaAddLink): the "+" turns a quarter and fades while a person with
+   a plus pops in with a small overshoot. One-shot on hover, back on leave. */
+.cta-add {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+.cta-add .icon {
+  grid-area: 1 / 1;
+  display: block;
+  transition:
+    transform var(--dur-add) var(--ease-std),
+    opacity var(--dur-base) var(--ease-out);
+}
+.cta-add-person {
+  opacity: 0;
+  transform: translateX(-6px) scale(0.4);
+}
+.cta--add .cta-add-person {
+  transition:
+    transform var(--dur-slow) cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity var(--dur-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .cta--add:hover .cta-add-plus,
+  .cta--add:focus-visible .cta-add-plus {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.3);
+  }
+  .cta--add:hover .cta-add-person,
+  .cta--add:focus-visible .cta-add-person {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The sidebar's "New customer": quieter, the "+" just turns a quarter. */
+.topbar__nav a[href="/tenants/new"] .icon {
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+@media (hover: hover) {
+  .topbar__nav a[href="/tenants/new"]:hover .icon {
+    transform: rotate(90deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cta.is-flying .cta-plane-fly {
     animation: none !important;
   }
   .cta-text,
-  .cta-win {
+  .cta-win,
+  .cta-add .icon,
+  .topbar__nav a[href="/tenants/new"] .icon {
     transition: none !important;
   }
 }
