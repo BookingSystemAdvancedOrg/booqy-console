@@ -1,0 +1,73 @@
+# Copy to .github/workflows/desktop-installers.yml (the owner adds it).
+# Builds the desktop installers on each OS's own runner: no Rosetta, no
+# cross-building. Manual run: pick dev or prod. A tag "desktop-v1.2.3" builds
+# prod and attaches the files to a GitHub Release.
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Which API the app talks to
+        type: choice
+        options: [dev, prod]
+        default: dev
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      BOOQY_ENV: ${{ github.event_name == 'push' && 'prod' || inputs.env }}
+      # ---- Signing: off until the owner buys certificates (see desktop/README.md).
+      # Uncomment and add the secrets to switch it on.
+      # BOOQY_MAC_IDENTITY: ${{ secrets.BOOQY_MAC_IDENTITY }}
+      # CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERT_P12_BASE64 || secrets.WIN_CERT_PFX_BASE64 }}
+      # CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERT_PASSWORD || secrets.WIN_CERT_PASSWORD }}
+      # APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8   # write secrets.APPLE_API_KEY_P8 there first
+      # APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: node build.mjs --env ${{ env.BOOQY_ENV }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ env.BOOQY_ENV }}-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            desktop/release/${{ env.BOOQY_ENV }}/*.dmg
+            desktop/release/${{ env.BOOQY_ENV }}/*.exe
+            desktop/release/${{ env.BOOQY_ENV }}/*.AppImage
+            desktop/release/${{ env.BOOQY_ENV }}/*.deb
+
+  release:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" installers/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Skrivbordsappen, byggd från $GITHUB_SHA."
