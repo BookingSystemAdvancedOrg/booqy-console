@@ -1,3 +1,4 @@
+import { showDownloadNav } from './desktopDownloads'
 import { APP_HINT_KEY } from './storageRegistry'
 
 /**
@@ -35,9 +36,9 @@ function remember() {
 
 export function showDesktopHint(): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return
-  if (document.documentElement.classList.contains('is-desktop-glass')) return
-  if (!window.matchMedia?.('(pointer: fine) and (min-width: 768px)').matches) return
-  if (/iPhone|iPad|Android/.test(navigator.userAgent) || seen()) return
+  // Never inside the desktop app (also with reduced transparency, when the
+  // glass is off), and only in a desktop browser: the same rule as the menu.
+  if (!showDownloadNav() || seen()) return
   remember()
   if (!document.getElementById(STYLE_ID)) {
     const style = document.createElement('style')
