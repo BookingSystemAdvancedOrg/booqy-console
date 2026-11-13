@@ -53,7 +53,7 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: GLASS_BACKDROP_KEY,
     kind: "localStorage",
-    purpose: "The colour behind the glass, if you chose one (Settings, Appearance and sound). Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
+    purpose: "Which background you chose behind the glass on this device: a colour or \"your image\" (Settings, Appearance and sound). The picture itself is stored on the server under your operator account and is deleted when you remove it or your account. Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
     lifetime: "Until you switch back or clear the browser",
   },
   {

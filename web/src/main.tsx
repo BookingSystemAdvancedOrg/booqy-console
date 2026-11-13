@@ -11,6 +11,7 @@ import { confirmLeave } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
+import { syncBackdropImage } from "./backdropImage";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
 import { DownloadRedirect } from "./components/DownloadRedirect";
@@ -141,6 +142,11 @@ function Shell() {
 
   useEffect(() => {
     if (user) preloadPages();
+  }, [user]);
+
+  // Your own picture behind the glass: fetched once signed in (backdropImage.ts).
+  useEffect(() => {
+    if (user) syncBackdropImage();
   }, [user]);
 
   // The emailed reset link works signed in or out (LoginPage signs out

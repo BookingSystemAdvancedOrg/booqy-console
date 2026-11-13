@@ -1,10 +1,24 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { applyGlassBackdrop, installGlassBackdrop, parseGlassBackdrop, readGlassBackdrop, setGlassBackdrop } from './glassBackdrop'
+import {
+  applyGlassBackdrop,
+  forgetBackdropImage,
+  hasBackdropImage,
+  installGlassBackdrop,
+  parseGlassBackdrop,
+  readGlassBackdrop,
+  refreshBackdropImage,
+  setBackdropImageSource,
+  setGlassBackdrop,
+} from './glassBackdrop'
+import { vi } from 'vitest'
 import { GLASS_BACKDROP_KEY } from './storageRegistry'
 
 afterEach(() => {
   localStorage.clear()
+  forgetBackdropImage()
+  setBackdropImageSource(async () => null)
   applyGlassBackdrop({ mode: 'clear' })
+  vi.unstubAllGlobals()
 })
 
 describe('background behind the glass', () => {
@@ -39,5 +53,37 @@ describe('background behind the glass', () => {
     setGlassBackdrop({ mode: 'clear' })
     expect(localStorage.getItem(GLASS_BACKDROP_KEY)).toBeNull()
     expect(document.documentElement.dataset.glassBackdrop).toBeUndefined()
+  })
+
+  it('Your image shows the Booqy backdrop until the picture is decoded', () => {
+    setGlassBackdrop({ mode: 'image' })
+    expect(localStorage.getItem(GLASS_BACKDROP_KEY)).toBe('image')
+    expect(document.documentElement.dataset.glassBackdrop).toBe('image-loading')
+  })
+
+  it('puts the picture on <html> once fetched and decoded', async () => {
+    vi.stubGlobal(
+      'Image',
+      class {
+        decoding = ''
+        src = ''
+        decode() {
+          return Promise.resolve()
+        }
+      },
+    )
+    setBackdropImageSource(async () => 'https://images.example/backdrop?sig=1')
+    setGlassBackdrop({ mode: 'image' })
+    expect(await refreshBackdropImage()).toBe(true)
+    expect(hasBackdropImage()).toBe(true)
+    expect(document.documentElement.dataset.glassBackdrop).toBe('image')
+    expect(document.documentElement.style.getPropertyValue('--user-image')).toContain('https://images.example/backdrop?sig=1')
+  })
+
+  it('without a picture on the server the page stays on the Booqy backdrop', async () => {
+    setBackdropImageSource(async () => null)
+    setGlassBackdrop({ mode: 'image' })
+    expect(await refreshBackdropImage()).toBe(false)
+    expect(document.documentElement.dataset.glassBackdrop).toBe('image-loading')
   })
 })
