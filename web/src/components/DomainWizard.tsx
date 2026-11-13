@@ -98,7 +98,7 @@ function Buy({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; o
                 <td>{o.available ? money(o.renewalPrice) : "-"}</td>
                 <td className="right">
                   {o.available && o.sellable
-                    ? <button className="btn btn--small" onClick={() => setPick(o)} disabled={!o.price}>Choose</button>
+                    ? <button className="row-action" onClick={() => setPick(o)} disabled={!o.price}>Choose</button>
                     : <span className="small muted">{o.sellable ? "Taken" : "Not sold here"}</span>}
                 </td>
               </tr>

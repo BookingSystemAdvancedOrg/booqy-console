@@ -43,3 +43,6 @@
   .desktop-app__list a, .desktop-app__list a::after { transition: none; }
   .desktop-app__list a:hover, .desktop-app__list a:focus-visible { transform: none; }
 }
+
+/* A long button label wraps inside the card instead of sticking out. */
+.desktop-app-card .btn { max-width: 100%; white-space: normal; text-align: center; }

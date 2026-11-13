@@ -1,4 +1,3 @@
-import { BackdropPicker } from "../components/BackdropPicker";
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -28,13 +27,6 @@ export default function SettingsPage({ email }: { email?: string }) {
               <p className="muted small">Press to switch: dark surfaces are easier on the eyes at night. Light is the default.</p>
             </div>
             <ThemeToggle className="setting-toggle" label />
-          </div>
-          <div className="setting-row">
-            <div>
-              <label className="strong" htmlFor="backdrop-file">Background</label>
-              <p className="muted small">The picture behind the glass, for example your wallpaper. Kept only in this browser. In the desktop app your real desktop shows through.</p>
-            </div>
-            <BackdropPicker id="backdrop-file" />
           </div>
           <div className="setting-row">
             <div>

@@ -22,7 +22,7 @@ export interface StorageEntry {
 export const THEME_KEY = "booqy-theme";
 export const SOUND_KEY = "booqy-sound";
 export const SOUND_VOLUME_KEY = "booqy-sound-volume";
-export const BACKDROP_KEY = "booqy-backdrop";
+export const APP_HINT_KEY = "booqy-app-hint";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
@@ -50,9 +50,9 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
     lifetime: "Until you clear the browser",
   },
   {
-    name: BACKDROP_KEY,
+    name: APP_HINT_KEY,
     kind: "localStorage",
-    purpose: "The picture you chose as the background behind the glass (Settings), shrunk. It never leaves this browser. Same key as in admin.",
-    lifetime: "Until you remove the picture or clear the browser",
+    purpose: "That the tip about the desktop app was already shown in this browser, so it appears only once.",
+    lifetime: "Until you clear the browser",
   },
 ];

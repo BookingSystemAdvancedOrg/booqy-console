@@ -631,7 +631,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                   )}</td>
                 <td><Status value={z.status} /></td>
                 <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}
-                  {z.transferable && <div><button className="btn btn--small" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
+                  {z.transferable && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
             {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet - <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}

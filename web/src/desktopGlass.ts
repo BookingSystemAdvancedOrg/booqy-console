@@ -5,7 +5,7 @@
  * then gets is-desktop-glass and data-desktop-glass=<mode>, and the CSS makes
  * the page clear so the desktop shows through. In a browser nothing happens.
  */
-import { installBackdrop } from "./backdrop"
+import { showDesktopHint } from './desktopHint'
 
 export type DesktopGlass = 'vibrancy' | 'acrylic' | 'tint'
 
@@ -15,12 +15,19 @@ export function desktopGlassMode(userAgent: string): DesktopGlass | null {
 }
 
 export function installDesktopGlass(): DesktopGlass | null {
-  // Your own backdrop (backdrop.ts) belongs to the same glass room: in the
-  // browser it sits behind the glass, in the desktop app the desktop does.
-  installBackdrop()
+  // The removed Background setting kept a picture here; clean it up.
+  try {
+    localStorage.removeItem('booqy-backdrop')
+  } catch {
+    // no storage, nothing to clean
+  }
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return null
   const mode = desktopGlassMode(navigator.userAgent)
-  if (!mode) return null
+  if (!mode) {
+    // In a browser: once, a tip about the app (it sees the desktop, a page cannot).
+    window.setTimeout(showDesktopHint, 2500)
+    return null
+  }
   const root = document.documentElement
   root.classList.add('is-desktop-glass')
   root.dataset.desktopGlass = mode

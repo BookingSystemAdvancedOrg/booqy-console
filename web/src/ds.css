@@ -654,14 +654,12 @@
 /* A light tint and thin glass so the wallpaper reads (shapes and edges);
    the cards carry the text on denser glass (AA). */
 html.is-desktop-glass {
-  --desk-veil: rgb(var(--bq-snow-rgb) / 0.04);
   --glass-main: rgb(var(--bq-snow-rgb) / 0.34);
   --glass-side: rgb(var(--bq-snow-rgb) / 0.42);
   --glass-surface: rgb(var(--bq-snow-rgb) / 0.5);
   --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.72);
 }
 html.is-desktop-glass[data-theme='dark'] {
-  --desk-veil: rgba(26, 18, 14, 0.14);
   --glass-main: rgba(26, 18, 14, 0.42);
   --glass-side: rgba(30, 21, 16, 0.5);
   --glass-surface: rgba(42, 29, 22, 0.52);
@@ -685,9 +683,10 @@ html.is-desktop-glass[data-desktop-glass='tint'][data-theme='dark'] {
 html.is-desktop-glass,
 html.is-desktop-glass body,
 html.is-desktop-glass .boot { background: transparent; }
-html.is-desktop-glass body::before {
-  background: linear-gradient(var(--desk-veil), var(--desk-veil)), var(--backdrop-blobs);
-}
+/* No photo, colour pools or veil behind the panels: whatever is behind the
+   window (other windows, the desktop) shows through the glass, live. */
+html.is-desktop-glass body::before { display: none; }
+html.is-desktop-glass[data-desktop-glass='tint'] body::before { display: block; background: linear-gradient(var(--desk-veil), var(--desk-veil)); }
 /* The OS already blurs the desktop; the page's own blur would only blur the
    clear window. Modals and the palette keep theirs (they sit over content). */
 html.is-desktop-glass .topbar,
@@ -711,10 +710,6 @@ html.is-desktop-glass .auth__main {
   .switch input, .switch input::after { transition: none; }
 }
 
-/* Your own backdrop (backdrop.ts): your picture without the blobs and with a
-   light evening veil, so it reads clearly through the glass. */
-html[data-user-backdrop] { --backdrop-blobs: linear-gradient(transparent, transparent); }
-html[data-user-backdrop][data-theme='dark'] { --backdrop-veil: rgb(26 18 14 / 0.36); }
 
 /* Less transparency wanted: the glass surfaces turn back into solid paper.
    !important wins over the desktop app's tints above. */
@@ -727,14 +722,6 @@ html[data-user-backdrop][data-theme='dark'] { --backdrop-veil: rgb(26 18 14 / 0.
   }
 }
 
-/* Background (components/BackdropPicker.tsx): the file input looks like the other toggles. */
-.backdrop-picker { display: grid; gap: 8px; justify-items: end; }
-.backdrop-picker__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.backdrop-picker__choose { position: relative; align-items: center; cursor: pointer; }
-.backdrop-picker__input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
-.backdrop-picker__choose:has(.backdrop-picker__input:focus-visible) { box-shadow: 0 0 0 3px var(--focus); }
-.backdrop-picker .error-text { margin: 0; }
-@media (max-width: 600px) { .backdrop-picker { justify-items: start; } }
 
 /* Liquid refraction, Chromium and Electron only (glassFilter.ts sets
    .glass-refract there). Safari keeps the plain -webkit- blur above. */
@@ -784,3 +771,31 @@ html.is-desktop-glass.glass-refract .auth__main { backdrop-filter: none; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* --- Row actions (components/RowActions.tsx): quiet, the same in every table --- */
+.table-wrap { container-type: inline-size; }
+.table th.right, .table td.right { text-align: right; }
+.row-actions-box { display: inline-flex; justify-content: flex-end; vertical-align: middle; }
+.row-actions--inline { gap: 2px; flex-wrap: nowrap; }
+.row-action {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--print); font: 600 13.5px/1.2 var(--sans); white-space: nowrap;
+  cursor: pointer; text-decoration: none; transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+.row-action:hover:not(:disabled), .row-action:focus-visible, .row-action[aria-expanded="true"] { background: var(--glass-fill); }
+.row-action:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.row-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.row-action--danger { color: var(--danger); }
+.row-menu { display: none; }
+.row-menu__toggle { min-width: 36px; font-size: 18px; letter-spacing: 0.05em; }
+.row-menu__list {
+  display: grid; justify-items: stretch; margin-top: 4px; padding: 4px; min-width: 150px;
+  border-radius: var(--r-md); background: var(--glass-surface); box-shadow: var(--liquid-edge);
+}
+.row-menu__list .row-action { justify-content: flex-start; width: 100%; }
+@container (max-width: 560px) {
+  .row-actions--inline { display: none; }
+  .row-menu { display: inline-grid; justify-items: end; }
+}
+@media (prefers-reduced-motion: reduce) { .row-action { transition: none; } }

@@ -59,8 +59,12 @@ The window is translucent and the desktop behind it shows through, blurred:
 
 The shell adds `BooqyGlass/<vibrancy|acrylic|tint|none>` to the user agent;
 the web app reads it and puts `is-desktop-glass` (and `data-desktop-glass`) on
-`<html>`, makes `html, body` transparent and gives every glass layer a tint
-dense enough for WCAG AA. In a browser nothing changes. macOS "Reduce
+`<html>`, makes every layer from `html` and `body` down to the app shell
+transparent (no brand photo, colour pools or veil in the desktop app: the
+panels themselves are the glass) and gives each panel a low tint, dense
+enough for WCAG AA. Other windows behind the app show through live, blurred.
+macOS fixes the blur strength of its materials: colours and large shapes
+behind read clearly, small text behind does not. In a browser nothing changes. macOS "Reduce
 transparency", `prefers-reduced-transparency`, or `BOOQY_GLASS=off npm start`
 give the solid window. The native material follows the app's own light/dark
 theme (the shell reads `data-theme` on `<html>`, it never writes to the page).

@@ -1,3 +1,4 @@
+import { RowActions } from "../components/RowActions";
 import { FormEvent, useState } from "react";
 import { api } from "../api";
 import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
@@ -67,34 +68,34 @@ export default function OperatorsPage({ me }: { me: string }) {
                     <td><span className={`status status--${s.cls}`}>{s.label}</span></td>
                     <td className="muted small">{fmtDate(o.createdAt)}</td>
                     <td className="right">
-                      <div className="row-actions">
-                        <button className="btn btn--small" onClick={() => setEditing(o)}>Edit</button>
+                      <RowActions label={`Actions for ${o.email}`}>
+                        <button className="row-action" onClick={() => setEditing(o)}>Edit</button>
                         {o.status === "FORCE_CHANGE_PASSWORD" && o.enabled && (
-                          <button className="btn btn--small" disabled={row.busy}
+                          <button className="row-action" disabled={row.busy}
                                   onClick={() => act(() => api.resendInvite(o.username), `Invite sent again to ${o.email}.`)}>
                             Resend invite
                           </button>
                         )}
                         {o.enabled ? (
-                          <button className="btn btn--small" disabled={row.busy || self || lastActive}
+                          <button className="row-action" disabled={row.busy || self || lastActive}
                                   title={self ? "You can't disable yourself" : lastActive ? "The last active operator" : undefined}
                                   onClick={() => act(() => api.updateOperator(o.username, { enabled: false }),
                                                      `${o.email} is disabled and signed out.`)}>
                             Disable
                           </button>
                         ) : (
-                          <button className="btn btn--small" disabled={row.busy}
+                          <button className="row-action" disabled={row.busy}
                                   onClick={() => act(() => api.updateOperator(o.username, { enabled: true }),
                                                      `${o.email} can sign in again.`)}>
                             Enable
                           </button>
                         )}
-                        <button className="btn btn--small danger" disabled={row.busy || self || lastActive}
+                        <button className="row-action row-action--danger" disabled={row.busy || self || lastActive}
                                 title={self ? "You can't delete yourself" : lastActive ? "The last active operator" : undefined}
                                 onClick={() => setDeleting(o)}>
                           Delete
                         </button>
-                      </div>
+                      </RowActions>
                     </td>
                   </tr>
                 );
