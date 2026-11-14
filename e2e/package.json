@@ -6,9 +6,13 @@
     "test": "playwright test",
     "test:chromium": "playwright test --project=chromium",
     "test:iphone": "playwright test --project=iphone",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test:ui": "playwright test -c playwright.ui.config.ts",
+    "test:ui:update": "playwright test -c playwright.ui.config.ts --update-snapshots all",
+    "ui:report": "node summarize-ui.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "1.63.0",
     "@types/node": "^24.19.2",
     "typescript": "5.9"
