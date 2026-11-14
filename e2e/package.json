@@ -1,0 +1,16 @@
+{
+  "name": "booqy-console-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "test:iphone": "playwright test --project=iphone",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.19.2",
+    "typescript": "5.9"
+  }
+}
