@@ -50,14 +50,15 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
         }
       }
       const nextLift = obstacle ? Math.max(0, Math.ceil(bottom - obstacleTop + 10)) : 0
-      // Line the button's right edge up with the bar's last button (owner
-      // 2026-11-14: Fråga Booqy and Spara utkast end on the same vertical line).
+      // Line the button's right edge up with the bar's right edge (owner
+      // 2026-11-14: Fråga Booqy ends on the same vertical line as the brown
+      // save bar under it). Kept inside the window.
       let nextShift = 0
       if (obstacle) {
-        const controls = obstacle.querySelectorAll('button, a[href], [role="button"]')
-        let edge = -Infinity
-        controls.forEach((c) => { const cr = c.getBoundingClientRect(); if (cr.width > 0) edge = Math.max(edge, cr.right) })
-        if (edge > -Infinity && edge < right && right - edge <= 240) nextShift = Math.min(Math.round(right - edge), Math.max(0, left - 12))
+        const edge = obstacle.getBoundingClientRect().right
+        nextShift = Math.round(right - edge)
+        nextShift = Math.min(nextShift, Math.max(0, left - 12)) // not off the left side
+        nextShift = Math.max(nextShift, -Math.max(0, vw - 12 - right)) // not off the right side
       }
       if (nextLift !== lift || nextShift !== shift) {
         lift = nextLift
