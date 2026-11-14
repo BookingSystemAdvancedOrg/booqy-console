@@ -5,13 +5,16 @@ Stripe subscriptions. The agreement lives on PROFILE.billing: status
 (active, ended), startsAt, endsAt, terms (trial = try-out period: leaves
 with the current period and becomes a subscription after
 BILLING_TRIAL_MONTHS; subscription = BILLING_NOTICE_MONTHS notice),
-priceSek (own monthly price, else the plan's), collectionMethod,
+priceSek (own monthly price, else the plan's; kept while on Free as the
+price after it), collectionMethod,
 lastInvoicedPeriodEnd, offboardAtEnd, priceHistory ([{from, monthlySek,
 planName, exact?}]: a change applies from the next period; an `exact` one,
 a move onto or off the Free plan, from its own day, pro rata),
 freeUntil / freeThenPlanId / freeSince / freeNoticeFor (the Free plan:
-its last free day, none = no end date, the plan after it and the day the
-owner was told), previous (earlier agreements,
+its last free day, none = no end date, the plan after it, the day it began
+and the end date the owner was told about), freeSwitchAgreementPending
+(the day a switch off Free should have started an agreement that has not
+started yet: retried daily), previous (earlier agreements,
 [{startsAt, endsAt}], that ended but are not invoiced in full yet: a
 customer who leaves and comes back in the same period pays for both
 stretches on the same invoice).
@@ -41,7 +44,7 @@ from . import validation as v
 from .core import (ApiError, client, env, log, now_iso, query_all, tenant_table, to_ddb,
                    to_ddb_value, write_audit)
 from .stripe_connect import stripe_request
-from .tenants import (FREE_PLAN_ID, add_months, apply_plan, ensure_billing_map, get_plan, get_profile, offboard_tenant,
+from .tenants import (FREE_NOTICE_DAYS, FREE_PLAN_ID, add_months, apply_plan, ensure_billing_map, get_plan, get_profile, offboard_tenant,
                       resume_tenant, suspend_tenant, tkey)
 
 COLLECTION_METHODS = ("send_invoice", "charge_automatically")
@@ -355,11 +358,14 @@ def plan_of(profile: dict) -> dict:
 
 
 def monthly_price(profile: dict, plan: dict | None = None) -> int:
-    """What the customer pays per period, ex VAT: their own price or the plan's."""
+    """What the customer pays per period, ex VAT: nothing on Free, else
+    their own price or the plan's."""
+    plan = plan if plan is not None else plan_of(profile)
+    if plan.get("free"):
+        return 0
     billing = _billing(profile)
     if billing.get("priceSek") is not None:
         return int(billing["priceSek"])
-    plan = plan if plan is not None else plan_of(profile)
     return int(plan.get("priceSek") or 0)
 
 
@@ -632,7 +638,10 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_
     plan = plan_of(profile)
     if not plan:
         raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
-    if plan.get("free") or (price_sek is not None and int(price_sek) == int(plan.get("priceSek") or -1)):
+    if plan.get("free"):
+        # Free: the own price stays as the price after it.
+        price_sek = int(billing["priceSek"]) if billing.get("priceSek") is not None else None
+    elif price_sek is not None and int(price_sek) == int(plan.get("priceSek") or -1):
         price_sek = None
     elif price_sek is None and billing.get("priceSek") is not None:
         price_sek = int(billing["priceSek"])
@@ -741,14 +750,22 @@ def card_link(req) -> tuple[int, dict]:
 
 # ------------------------------------------------------------- hooks from tenants
 def after_plan_change(tenant_id: str, profile: dict, plan: dict, actor: str, *, exact: bool = False,
-                      on: date | None = None) -> dict | None:
+                      on: date | None = None, before: dict | None = None) -> dict | None:
     """A changed plan or price applies from the next period: the one
     running is invoiced at the prices it began with (priceHistory). Onto or
-    off Free (`exact`) applies from `on` (today), pro rata."""
+    off Free (`exact`) applies from `on` (today), pro rata. An agreement
+    from before price history first gets the price it ran at (`before`,
+    the profile before the change) from its start, so its days before the
+    change keep that price."""
     billing = _billing(profile)
     if not agreement_running(billing):
         return None
     today = on or datetime.now(timezone.utc).date()
+    if exact and before is not None and not billing.get("priceHistory"):
+        started = _date(billing.get("startsAt")) or today
+        if started < today:
+            record_price(tenant_id, before, plan_of(before), on=started)
+            profile = get_profile(tenant_id)
     record_price(tenant_id, profile, plan, on=today, exact=exact)
     _start, end = period_of(today)
     return {"monthlySek": monthly_price(profile, plan), "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
@@ -968,7 +985,6 @@ def invoice_now(req) -> tuple[int, dict]:
 
 
 # ------------------------------------------------------------- the Free plan
-FREE_NOTICE_DAYS = 14
 SV_MONTHS_LONG = ("januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober",
                   "november", "december")
 
@@ -977,9 +993,18 @@ def sv_day(day: date) -> str:
     return f"{day.day} {SV_MONTHS_LONG[day.month - 1]} {day.year}"
 
 
+def _then_price(billing: dict, then: dict) -> int:
+    """The monthly price after Free: the customer's own price (kept while on
+    Free), else the next plan's."""
+    if billing.get("priceSek") is not None:
+        return int(billing["priceSek"])
+    return int(then.get("priceSek") or 0)
+
+
 def free_view(profile: dict) -> dict | None:
     """The free period of a customer on Free: until = the last free day
-    (None = no end date), then the plan it moves to the day after."""
+    (None = no end date), then the plan it moves to the day after, at the
+    customer's own price if one is kept."""
     if profile.get("planId") != FREE_PLAN_ID:
         return None
     billing = _billing(profile)
@@ -988,19 +1013,22 @@ def free_view(profile: dict) -> dict | None:
     return {"until": until.isoformat() if until else None, "since": billing.get("freeSince"),
             "switchOn": (until + timedelta(days=1)).isoformat() if until else None,
             "thenPlanId": billing.get("freeThenPlanId") or "starter", "thenPlanName": then.get("name"),
-            "thenPriceSek": then.get("priceSek"), "noticeSentFor": billing.get("freeNoticeFor")}
+            "thenPriceSek": _then_price(billing, then) if then else None,
+            "thenOwnPrice": billing.get("priceSek") is not None, "noticeSentFor": billing.get("freeNoticeFor")}
 
 
-def _claim_notice(tenant_id: str, until: str) -> bool:
-    """Marks the notice for this end date as sent, once (a re-run, or two
-    runs at the same time, never send it twice)."""
+def _claim_notice(tenant_id: str, until: str, new_until: str) -> bool:
+    """Marks the notice as sent, once (a re-run, or two runs at the same
+    time, never send it twice). A notice later than 14 days before the
+    first paid day moves the last free day to `new_until` with it."""
     try:
         client("dynamodb").update_item(
             TableName=tenant_table(), Key=tkey(tenant_id),
-            UpdateExpression="SET billing.freeNoticeFor = :u, billing.freeNoticeAt = :n",
+            UpdateExpression="SET billing.freeNoticeFor = :nu, billing.freeUntil = :nu, billing.freeNoticeAt = :n",
             ConditionExpression="planId = :free AND billing.freeUntil = :u AND "
                                 "(attribute_not_exists(billing.freeNoticeFor) OR billing.freeNoticeFor <> :u)",
-            ExpressionAttributeValues={":u": {"S": until}, ":free": {"S": FREE_PLAN_ID}, ":n": {"S": now_iso()}})
+            ExpressionAttributeValues={":u": {"S": until}, ":nu": {"S": new_until}, ":free": {"S": FREE_PLAN_ID},
+                                       ":n": {"S": now_iso()}})
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return False
@@ -1008,82 +1036,134 @@ def _claim_notice(tenant_id: str, until: str) -> bool:
     return True
 
 
-def _free_notice_mail(profile: dict, until: date, then: dict) -> tuple[str, str]:
+def _unclaim_notice(tenant_id: str, until: str, new_until: str) -> None:
+    """The notice was not sent: back to the end date it had, so the next run
+    tries again (unless someone changed the period meanwhile)."""
+    try:
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key=tkey(tenant_id),
+            UpdateExpression="SET billing.freeUntil = :u REMOVE billing.freeNoticeFor, billing.freeNoticeAt",
+            ConditionExpression="billing.freeNoticeFor = :nu AND billing.freeUntil = :nu",
+            ExpressionAttributeValues={":u": {"S": until}, ":nu": {"S": new_until}})
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+
+
+def _free_notice_mail(profile: dict, until: date, then: dict, price: int) -> tuple[str, str]:
     first = ((profile.get("ownerName") or "").split() or [""])[0]
-    price = f"{int(then.get('priceSek') or 0):,}".replace(",", " ")
+    amount = f"{price:,}".replace(",", " ")
+    card = (_billing(profile).get("collectionMethod") or "send_invoice") == "charge_automatically"
+    paying = ("Kortet på filen dras i efterhand, den 25:e varje månad." if card
+              else "Fakturan kommer i efterhand, den 25:e varje månad.")
     subject = f"Er gratisperiod hos Booqy slutar {sv_day(until)}"
     body = (f"Hej{' ' + first if first else ''}!\n\n"
             f"Gratisperioden för {profile.get('name')} gäller till och med {sv_day(until)}. "
-            f"Från {sv_day(until + timedelta(days=1))} har ni Booqy {then.get('name') or ''}, {price} kr per månad "
+            f"Från {sv_day(until + timedelta(days=1))} har ni Booqy {then.get('name') or ''}, {amount} kr per månad "
             f"exklusive moms. SMS ingår.\n\n"
-            f"Fakturan kommer i efterhand, den 25:e varje månad. Vill ni ändra något, svara på det här mejlet.")
+            f"{paying} Vill ni ändra något, svara på det här mejlet.")
     return subject, body
 
 
+def _start_after_free(tenant_id: str, profile: dict, actor: str, start_day: str) -> str | None:
+    """Starts the agreement after a switch off Free, from `start_day`, the
+    way it is collected (invoice or card). None when started, else why not
+    (billing.freeSwitchAgreementPending stays, so the next run tries again)."""
+    billing = _billing(profile)
+    if agreement_running(billing):
+        _write_billing(tenant_id, {"freeSwitchAgreementPending": None})
+        return None
+    try:
+        start_for(tenant_id, profile, actor=actor, start_day=start_day,
+                  method=billing.get("collectionMethod") or "send_invoice",
+                  terms=billing.get("terms") or "subscription")
+    except (ApiError, ClientError, BotoCoreError) as e:
+        return str(getattr(e, "message", None) or e)
+    _write_billing(tenant_id, {"freeSwitchAgreementPending": None})
+    return None
+
+
 def free_step(profile: dict, today: date, actor: str) -> dict:
-    """The daily look at one customer on Free with an end date: 14 days
-    before the first paid day the owner gets an email and the operators a
-    line in the summary (once per end date); from the day after the last
-    free day the customer is on the plan chosen for afterwards, and an
-    agreement runs so the 25th invoices it. Idempotent."""
+    """The daily look at one customer on Free with an end date. The owner is
+    emailed and the operators get a line in the summary 14 days before the
+    first paid day (once per end date); a notice that goes out later (set
+    late, the email failed, the job was down) moves the first paid day to
+    14 days after it, so nobody is charged without notice. From the day
+    after the last free day, once told, the customer is on the plan chosen
+    for afterwards and an agreement runs so the 25th invoices it; an
+    agreement that did not start is tried again every day. Idempotent."""
     out = {"notice": None, "switched": None, "failed": None}
     billing = _billing(profile)
+    tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
+    pending = billing.get("freeSwitchAgreementPending")
+    if pending and profile.get("planId") != FREE_PLAN_ID:
+        why = _start_after_free(tenant_id, profile, actor, pending)
+        if why:
+            out["failed"] = f"{name}: switched off Free, NO AGREEMENT yet from {pending}: {why} (tried again tomorrow)"[:300]
+        else:
+            out["switched"] = f"{name}: agreement after Free started from {pending}"
+        return out
     until = _date(billing.get("freeUntil"))
     if profile.get("planId") != FREE_PLAN_ID or until is None:
         return out
     if profile.get("status") not in ("provisioning", "active", "suspended"):
         return out
-    tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
     switch_on = until + timedelta(days=1)
     then_id = billing.get("freeThenPlanId") or "starter"
     then = get_plan(then_id)
     if then is None or then.get("free"):
         out["failed"] = f"{name}: the plan after Free ({then_id}) does not exist"
         return out
-    price = int(then.get("priceSek") or 0)
-    if today >= switch_on:
+    price = _then_price(billing, then)
+    told = billing.get("freeNoticeFor") == until.isoformat()
+    if today >= switch_on and told:
+        own = int(billing["priceSek"]) if billing.get("priceSek") is not None else None
         try:
-            apply_plan(tenant_id, profile, then, actor, force=True, expect_free_until=until.isoformat(), price_from=switch_on)
+            apply_plan(tenant_id, profile, then, actor, force=True, price_sek=own, expect_free_until=until.isoformat(),
+                       price_from=switch_on, agreement_pending=switch_on.isoformat())
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 return out                          # someone else switched it, or changed the period
             raise
-        write_audit(tenant_id, "free_period_ended", actor, {"freeUntil": until.isoformat(), "planId": then_id})
+        write_audit(tenant_id, "free_period_ended", actor, {"freeUntil": until.isoformat(), "planId": then_id,
+                                                            "priceSek": price})
         line = f"{name}: Free ended {until.isoformat()}, now {then.get('name')} ({price} kr per month)"
         fresh = get_profile(tenant_id)
-        if not agreement_running(_billing(fresh), today):
-            try:
-                start_for(tenant_id, fresh, actor=actor, start_day=switch_on.isoformat(),
-                          terms=_billing(fresh).get("terms") or "subscription")
-                line += f", agreement started from {switch_on.isoformat()}"
-            except ApiError as e:
-                line += f", NO AGREEMENT: {e.message} (start it on the Billing tab)"
+        if agreement_running(_billing(fresh), today):
+            _write_billing(tenant_id, {"freeSwitchAgreementPending": None})
+        else:
+            why = _start_after_free(tenant_id, fresh, actor, switch_on.isoformat())
+            line += (f", NO AGREEMENT: {why} (tried again tomorrow)" if why
+                     else f", agreement started from {switch_on.isoformat()}")
         count = int(fresh.get("locationCount") or 0)
         limit = int(((fresh.get("entitlements") or {}).get("maxLocations")) or 0)
         if count > limit:
             line += f"; {count} locations, the plan allows {limit}"
         out["switched"] = line
         return out
-    if today >= switch_on - timedelta(days=FREE_NOTICE_DAYS) and billing.get("freeNoticeFor") != until.isoformat():
-        if not _claim_notice(tenant_id, until.isoformat()):
+    if today >= switch_on - timedelta(days=FREE_NOTICE_DAYS) and not told:
+        # Told today: at least 14 days before the first paid day.
+        new_until = max(until, today + timedelta(days=FREE_NOTICE_DAYS - 1))
+        if not _claim_notice(tenant_id, until.isoformat(), new_until.isoformat()):
             return out
         to = profile.get("billingEmail") or profile.get("ownerEmail")
         try:
             if not to:
                 raise ApiError(409, "no_email", "no owner or billing email")
             from . import mail                       # mail imports nothing from billing
-            subject, body = _free_notice_mail(profile, until, then)
+            subject, body = _free_notice_mail(profile, new_until, then, price)
             mail._send_one(to, subject, body, mail._load_template())
         except (ApiError, ClientError, BotoCoreError) as e:
-            # Not sent: the claim goes, so tomorrow's run tries again.
-            client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
-                                           UpdateExpression="REMOVE billing.freeNoticeFor, billing.freeNoticeAt")
-            out["failed"] = f"{name}: Free ending notice not sent: {getattr(e, 'message', None) or e}"[:300]
+            _unclaim_notice(tenant_id, until.isoformat(), new_until.isoformat())
+            held = f", still on Free until the owner is told (was to end {until.isoformat()})" if today >= switch_on else ""
+            out["failed"] = f"{name}: Free ending notice not sent{held}: {getattr(e, 'message', None) or e}"[:300]
             return out
-        write_audit(tenant_id, "free_period_notice_sent", actor, {"freeUntil": until.isoformat(), "to": to,
-                                                                   "thenPlanId": then_id})
-        out["notice"] = (f"{name}: Free ends {until.isoformat()}, {then.get('name')} ({price} kr per month) from "
-                         f"{switch_on.isoformat()}; owner told ({to})")
+        write_audit(tenant_id, "free_period_notice_sent", actor, {"freeUntil": new_until.isoformat(), "to": to,
+                                                                   "thenPlanId": then_id, "priceSek": price,
+                                                                   **({"movedFrom": until.isoformat()} if new_until != until else {})})
+        moved = f" (moved from {switch_on.isoformat()}: told late)" if new_until != until else ""
+        out["notice"] = (f"{name}: Free ends {new_until.isoformat()}, {then.get('name')} ({price} kr per month) from "
+                         f"{(new_until + timedelta(days=1)).isoformat()}{moved}; owner told ({to})")
     return out
 
 

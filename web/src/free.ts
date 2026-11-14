@@ -26,6 +26,15 @@ export function defaultFreeUntil(now: Date = new Date()): string {
   return addMonths(stockholmToday(now), FREE_MONTHS);
 }
 
+/** The owner is told this many days before the first paid day. */
+export const FREE_NOTICE_DAYS = 14;
+
+/** The earliest new last free day: 14 days ahead, so the owner is told in time. */
+export function earliestFreeUntil(now: Date = new Date()): string {
+  const [y, m, d] = stockholmToday(now).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + FREE_NOTICE_DAYS)).toISOString().slice(0, 10);
+}
+
 /** "14 Feb 2027" (the date as written, no time zone shift). */
 export function fmtFreeDay(day: string): string {
   const [y, m, d] = day.slice(0, 10).split("-").map(Number);

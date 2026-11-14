@@ -391,12 +391,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
 }
 
 /** A key figure. With a `trend` the figure turns green or red by how it is
- * doing (src/trend.ts) and the change stands under it; `valueTone` overrides
- * the colour when something else decides it (SMS sold at a loss). */
-function Kpi({ label, value, sub, tone, trend, deltaLabel, valueTone }: {
-  label: string; value: ReactNode; sub?: string; tone?: "warn"; trend?: Trend; deltaLabel?: string; valueTone?: TrendTone;
+ * doing (src/trend.ts) and the change stands under it. */
+function Kpi({ label, value, sub, tone, trend, deltaLabel }: {
+  label: string; value: ReactNode; sub?: string; tone?: "warn"; trend?: Trend; deltaLabel?: string;
 }) {
-  const shade: TrendTone = valueTone ?? trend?.tone ?? "neutral";
+  const shade: TrendTone = trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>

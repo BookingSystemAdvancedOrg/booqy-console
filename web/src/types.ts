@@ -27,6 +27,8 @@ export interface FreePeriod {
   thenPlanId: string;
   thenPlanName?: string | null;
   thenPriceSek?: number | null;
+  /** thenPriceSek is the customer's own price (kept while on Free). */
+  thenOwnPrice?: boolean;
   noticeSentFor?: string | null;
 }
 

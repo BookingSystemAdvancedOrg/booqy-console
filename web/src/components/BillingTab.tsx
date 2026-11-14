@@ -96,7 +96,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           <Row label="This customer pays" value={b.free ? "Nothing (Free)" : `${fmtSek(b.monthlySek)} per period ex VAT${b.priceSek != null ? " (own price)" : ""}`} />
           {b.free && (
             <Row label="Free" value={b.free.until
-              ? `Until ${fmtFreeDay(b.free.until)}, then ${b.free.thenPlanName ?? b.free.thenPlanId}${b.free.thenPriceSek != null ? ` (${fmtSek(b.free.thenPriceSek)} per period)` : ""} from ${fmtFreeDay(b.free.switchOn ?? b.free.until)}${b.free.noticeSentFor === b.free.until ? "; the owner has been told" : ""}`
+              ? `Until ${fmtFreeDay(b.free.until)}, then ${b.free.thenPlanName ?? b.free.thenPlanId}${b.free.thenPriceSek != null ? ` (${fmtSek(b.free.thenPriceSek)} per period${b.free.thenOwnPrice ? ", own price" : ""})` : ""} from ${fmtFreeDay(b.free.switchOn ?? b.free.until)}${b.free.noticeSentFor === b.free.until ? "; the owner has been told" : ""}`
               : "No end date: free until the plan is changed"} />
           )}
           <Row label="SMS" value="Included in the price" />

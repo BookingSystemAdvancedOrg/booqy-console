@@ -37,10 +37,11 @@ describe("Plan tab: Free", () => {
       expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-02-14");
       expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
       expect(screen.queryByLabelText(/^Monthly price/)).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(3950);
+      expect(screen.getByLabelText(/^Free until/)).toHaveAttribute("min", "2026-11-28");
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
       expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
-        planId: "free", free: { until: "2027-02-14", thenPlanId: "starter" } }));
-      expect(mocks.setPlan.mock.calls[0][1]).not.toHaveProperty("priceSek");
+        planId: "free", free: { until: "2027-02-14", thenPlanId: "starter" }, priceSek: 3950 }));
     } finally {
       vi.useRealTimers();
     }
@@ -51,6 +52,7 @@ describe("Plan tab: Free", () => {
     await screen.findByText("Free");
     fireEvent.click(screen.getAllByRole("radio")[2]);
     fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(8295);       // follows the next plan
     fireEvent.click(screen.getByLabelText("No end date"));
     expect(screen.getByLabelText(/^Free until/)).toBeDisabled();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
@@ -67,6 +69,18 @@ describe("Plan tab: Free", () => {
     fireEvent.change(screen.getByLabelText(/^Free until/), { target: { value: "2027-05-14" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", free: { until: "2027-05-14", thenPlanId: "growth" } }));
+  });
+
+  it("keeps an own price as the price after Free", async () => {
+    const own = { ...tenant, billing: { ...(tenant.billing ?? {}), priceSek: 500 } };
+    render(<PlanTab tenant={own} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getAllByRole("radio")[2]);
+    expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(500);
+    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(500);        // an own price stays
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", priceSek: 500 }));
   });
 });
 

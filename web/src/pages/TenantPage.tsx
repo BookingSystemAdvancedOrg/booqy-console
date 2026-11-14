@@ -469,8 +469,12 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const a = useAction();
   const plan = plans.data?.find((p) => p.planId === planId);
   const current = plans.data?.find((p) => p.planId === tenant.planId);
+  // On Free the price field is the price after it: own, else the next plan's.
+  const thenPlan = plans.data?.find((p) => p.planId === free.thenPlanId);
+  const savedThen = plans.data?.find((p) => p.planId === savedFree.thenPlanId);
+  const priceText = (p?: { priceSek?: number | null }) => (p?.priceSek != null ? String(p.priceSek) : "");
   // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
-  const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
+  const savedPrice = ownPrice != null ? String(ownPrice) : priceText(onFree ? savedThen : current);
   const dirty = useDirty(
     { planId, maxLocations, features, price, ...limits, ...(isFree ? { freeUntil: free.noEnd ? "" : free.until, freeThen: free.thenPlanId } : {}) },
     { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: contractFeatures(tenant.entitlements.features),
@@ -485,12 +489,13 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       setMax(String(tenant.entitlements.maxLocations));
       setFeatures(tenant.entitlements.features);
       setLimits(limitsOf(tenant.entitlements));
-      setPrice(ownPrice != null ? String(ownPrice) : plan?.priceSek != null ? String(plan.priceSek) : "");
+      setPrice(ownPrice != null ? String(ownPrice) : priceText(plan?.free ? thenPlan : plan));
     } else if (plan) {
       setMax(String(plan.maxLocations));
       setFeatures(plan.features);
       setLimits(limitsOf(plan));
-      setPrice(plan.priceSek != null ? String(plan.priceSek) : "");
+      // Onto Free: the own price stays as the price after it.
+      setPrice(plan.free ? (ownPrice != null ? String(ownPrice) : priceText(thenPlan)) : priceText(plan));
     }
   }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -503,7 +508,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     if (changedLimits.length) overrides.limits = Object.fromEntries(changedLimits.map((k) => [k, Number(limits[k])]));
     const body: Parameters<typeof api.setPlan>[1] = { planId, overrides, force };
     if (isFree) body.free = freeInput(free);
-    else if (price !== "") body.priceSek = Number(price);
+    if (price !== "") body.priceSek = Number(price);
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
@@ -520,7 +525,13 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
         ))}
       </div>
       {isFree && (
-        <FreeFields value={free} onChange={setFree} plans={plans.data ?? []}
+        <FreeFields value={free} plans={plans.data ?? []} savedUntil={onFree ? tenant.billing?.freeUntil : null}
+                    onChange={(next) => {
+                      // A price that was the next plan's follows the next plan.
+                      const nextThen = plans.data?.find((p) => p.planId === next.thenPlanId);
+                      if (next.thenPlanId !== free.thenPlanId && price === priceText(thenPlan)) setPrice(priceText(nextThen));
+                      setFree(next);
+                    }}
                     errors={{ until: a.fields["free.until"], thenPlanId: a.fields["free.thenPlanId"] }}
                     changed={{ until: dirty.changed("freeUntil"), thenPlanId: dirty.changed("freeThen") }} />
       )}
@@ -528,7 +539,12 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
         <Field label="Locations allowed" changed={dirty.changed("maxLocations")} error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
           <input className="input" type="number" min={1} max={100} value={maxLocations} onChange={(e) => setMax(e.target.value)} />
         </Field>
-        {!isFree && (
+        {isFree ? (
+          <Field label="Price after Free, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
+                 hint={thenPlan?.priceSek != null ? `${thenPlan.name}'s price is ${thenPlan.priceSek} kr; a different amount is this customer's own price` : "Pick the next plan"}>
+            <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+          </Field>
+        ) : (
           <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
                  hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
             <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />

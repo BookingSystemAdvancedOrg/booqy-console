@@ -57,7 +57,7 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `GET /platform/tenants` | all customers |
 | `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`); `planId: "free"` with `free: {until, thenPlanId}` |
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
-| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice. `planId: "free"` takes `free: {until: yyyy-mm-dd \| null, thenPlanId}` (default three months, then Starter): no charge, Growth's features, and onto or off Free applies from the day itself |
+| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice. `planId: "free"` takes `free: {until: yyyy-mm-dd \| null, thenPlanId}` (default three months, then Starter; a new `until` at least 14 days ahead): no charge, Growth's features, and onto or off Free applies from the day itself; with Free, `priceSek` is the price after it |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
 | `POST .../offboard` | `{confirmSlug}`; users disabled, domains detached, website repo archived, data kept until `purgeAt` |
 | `POST .../restore` | an offboarded customer before `purgeAt`: active again, users enabled, setup re-run (slug address, website repo) |
@@ -88,9 +88,11 @@ customers past due longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended
 period from the 25th to the 24th that just ended, the monthly price (pro
 rata by days); SMS are included, never invoiced. The daily run also
 handles the Free plan: 14 days before a free period ends the owner gets
-an email and the operators a line in the summary, and the day after its
-last free day the customer moves to the plan chosen for afterwards -
-`api/src/app/billing.py`.
+an email and the operators a line in the summary (an email that goes out
+later moves the last free day, so nobody pays without 14 days notice), and
+the day after its last free day the customer moves to the plan chosen for
+afterwards, at their own price if one is kept, and an agreement that did
+not start is tried again daily - `api/src/app/billing.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
 | `GET .../billing` | the customer's agreement (status and phase, terms, start and end, monthly price, the free period, collection, last invoiced period, past due), a preview of the next invoice and the invoices with their period and fee |
 | `POST .../billing/subscription` | start the agreement: `{collectionMethod: send_invoice \| charge_automatically, startDate?, terms: trial \| subscription, priceSek?}` (the days from `startDate` are invoiced on the next 25th; priceSek = the customer's own monthly price ex VAT) |
