@@ -22,6 +22,14 @@ describe("PhoneAgentTenantSection", () => {
     expect(phoneAgentApi.setPaused).toHaveBeenCalledWith("t1", true);
   });
 
+  it("shows Not connected, without an error or a pause, before any location is set up", async () => {
+    vi.mocked(phoneAgentApi.tenant).mockResolvedValue({ paused: false, locations: [], usage: [] });
+    render(<PhoneAgentTenantSection tenantId="t1" />);
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("is calm before the feature is deployed", async () => {
     vi.mocked(phoneAgentApi.tenant).mockRejectedValue(new ApiError(404, "not_found", "x"));
     render(<PhoneAgentTenantSection tenantId="t1" />);

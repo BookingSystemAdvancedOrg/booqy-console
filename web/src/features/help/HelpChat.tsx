@@ -161,7 +161,7 @@ export function HelpChat() {
   return (
     <>
       {!open && (
-        <button ref={launcherRef} type="button" className="help-launcher" aria-expanded={false} aria-controls={panelId} onClick={show}>
+        <button ref={launcherRef} type="button" className="help-launcher" aria-label="Ask Booqy" title="Ask Booqy" aria-expanded={false} aria-controls={panelId} onClick={show}>
           <Icon name="search" size={18} />
           <span className="help-launcher-text">Ask Booqy</span>
         </button>

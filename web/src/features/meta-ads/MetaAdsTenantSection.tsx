@@ -28,9 +28,10 @@ export default function MetaAdsTenantSection({ tenantId }: { tenantId: string })
         <dt>Spend this month</dt><dd>{data.spendThisMonthSek.toLocaleString("en-GB")} SEK</dd>
       </dl>
       <ErrorNotice error={action.error} />
-      <button className={`btn ${data.paused ? "" : "btn--danger"}`} disabled={action.busy} onClick={() => void toggle()}>
+      {/* Nothing to pause before Meta is connected; a pause set earlier can still be lifted. */}
+      {(data.paused || data.status !== "disconnected") && <button className={`btn ${data.paused ? "" : "btn--danger"}`} disabled={action.busy} onClick={() => void toggle()}>
         {data.paused ? "Resume Meta ads" : "Pause Meta ads"}
-      </button>
+      </button>}
     </Card>
   );
 }
