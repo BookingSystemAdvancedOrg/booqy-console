@@ -1,5 +1,6 @@
 import { AuthUnavailableError, accessToken, notifySignedOut, refreshedAccessToken, signOut } from "./auth";
 import { withBusy } from "./busy";
+import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
@@ -28,15 +29,29 @@ const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 function fallbackMessage(status: number, requestId?: unknown): string {
   const ref = requestId ? ` (reference ${requestId})` : "";
   if (status === 403) return "You don't have access to this. Sign out and in again; if it persists, check that your account is an operator.";
-  if (status === 404) return "Not found - it may have been removed. Reload the page.";
+  if (status === 404) return "Not found - it may have been removed elsewhere. The page shows what is left by itself.";
   if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
-  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, reload first to see whether it went through.";
+  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, the page shows by itself whether it went through.";
   return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
 }
 
-// Every call shows the busy bar (busy.ts), so no load is ever silent.
+// Every call shows the busy bar (busy.ts), so no load is ever silent; only
+// the quiet live refetches (live.ts quietly) skip it. After a write, every
+// live page refetches at once (also after a 409: someone saved in between).
 function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  return withBusy(() => send<T>(method, path, body));
+  if (isQuiet() && method === "GET") return send<T>(method, path, body);
+  const call = withBusy(() => send<T>(method, path, body));
+  if (method === "GET") return call;
+  return call.then(
+    (value) => {
+      notifySaved({ path });
+      return value;
+    },
+    (err: unknown) => {
+      if (err instanceof ApiError && err.status === 409) notifySaved({ path, conflict: true });
+      throw err;
+    },
+  );
 }
 
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -77,7 +92,7 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Reload the page and try again.");
+    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Try again in a moment.");
   }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;

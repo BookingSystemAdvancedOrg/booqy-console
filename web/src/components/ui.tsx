@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ApiError } from "../api";
 import { CheckMark, useFlash } from "./save";
 import { helpSlug } from "../features/help/helpId";
+import { quietly, sameData, useLiveRefresh } from "../live";
 
 export function Field(props: {
   label: string;
@@ -13,6 +14,8 @@ export function Field(props: {
   wide?: boolean;
   /** Differs from the saved value: a light marker until saved or undone. */
   changed?: boolean;
+  /** Under the field, e.g. a ChangedNote when the value changed elsewhere. */
+  note?: ReactNode;
 }) {
   const msgId = useId();
   // One control inside: point it at the error (or hint) so screen readers read it with the field.
@@ -33,7 +36,22 @@ export function Field(props: {
       {control}
       {props.error ? <span id={msgId} className="field__msg">{props.error}</span>
         : props.hint && <span id={msgId} className="field__hint">{props.hint}</span>}
+      {props.note}
     </label>
+  );
+}
+
+/**
+ * A calm line under a field: the value was changed elsewhere (another
+ * operator, or the restaurant in its admin) while you were editing. Your
+ * value stays in the field; "Use" takes the other one.
+ */
+export function ChangedNote({ value, onUse }: { value: string; onUse?: () => void }) {
+  return (
+    <span className="changed-note" role="status">
+      <span>Changed elsewhere just now: <strong>{value || "empty"}</strong></span>
+      {onUse && <button type="button" className="changed-note__use" onClick={(e) => { e.preventDefault(); onUse(); }}>Use</button>}
+    </span>
   );
 }
 
@@ -100,7 +118,7 @@ export function errorMessage(error: unknown): string {
   if (error instanceof TypeError) return "Couldn't reach the API. Check your internet connection and try again.";
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
-  return "Something went wrong. Try again; if it keeps failing, reload the page.";
+  return "Something went wrong. Try again in a moment.";
 }
 
 export function ErrorNotice({ error }: { error: unknown }) {
@@ -157,7 +175,14 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
   );
 }
 
-/** Load-once data with reload(); errors kept for display. */
+/**
+ * Data with reload(); errors kept for display. Live (live.ts): refetched
+ * quietly every 15 s while the tab is visible, on focus, when back online and
+ * right after a save, so changes made elsewhere show up by themselves. A quiet
+ * refetch never shows loading or the busy bar, keeps the same object when
+ * nothing changed (no re-render, open forms keep what they hold) and keeps
+ * what is on screen when it fails.
+ */
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -185,6 +210,18 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
     setLoading(true);
     void reload();
   }, [reload]);
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
+  useLiveRefresh(async () => {
+    const id = ++latest.current;
+    const value = await quietly(() => loadRef.current());
+    if (id !== latest.current) return true;
+    setError(null);
+    setData((prev) => (sameData(prev, value) ? prev : value));
+    return true;
+  }, { enabled: data !== null && !loading });
   return { data, error, loading, reload, setData };
 }
 

@@ -48,3 +48,35 @@ describe("api: a 401 is not a sign-out by itself", () => {
     expect(auth.signOut).not.toHaveBeenCalled();
   });
 });
+
+describe("api: live refetches", () => {
+  it("a quiet refetch skips the busy bar; a normal load shows it", async () => {
+    const { getBusyState } = await import("./test/busyProbe");
+    const { quietly } = await import("./live");
+    let during = false;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      during = getBusyState();
+      return json(200, { plans: [] });
+    }));
+    await quietly(() => api.plans());
+    expect(during).toBe(false);
+    await api.plans();
+    expect(during).toBe(true);
+  });
+
+  it("a save tells every live page to refetch, also after a 409", async () => {
+    const { LIVE_SAVED_EVENT } = await import("./live");
+    const seen: unknown[] = [];
+    const on = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener(LIVE_SAVED_EVENT, on);
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json(200, { tenant: {} }))
+      .mockResolvedValueOnce(json(409, { error: "conflict", message: "Changed." }))
+      .mockResolvedValueOnce(json(200, { plans: [] })));
+    await api.updateTenant("t1", { name: "x" });
+    await expect(api.updateTenant("t1", { name: "y" })).rejects.toMatchObject({ status: 409 });
+    await api.plans();
+    window.removeEventListener(LIVE_SAVED_EVENT, on);
+    expect(seen).toEqual([{ path: "/platform/tenants/t1" }, { path: "/platform/tenants/t1", conflict: true }]);
+  });
+});

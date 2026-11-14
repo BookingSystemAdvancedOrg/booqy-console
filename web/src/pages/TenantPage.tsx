@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
+  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
@@ -164,8 +164,25 @@ const OWNER_FIELDS: [keyof Tenant, string, string?][] = [
 function Overview({ detail, onSaved, fixField, onFixed }: {
   detail: TenantDetail; onSaved: () => void; fixField: string | null; onFixed: () => void;
 }) {
-  const t = detail.tenant;
+  const live = detail.tenant;
+  // While editing, changes are counted against the customer as it was when
+  // Edit was pressed: the page refetches live, and a field changed elsewhere
+  // in the meantime is not overwritten unless you changed it too.
+  const [base, setBase] = useState<Tenant | null>(null);
   const [editing, setEditing] = useState(false);
+  const t = editing && base ? base : live;
+  /** The value on the server now, when it changed since Edit and differs from yours. */
+  const there = (k: string, mine: string): string | null => {
+    if (!editing || !base) return null;
+    const read = (x: Tenant) => (k === "street" || k === "city" ? x.address?.[k] ?? "" : k === "postalCode" ? formatPostalCode(x.address?.postalCode ?? "")
+      : ((x as unknown as Record<string, string | null>)[k] ?? ""));
+    const now = read(live);
+    return now !== read(base) && now !== mine ? now : null;
+  };
+  const note = (k: string) => {
+    const v = there(k, f[k] ?? "");
+    return v === null ? undefined : <ChangedNote value={v} onUse={() => setF({ ...f, [k]: v })} />;
+  };
   const fields = t.status === "provisioning_failed" ? [...PROFILE_FIELDS, ...OWNER_FIELDS] : PROFILE_FIELDS;
   const failure = t.status === "provisioning_failed" ? setupFailure(t.lastError).fields : {};
   const initial = () => ({
@@ -180,6 +197,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
   useEffect(() => {
     if (!fixField) return;
     setF(initial());
+    setBase(live);
     setEditing(true);
     window.setTimeout(() => {
       const el = document.getElementById(`e-${fixField}`);
@@ -213,7 +231,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
 
   return (
     <div className="cols">
-      <Card title="Company" saved={saved} actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setEditing(true); }}>Edit</button>}>
+      <Card title="Company" saved={saved} actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setBase(live); setEditing(true); }}>Edit</button>}>
         {!editing ? (
           <dl className="dl">
             {fields.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
@@ -226,6 +244,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
             <div className="grid">
               {fields.map(([k, label, hint]) => (
                 <Field key={k} label={label} required={k === "name" || k === "ownerName" || k === "ownerEmail"} changed={k !== "vatNumber" && dirty.changed(k)}
+                       note={k === "vatNumber" ? undefined : note(k)}
                        hint={k === "orgNumber" ? "10 digits, the dash is added for you" : k === "vatNumber" ? "SE + org. number + 01, filled in from the org. number" : hint}
                        error={a.fields[k] ?? (f[k] === ((t[k] as string) ?? "") ? failure[k] : undefined) ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
                   {k === "contactPhone" || k === "ownerPhone" ? (
@@ -240,10 +259,10 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
                   )}
                 </Field>
               ))}
-              <Field label="Street" changed={dirty.changed("street")} error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
-              <Field label="Postal code" changed={dirty.changed("postalCode")} error={a.fields["address.postalCode"]}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
-              <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
-              <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+              <Field label="Street" changed={dirty.changed("street")} error={a.fields["address.street"]} note={note("street")}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
+              <Field label="Postal code" changed={dirty.changed("postalCode")} error={a.fields["address.postalCode"]} note={note("postalCode")}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
+              <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]} note={note("city")}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
+              <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes} note={note("notes")}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
             <div className="row">
               <SaveButton label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
