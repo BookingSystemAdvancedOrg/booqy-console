@@ -8,6 +8,7 @@ import { HelpLimited, askHelp, getHelpStatus } from "./helpApi";
 import type { HelpTurn } from "./helpApi";
 import { resolveLive } from "./live";
 import { spotlight } from "./spotlight";
+import { useDodge } from "./dodge";
 import { OPEN_EVENT, helpChatEnabled, setHelpChatEnabled } from "./chatState";
 import { KB, actionAllowed, actionHref } from "./kb";
 import type { HelpAction, HelpAnswer } from "./kb";
@@ -46,6 +47,7 @@ export function HelpChat() {
   const [waiting, setWaiting] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  useDodge(launcherRef, enabled && !open);
   const logRef = useRef<HTMLOListElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
