@@ -142,6 +142,26 @@ describe("NewTenantPage Free plan", () => {
     expect(body.billing).toMatchObject({ priceSek: 499, collectionPreference: "card" });
   });
 
+  it("the price after Free follows the plan after it unless the operator typed one", async () => {
+    await pickFree();
+    const plan = screen.getByLabelText(/^Then switch to/), price = screen.getByLabelText(/^Monthly price after Free/);
+    fireEvent.change(plan, { target: { value: "starter" } });
+    expect(price).toHaveValue(499);
+    fireEvent.change(plan, { target: { value: "growth" } });
+    expect(price).toHaveValue(899);                                            // not Starter's price on Growth
+    fireEvent.change(price, { target: { value: "700" } });
+    fireEvent.change(plan, { target: { value: "starter" } });
+    expect(price).toHaveValue(700);                                            // an own price stays
+  });
+
+  it("the Free option error is linked to the radio group", async () => {
+    await pickFree();
+    fireEvent.click(screen.getByRole("radio", { name: /Free for 3 months/ }));
+    const group = screen.getByRole("radiogroup", { name: "Free period" });
+    expect(group).not.toHaveAttribute("aria-describedby");
+    expect(screen.getByRole("radio", { name: /Free for 3 months/ })).toBeVisible();   // in the a11y tree, not display: none
+  });
+
   it("six months, then an own price after Free, invoiced with 30 days", async () => {
     await pickFree();
     fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));

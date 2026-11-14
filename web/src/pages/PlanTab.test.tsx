@@ -63,6 +63,32 @@ describe("Plan tab: Free", () => {
     }
   });
 
+  it("a customer with more locations moved onto Free keeps them on the stepper", async () => {
+    const growth = { ...tenant, planId: "growth", entitlements: { ...tenant.entitlements, maxLocations: 3 }, locationCount: 3 };
+    render(<PlanTab tenant={growth} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
+  });
+
+  it("the locations number can be cleared while typing and is clamped on blur", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    const input = screen.getByLabelText(/^Locations/);                       // a real label, also on the Plan tab
+    fireEvent.change(input, { target: { value: "" } });
+    expect(input).toHaveValue(null);
+    fireEvent.change(input, { target: { value: "5" } });
+    expect(input).toHaveValue(5);
+    fireEvent.change(input, { target: { value: "500" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue(100);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue(100);                                            // empty on blur: the last number
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    expect(input).toHaveValue(99);
+  });
+
   it("free until changed: no end, no plan or price needed", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Free");
@@ -128,6 +154,7 @@ describe("Plan tab: locations and features", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
     expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);
     fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: "500" } });
+    fireEvent.blur(screen.getByLabelText(/^Locations/));
     expect(screen.getByLabelText(/^Locations/)).toHaveValue(100);
     expect(screen.getByRole("button", { name: "More locations" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: "5" } });

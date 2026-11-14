@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import "./planFields.css";
 
 /** A plan card's one line: Free has no charge, Starter one location, Growth several. */
@@ -15,7 +15,8 @@ export const MAX_LOCATIONS = 100;
 /** Clamped to 1..100 whole locations. */
 export const clampLocations = (n: number) => Math.min(MAX_LOCATIONS, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
 
-/** The number of locations the customer may have: minus, the number, plus. */
+/** The number of locations the customer may have: minus, the number, plus.
+ * The number can be cleared while typing; it is clamped to 1..100 on blur or Enter. */
 export function LocationStepper({ id, value, onChange, error, changed, hint }: {
   id?: string;
   value: number;
@@ -24,17 +25,33 @@ export function LocationStepper({ id, value, onChange, error, changed, hint }: {
   changed?: boolean;
   hint?: string;
 }) {
-  const labelId = useId();
+  const ownId = useId();
+  const inputId = id ?? ownId;
   const msgId = useId();
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const n = clampLocations(text.trim() === "" ? value : Number(text));
+    setText(String(n));
+    if (n !== value) onChange(n);
+  };
   return (
     <div className={`field${error ? " field--error" : ""}${changed ? " field--changed" : ""}`} >
-      <span id={labelId} className="field__label">Locations{changed && <span className="sr-only"> (changed)</span>}</span>
+      <label htmlFor={inputId} className="field__label">Locations{changed && <span className="sr-only"> (changed)</span>}</label>
       <div className="stepper">
         <button type="button" className="stepper__btn" aria-label="Fewer locations" disabled={value <= 1}
                 onClick={() => onChange(clampLocations(value - 1))}>−</button>
-        <input id={id} className="input mono stepper__num" type="number" inputMode="numeric" min={1} max={MAX_LOCATIONS} step={1}
-               aria-labelledby={labelId} aria-invalid={error ? true : undefined} aria-describedby={error || hint ? msgId : undefined}
-               value={value} onChange={(e) => onChange(clampLocations(Number(e.target.value)))} />
+        <input id={inputId} className="input mono stepper__num" type="number" inputMode="numeric" min={1} max={MAX_LOCATIONS} step={1}
+               aria-invalid={error ? true : undefined} aria-describedby={error || hint ? msgId : undefined}
+               value={text}
+               onChange={(e) => {
+                 const raw = e.target.value;
+                 setText(raw);
+                 const n = Number(raw);
+                 if (raw.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= MAX_LOCATIONS && n !== value) onChange(n);
+               }}
+               onBlur={commit}
+               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
         <button type="button" className="stepper__btn" aria-label="More locations" disabled={value >= MAX_LOCATIONS}
                 onClick={() => onChange(clampLocations(value + 1))}>+</button>
       </div>

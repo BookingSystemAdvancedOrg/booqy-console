@@ -500,9 +500,11 @@ export default function NewTenantPage() {
             {isFree && (
               <FreeFields value={free} plans={plans.data ?? []} until={freeUntil}
                           onChange={(next) => {
-                            // Picking the plan after Free fills in its price while none is typed.
+                            // A price that is empty or the previous next plan's follows the plan after Free.
+                            const prevThen = plans.data?.find((p) => p.planId === free.thenPlanId);
                             const then = plans.data?.find((p) => p.planId === next.thenPlanId);
-                            if (next.thenPlanId !== free.thenPlanId && !freePrice && then?.priceSek) setFreePrice(String(then.priceSek));
+                            if (next.thenPlanId !== free.thenPlanId && (freePrice === "" || freePrice === String(prevThen?.priceSek ?? "")))
+                              setFreePrice(then?.priceSek != null ? String(then.priceSek) : "");
                             setFree(next);
                           }}
                           errors={{ preset: errs["free.preset"] ?? errs["free.until"], thenPlanId: errs["free.thenPlanId"], price: errs["billing.priceSek"] }}

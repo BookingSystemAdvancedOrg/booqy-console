@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { FREE_OPTIONS, FREE_PLAN_ID, type FreeForm, fmtFreeDay, freeLabel, isTimed } from "../free";
 import type { Plan } from "../types";
 import { Field } from "./ui";
@@ -19,9 +20,11 @@ export function FreeFields({ value, onChange, plans, until, errors = {}, changed
 }) {
   const paid = plans.filter((p) => p.planId !== FREE_PLAN_ID && !p.free);
   const timed = isTimed(value);
+  const presetMsg = useId();
   return (
     <div className="free-fields" data-testid="free-fields">
-      <div className="free-options" role="radiogroup" aria-label="Free period" id="f-free.preset">
+      <div className="free-options" role="radiogroup" aria-label="Free period" id="f-free.preset"
+           aria-describedby={errors.preset ? presetMsg : undefined} aria-invalid={errors.preset ? true : undefined}>
         {FREE_OPTIONS.map((o) => (
           <label key={o.id} className={`choice${value.preset === o.id ? " choice--on" : ""}`}>
             <input type="radio" name="free-preset" checked={value.preset === o.id}
@@ -31,7 +34,7 @@ export function FreeFields({ value, onChange, plans, until, errors = {}, changed
           </label>
         ))}
       </div>
-      {errors.preset && <p className="field__msg free-until">{errors.preset}</p>}
+      {errors.preset && <p id={presetMsg} className="field__msg free-until">{errors.preset}</p>}
       {timed && until && <p className="small muted free-until" data-testid="free-until">{freeLabel(until)}</p>}
       {timed && (
         <>

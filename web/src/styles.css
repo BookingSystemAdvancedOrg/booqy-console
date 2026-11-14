@@ -408,7 +408,9 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .plans { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .plan { border: 1.5px solid var(--paper-line); border-radius: var(--r-md); padding: 12px 16px; display: grid; gap: 2px; min-width: 190px; cursor: default; background: var(--glass-surface); transition: border-color 160ms var(--ease); }
 .plan:hover { border-color: var(--print); }
-.plan input { display: none; }
+.plan, .choice { position: relative; }
+.plan input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.plan:has(input:focus-visible) { outline: 2px solid var(--print); outline-offset: 2px; }
 .plan--on { border-color: var(--print); box-shadow: inset 0 0 0 1px var(--print); background: var(--glass-fill); }
 .loc-row { display: flex; gap: 12px; align-items: flex-end; padding: 6px 0 12px; border-bottom: 1.5px dashed var(--paper-line); }
 .loc-row .grid { flex: 1; margin: 0; }
@@ -694,7 +696,8 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 .table-wrap--inner .table th:first-child, .table-wrap--inner .table td:first-child { padding-left: 0; }
 .table-wrap--inner .table th:last-child, .table-wrap--inner .table td:last-child { padding-right: 0; }
 .choice--on { border-color: var(--print); box-shadow: inset 0 0 0 1px var(--print); background: var(--glass-fill); }
-.choice input { display: none; }
+.choice input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.choice:has(input:focus-visible) { outline: 2px solid var(--print); outline-offset: 2px; }
 .dd-mono { font-family: var(--mono); }
 
 @media (max-width: 860px) {

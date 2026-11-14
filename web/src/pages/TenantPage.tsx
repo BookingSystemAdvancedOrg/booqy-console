@@ -517,7 +517,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       setLimits(limitsOf(tenant.entitlements));
       setPrice(ownPrice != null ? String(ownPrice) : priceText(plan?.free ? thenPlan : plan));
     } else if (plan) {
-      setMax(defaultLocations(plan));
+      // Onto Free: never below the locations in use (Free has no fixed limit).
+      setMax(plan.free ? Math.max(defaultLocations(plan), tenant.locationCount) : defaultLocations(plan));
       setFeatures(plan.features);
       setLimits(limitsOf(plan));
       // Onto Free: the own price stays as the price after it.
