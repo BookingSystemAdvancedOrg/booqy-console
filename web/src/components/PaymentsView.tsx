@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
+import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
 import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
@@ -31,9 +31,9 @@ export default function PaymentsView() {
     <>
       <div className="row payments-actions">
         <p className="muted small">
-          Runs on the 25th{" "}
+          Runs on the 1st{" "}
           <InfoTip label="About invoicing">
-            Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). Run it by hand after a missed 25th, with a preview first.
+            Invoices are created on the 1st for that calendar month, in advance (the monthly price; SMS are included, Free has no charge). A new agreement gets its first month pro rata on its start day. The daily run catches up by itself; run it by hand with a preview first.
           </InfoTip>
         </p>
         <button className="btn btn--primary" onClick={() => setInvoicing(true)}>Run invoicing</button>
@@ -96,7 +96,7 @@ export default function PaymentsView() {
   );
 }
 
-/** Preview (dry run) of what the 25th would invoice, then the real run. */
+/** Preview (dry run) of what the next run would invoice, then the real run. */
 function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const preview = useLoad(() => api.financeInvoicing(true));
   const run = useAction();
@@ -154,7 +154,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
 function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   const remind = useAction();
   const openRow = useRowOpen();
-  const overdue = r.status === "open" && r.daysLate > 0;
+  const overdue = isOverdue(r);
   const fees = (Number(r.lateFeeSek) || 0) + (Number(r.interestSek) || 0);
   return (
     <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
@@ -178,7 +178,7 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
       </td>
       <td className="num" data-label="Fees">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
       <td>
-        {overdue && r.collectionMethod !== "charge_automatically" && (
+        {overdue && r.status === "open" && r.collectionMethod !== "charge_automatically" && (
           <SaveButton kind="plain" small type="button" label="Send reminder" busy={remind.busy} busyLabel="Sending…" done={remind.done} doneLabel="Sent"
                       onClick={async () => { if (await remind.run(() => api.remindInvoice(r.tenantId, r.invoiceId))) onChanged(); }} />
         )}

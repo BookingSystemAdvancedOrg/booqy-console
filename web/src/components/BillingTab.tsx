@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
-import { INVOICE_STATUS_TEXT, addDays, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay } from "../finance";
+import { INVOICE_STATUS_TEXT, addDays, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from "./ui";
 import { SaveButton, useFlash } from "./save";
@@ -38,7 +38,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   // Ended (its last day has passed) but still waiting for its last invoice: a new agreement can start.
   const ended = running && !!b.endsAt && b.endsAt < isoDay(new Date());
   const isTrial = b.terms === "trial";
-  const overdue = data.invoices.filter((i) => i.status === "open" && i.daysLate > 0);
+  const overdue = data.invoices.filter(isOverdue);
   const stamp = (b.pastDueSince || overdue.length) && running ? "past_due" : ended ? "ended" : b.status;
   const pref = b.collectionPreference ?? (b.collectionMethod === "charge_automatically" ? "card" : "invoice");
 
@@ -310,7 +310,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
             <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Fee</th>{smsColumn && <th>SMS</th>}<th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
             <tbody>
               {invoices.map((i) => {
-                const overdue = i.status === "open" && i.daysLate > 0;
+                const overdue = isOverdue(i);
                 const fees = (Number(i.lateFeeSek) || 0) + (Number(i.interestSek) || 0);
                 return (
                   <tr key={i.invoiceId}>
@@ -331,7 +331,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
                     <td className="small">
                       {i.hostedInvoiceUrl && <a href={i.hostedInvoiceUrl} target="_blank" rel="noreferrer">Open</a>}
                       {i.invoicePdf && <> · <a href={i.invoicePdf} target="_blank" rel="noreferrer">PDF</a></>}
-                      {overdue && i.collectionMethod !== "charge_automatically" && (
+                      {overdue && i.status === "open" && i.collectionMethod !== "charge_automatically" && (
                         <div><button className="link" disabled={remind.busy}
                                      onClick={async () => { if (await remind.run(() => api.remindInvoice(tenantId, i.invoiceId))) onChanged(); }}>
                           {remind.busy ? "Sending…" : "Send reminder"}

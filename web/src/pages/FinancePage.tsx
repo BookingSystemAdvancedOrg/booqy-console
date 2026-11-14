@@ -27,7 +27,7 @@ const VIEWS = ["Overview", "Payments"] as const;
 
 export default function FinancePage({ view: initialView = "Overview" }: { view?: (typeof VIEWS)[number] }) {
   const [view, setView] = useState<(typeof VIEWS)[number]>(initialView);
-  // A billing period (25th to 24th) and how many periods back from it; the period in progress runs to today.
+  // A billing period (a calendar month) and how many months back from it; the month in progress runs to today.
   const choices = useMemo(() => periodChoices(24), []);
   const [periodFrom, setPeriodFrom] = useState(() => choices[0].from);
   const [span, setSpan] = useState<Span>(1);

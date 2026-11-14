@@ -42,12 +42,12 @@ describe("Plan tab: Free", () => {
       expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(3950);
       fireEvent.click(screen.getByRole("radio", { name: "6 months" }));
       fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
-      expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-05-14");
+      expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-05-13");
       expect(screen.getByLabelText(/^Free until/)).toHaveAttribute("min", "2026-11-28");
       fireEvent.click(screen.getByRole("radio", { name: "3 months" }));
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
       expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
-        planId: "free", free: { until: "2027-02-14", thenPlanId: "starter" }, priceSek: 3950 }));
+        planId: "free", free: { until: "2027-02-13", thenPlanId: "starter" }, priceSek: 3950 }));
     } finally {
       vi.useRealTimers();
     }

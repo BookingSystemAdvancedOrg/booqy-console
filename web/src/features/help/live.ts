@@ -21,7 +21,7 @@ const tenants = (pick: (t: TenantSummary) => boolean): Metric => async (src) => 
 
 type Kpis = Awaited<ReturnType<typeof api.financeOverview>>["kpis"];
 
-/** The billing period in progress, as Finance opens it (25th to today). */
+/** The billing period in progress, as Finance opens it (the 1st to today). */
 const finance = (value: (k: Kpis) => Value): Metric => async (src) => {
   const range = spanRange(periodChoices(1)[0].from, 1);
   const data = await src.financeOverview(range);

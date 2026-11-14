@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { addMonths, defaultFreeUntil, fmtFreeDay, freeForm, freeInput, freeLabel, stockholmToday } from "./free";
+import { addMonths, applyFreePreset, defaultFreeUntil, fmtFreeDay, freePresetOf, freeForm, freeInput, freeLabel, stockholmToday } from "./free";
 
 describe("free plan helpers", () => {
   it("defaults to three months from today in Stockholm", () => {
     // 23:30 UTC on 14 Nov is already 15 Nov in Stockholm
     const late = new Date("2026-11-14T23:30:00Z");
     expect(stockholmToday(late)).toBe("2026-11-15");
-    expect(defaultFreeUntil(late)).toBe("2027-02-15");
-    expect(defaultFreeUntil(new Date("2026-11-14T10:00:00Z"))).toBe("2027-02-14");
+    expect(defaultFreeUntil(late)).toBe("2027-02-14");
+    expect(defaultFreeUntil(new Date("2026-11-14T10:00:00Z"))).toBe("2027-02-13");
+  });
+
+  it("3 and 6 months end the day before the same date, so no extra free day", () => {
+    const now = new Date("2026-11-14T10:00:00Z");
+    const form = freeForm(undefined, "starter", now);
+    const three = applyFreePreset(form, "3m", now);
+    const six = applyFreePreset(form, "6m", now);
+    expect(three.until).toBe("2027-02-13");                 // first paid day 14 Feb
+    expect(six.until).toBe("2027-05-13");                   // first paid day 14 May
+    expect(freePresetOf(three, now)).toBe("3m");
+    expect(freePresetOf(six, now)).toBe("6m");
+    expect(freePresetOf({ ...three, until: "2027-02-14" }, now)).toBe("custom");
+    // 31 Aug + 6 months clamps to 28 Feb, so the last free day is 27 Feb
+    expect(applyFreePreset(form, "6m", new Date("2026-08-31T10:00:00Z")).until).toBe("2027-02-27");
   });
 
   it("adds months and clamps to the month's last day", () => {
@@ -24,6 +38,6 @@ describe("free plan helpers", () => {
     expect(form.noEnd).toBe(true);
     expect(freeInput(form)).toEqual({ until: null, thenPlanId: "growth" });
     expect(freeInput({ ...form, noEnd: false, until: "2027-03-01" })).toEqual({ until: "2027-03-01", thenPlanId: "growth" });
-    expect(freeForm(undefined, undefined, new Date("2026-11-14T10:00:00Z"))).toEqual({ until: "2027-02-14", noEnd: false, thenPlanId: "starter" });
+    expect(freeForm(undefined, undefined, new Date("2026-11-14T10:00:00Z"))).toEqual({ until: "2027-02-13", noEnd: false, thenPlanId: "starter" });
   });
 });

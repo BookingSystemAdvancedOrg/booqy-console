@@ -777,7 +777,7 @@
         "profit",
         "export csv"
       ],
-      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (25th to 24th), in SEK ex VAT. Pick a customer to see just them, and export the rows as CSV.",
+      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (a calendar month), in SEK ex VAT. Pick a customer to see just them, and export the rows as CSV.",
       "steps": [
         "Open Finance in the menu.",
         "Pick the Billing period and how many periods.",
@@ -895,9 +895,9 @@
         "create invoices",
         "invoice run",
         "missed invoices",
-        "invoices on the 25th"
+        "invoices on the 1st"
       ],
-      "answer": "Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). After a missed 25th you run it by hand on Finance, Payments, with a preview first.",
+      "answer": "Invoices are created on the 1st for that calendar month, in advance (the monthly price; SMS are included, Free has no charge); a new agreement gets its first month pro rata on its start day. The daily run catches up by itself after a missed 1st; you can also run it by hand on Finance, Payments, with a preview first.",
       "steps": [
         "Open Finance and press Payments.",
         "Press Run invoicing and check the preview.",

@@ -251,6 +251,15 @@ def _ledger(finance, tenant_id, invoice_id, **fields):
                            "collectionMethod": "send_invoice", **fields})
 
 
+def _accept_terms(aws, tenant_id, version="2026-11-v1", at="2026-09-01T10:00:00Z"):
+    """The owner accepted Allmänna villkor för restauranger (the reminder
+    fee is agreed) before the ledger rows' invoices (1 Oct)."""
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET terms = :t",
+                           ExpressionAttributeValues={":t": {"M": {"version": {"S": version}, "acceptedAt": {"S": at},
+                                                                   "acceptedBySub": {"S": "sub-owner"}}}})
+
+
 def _ago(days):
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -731,6 +740,28 @@ def test_a_paying_customer_pays_the_same_per_month_after_the_switch(finance, str
     assert months == [Decimal("1490.00")] * 3
 
 
+def test_a_paid_legacy_subscription_continues_from_its_paid_period(finance, stripe, aws, tenant):
+    """A legacy subscription that collected its current period (10 Nov to
+    10 Dec): advance billing starts the day after, never from its start."""
+    from datetime import date
+    from app.billing import run_invoicing
+    _activate(aws, tenant)
+    _start(tenant)
+    _set_billing(aws, tenant, subscriptionId="sub_paid", status="active", startedAt="2026-06-10T10:00:00Z", mrrSek=990,
+                 startsAt="2026-06-10")
+    start, end = (int(datetime(2026, 11, 10, 10, tzinfo=timezone.utc).timestamp()),
+                  int(datetime(2026, 12, 10, 10, tzinfo=timezone.utc).timestamp()))
+    stripe["subs"]["sub_paid"] = {"id": "sub_paid", "status": "active", "items": {"data": [
+        {"current_period_start": start, "current_period_end": end}]}}
+    out = run_invoicing("invoicing", today=date(2026, 11, 14))
+    assert out["migrated"][0]["paidThrough"] == "2026-12-09" and out["invoices"] == []
+    b = _profile(aws, tenant)["billing"]
+    assert b["cycle"] == "advance" and b["paidThrough"] == "2026-12-09" and b["startsAt"] == "2026-06-10"
+    assert run_invoicing("invoicing", today=date(2026, 12, 1))["invoices"] == []
+    (dec,) = run_invoicing("invoicing", today=date(2026, 12, 10))["invoices"]
+    assert (dec["periodStart"], dec["periodEnd"]) == ("2026-12-10", "2026-12-31")
+
+
 def test_legacy_stripe_subscription_is_moved(finance, stripe, aws, tenant):
     from datetime import date
     from app.billing import run_invoicing
@@ -741,7 +772,9 @@ def test_legacy_stripe_subscription_is_moved(finance, stripe, aws, tenant):
     stripe["invoices"] = [{"id": "in_adv", "status": "open", "customer": "cus_test1", "subscription": "sub_legacy"}]
     out = run_invoicing("invoicing", today=date(2026, 11, 14))
     assert out["migrated"][0]["voided"] == ["in_adv"] and stripe["subs"]["sub_legacy"]["status"] == "canceled"
+    # its open invoice was voided: the period it was for is invoiced again, once
     assert out["invoices"][0]["periodStart"] == "2026-11-10"
+    assert _profile(aws, tenant)["billing"]["cycle"] == "advance"
 
 
 # ------------------------------------------------------------ the billing customer
@@ -770,11 +803,49 @@ def test_prefill_from_the_connected_account_and_sync_on_change(finance, stripe, 
     assert all(c[3].startswith(f"customer-sync-{tenant}-") for c in sync)
 
 
+def test_a_vat_number_that_failed_to_register_is_tried_again(finance, stripe, aws, tenant, monkeypatch):
+    from app import billing
+    from app.billing import sync_customer
+    from app.core import ApiError
+    _activate(aws, tenant)
+    _start(tenant)
+    real, fails = billing.stripe_request, {"n": 1}
+
+    def flaky(method, path, params=None, **kw):
+        if path.endswith("/tax_ids") and method == "POST" and fails["n"]:
+            fails["n"] -= 1
+            raise ApiError(502, "stripe_unavailable", "Stripe is down")
+        return real(method, path, params, **kw)
+    monkeypatch.setattr(billing, "stripe_request", flaky)
+    status, _b = call("PATCH /platform/tenants/{tenantId}", {"tenantId": tenant}, body={"vatNumber": "SE559988776601"})
+    assert status == 200
+    assert sync_customer(tenant, _profile(aws, tenant))
+    assert _profile(aws, tenant)["billing"].get("customerVat") != "SE559988776601"
+    # the next run: the VAT number again (the rest is unchanged)
+    assert sync_customer(tenant, _profile(aws, tenant))
+    b = _profile(aws, tenant)["billing"]
+    assert b["customerVat"] == "SE559988776601" and b["customerTaxId"] == "txi_SE559988776601"
+    assert not sync_customer(tenant, _profile(aws, tenant))
+
+
+def test_line_periods_are_stockholm_days():
+    from datetime import date
+    from app.billing import _ts
+    from zoneinfo import ZoneInfo
+    sthlm = ZoneInfo("Europe/Stockholm")
+    start, end = datetime.fromtimestamp(_ts(date(2026, 12, 1)), sthlm), datetime.fromtimestamp(_ts(date(2026, 12, 31), True), sthlm)
+    assert (start.date(), start.hour, start.minute) == (date(2026, 12, 1), 0, 0)
+    assert (end.date(), end.hour, end.minute, end.second) == (date(2026, 12, 31), 23, 59, 59)
+    summer = datetime.fromtimestamp(_ts(date(2026, 7, 31), True), sthlm)            # CEST
+    assert (summer.date(), summer.hour) == (date(2026, 7, 31), 23)
+
+
 # ------------------------------------------------------------ late payment
 def test_reminders_at_3_7_14_and_a_final_notice_at_30(finance, stripe, aws, tenant, mails, ops):
     from app.handler import handler
     _activate(aws, tenant)
     _start(tenant)
+    _accept_terms(aws, tenant)
     _ledger(finance, tenant, "in_a", status="open", dueDate=_ago(2))       # not yet
     _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(3))       # step 3
     _ledger(finance, tenant, "in_c", status="open", dueDate=_ago(16))      # job was down: one email, step 14
@@ -850,6 +921,7 @@ def test_reminder_fee_60_then_forseningsersattning_390_on_separate_fee_invoices(
     from app.handler import handler
     _activate(aws, tenant)
     _start(tenant)
+    _accept_terms(aws, tenant)
     _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(3))
     handler({"financeTask": "dunning"}, None)
     (fee,) = _fee_invoices(stripe)
@@ -876,6 +948,135 @@ def test_reminder_fee_60_then_forseningsersattning_390_on_separate_fee_invoices(
     assert [f["metadata[step]"] for f in _fee_invoices(stripe)] == ["reminder", "late_fee"]
     # the fee invoices themselves get no fees
     assert not any(f.get("metadata[invoiceId]", "").startswith("in_made") for f in _fee_invoices(stripe))
+
+
+def test_no_reminder_fee_unless_agreed_before_the_invoice(finance, stripe, aws, tenant, mails, ops):
+    """2 § lagen (1981:739): a reminder fee only when agreed when the debt
+    arose; the förseningsersättning (the law itself) is then 450 kr."""
+    from app.handler import handler
+    _activate(aws, tenant)
+    _start(tenant)
+    _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(3))
+    handler({"financeTask": "dunning"}, None)
+    (mail,) = mails
+    assert "påminnelseavgift" not in mail[2].lower() and _fee_invoices(stripe) == []
+    assert "reminderFeeAt" not in _row(finance, tenant, "in_b")
+    # accepted after the invoice was created: still no reminder fee for it
+    _accept_terms(aws, tenant, at="2026-10-15T10:00:00Z")
+    finance.update_item(Key={"PK": f"TENANT#{tenant}", "SK": "INVOICE#2026-10-01#in_b"},
+                        UpdateExpression="SET dueDate = :d", ExpressionAttributeValues={":d": _ago(7)})
+    mails.clear()
+    handler({"financeTask": "dunning"}, None)
+    (fee,) = _fee_invoices(stripe)
+    assert fee["metadata[step]"] == "late_fee"
+    (item,) = _items_of(stripe, next(i for i, p in stripe["made"].items() if p["metadata"].get("step") == "late_fee"))
+    assert item["amount"] == 45000
+    (mail,) = mails
+    assert "förseningsersättning på 450 kr på en separat faktura" in mail[2] and "minus" not in mail[2]
+    assert "påminnelseavgift" not in mail[2].lower()
+    # an older terms version (before the fee) does not count either
+    from app.billing import reminder_fee_agreed
+    row = {"createdAt": "2026-12-01T00:00:00Z"}
+    assert not reminder_fee_agreed({"terms": {"version": "2026-10-v3", "acceptedAt": "2026-10-01T00:00:00Z"}}, row)
+    assert reminder_fee_agreed({"terms": {"version": "2026-11-v1", "acceptedAt": "2026-11-20T00:00:00Z"}}, row)
+    assert reminder_fee_agreed({"terms": {"version": "2027-01-v2", "acceptedAt": "2026-12-01T00:00:00Z"}}, row)
+    assert not reminder_fee_agreed({}, row)
+
+
+def test_fees_never_exceed_450_kr_when_the_reminder_fee_fails(finance, stripe, aws, tenant, mails, ops, monkeypatch):
+    """4 a §: the reminder fee and the förseningsersättning together at most
+    450 kr, also when the 60 kr invoice fails on the run the 450 kr is due."""
+    from app import billing
+    from app.core import ApiError
+    from app.handler import handler
+    _activate(aws, tenant)
+    _start(tenant)
+    _accept_terms(aws, tenant)
+    _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(7))
+    real = billing._fee_invoice
+    failing = {"reminder": 1}
+
+    def flaky(customer_id, tenant_id, row, step, lines, actor):
+        if failing.get(step):
+            failing[step] -= 1
+            raise ApiError(502, "stripe_unavailable", "Stripe is down")
+        return real(customer_id, tenant_id, row, step, lines, actor)
+    monkeypatch.setattr(billing, "_fee_invoice", flaky)
+    out = handler({"financeTask": "dunning"}, None)
+    assert any("reminder fee FAILED" in f for f in out["fees"])
+    assert _fee_invoices(stripe) == []                                               # no 450 kr on its own
+    row = _row(finance, tenant, "in_b")
+    assert "lateFeeAdded" not in row and "reminderFeeAt" not in row and row["customerReminder7At"]
+    handler({"financeTask": "dunning"}, None)
+    amounts = sorted(i["amount"] for f in stripe["made"].values() if f["metadata"].get("kind") == "fees"
+                     for i in _items_of(stripe, f["id"]))
+    assert amounts == [6000, 39000]                                                  # 60 + 390 = 450
+    handler({"financeTask": "dunning"}, None)
+    assert len(_fee_invoices(stripe)) == 2
+
+
+def test_no_reminder_fee_after_the_forseningsersattning(finance, stripe, aws, tenant, mails, ops):
+    from app.handler import handler
+    _activate(aws, tenant)
+    _start(tenant)
+    _accept_terms(aws, tenant)
+    # the 450 kr went out (an older run), the reminder fee never did
+    _ledger(finance, tenant, "in_b", status="open", dueDate=_ago(8), customerReminder3At=_ago(5),
+            customerReminder7At=_ago(1), lateFeeAdded=_ago(1), lateFeeSek=Decimal(450))
+    handler({"financeTask": "dunning"}, None)
+    assert _fee_invoices(stripe) == [] and "reminderFeeAt" not in _row(finance, tenant, "in_b")
+
+
+def test_a_card_invoice_has_no_due_date_and_is_late_from_its_charge(finance, stripe, aws, tenant, mails, ops):
+    """Stripe leaves due_date empty on charge_automatically invoices: the
+    day it was finalized (charged) is the due date, for the restaurant's
+    reminders, the operators' steps, the summary and the console."""
+    from app import billing
+    from app.handler import handler
+    _activate(aws, tenant)
+    _start(tenant)
+    _accept_terms(aws, tenant)
+    _ledger(finance, tenant, "in_c", status="open", collectionMethod="charge_automatically", finalizedAt=_ago(7))
+    out = handler({"financeTask": "dunning"}, None)
+    (mail,) = mails
+    assert mail[1] == "Påminnelse: faktura F-c från Booqy" and "försökt dra beloppet från ert kort" in mail[2]
+    assert "förseningsersättning på 390 kr" in mail[2]
+    steps = [s for s, _m in ops if "overdue invoice(s)" not in s]
+    assert steps == ["[dev] Booqy: Pizzeria Roma invoice F-c 7 days overdue"]
+    message = dict(ops)[steps[0]]
+    assert "Due date: " + _ago(7)[:10] in message and "card (Stripe retries)" in message
+    assert out["overdue"] == 1 and out["overdueSummarySent"] is True
+    assert sorted(f["metadata[step]"] for f in _fee_invoices(stripe)) == ["late_fee", "reminder"]
+    # the console: days late, the past-due status and the Payments list
+    (inv,) = [i for i in billing.list_invoices(tenant) if i["invoiceId"] == "in_c"]
+    assert inv["daysLate"] == 7
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-01-01", "to": "2026-12-31", "status": "overdue"})
+    assert status == 200 and [r["invoiceId"] for r in body["invoices"]] == ["in_c"] and body["summary"]["overdue"] == 1
+    # a new card invoice from Stripe: its row gets the finalized day as the due date
+    now = int(time.time())
+    row = billing._invoice_row(tenant, {"id": "in_x", "status": "open", "collection_method": "charge_automatically",
+                                        "due_date": None, "created": now, "status_transitions": {"finalized_at": now}})
+    assert row["dueDate"] == billing._iso(now)
+    emailed = billing._invoice_row(tenant, {"id": "in_y", "status": "open", "collection_method": "send_invoice",
+                                            "due_date": now + 86400, "created": now, "status_transitions": {"finalized_at": now}})
+    assert emailed["dueDate"] == billing._iso(now + 86400)
+
+
+def test_an_uncollectible_invoice_is_still_reminded_and_listed(finance, stripe, aws, tenant, mails, ops):
+    """Stripe marks a card invoice uncollectible after its last retry; it is
+    still owed (and payable), so it stays in the reminders and the lists."""
+    from app.handler import handler
+    _activate(aws, tenant)
+    _start(tenant)
+    _ledger(finance, tenant, "in_u", status="uncollectible", collectionMethod="charge_automatically",
+            finalizedAt=_ago(14), dueDate=_ago(14))
+    stripe["remote"] = {"in_u": {"id": "in_u", "status": "uncollectible"}}
+    out = handler({"financeTask": "dunning"}, None)
+    assert [m[1] for m in mails] == ["Påminnelse: faktura F-u från Booqy"]
+    assert [s for s, _m in ops if "overdue invoice(s)" not in s] == ["[dev] Booqy: Pizzeria Roma invoice F-u 14 days overdue"]
+    assert out["overdue"] == 1
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-01-01", "to": "2026-12-31", "status": "overdue"})
+    assert [r["invoiceId"] for r in body["invoices"]] == ["in_u"]
 
 
 def test_450_kr_once_when_there_is_no_reminder_fee(finance, stripe, aws, tenant, mails, monkeypatch):

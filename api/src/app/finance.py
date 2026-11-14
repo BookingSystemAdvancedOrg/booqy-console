@@ -112,6 +112,10 @@ def _locations(tenant_id: str) -> list[dict]:
     return [{"locationId": r.get("locationId"), "name": r.get("name")} for r in rows if r.get("locationId")]
 
 
+# Still owed (billing.OWED): open, or uncollectible after the last card retry.
+_OWED = ("open", "uncollectible")
+
+
 def _invoices(tenant_id: str) -> list[dict]:
     return query_all(TableName=_finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
                      ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
@@ -164,10 +168,10 @@ def _billing_status(profile: dict, invoices: list[dict] | None = None) -> str:
     """none | scheduled | active | ending | ended, or past_due while an
     invoice is overdue: a failed card payment, or an open invoice past its
     due date (an emailed invoice never fails a payment)."""
-    from .billing import days_late, phase
+    from .billing import is_overdue, phase
     billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
     ph = phase(billing)
-    overdue = any(i.get("status") == "open" and days_late(i) > 0 for i in invoices or [])
+    overdue = any(is_overdue(i) for i in invoices or [])
     if ph in ("active", "ending", "ended") and (billing.get("pastDueSince") or overdue):
         return "past_due"
     return ph
@@ -210,9 +214,8 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         if row.get("active"):
             point["activeTenants"] += 1
     invoices = _invoices(tenant_id)
-    from .billing import days_late
-    overdue_since = min((i["dueDate"] for i in invoices if i.get("status") == "open" and i.get("dueDate") and days_late(i) > 0),
-                        default=None)
+    from .billing import due_iso, is_overdue
+    overdue_since = min((due_iso(i) for i in invoices if is_overdue(i) and due_iso(i)), default=None)
     sms_cost = _q(split["sms"])
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
     cost = _q(sums["costSek"])
@@ -374,7 +377,7 @@ def invoices(req) -> tuple[int, dict]:
             if not (first <= when <= last):
                 continue
             late = inv["daysLate"]
-            if wanted == "overdue" and not (inv["status"] == "open" and late > 0):
+            if wanted == "overdue" and not (inv["status"] in _OWED and late > 0):
                 continue
             if wanted not in ("all", "overdue") and inv["status"] != wanted:
                 continue
@@ -382,9 +385,9 @@ def invoices(req) -> tuple[int, dict]:
                          "orgNumber": p.get("orgNumber"), "tenantStatus": p.get("status")})
     # Overdue first (the most days late on top), then by month, newest first.
     rows.sort(key=lambda r: ((r.get("month") or ""), (r.get("name") or "").lower()), reverse=True)
-    rows.sort(key=lambda r: -(r["daysLate"] if r["status"] == "open" else 0))
+    rows.sort(key=lambda r: -(r["daysLate"] if r["status"] in _OWED else 0))
     paid = sum(1 for r in rows if r["status"] == "paid")
-    overdue = [r for r in rows if r["status"] == "open" and r["daysLate"] > 0]
+    overdue = [r for r in rows if r["status"] in _OWED and r["daysLate"] > 0]
     return 200, {
         "period": {"from": first, "to": last, "status": wanted},
         "summary": {"invoices": len(rows), "paid": paid, "open": sum(1 for r in rows if r["status"] == "open"),

@@ -21,9 +21,20 @@ export function addMonths(day: string, months: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
 }
 
+/** yyyy-mm-dd plus (or minus) whole days. */
+export function addDays(day: string, days: number): string {
+  const [y, m, d] = day.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** The last free day of `months` months from today (Stockholm): from 14 Nov, 3 months end on 13 Feb, so the first paid day is 14 Feb. */
+export function freeUntilAfter(months: number, now: Date = new Date()): string {
+  return addDays(addMonths(stockholmToday(now), months), -1);
+}
+
 /** The default last free day: three months from today (Stockholm). */
 export function defaultFreeUntil(now: Date = new Date()): string {
-  return addMonths(stockholmToday(now), FREE_MONTHS);
+  return freeUntilAfter(FREE_MONTHS, now);
 }
 
 /** The owner is told this many days before the first paid day. */
@@ -75,14 +86,13 @@ export const FREE_PRESETS: { id: FreePreset; label: string }[] = [
 export function applyFreePreset(form: FreeForm, preset: FreePreset, now: Date = new Date()): FreeForm {
   if (preset === "none") return { ...form, noEnd: true, until: form.until || defaultFreeUntil(now) };
   if (preset === "custom") return { ...form, noEnd: false, until: form.until || defaultFreeUntil(now) };
-  return { ...form, noEnd: false, until: addMonths(stockholmToday(now), preset === "3m" ? 3 : 6) };
+  return { ...form, noEnd: false, until: freeUntilAfter(preset === "3m" ? 3 : 6, now) };
 }
 
 /** Which preset the form matches (a date that is not 3 or 6 months from today is custom). */
 export function freePresetOf(form: FreeForm, now: Date = new Date()): FreePreset {
   if (form.noEnd) return "none";
-  const today = stockholmToday(now);
-  if (form.until === addMonths(today, 3)) return "3m";
-  if (form.until === addMonths(today, 6)) return "6m";
+  if (form.until === freeUntilAfter(3, now)) return "3m";
+  if (form.until === freeUntilAfter(6, now)) return "6m";
   return "custom";
 }

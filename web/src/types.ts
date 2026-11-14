@@ -386,7 +386,7 @@ export interface BillingPlan {
   free?: boolean;
 }
 
-/** What the next invoice (on the 25th, for the period 25th to 24th) would carry. */
+/** What the next invoice (on the 1st, for that calendar month in advance) would carry. */
 export interface InvoicePlan {
   periodStart: string;
   periodEnd: string;

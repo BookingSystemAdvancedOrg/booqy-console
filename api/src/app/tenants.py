@@ -97,9 +97,11 @@ def add_months(day: date, months: int) -> date:
 
 
 def default_free_until(today: date | None = None) -> date:
-    """The default last free day: three months from today (Stockholm)."""
+    """The default last free day: three months from today (Stockholm), the
+    day before the same date three months on (from 14 Nov: 13 Feb, the
+    first paid day 14 Feb)."""
     from .website import stockholm_today          # website imports nothing from here
-    return add_months(today or stockholm_today(), FREE_MONTHS)
+    return add_months(today or stockholm_today(), FREE_MONTHS) - timedelta(days=1)
 
 
 def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_until: str | None = None) -> dict | None:

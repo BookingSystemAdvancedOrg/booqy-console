@@ -43,6 +43,7 @@ import json
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -59,6 +60,7 @@ SUBSCRIPTION_FIELDS = ("subscriptionId", "status", "priceId", "planId", "mrrSek"
                        "currentPeriodStart", "currentPeriodEnd", "cancelAt", "canceledAt", "pauseCollection",
                        "trialEnd")
 CENTS = Decimal("0.01")
+STOCKHOLM = ZoneInfo("Europe/Stockholm")
 
 
 def finance_table() -> str:
@@ -168,7 +170,10 @@ def sync_customer(tenant_id: str, profile: dict, *, actor: str = "billing") -> b
         return False
     params = _customer_params(tenant_id, profile, _connected_account(profile))
     vat = vat_number_of(profile)
-    digest = hashlib.sha256(json.dumps({**params, "vat": vat}, sort_keys=True).encode()).hexdigest()[:20]
+
+    def hash_of(vat_part):
+        return hashlib.sha256(json.dumps({**params, "vat": vat_part}, sort_keys=True).encode()).hexdigest()[:20]
+    digest = hash_of(vat)
     if billing.get("customerSyncHash") == digest:
         return False
     stripe_request("POST", f"/customers/{customer_id}", params, idempotency_key=f"customer-sync-{tenant_id}-{digest}")
@@ -186,6 +191,8 @@ def sync_customer(tenant_id: str, profile: dict, *, actor: str = "billing") -> b
                     log.warning("old VAT number %s not removed: %s", old, e.message)
             fields.update({"customerVat": vat, "customerTaxId": tax.get("id")})
         except ApiError as e:
+            # Not in the hash: the next run tries the VAT number again.
+            fields["customerSyncHash"] = hash_of(billing.get("customerVat"))
             log.warning("VAT number not registered on %s: %s", customer_id, e.message)
     _write_billing(tenant_id, fields)
     write_audit(tenant_id, "billing_customer_synced", actor, {"customerId": customer_id, "email": params.get("email"),
@@ -299,6 +306,20 @@ def ensure_customer(tenant_id: str, profile: dict, actor: str) -> str:
 
 
 # ------------------------------------------------------------- the ledger
+# Still owed: open, or uncollectible (Stripe's last card retry gave up; the
+# restaurant can still pay it and is still reminded).
+OWED = ("open", "uncollectible")
+
+
+def due_date_of(invoice: dict) -> str | None:
+    """The due date: Stripe's own for an emailed invoice; a card invoice has
+    none (it is due when charged), so the day it was finalized."""
+    due = _iso(invoice.get("due_date"))
+    if due or invoice.get("collection_method") != "charge_automatically":
+        return due
+    return _iso((invoice.get("status_transitions") or {}).get("finalized_at"))
+
+
 def _invoice_row(tenant_id: str, invoice: dict) -> dict:
     transitions = invoice.get("status_transitions") or {}
     metadata = invoice.get("metadata") or {}
@@ -320,7 +341,7 @@ def _invoice_row(tenant_id: str, invoice: dict) -> dict:
         # The billed period (a calendar month or part of one) is in the
         # metadata, like the webhook reads it; Stripe's own period of a
         # one-off invoice is its creation.
-        "dueDate": _iso(invoice.get("due_date")),
+        "dueDate": due_date_of(invoice),
         "kind": metadata.get("kind"), "feesFor": metadata.get("invoiceId") if metadata.get("kind") == "fees" else None,
         "periodStart": metadata.get("periodStart") or _iso(invoice.get("period_start")),
         "periodEnd": metadata.get("periodEnd") or _iso(invoice.get("period_end")),
@@ -606,18 +627,37 @@ def agreement_running(billing: dict, today: date | None = None) -> bool:
     return phase(billing, today) in ("scheduled", "active", "ending")
 
 
+def _sub_period(sub: dict, billing: dict, field: str) -> date | None:
+    """A legacy subscription's current period start or end as a Stockholm
+    date: from the subscription (or its first item, newer API versions), else
+    what PROFILE.billing recorded."""
+    items = ((sub.get("items") or {}).get("data") or [{}]) if isinstance(sub, dict) else [{}]
+    ts = (sub or {}).get(f"current_{field}") or (items[0] or {}).get(f"current_{field}")
+    if isinstance(ts, (int, float)) and ts > 0:
+        return datetime.fromtimestamp(int(ts), STOCKHOLM).date()
+    iso = billing.get("currentPeriodStart" if field == "period_start" else "currentPeriodEnd")
+    parsed = _parse(iso) if isinstance(iso, str) else None
+    if parsed is not None:
+        return parsed.astimezone(STOCKHOLM).date()
+    return None
+
+
 def migrate_legacy(tenant_id: str, profile: dict, actor: str) -> dict | None:
     """A Stripe subscription from the first version (billed in advance):
     cancelled without a final invoice, its open advance invoice voided, and
-    the agreement continues in arrears from the same start date."""
+    the agreement continues in advance per calendar month from the day after
+    the last period the subscription collected (paidThrough), so no day is
+    invoiced twice: the period end less a day when it was paid, the day
+    before the period when its open invoice was voided."""
     billing = _billing(profile)
     sub_id = billing.get("subscriptionId")
     if not sub_id:
         return None
     customer_id = billing.get("customerId")
     voided = []
+    sub: dict = {}
     if billing.get("status") not in ("canceled", "incomplete_expired"):
-        stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "false", "prorate": "false"})
+        sub = stripe_request("DELETE", f"/subscriptions/{sub_id}", {"invoice_now": "false", "prorate": "false"}) or {}
         if customer_id:
             page = stripe_request("GET", "/invoices", {"customer": customer_id, "subscription": sub_id, "status": "open", "limit": 100})
             for invoice in page.get("data") or []:
@@ -625,16 +665,31 @@ def migrate_legacy(tenant_id: str, profile: dict, actor: str) -> dict | None:
                 voided.append(invoice["id"])
     started = _date(billing.get("startedAt")) or _date(billing.get("termsSince")) or _today()
     ended = billing.get("status") in ("canceled", "incomplete_expired")
+    ends_at = (_date(billing.get("canceledAt")) or started) if ended else None
+    if ended:
+        paid = ends_at
+    elif voided:
+        period_start = _sub_period(sub, billing, "period_start")
+        paid = period_start - timedelta(days=1) if period_start else None
+    else:
+        period_end = _sub_period(sub, billing, "period_end")
+        # Unknown (never seen): the days so far count as collected, never
+        # charged again.
+        paid = period_end - timedelta(days=1) if period_end else _today() - timedelta(days=1)
+    if paid is not None and paid < started:
+        paid = None
     fields = {
         "status": "ended" if ended else "active", "startsAt": started.isoformat(),
-        "endsAt": (_date(billing.get("canceledAt")) or started).isoformat() if ended else None,
+        "endsAt": ends_at.isoformat() if ends_at else None,
+        "cycle": "advance", "paidThrough": paid.isoformat() if paid else None,
         "legacySubscriptionId": sub_id, "subscriptionId": None, "priceId": None, "mrrSek": None,
         "currentPeriodStart": None, "currentPeriodEnd": None, "cancelAt": None, "canceledAt": None,
         "pauseCollection": None, "trialEnd": None, "eventCreated": None,
     }
     _write_billing(tenant_id, fields)
-    write_audit(tenant_id, "billing_migrated_to_arrears", actor, {"subscriptionId": sub_id, "voidedInvoices": voided})
-    return {"subscriptionId": sub_id, "voided": voided}
+    write_audit(tenant_id, "billing_migrated_to_advance", actor, {"subscriptionId": sub_id, "voidedInvoices": voided,
+                                                                  "paidThrough": fields["paidThrough"]})
+    return {"subscriptionId": sub_id, "voided": voided, "paidThrough": fields["paidThrough"]}
 
 
 # ------------------------------------------------------------- what a period costs
@@ -1210,8 +1265,11 @@ def _cents(amount: Decimal) -> int:
 
 
 def _ts(day: date, end: bool = False) -> int:
+    """A line's period bound in Stockholm time (00:00 or 23:59:59), so the
+    invoice shows the billed days themselves, also when Stripe renders the
+    period in the account's timezone."""
     t = datetime.max.time().replace(microsecond=0) if end else datetime.min.time()
-    return int(datetime.combine(day, t, tzinfo=timezone.utc).timestamp())
+    return int(datetime.combine(day, t, tzinfo=STOCKHOLM).timestamp())
 
 
 def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: dict, actor: str,
@@ -1615,13 +1673,36 @@ def _parse(iso: str | None) -> datetime | None:
 
 
 def days_late(invoice: dict, now: datetime | None = None) -> int:
-    """Days between the due date and now (or the payment), 0 when not late."""
+    """Days between the due date and now (or the payment), 0 when not late.
+    A card invoice has no due date of its own: due when it was finalized
+    (rows written before that rule have only finalizedAt or createdAt)."""
     due = _parse(invoice.get("dueDate"))
+    if due is None and invoice.get("collectionMethod") == "charge_automatically":
+        due = _parse(invoice.get("finalizedAt") or invoice.get("createdAt"))
     if due is None:
         return 0
     end = _parse(invoice.get("paidAt")) if invoice.get("status") == "paid" else None
     end = end or now or datetime.now(timezone.utc)
     return max(0, (end.date() - due.date()).days)
+
+
+def due_iso(row: dict) -> str | None:
+    """The ledger row's due date (a card invoice: the day it was finalized)."""
+    if row.get("dueDate"):
+        return row["dueDate"]
+    if row.get("collectionMethod") == "charge_automatically":
+        return row.get("finalizedAt") or row.get("createdAt")
+    return None
+
+
+def is_overdue(row: dict, now: datetime | None = None) -> bool:
+    return row.get("status") in OWED and days_late(row, now) > 0
+
+
+def _pct(value: Decimal) -> str:
+    """A percentage in Swedish: 10, 10,25 (decimal comma, no trailing zeros)."""
+    text = format(Decimal(value).normalize(), "f")
+    return text.replace(".", ",")
 
 
 def interest_sek(amount: Decimal, days: int, *, reference_pct: Decimal, margin_pct: Decimal) -> Decimal:
@@ -1644,7 +1725,7 @@ def _mark(row: dict, **fields) -> None:
 def open_invoices(tenant_id: str) -> list[dict]:
     return [r for r in query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
                                  ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
-            if r.get("status") in ("open", "paid")]
+            if r.get("status") in (*OWED, "paid")]
 
 
 def send_reminder(tenant_id: str, row: dict, actor: str) -> dict:
@@ -1709,10 +1790,36 @@ def console_link(tenant_id: str) -> str:
     return f"{base}/tenants/{tenant_id}?tab=billing"
 
 
+# The first version of Allmänna villkor för restauranger that agrees the
+# reminder fee (application shared/terms.py CURRENT_VERSION).
+FEE_TERMS_VERSION = "2026-11-v1"
+
+
+def _terms_key(version: str) -> tuple:
+    """2026-11-v1 -> (2026, 11, 1): versions compare by date, then number."""
+    try:
+        year, month, rest = version.split("-", 2)
+        return int(year), int(month), int(rest.lstrip("v"))
+    except (AttributeError, ValueError):
+        return (0, 0, 0)
+
+
+def reminder_fee_agreed(profile: dict, row: dict) -> bool:
+    """The restaurant accepted terms with the reminder fee (FEE_TERMS_VERSION
+    or later) on or before the invoice was created: 2 § lagen (1981:739)
+    allows a reminder fee only when agreed when the debt arose."""
+    terms = profile.get("terms") if isinstance(profile.get("terms"), dict) else {}
+    version, accepted = terms.get("version"), _parse(terms.get("acceptedAt"))
+    created = _parse(row.get("createdAt"))
+    if not isinstance(version, str) or accepted is None or created is None:
+        return False
+    return _terms_key(version) >= _terms_key(FEE_TERMS_VERSION) and accepted <= created
+
+
 def _reminder_mail(profile: dict, row: dict, step: int, late: int, fee_note: str | None) -> tuple[str, str]:
     """The restaurant's reminder, in Swedish; the last one is the final notice."""
     number = row.get("number") or row.get("invoiceId")
-    due = _date(row.get("dueDate"))
+    due = _date(due_iso(row))
     final = step == final_notice_days()
     card = row.get("collectionMethod") == "charge_automatically"
     subject = (f"Sista påminnelse: faktura {number} från Booqy" if final else f"Påminnelse: faktura {number} från Booqy")
@@ -1728,8 +1835,7 @@ def _reminder_mail(profile: dict, row: dict, step: int, late: int, fee_note: str
     if fee_note:
         lines += ["", fee_note]
     if final:
-        lines += ["", "Detta är vår sista påminnelse. Betala inom 10 dagar, annars kan ärendet gå vidare till inkasso "
-                      "och tjänsten kan komma att pausas."]
+        lines += ["", "Detta är vår sista påminnelse. Betala inom 10 dagar, annars kan ärendet gå vidare till inkasso."]
     lines += ["", "Har ni redan betalat kan ni bortse från det här meddelandet. Frågor? Svara på det här mejlet."]
     return subject, "\n".join(lines)
 
@@ -1786,7 +1892,7 @@ def ops_reminder(profile: dict, row: dict, step: int, late: int) -> bool:
         return False
     tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
     number = row.get("number") or row["invoiceId"]
-    due = (row.get("dueDate") or "")[:10]
+    due = (due_iso(row) or "")[:10]
     final = " FINAL NOTICE" if step == final_notice_days() else ""
     subject = f"[{env('ENVIRONMENT', 'dev')}] Booqy: {name} invoice {number} {late} days overdue{final}"
     message = "\n".join([
@@ -1830,26 +1936,30 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
         late = days_late(row, now)
         number = row.get("number") or row["invoiceId"]
         is_fee_invoice = row.get("kind") in ("fees", "late_fees")
-        if row.get("status") == "open" and late >= 1:
+        if row.get("status") in OWED and late >= 1:
             # Never remind or charge a fee on an invoice paid (or voided)
             # whose webhook was missed: ask Stripe first.
             try:
                 fresh = stripe_request("GET", f"/invoices/{row['invoiceId']}")
             except ApiError:
                 fresh = None
-            if fresh and fresh.get("status") and fresh["status"] != "open":
+            if fresh and fresh.get("status") and fresh["status"] != row.get("status"):
                 record_invoice(tenant_id, fresh)
                 row = {**row, **{k: val for k, val in _invoice_row(tenant_id, fresh).items() if val is not None}}
                 late = days_late(row, now)
-        if row.get("status") == "open" and late >= 1:
+        if row.get("status") in OWED and late >= 1:
             out["overdue"].append({"tenantId": tenant_id, "name": name, "number": number, "late": late,
                                    "amountSek": row.get("amountRemainingSek") or row.get("totalSek"),
-                                   "dueDate": (row.get("dueDate") or "")[:10]})
-        reached = [st for st in steps if row.get("status") == "open" and late >= st]
+                                   "dueDate": (due_iso(row) or "")[:10]})
+        reached = [st for st in steps if row.get("status") in OWED and late >= st]
         if reached:
             top = max(reached)
+            # The reminder fee only when agreed before the debt arose
+            # (2 § lagen (1981:739)), and never after the
+            # förseningsersättning: 4 a § caps both together at 450 kr.
             want_reminder_fee = (not is_fee_invoice and to and reminder_fee > 0 and late >= first_step
-                                 and not row.get("reminderFeeAt"))
+                                 and not row.get("reminderFeeAt") and not row.get("lateFeeAdded")
+                                 and reminder_fee_agreed(profile, row))
             want_late_fee = not is_fee_invoice and late_fee > 0 and late >= fee_step and not row.get("lateFeeAdded")
             offset = reminder_fee if (want_reminder_fee or row.get("reminderFeeSek")) else Decimal(0)
             late_amount = max(Decimal(0), late_fee - Decimal(offset))
@@ -1857,10 +1967,11 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
             if want_reminder_fee:
                 notes.append(f"En påminnelseavgift på {_kr(reminder_fee)} enligt avtalet kommer på en separat faktura.")
             if want_late_fee and late_amount > 0:
+                less = f" ({_kr(late_fee)} minus påminnelseavgiften)" if offset else ""
                 notes.append(f"Enligt lagen (1981:739) om ersättning för inkassokostnader m.m. tar vi ut en "
-                             f"förseningsersättning på {_kr(late_amount)} (450 kr minus påminnelseavgiften) på en "
-                             f"separat faktura. Dröjsmålsränta enligt räntelagen (referensräntan plus 8 "
-                             f"procentenheter) räknas från förfallodagen.")
+                             f"förseningsersättning på {_kr(late_amount)}{less} på en "
+                             f"separat faktura. Dröjsmålsränta enligt räntelagen (referensräntan plus "
+                             f"{_pct(margin)} procentenheter) räknas från förfallodagen.")
             # The restaurant: the newest step only (a job that was down
             # catches up with one email, not three).
             new = [st for st in reached if not row.get(f"customerReminder{st}At")]
@@ -1884,6 +1995,7 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
                         _unclaim(row, f"customerReminder{st}At")
                     out["reminded"].append(f"{name} {number}: FAILED {getattr(e, 'message', None) or e}")
             reminded_before = any(row.get(f"customerReminder{st}At") for st in reached)
+            reminder_fee_failed = False
             # The reminder fee only with a reminder sent (now or earlier).
             if want_reminder_fee and (mailed or reminded_before) and _claim(row, "reminderFeeAt"):
                 try:
@@ -1894,8 +2006,12 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
                     row = {**row, "reminderFeeSek": reminder_fee}
                 except ApiError as e:
                     _unclaim(row, "reminderFeeAt")
+                    reminder_fee_failed = True
                     out["fees"].append(f"{name} {number}: reminder fee FAILED {e.message}")
-            if want_late_fee and _claim(row, "lateFeeAdded"):
+            # A reminder fee that failed just now is retried first (the next
+            # run), so the förseningsersättning is then 450 kr less it, never
+            # 450 kr with the 60 kr on top.
+            if want_late_fee and not reminder_fee_failed and _claim(row, "lateFeeAdded"):
                 # 4 a § lagen (1981:739): a reminder fee already charged is
                 # covered by the förseningsersättning, never both in full.
                 amount = max(Decimal(0), late_fee - Decimal(row.get("reminderFeeSek") or 0))
@@ -1924,7 +2040,7 @@ def work_invoices(profile: dict, now: datetime, actor: str) -> dict:
                 inv_id = None
                 if amount >= 1:
                     inv_id = _fee_invoice(customer_id, tenant_id, row, "interest", [(
-                        amount, f"Dröjsmålsränta {reference + margin} % per år (räntelagen 6 §) i {late} dagar, "
+                        amount, f"Dröjsmålsränta {_pct(reference + margin)} % per år (räntelagen 6 §) i {late} dagar, "
                                 f"faktura {number}", "interest")], actor)["id"]
                 _mark(row, interestSek=amount, interestDays=late, interestInvoiceId=inv_id or "-")
                 write_audit(tenant_id, "interest_added", actor, {"invoiceId": row["invoiceId"], "number": number,
@@ -1969,7 +2085,7 @@ def overdue_days(tenant_id: str, now: datetime | None = None) -> int | None:
     """Days the oldest open invoice is past its due date (None: none is).
     An emailed invoice never fails a payment, so this is what makes it
     past due."""
-    late = [days_late(r, now) for r in open_invoices(tenant_id) if r.get("status") == "open"]
+    late = [days_late(r, now) for r in open_invoices(tenant_id) if r.get("status") in OWED]
     late = [d for d in late if d > 0]
     return max(late) if late else None
 

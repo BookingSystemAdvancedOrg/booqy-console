@@ -122,9 +122,9 @@ describe("FinancePage", () => {
     await user.selectOptions(period, period.options[2].value);
     const picked = period.options[2].value;
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ from: picked })));
-    await user.click(screen.getByRole("button", { name: "3 periods" }));
+    await user.click(screen.getByRole("button", { name: "3 months" }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(
-      expect.objectContaining({ to: expect.any(String), from: expect.stringMatching(/-25$/) })));
+      expect.objectContaining({ to: expect.any(String), from: expect.stringMatching(/-01$/) })));
     await user.click(screen.getByLabelText("Include inactive customers"));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ includeInactive: true })));
   });

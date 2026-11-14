@@ -48,7 +48,7 @@ def test_plans_list_free_with_growths_features_and_no_price(aws):
     assert free["name"] == "Free" and free["priceSek"] == 0 and free["free"] is True and growth["free"] is False
     assert free["features"] == growth["features"] and free["maxLocations"] == growth["maxLocations"]
     assert free["limits"] == growth["limits"]
-    assert body["freeDefaultUntil"] == _add_months(_today(), 3).isoformat()
+    assert body["freeDefaultUntil"] == (_add_months(_today(), 3) - timedelta(days=1)).isoformat()
 
 
 def test_setting_free_defaults_to_three_months_then_starter(finance, stripe, aws, tenant):
@@ -59,7 +59,7 @@ def test_setting_free_defaults_to_three_months_then_starter(finance, stripe, aws
     growth = _profile(aws, tenant)
     assert t["planId"] == "free" and t["entitlements"]["maxLocations"] == 3
     assert t["entitlements"]["features"]["catering"] is True                      # Growth's features
-    until = _add_months(_today(), 3).isoformat()
+    until = (_add_months(_today(), 3) - timedelta(days=1)).isoformat()
     assert growth["billing"]["freeUntil"] == until and growth["billing"]["freeThenPlanId"] == "starter"
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
     free = body["billing"]["free"]
@@ -119,7 +119,7 @@ def test_create_customer_on_free(finance, stripe, aws):
                                                         "planId": "free"})
     assert status == 202
     b = _profile(aws, body["tenantId"])["billing"]
-    assert b["freeUntil"] == _add_months(_today(), 3).isoformat() and b["freeThenPlanId"] == "starter"
+    assert b["freeUntil"] == (_add_months(_today(), 3) - timedelta(days=1)).isoformat() and b["freeThenPlanId"] == "starter"
 
 
 def test_free_has_no_charge(finance, stripe, aws, tenant):
