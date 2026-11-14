@@ -56,29 +56,23 @@
 }
 .info-tip__btn:hover, .info-tip__btn:focus-visible { color: var(--print); background: var(--glass-fill); }
 .info-tip__pop {
-  position: absolute; top: calc(100% + 6px); right: -6px; z-index: 30; width: max-content; max-width: min(300px, calc(100vw - 48px));
+  position: fixed; left: 0; top: 0; z-index: 400; width: max-content; max-width: 320px;
   padding: 10px 12px; border-radius: var(--r-md); background: var(--glass-pop, var(--paper)); color: var(--print);
   box-shadow: var(--glass-edge, var(--rim)), 0 14px 30px -14px rgb(0 0 0 / 0.45);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
   font: 500 13px/1.45 var(--sans); text-transform: none; letter-spacing: 0; text-align: left; white-space: normal;
   display: none; pointer-events: none;
 }
-/* shown only while hovered or focused (display, so a closed one never widens the page) */
-.info-tip:hover .info-tip__pop, .info-tip:focus-within .info-tip__pop { display: block; animation: tip-in 140ms var(--ease) both; }
-@keyframes tip-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-.page-head .info-tip__pop { left: -6px; right: auto; }
-/* phones: the tip spans the screen under its dot, never off the edge */
-@media (max-width: 600px) {
-  .info-tip__pop { position: fixed; top: auto; left: 16px; right: 16px; width: auto; max-width: none; margin-top: 34px; }
-  .page-head .info-tip__pop { left: 16px; right: 16px; }
-}
+/* Placed by InfoTip on <body> (fixed, inside the window); display, so a closed one takes no space. */
+.info-tip__pop.is-open { display: block; animation: tip-in 140ms var(--ease) both; }
+@keyframes tip-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .info-tip__pop.is-open { animation: none; } }
 
 /* --- step cards ------------------------------------------------------------------------------ */
 .step { scroll-margin-top: calc(var(--flow-top, 84px) + 96px); }
 /* sparks and info tips may reach past a short card (cards clip by default) */
 .form-page .step { overflow: visible; }
 /* an open info tip sits over the cards after it (still under the sticky bar, z-index 4) */
-.step:has(.info-tip:hover, .info-tip:focus-within) { position: relative; z-index: 3; }
 .form-page .step { animation: none; }
 /* back on the form after a failed setup: everything as it was, nothing replays */
 .form-page--back .step--done .step__num, .form-page--back .step--done .step__num .drawn-tick path,
