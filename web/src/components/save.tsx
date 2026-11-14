@@ -25,9 +25,11 @@ function stable(value: unknown): string {
 // ------------------------------------------------------------- leave guard
 const pending = new Set<string>();
 let listening = false;
+/** One reload the operator already confirmed (the update notice): let it through. */
+let bypass = false;
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
-  if (pending.size === 0) return;
+  if (bypass || pending.size === 0) return;
   e.preventDefault();
   e.returnValue = "";
 }
@@ -35,18 +37,23 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 /** True when nothing is unsaved, or the operator chose to leave anyway. */
 export function confirmLeave(): boolean {
   if (pending.size === 0) return true;
-  const ok = window.confirm("You have unsaved changes. Leave without saving?");
-  if (ok) pending.clear();
-  return ok;
+  // The forms stay registered: a form that is still mounted keeps guarding.
+  return window.confirm("You have unsaved changes. Leave without saving?");
 }
 
 /**
- * Drops the leave guard without asking, for a navigation the operator has
+ * Lets the next unload through without asking, for a reload the operator has
  * already confirmed elsewhere (the update notice's "Reload anyway"). The
- * desktop app would otherwise cancel that reload silently.
+ * desktop app would otherwise cancel that reload silently. The dirty forms
+ * stay registered, so hasUnsaved() and confirmLeave() stay right.
  */
 export function discardUnsaved(): void {
-  pending.clear();
+  bypass = true;
+}
+
+/** Turns the guard back on when that reload did not happen. */
+export function restoreUnsaved(): void {
+  bypass = false;
 }
 
 /** True while a dirty form guards the page (the update notice asks first). */

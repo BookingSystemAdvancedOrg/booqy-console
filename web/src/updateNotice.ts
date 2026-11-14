@@ -12,7 +12,9 @@
  * Omladdningen fastnar aldrig: osparade ändringar frågas om i rutan (inte
  * via beforeunload, som skrivbordsappen annars kan avbryta tyst), hämtningen
  * av färska filer ges högst 3 s, och lever sidan kvar 8 s efter reload()
- * kommer knappen tillbaka med en kort förklaring. Under tiden rusar en
+ * kommer knappen tillbaka med en kort förklaring (har bytet bevisligen
+ * börjat, väntas längre). Versionskontrollen ges högst 10 s, så en fastnad
+ * förfrågan (vanligt när Macen vaknat) aldrig stoppar senare kontroller. Under tiden rusar en
  * förloppsfyllning till 80 %, kryper mot 95 % och slår i 100 % precis före
  * bytet; den nya sidan visar "Uppdaterad" en kort stund.
  *
@@ -28,6 +30,10 @@ const STYLE_ID = 'booqy-update-style'
 export const FETCH_TIMEOUT_MS = 3_000
 /** Lever sidan kvar så här länge efter reload() har något stoppat bytet. */
 export const FAILSAFE_MS = 8_000
+/** Har bytet börjat (beforeunload utan stopp) väntas så här länge innan knappen kommer tillbaka. */
+export const SLOW_RELOAD_MS = 30_000
+/** Längsta väntan på versionskontrollen (HEAD). */
+export const VERSION_TIMEOUT_MS = 10_000
 /** Snabbfasen: 0 till 80 % på den här tiden. */
 export const RUSH_MS = 600
 /** Från 100 % (med glöd) till själva omladdningen. */
@@ -51,6 +57,9 @@ background:#1c1918;color:#fbfaf6;font:inherit;font-weight:700;white-space:nowrap
 .booqy-update__btn:hover{background:#350001}
 .booqy-update__btn--ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px currentColor}
 .booqy-update__btn--ghost:hover{background:rgba(28,25,24,.08)}
+@media (max-width:420px){.booqy-update[data-phase=confirm]{flex-wrap:wrap;row-gap:10px;width:calc(100vw - 32px);padding:12px}
+.booqy-update[data-phase=confirm] .booqy-update__text{flex-basis:100%}
+.booqy-update[data-phase=confirm] .booqy-update__btn{flex:1 1 0}}
 .booqy-update__btn:focus-visible,.booqy-update__close:focus-visible{outline:2px solid #9e1d26;outline-offset:2px}
 .booqy-update__close{appearance:none;border:0;background:transparent;color:inherit;opacity:.7;cursor:pointer;
 width:32px;height:32px;border-radius:999px;font:inherit;font-size:1.15rem;line-height:1;position:relative}
@@ -139,24 +148,41 @@ export type UpdateNoticeOptions = {
   labels?: Partial<UpdateNoticeLabels>
   /** Finns det osparade ändringar? Då frågar rutan innan den laddar om. */
   hasUnsaved?: () => boolean
-  /** Släpper sidans lämna-spärr (beforeunload) inför omladdningen. */
+  /** Släpper sidans lämna-spärr (beforeunload) för just den omladdning som bekräftats. */
   discardUnsaved?: () => void
+  /** Sätter tillbaka spärren när den omladdningen inte blev av. */
+  restoreUnsaved?: () => void
 }
 
 /** Själva omladdningen, utbytbar i tester (jsdom kan inte ladda om). */
 export const page = { reload: () => location.reload() }
 
 /** Läser versionen (ETag, annars Last-Modified) förbi alla cacher. */
-export async function readVersion(url: string | string[]): Promise<string | null> {
+export async function readVersion(url: string | string[], timeoutMs = VERSION_TIMEOUT_MS): Promise<string | null> {
   const urls = Array.isArray(url) ? url : [url]
-  const parts = await Promise.all(
-    urls.map(async (u) => {
-      const res = await fetch(u, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
-      if (!res.ok) return null
-      return res.headers.get('etag') ?? res.headers.get('last-modified')
-    }),
-  )
-  return parts.some((p) => p === null) ? null : parts.join('|')
+  const abort = new AbortController()
+  let timer = 0
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => {
+      abort.abort()
+      reject(new Error('timeout'))
+    }, timeoutMs)
+  })
+  try {
+    const parts = await Promise.race([
+      Promise.all(
+        urls.map(async (u) => {
+          const res = await fetch(u, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin', signal: abort.signal })
+          if (!res.ok) return null
+          return res.headers.get('etag') ?? res.headers.get('last-modified')
+        }),
+      ),
+      timeout,
+    ])
+    return parts.some((p) => p === null) ? null : parts.join('|')
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 /**
@@ -241,7 +267,7 @@ function button(className: string, text: string, onClick: () => void): HTMLButto
   return b
 }
 
-type NoticeDeps = Pick<UpdateNoticeOptions, 'hasUnsaved' | 'discardUnsaved'>
+type NoticeDeps = Pick<UpdateNoticeOptions, 'hasUnsaved' | 'discardUnsaved' | 'restoreUnsaved'>
 
 function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () => void): void {
   if (document.querySelector('.booqy-update')) return
@@ -259,7 +285,7 @@ function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () 
     if (note) text.append(el('span', 'booqy-update__note', note))
     const reload = button('booqy-update__btn booqy-update__reload', labels.reload, () => {
       if (deps.hasUnsaved?.()) confirmUnsaved()
-      else start()
+      else start(false)
     })
     reload.title = labels.hint
     const close = button('booqy-update__close', '×', () => {
@@ -276,15 +302,13 @@ function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () 
     box.dataset.phase = 'confirm'
     const text = el('span', 'booqy-update__text', labels.unsaved)
     const cancel = button('booqy-update__btn booqy-update__btn--ghost booqy-update__cancel', labels.cancel, () => idle().focus())
-    const anyway = button('booqy-update__btn booqy-update__anyway', labels.reloadAnyway, () => {
-      deps.discardUnsaved?.()
-      start()
-    })
+    const anyway = button('booqy-update__btn booqy-update__anyway', labels.reloadAnyway, () => start(true))
     box.replaceChildren(text, cancel, anyway)
     anyway.focus()
   }
 
-  const start = () => {
+  /** `confirmed`: osparade ändringar får släppas (frågat i rutan). */
+  const start = (confirmed: boolean) => {
     const reduced = reducedMotion()
     // Samma bredd hela vägen, så rutan inte hoppar när innehållet byts.
     const width = box.getBoundingClientRect().width
@@ -354,9 +378,15 @@ function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () 
         } catch {
           /* privat läge eller blockerad lagring: hoppa över "Uppdaterad" */
         }
-        page.reload()
-        // Lever sidan kvar har något stoppat bytet: knappen tillbaka, aldrig ett evigt förlopp.
-        window.setTimeout(() => {
+        // Läggs sist, så den ser om appens egna spärrar stoppade bytet.
+        let going = false
+        const probe = (e: Event) => {
+          going = !e.defaultPrevented
+        }
+        window.addEventListener('beforeunload', probe)
+        const restore = () => {
+          window.removeEventListener('beforeunload', probe)
+          deps.restoreUnsaved?.()
           try {
             sessionStorage.removeItem(UPDATED_KEY)
           } catch {
@@ -364,6 +394,14 @@ function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () 
           }
           curtain.remove()
           idle(labels.failed).focus()
+        }
+        if (confirmed) deps.discardUnsaved?.()
+        page.reload()
+        // Lever sidan kvar har något stoppat bytet: knappen tillbaka, aldrig ett evigt förlopp.
+        // Har bytet börjat (bara långsamt, som efter att Macen vaknat) väntas längre.
+        window.setTimeout(() => {
+          if (going) window.setTimeout(restore, SLOW_RELOAD_MS - FAILSAFE_MS)
+          else restore()
         }, FAILSAFE_MS)
       }, reduced ? 0 : FINISH_MS)
     }
@@ -412,7 +450,11 @@ export function startUpdateNotice(options: UpdateNoticeOptions = {}): () => void
   const url = options.url ?? '/index.html'
   const intervalMs = options.intervalMs ?? CHECK_EVERY_MS
   const labels: UpdateNoticeLabels = { ...SV, ...options.labels }
-  const deps: NoticeDeps = { hasUnsaved: options.hasUnsaved, discardUnsaved: options.discardUnsaved }
+  const deps: NoticeDeps = {
+    hasUnsaved: options.hasUnsaved,
+    discardUnsaved: options.discardUnsaved,
+    restoreUnsaved: options.restoreUnsaved,
+  }
   let baseline: string | null = null
   let latest: string | null = null
   let running = false

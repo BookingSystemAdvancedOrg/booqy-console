@@ -314,7 +314,7 @@ app.on('web-contents-created', (_e, contents) => {
     const options = {
       type: 'question',
       buttons: [leave.leave, leave.stay],
-      defaultId: 0,
+      defaultId: 1,
       cancelId: 1,
       message: leave.message,
       detail: leave.detail,

@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FAILSAFE_MS, FETCH_TIMEOUT_MS, page, reloadProgress, showUpdatedIfFlagged, startUpdateNotice } from './updateNotice'
+import {
+  FAILSAFE_MS,
+  FETCH_TIMEOUT_MS,
+  SLOW_RELOAD_MS,
+  VERSION_TIMEOUT_MS,
+  page,
+  reloadProgress,
+  showUpdatedIfFlagged,
+  startUpdateNotice,
+} from './updateNotice'
 
 function headWith(etags: string[]) {
   let i = 0
@@ -73,6 +82,29 @@ describe('updateNotice', () => {
     await flush()
     expect(document.querySelector('.booqy-update')).not.toBeNull()
   })
+
+  it('gives up on a hanging version check, so the next check still runs', async () => {
+    vi.useFakeTimers()
+    let call = 0
+    vi.stubGlobal('fetch', vi.fn(() => {
+      call++
+      if (call === 1) return Promise.resolve(new Response(null, { headers: { etag: '"a"' } }))
+      if (call === 2) return new Promise<Response>(() => {})
+      return Promise.resolve(new Response(null, { headers: { etag: '"b"' } }))
+    }))
+    stop = startUpdateNotice({ intervalMs: 600_000 })
+    await vi.advanceTimersByTimeAsync(0)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(VERSION_TIMEOUT_MS - 100)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(call).toBe(2)
+    await vi.advanceTimersByTimeAsync(200)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(call).toBe(3)
+    expect(document.querySelector('.booqy-update')).not.toBeNull()
+  })
 })
 
 describe('reloadProgress', () => {
@@ -142,15 +174,64 @@ describe('reloading', () => {
     expect(again?.disabled).toBe(false)
   })
 
-  it('"Ladda om ändå" drops the guard and reloads', async () => {
-    const discard = vi.fn()
+  it('"Ladda om ändå" drops the guard just before the reload', async () => {
+    const order: string[] = []
+    const discard = vi.fn(() => order.push('discard'))
+    reload.mockImplementation(() => order.push('reload'))
     await noticeShown({ hasUnsaved: () => true, discardUnsaved: discard })
     click('.booqy-update__reload')
     click('.booqy-update__anyway')
-    expect(discard).toHaveBeenCalledOnce()
+    expect(discard).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(order).toEqual(['discard', 'reload'])
+    expect(sessionStorage.getItem('booqy-updated')).toBe('1')
+  })
+
+  it('never drops the guard without the question', async () => {
+    const discard = vi.fn()
+    await noticeShown({ hasUnsaved: () => false, discardUnsaved: discard })
+    click('.booqy-update__reload')
     await vi.advanceTimersByTimeAsync(1_000)
     expect(reload).toHaveBeenCalledOnce()
+    expect(discard).not.toHaveBeenCalled()
+  })
+
+  it('puts the guard back when the confirmed reload did not happen', async () => {
+    const restore = vi.fn()
+    const box = await noticeShown({ hasUnsaved: () => true, discardUnsaved: vi.fn(), restoreUnsaved: restore })
+    click('.booqy-update__reload')
+    click('.booqy-update__anyway')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(reload).toHaveBeenCalledOnce()
+    expect(restore).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(FAILSAFE_MS)
+    expect(restore).toHaveBeenCalledOnce()
+    expect(box.querySelector('.booqy-update__reload')).not.toBeNull()
+  })
+
+  it('waits longer when the reload has started but is slow', async () => {
+    reload.mockImplementation(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))
+    const box = await noticeShown()
+    click('.booqy-update__reload')
+    await vi.advanceTimersByTimeAsync(FAILSAFE_MS + 500)
+    expect(box.querySelector('.booqy-update__reload')).toBeNull()
     expect(sessionStorage.getItem('booqy-updated')).toBe('1')
+    expect(document.querySelector('.booqy-curtain')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(SLOW_RELOAD_MS - FAILSAFE_MS)
+    expect(box.querySelector('.booqy-update__reload')).not.toBeNull()
+    expect(sessionStorage.getItem('booqy-updated')).toBeNull()
+  })
+
+  it('restores after 8 s when a leave guard stopped the reload', async () => {
+    const guard = (e: Event) => e.preventDefault()
+    window.addEventListener('beforeunload', guard)
+    reload.mockImplementation(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))
+    const box = await noticeShown()
+    click('.booqy-update__reload')
+    await vi.advanceTimersByTimeAsync(FAILSAFE_MS + 500)
+    window.removeEventListener('beforeunload', guard)
+    expect(box.textContent).toContain('Kunde inte ladda om. Försök igen.')
+    expect(box.querySelector('.booqy-update__reload')).not.toBeNull()
   })
 
   it('reloads after 3 s even if the fresh files hang', async () => {

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Field, useAction } from "./ui";
-import { SaveButton, confirmLeave, hasUnsaved, useDirty } from "./save";
+import { SaveButton, confirmLeave, discardUnsaved, hasUnsaved, restoreUnsaved, useDirty } from "./save";
 
 function Form({ saved = { name: "Pizza", city: "Malmö" }, onSave = async () => true }: { saved?: { name: string; city: string }; onSave?: () => Promise<boolean> }) {
   const [f, setF] = useState(saved);
@@ -68,5 +68,22 @@ describe("useDirty and SaveButton", () => {
     const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
     expect(confirmLeave()).toBe(false);
     expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it("lets one confirmed reload through and guards again when it did not happen", () => {
+    render(<Form />);
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "y" } });
+    const unload = () => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; };
+    expect(unload()).toBe(true);
+    discardUnsaved();
+    expect(hasUnsaved()).toBe(true);
+    expect(unload()).toBe(false);
+    restoreUnsaved();
+    expect(hasUnsaved()).toBe(true);
+    expect(unload()).toBe(true);
+    const ask = vi.spyOn(window, "confirm").mockReturnValue(true);
+    expect(confirmLeave()).toBe(true);
+    expect(ask).toHaveBeenCalledOnce();
+    expect(hasUnsaved()).toBe(true);
   });
 });
