@@ -420,25 +420,25 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
   const openRow = useRowOpen();
   return (
     <tr className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}?tab=billing`)}>
-      <td>
+      <td className="cell-title">
         <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
         <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
-      <td>
+      <td className="cell-badge">
         <span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span>
         {t.free && <div><FreeBadge until={t.freeUntil ?? null} /></div>}
       </td>
-      <td className="num">{fmtSek(t.mrrSek)}</td>
-      <td className="num">{fmtSek(t.revenueSek)}</td>
-      <td className="num">{fmtSek(t.collectedSek)}</td>
-      <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`}>{fmtSek(t.outstandingSek)}</td>
-      <td className="num">{fmtSek(t.costSek)}</td>
-      <td className={`num${t.marginSek < 0 ? " bad" : ""}`}>
+      <td className="num" data-label="MRR">{fmtSek(t.mrrSek)}</td>
+      <td className="num" data-label="Revenue">{fmtSek(t.revenueSek)}</td>
+      <td className="num" data-label="Collected">{fmtSek(t.collectedSek)}</td>
+      <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`} data-label="Outstanding">{fmtSek(t.outstandingSek)}</td>
+      <td className="num" data-label="AWS cost">{fmtSek(t.costSek)}</td>
+      <td className={`num${t.marginSek < 0 ? " bad" : ""}`} data-label="Margin">
         {fmtSek(t.marginSek)}<div className="muted small">{t.marginPct === null ? "-" : fmtPct(t.marginPct)}</div>
       </td>
-      <td className="num">{fmtInt(t.bookings)}</td>
-      <td className="num">{fmtInt(t.orders)}</td>
-      <td className="num">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsCostSek, { decimals: true })} cost</div></td>
+      <td className="num" data-label="Bookings">{fmtInt(t.bookings)}</td>
+      <td className="num" data-label="Orders">{fmtInt(t.orders)}</td>
+      <td className="num" data-label="SMS">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsCostSek, { decimals: true })} cost</div></td>
     </tr>
   );
 }

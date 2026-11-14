@@ -83,17 +83,17 @@ export default function TenantsPage() {
             <tbody>
               {rows.map((t) => (
                 <tr key={t.tenantId} className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}`)}>
-                  <td>
+                  <td className="cell-title">
                     <Link to={`/tenants/${t.tenantId}`} className="strong row-link__name">{t.name}</Link>
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
-                  <td><Status value={t.status} /></td>
-                  <td>{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : t.planId}</td>
-                  <td><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
-                  <td>{t.locationCount} / {t.maxLocations ?? "-"}</td>
-                  <td>{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
-                  <td className="small">{t.primaryDomain ?? <span className="muted">-</span>}</td>
-                  <td className="small">{fmtDate(t.createdAt)}</td>
+                  <td className="cell-badge"><Status value={t.status} /></td>
+                  <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : t.planId}</td>
+                  <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
+                  <td className="cell-fact" data-label="Locations">{t.locationCount} / {t.maxLocations ?? "-"}</td>
+                  <td className="phone-hide" data-label="Payments">{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
+                  <td className="small phone-hide" data-label="Site">{t.primaryDomain ?? <span className="muted">-</span>}</td>
+                  <td className="small phone-hide" data-label="Created">{fmtDate(t.createdAt)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (

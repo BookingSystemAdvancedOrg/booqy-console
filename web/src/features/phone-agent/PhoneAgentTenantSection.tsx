@@ -38,9 +38,9 @@ export default function PhoneAgentTenantSection({ tenantId }: { tenantId: string
             {data.locations.map((l) => (
               <tr key={l.locationId}>
                 <td>{l.locationId}</td>
-                <td>{l.enabled ? "On" : "Off"}</td>
-                <td className="mono">{l.number ?? "-"}</td>
-                <td>{l.minutesThisPeriod.toLocaleString("en-GB")}</td>
+                <td className="cell-fact" data-label="Agent">{l.enabled ? "On" : "Off"}</td>
+                <td className="mono" data-label="Booqy number">{l.number ?? "-"}</td>
+                <td data-label="Minutes this period">{l.minutesThisPeriod.toLocaleString("en-GB")}</td>
               </tr>
             ))}
           </tbody>

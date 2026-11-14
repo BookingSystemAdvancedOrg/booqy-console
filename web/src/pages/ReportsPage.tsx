@@ -114,7 +114,7 @@ export default function ReportsPage() {
               {rows.map((r) => (
                 <tr key={r.reportId} className={r.handled ? "reports-row--handled" : undefined}>
                   <td className="nowrap" data-label="Reported">{fmtDate(r.createdAt)}</td>
-                  <td data-label="Restaurant">
+                  <td className="cell-title" data-label="Restaurant">
                     <Link to={`/tenants/${encodeURIComponent(r.tenantId)}`}>{r.tenantName || r.tenantId}</Link>
                     <span className="small muted reports-who">{r.role === "staff_user" ? "Staff" : r.role === "owner_user" ? "Owner" : r.role ?? ""}</span>
                   </td>

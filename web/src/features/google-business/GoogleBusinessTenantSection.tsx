@@ -26,10 +26,10 @@ export default function GoogleBusinessTenantSection({ tenantId }: { tenantId: st
           <tbody>
             {data.links.map((l) => (
               <tr key={l.locationId}>
-                <td>{l.locationId}</td>
-                <td>{l.title}</td>
-                <td>{SYNC[l.syncStatus] ?? l.syncStatus}</td>
-                <td>{l.lastSyncAt ? new Date(l.lastSyncAt).toLocaleString("en-GB") : "-"}</td>
+                <td className="cell-title">{l.title}</td>
+                <td data-label="Location">{l.locationId}</td>
+                <td data-label="Hours">{SYNC[l.syncStatus] ?? l.syncStatus}</td>
+                <td data-label="Last sync">{l.lastSyncAt ? new Date(l.lastSyncAt).toLocaleString("en-GB") : "-"}</td>
               </tr>
             ))}
           </tbody>

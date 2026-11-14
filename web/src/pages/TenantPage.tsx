@@ -317,10 +317,10 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
         <tbody>
           {detail.locations.map((l) => (
             <tr key={l.locationId}>
-              <td className="strong">{l.name}<div className="muted small mono">{l.locationId}</div></td>
-              <td>{l.address}</td>
-              <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
-              <td className="small mono">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
+              <td className="strong cell-title">{l.name}<div className="muted small mono">{l.locationId}</div></td>
+              <td data-label="Address">{l.address}</td>
+              <td className="small" data-label="Contact">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
+              <td className="small mono" data-label="Stripe override">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
               <td className="right">
                 <button className="btn btn--ghost btn--small" onClick={() => setEdit(l)}>Edit</button>
                 <button className="btn btn--ghost btn--small danger" onClick={() => setDel(l)}>Delete</button>
@@ -440,10 +440,10 @@ function Users({ tenant }: { tenant: Tenant }) {
           <tbody>
             {(users.data ?? []).map((u) => (
               <tr key={u.cognitoSub}>
-                <td>{u.name}<div className="muted small">{u.email}</div></td>
-                <td>{u.role === "owner_user" ? "Owner" : "Staff"}</td>
-                <td>{u.status ?? "active"}</td>
-                <td className="small">{fmtDate(u.createdAt)}</td>
+                <td className="cell-title">{u.name}<div className="muted small">{u.email}</div></td>
+                <td className="cell-fact" data-label="Role">{u.role === "owner_user" ? "Owner" : "Staff"}</td>
+                <td className="cell-fact" data-label="Status">{u.status ?? "active"}</td>
+                <td className="small cell-fact" data-label="Since">{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
             {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
@@ -657,10 +657,10 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <tbody>
             {detail.zones.map((z) => (
               <tr key={z.domain}>
-                <td className="strong mono">{z.domain}
+                <td className="strong mono cell-title">{z.domain}
                   {z.statusDetail && <div className="small muted">{z.statusDetail}</div>}
                   {z.lastError && <div className="small error-text">{z.lastError}</div>}</td>
-                <td className="small">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
+                <td className="small" data-label="How">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
                   : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}
                   <div className="muted">Registrar: {z.registrar === "route53" ? "Route 53 (ours)" : "their own"}</div>
                   {z.transfer && z.transfer.status !== "transferred" && (
@@ -668,8 +668,8 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                       {z.transfer.statusDetail && <div className="muted">{z.transfer.statusDetail}</div>}
                       {z.transfer.error && <div className="error-text">{z.transfer.error}</div>}</div>
                   )}</td>
-                <td><Status value={z.status} /></td>
-                <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}
+                <td className="cell-badge"><Status value={z.status} /></td>
+                <td className="right small muted" data-label="Updated">{fmtDate(z.updatedAt ?? z.requestedAt)}
                   {z.transferable && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
@@ -698,10 +698,10 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <tbody>
             {detail.domains.map((d) => (
               <tr key={d.domain}>
-                <td className="strong">{d.domain} {d.primary && <span className="tag">primary</span>}
+                <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
                   {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
-                <td>{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
-                <td><Status value={d.status} /></td>
+                <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
+                <td className="cell-badge"><Status value={d.status} /></td>
                 <td className="right">{d.kind === "custom" && d.status !== "removing" && (
                   <button className="btn btn--ghost btn--small danger" disabled={remove.busy}
                           onClick={async () => {

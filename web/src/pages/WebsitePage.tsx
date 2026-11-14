@@ -282,11 +282,11 @@ function SourcesTable({ data }: { data: WebsiteOverview }) {
                   <span className="strong">{SOURCE_LABEL[r.key] ?? r.key}</span>
                   {tr.text && <div className={`web-delta${toneClass(tr.tone)}`}>{tr.text}<span className="sr-only"> {tr.spoken}</span></div>}
                 </td>
-                <td className="num">{fmtInt(r.visits)}</td>
-                <td className="num web-col-share">{fmtPct(share(r.visits, total))}</td>
-                <td className="num">{fmtInt(r.conversions)}</td>
-                <td className="num">{fmtPct(share(r.conversions, r.visits))}</td>
-                <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+                <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+                <td className="num web-col-share" data-label="Share">{fmtPct(share(r.visits, total))}</td>
+                <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+                <td className="num" data-label="Conv.">{fmtPct(share(r.conversions, r.visits))}</td>
+                <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
               </tr>
             );
           })}
@@ -326,11 +326,11 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
             const c = campaignParts(r.key);
             return (
               <tr key={r.key}>
-                <td className="mono">{c.source}</td><td className="mono">{c.medium}</td><td className="mono">{c.campaign}</td>
-                <td className="num">{fmtInt(r.visits)}</td>
-                <td className="num">{fmtInt(r.conversions)}</td>
-                <td className={`num${r.conversions > 0 ? " web-good" : ""}`}>{fmtPct(share(r.conversions, r.visits))}</td>
-                <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+                <td className="mono">{c.source}</td><td className="mono" data-label="Medium">{c.medium}</td><td className="mono" data-label="Campaign">{c.campaign}</td>
+                <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+                <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+                <td className={`num${r.conversions > 0 ? " web-good" : ""}`} data-label="Conv.">{fmtPct(share(r.conversions, r.visits))}</td>
+                <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
               </tr>
             );
           })}
@@ -351,10 +351,10 @@ function VisitTable({ title, rows, label, mono }: { title: string; rows: VisitRo
           {rows.slice(0, 25).map((r) => (
             <tr key={r.key}>
               <td className={`web-key${mono ? " mono" : ""}`}>{label ? label(r.key) : r.key}</td>
-              <td className="num">{fmtInt(r.visits)}</td>
-              <td className="num web-col-share">{fmtPct(share(r.visits, total))}</td>
-              <td className="num">{fmtInt(r.conversions)}</td>
-              <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+              <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+              <td className="num web-col-share" data-label="Share">{fmtPct(share(r.visits, total))}</td>
+              <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+              <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
             </tr>
           ))}
         </tbody>
@@ -373,8 +373,8 @@ function PageTable({ rows }: { rows: PageRow[] }) {
           {rows.slice(0, 25).map((r) => (
             <tr key={r.key}>
               <td className="web-key mono">{r.key}</td>
-              <td className="num">{fmtInt(r.pageviews)}</td>
-              <td className="num">{fmtDuration(r.avgSeconds)}</td>
+              <td className="num" data-label="Views">{fmtInt(r.pageviews)}</td>
+              <td className="num" data-label="Engaged time">{fmtDuration(r.avgSeconds)}</td>
             </tr>
           ))}
         </tbody>
@@ -390,7 +390,7 @@ function EventTable({ title, rows }: { title: string; rows: { key: string; count
         <thead><tr><th>{title}</th><th className="num">Clicks</th></tr></thead>
         <tbody>
           {rows.slice(0, 15).map((r) => (
-            <tr key={r.key}><td className="web-key mono">{r.key}</td><td className="num">{fmtInt(r.count)}</td></tr>
+            <tr key={r.key}><td className="web-key mono">{r.key}</td><td className="num" data-label="Clicks">{fmtInt(r.count)}</td></tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={2} className="web-none">No clicks.</td></tr>}
         </tbody>

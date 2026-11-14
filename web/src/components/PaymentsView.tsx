@@ -116,11 +116,11 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
                   <tbody>
                     {shown.invoices.map((i) => (
                       <tr key={`${i.tenantId}-${i.periodEnd}`}>
-                        <td className="strong">{i.name}</td>
-                        <td className="small">{i.period}{i.activeDays < i.days ? ` (${i.activeDays} of ${i.days} days)` : ""}</td>
-                        <td className="num">{fmtSek(i.feeSek, { decimals: true })}</td>
-                        <td className="num">{fmtSek(i.totalSek, { decimals: true })}</td>
-                        {result && <td className="small">{i.number ?? i.invoiceId}, {i.delivery}</td>}
+                        <td className="strong cell-title">{i.name}</td>
+                        <td className="small" data-label="Period">{i.period}{i.activeDays < i.days ? ` (${i.activeDays} of ${i.days} days)` : ""}</td>
+                        <td className="num" data-label="Fee">{fmtSek(i.feeSek, { decimals: true })}</td>
+                        <td className="num" data-label="Total ex VAT">{fmtSek(i.totalSek, { decimals: true })}</td>
+                        {result && <td className="small" data-label="Result">{i.number ?? i.invoiceId}, {i.delivery}</td>}
                       </tr>
                     ))}
                     {shown.errors.map((e) => (
@@ -158,25 +158,25 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   const fees = (Number(r.lateFeeSek) || 0) + (Number(r.interestSek) || 0);
   return (
     <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
-      <td>
+      <td className="cell-title">
         <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong row-link__name">{r.name}</Link>
         <div className="muted small mono">{r.orgNumber ?? r.slug}{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
       </td>
-      <td className="mono small">
+      <td className="mono small" data-label="Invoice">
         {r.hostedInvoiceUrl ? <a href={r.hostedInvoiceUrl} target="_blank" rel="noreferrer">{r.number ?? r.invoiceId}</a> : r.number ?? r.invoiceId}
         <div className="muted">{r.periodStart ? `${fmtDay(r.periodStart)} to ${fmtDay(r.periodEnd)}` : ""}</div>
       </td>
-      <td><span className={`status status--invoice-${invoiceStatus(r)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(r)] ?? r.status}</span></td>
-      <td className="num">{fmtSek(r.subtotalSek)}</td>
-      <td className="num">{fmtSek(r.totalSek)}</td>
-      <td className="small">{fmtDay(r.dueDate)}</td>
-      <td className="small">{r.paidAt ? `${fmtDay(r.paidAt)}${r.paidOutOfBand ? " (bankgiro)" : ""}` : "-"}</td>
-      <td className={`num${overdue ? " bad" : ""}`}>{r.daysLate > 0 ? `${r.daysLate} d` : "-"}</td>
-      <td className="small">
+      <td className="cell-badge"><span className={`status status--invoice-${invoiceStatus(r)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(r)] ?? r.status}</span></td>
+      <td className="num" data-label="Ex VAT">{fmtSek(r.subtotalSek)}</td>
+      <td className="num" data-label="Total">{fmtSek(r.totalSek)}</td>
+      <td className="small cell-fact" data-label="Due">{fmtDay(r.dueDate)}</td>
+      <td className="small cell-fact" data-label="Paid">{r.paidAt ? `${fmtDay(r.paidAt)}${r.paidOutOfBand ? " (bankgiro)" : ""}` : "-"}</td>
+      <td className={`num${overdue ? " bad" : ""}`} data-label="Late">{r.daysLate > 0 ? `${r.daysLate} d` : "-"}</td>
+      <td className="small cell-fact" data-label="Reminders">
         {r.remindersSent > 0 ? `${r.remindersSent} sent` : "-"}
         {r.lastReminderAt && <div className="muted">last {fmtDay(r.lastReminderAt)}</div>}
       </td>
-      <td className="num">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
+      <td className="num" data-label="Fees">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
       <td>
         {overdue && r.collectionMethod !== "charge_automatically" && (
           <SaveButton kind="plain" small type="button" label="Send reminder" busy={remind.busy} busyLabel="Sending…" done={remind.done} doneLabel="Sent"

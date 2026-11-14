@@ -193,12 +193,12 @@ function Sent() {
               {(data ?? []).length === 0 && <tr><td colSpan={6} className="empty">No news sent yet.</td></tr>}
               {(data ?? []).map((n) => (
                 <tr key={n.newsletterId} className="row-link" {...rowAction(() => setOpen(n))}>
-                  <td className="small nowrap">{fmtDate(n.createdAt)}</td>
-                  <td className="strong row-link__name">{n.subject}</td>
-                  <td><Status value={n.status} /></td>
-                  <td className="mono">{n.recipientCount}</td>
-                  <td className="mono">{n.sentCount} sent{n.failedCount ? ` · ${n.failedCount} failed` : ""}</td>
-                  <td className="small">{n.createdBy}</td>
+                  <td className="small nowrap" data-label="Sent">{fmtDate(n.createdAt)}</td>
+                  <td className="strong row-link__name cell-title">{n.subject}</td>
+                  <td className="cell-badge"><Status value={n.status} /></td>
+                  <td className="mono cell-fact" data-label="Recipients">{n.recipientCount}</td>
+                  <td className="mono cell-fact" data-label="Delivered">{n.sentCount} sent{n.failedCount ? ` · ${n.failedCount} failed` : ""}</td>
+                  <td className="small cell-fact" data-label="By">{n.createdBy}</td>
                 </tr>
               ))}
             </tbody>
@@ -239,9 +239,9 @@ function RecipientList({ recipients }: { recipients: NewsletterRecipient[] }) {
       <tbody>
         {recipients.map((r) => (
           <tr key={r.email}>
-            <td className="small">{r.email}</td>
-            <td className="small">{r.tenantName}</td>
-            <td className="small">{r.status === "failed" ? <span className="error-text">Failed{r.error ? `: ${r.error}` : ""}</span> : r.status}</td>
+            <td className="small" data-label="Owner">{r.email}</td>
+            <td className="small cell-title">{r.tenantName}</td>
+            <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Failed{r.error ? `: ${r.error}` : ""}</span> : r.status}</td>
           </tr>
         ))}
       </tbody>

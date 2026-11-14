@@ -132,10 +132,10 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
                 {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet.</td></tr>}
                 {rows.map((r) => (
                   <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
-                    <td className="nowrap">{fmtDate(r.at)}</td>
-                    <td>{r.channel === "sms" ? "SMS" : "Email"}</td>
-                    <td>{r.to}</td>
-                    <td>{r.subject}</td>
+                    <td className="nowrap" data-label="Saved">{fmtDate(r.at)}</td>
+                    <td data-label="Type">{r.channel === "sms" ? "SMS" : "Email"}</td>
+                    <td data-label="To">{r.to}</td>
+                    <td className="cell-title">{r.subject}</td>
                   </tr>
                 ))}
               </tbody>

@@ -286,16 +286,16 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
                 const fees = (Number(i.lateFeeSek) || 0) + (Number(i.interestSek) || 0);
                 return (
                   <tr key={i.invoiceId}>
-                    <td className="mono">{i.number ?? i.invoiceId}</td>
-                    <td><span className={`status status--invoice-${invoiceStatus(i)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(i)] ?? i.status}</span></td>
-                    <td className="small">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
-                    <td className="num">{i.feeSek != null ? fmtSek(i.feeSek, { decimals: true }) : "-"}</td>
-                    {smsColumn && <td className="num">{Number(i.smsSek) > 0 ? `${fmtInt(i.smsParts ?? 0)} parts, ${fmtSek(i.smsSek, { decimals: true })}` : "-"}</td>}
-                    <td className="num">{fmtSek(i.subtotalSek)}</td>
-                    <td className="num">{fmtSek(i.totalSek)}</td>
-                    <td className="small">{fmtDay(i.dueDate)}</td>
-                    <td className="small">{i.paidAt ? fmtDay(i.paidAt) + (i.paidOutOfBand ? " (bankgiro)" : "") : "-"}</td>
-                    <td className={`small${overdue ? " bad" : ""}`}>
+                    <td className="mono cell-title">{i.number ?? i.invoiceId}</td>
+                    <td className="cell-badge"><span className={`status status--invoice-${invoiceStatus(i)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(i)] ?? i.status}</span></td>
+                    <td className="small" data-label="Period">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
+                    <td className="num" data-label="Fee">{i.feeSek != null ? fmtSek(i.feeSek, { decimals: true }) : "-"}</td>
+                    {smsColumn && <td className="num" data-label="SMS">{Number(i.smsSek) > 0 ? `${fmtInt(i.smsParts ?? 0)} parts, ${fmtSek(i.smsSek, { decimals: true })}` : "-"}</td>}
+                    <td className="num" data-label="Ex VAT">{fmtSek(i.subtotalSek)}</td>
+                    <td className="num" data-label="Total">{fmtSek(i.totalSek)}</td>
+                    <td className="small cell-fact" data-label="Due">{fmtDay(i.dueDate)}</td>
+                    <td className="small cell-fact" data-label="Paid">{i.paidAt ? fmtDay(i.paidAt) + (i.paidOutOfBand ? " (bankgiro)" : "") : "-"}</td>
+                    <td className={`small cell-fact${overdue ? " bad" : ""}`} data-label="Late">
                       {i.daysLate > 0 ? `${i.daysLate} days` : "-"}
                       {i.remindersSent > 0 && <div className="muted">{i.remindersSent} reminder{i.remindersSent === 1 ? "" : "s"}</div>}
                       {fees > 0 && <div className="muted">{fmtSek(fees, { decimals: true })} fees</div>}

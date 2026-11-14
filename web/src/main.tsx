@@ -21,6 +21,7 @@ import { installPwa, showPhoneInstallNav } from "./pwa";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
+import "./phoneTables.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";
