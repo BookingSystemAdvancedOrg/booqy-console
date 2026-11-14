@@ -4,7 +4,9 @@ import {
   FETCH_TIMEOUT_MS,
   SLOW_RELOAD_MS,
   VERSION_TIMEOUT_MS,
+  WHATS_NEW_TIMEOUT_MS,
   page,
+  readWhatsNew,
   reloadProgress,
   showUpdatedIfFlagged,
   startUpdateNotice,
@@ -286,6 +288,100 @@ describe('reloading', () => {
     expect(reload).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(300)
     expect(reload).toHaveBeenCalledOnce()
+  })
+})
+
+describe('what is new in the notice', () => {
+  let stop: (() => void) | undefined
+  afterEach(() => {
+    stop?.()
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+    sessionStorage.clear()
+  })
+
+  /** HEAD ger "a" och sedan "b" (ny version); whats-new.json svarar med `news`. */
+  function serve(news: (() => Promise<Response>) | unknown) {
+    let head = 0
+    const fetchMock = vi.fn(async (u: string, init?: RequestInit) => {
+      if (init?.method === 'HEAD') return new Response(null, { status: 200, headers: { etag: head++ === 0 ? '"a"' : '"b"' } })
+      if (u === '/whats-new.json') return typeof news === 'function' ? (news as () => Promise<Response>)() : Response.json(news)
+      return new Response(null, { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  const entries = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => ({ n: from + i, text: `Del ${from + i}` }))
+
+  async function detect(since = 2) {
+    stop = startUpdateNotice({ intervalMs: 60_000, whatsNew: { since } })
+    await flush()
+    window.dispatchEvent(new Event('focus'))
+    await flush()
+    await flush()
+    return document.querySelector<HTMLElement>('.booqy-update')
+  }
+
+  const items = (box: HTMLElement | null) => [...(box?.querySelectorAll('.booqy-update__item') ?? [])].map((n) => n.textContent)
+
+  it('lists only entries newer than the running build, newest first, before reload', async () => {
+    const fetchMock = serve({ entries: entries(1, 4) })
+    const box = await detect(2)
+    expect(items(box)).toEqual(['Del 4', 'Del 3'])
+    expect(box?.classList.contains('has-news')).toBe(true)
+    expect(box?.querySelector('.booqy-update__sr')?.textContent).toBe('Nytt: ')
+    expect(box?.querySelector('.booqy-update__reload')?.textContent).toBe('Ladda om')
+    expect(fetchMock).toHaveBeenCalledWith('/whats-new.json', expect.objectContaining({ cache: 'no-store' }))
+  })
+
+  it('shows at most five plus "+N till"', async () => {
+    serve({ entries: entries(1, 10) })
+    const box = await detect(2)
+    expect(items(box)).toEqual(['Del 10', 'Del 9', 'Del 8', 'Del 7', 'Del 6', '+3 till'])
+  })
+
+  it('looks as before when nothing is newer', async () => {
+    serve({ entries: entries(1, 2) })
+    const box = await detect(2)
+    expect(box?.textContent).toContain('Ny version finns')
+    expect(box?.querySelector('.booqy-update__news')).toBeNull()
+    expect(box?.classList.contains('has-news')).toBe(false)
+  })
+
+  it('keeps the notice working when the list fails or is junk', async () => {
+    serve(async () => new Response('nope', { status: 500 }))
+    let box = await detect(0)
+    expect(box?.querySelector('.booqy-update__reload')).not.toBeNull()
+    expect(box?.querySelector('.booqy-update__news')).toBeNull()
+    stop?.()
+    document.body.innerHTML = ''
+    serve(async () => {
+      throw new TypeError('offline')
+    })
+    box = await detect(0)
+    expect(box?.querySelector('.booqy-update__news')).toBeNull()
+    expect(await (async () => {
+      serve({ entries: [{ n: 'x', text: 'Fel' }, { n: 3 }, null, { n: 4, text: ' ' }] })
+      return readWhatsNew('/whats-new.json', 0)
+    })()).toEqual([])
+  })
+
+  it('gives up on the list after the timeout and still shows the notice', async () => {
+    vi.useFakeTimers()
+    serve(() => new Promise<Response>(() => undefined))
+    stop = startUpdateNotice({ intervalMs: 60_000, whatsNew: { since: 0 } })
+    await vi.advanceTimersByTimeAsync(0)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(WHATS_NEW_TIMEOUT_MS - 10)
+    expect(document.querySelector('.booqy-update')).toBeNull()
+    await vi.advanceTimersByTimeAsync(20)
+    const box = document.querySelector('.booqy-update')
+    expect(box?.querySelector('.booqy-update__reload')).not.toBeNull()
+    expect(box?.querySelector('.booqy-update__news')).toBeNull()
   })
 })
 

@@ -18,6 +18,10 @@
  * förloppsfyllning till 80 %, kryper mot 95 % och slår i 100 % precis före
  * bytet; den nya sidan visar "Uppdaterad" en kort stund.
  *
+ * Nytt i versionen: med `whatsNew` hämtas /whats-new.json (högst 3 s, fel
+ * ignoreras) när en ny version upptäcks, och rutan visar poster med högre n
+ * än bygget som körs, högst fem plus "+N till". Tom lista: rutan som förut.
+ *
  * Samma fil finns i admin och konsolen (gästsajten och booqy.se har en
  * äldre kopia). Ändra dem tillsammans.
  */
@@ -38,6 +42,10 @@ export const VERSION_TIMEOUT_MS = 10_000
 export const RUSH_MS = 600
 /** Från 100 % (med glöd) till själva omladdningen. */
 const FINISH_MS = 420
+/** Längsta väntan på listan över nytt (/whats-new.json). */
+export const WHATS_NEW_TIMEOUT_MS = 3_000
+/** Så många poster visas, resten blir "+N till". */
+export const WHATS_NEW_MAX = 5
 const UPDATED_KEY = UPDATED_FLAG_KEY
 const UPDATED_MS = 1_500
 
@@ -51,6 +59,16 @@ background:var(--glass-pop,rgba(251,250,246,.74));color:var(--ink,#1c1918);
 box-shadow:0 14px 34px -12px rgba(28,25,24,.45),inset 0 1px 0 rgba(253,250,246,.6);
 font:600 0.95rem/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;animation:booqy-update-in .42s cubic-bezier(.16,1,.3,1)}
 .booqy-update__text{flex:1 1 auto;position:relative}
+.booqy-update__news{display:block;margin-top:7px;max-width:26rem}
+.booqy-update__list{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:0;list-style:none}
+.booqy-update__item{font:600 .66rem/1.3 var(--mono,ui-monospace,"SF Mono",Menlo,Consolas,monospace);letter-spacing:.06em;
+text-transform:uppercase;padding:3px 7px 2px;border-radius:6px;background:rgba(28,25,24,.06);
+box-shadow:inset 0 0 0 1px rgba(28,25,24,.14);overflow-wrap:anywhere}
+.booqy-update__item--more{background:transparent;box-shadow:none;opacity:.7;padding-inline:3px}
+.booqy-update__sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media (max-width:560px){.booqy-update.has-news:not([data-phase]){flex-wrap:wrap;row-gap:10px;width:calc(100vw - 32px);padding:12px 12px 12px 16px}
+.booqy-update.has-news:not([data-phase]) .booqy-update__text{flex-basis:100%}
+.booqy-update.has-news:not([data-phase]) .booqy-update__reload{flex:1 1 0}}
 .booqy-update__note{display:block;font-weight:500;font-size:.82rem;opacity:.75}
 .booqy-update__btn{appearance:none;border:0;border-radius:999px;padding:9px 16px;cursor:pointer;
 background:#1c1918;color:#fbfaf6;font:inherit;font-weight:700;white-space:nowrap;position:relative}
@@ -96,6 +114,8 @@ border-color:var(--glass-edge,rgba(246,236,233,.16));box-shadow:0 14px 34px -12p
 [data-theme="dark"] .booqy-update__btn:hover{background:#f6ece9}
 [data-theme="dark"] .booqy-update__btn--ghost{background:transparent;color:inherit}
 [data-theme="dark"] .booqy-update__btn--ghost:hover{background:rgba(246,236,233,.1)}
+[data-theme="dark"] .booqy-update__item{background:rgba(246,236,233,.07);box-shadow:inset 0 0 0 1px rgba(246,236,233,.18)}
+[data-theme="dark"] .booqy-update__item--more{background:transparent;box-shadow:none}
 [data-theme="dark"] .booqy-update__fill{background:linear-gradient(90deg,rgba(158,29,38,.18),rgba(158,29,38,.45) 70%,rgba(196,60,66,.62))}
 [data-theme="dark"] .booqy-update__glow{background:radial-gradient(120% 160% at 100% 50%,rgba(214,92,96,.5),transparent 60%)}
 [data-theme="dark"] .booqy-curtain{background:rgba(20,14,12,.42)}
@@ -125,6 +145,10 @@ export type UpdateNoticeLabels = {
   cancel: string
   failed: string
   updated: string
+  /** Rubriken som skärmläsare läser före listan: "Nytt: ...". */
+  whatsNew: string
+  /** Fler än WHATS_NEW_MAX poster; {n} byts mot antalet. */
+  more: string
 }
 
 /** Svenska som standard; konsolen (engelskt gränssnitt) skickar egna. */
@@ -139,6 +163,8 @@ const SV: UpdateNoticeLabels = {
   cancel: 'Avbryt',
   failed: 'Kunde inte ladda om. Försök igen.',
   updated: 'Uppdaterad',
+  whatsNew: 'Nytt',
+  more: '+{n} till',
 }
 
 export type UpdateNoticeOptions = {
@@ -152,7 +178,12 @@ export type UpdateNoticeOptions = {
   discardUnsaved?: () => void
   /** Sätter tillbaka spärren när den omladdningen inte blev av. */
   restoreUnsaved?: () => void
+  /** Visar vad som är nytt: poster i `url` (standard /whats-new.json) med n större än `since` (byggets högsta n). */
+  whatsNew?: { url?: string; since: number }
 }
+
+/** En post i whats-new.json: bara var ändringen finns, två till fyra ord. */
+export type WhatsNewEntry = { n: number; text: string }
 
 /** Själva omladdningen, utbytbar i tester (jsdom kan inte ladda om). */
 export const page = { reload: () => location.reload() }
@@ -183,6 +214,54 @@ export async function readVersion(url: string | string[], timeoutMs = VERSION_TI
   } finally {
     window.clearTimeout(timer)
   }
+}
+
+/**
+ * Hämtar listan över nytt förbi alla cacher och returnerar posterna nyare än
+ * `since`, nyaste först. Fel, konstigt innehåll eller timeout ger en tom
+ * lista, så rutan alltid visas ändå.
+ */
+export async function readWhatsNew(url: string, since: number, timeoutMs = WHATS_NEW_TIMEOUT_MS): Promise<WhatsNewEntry[]> {
+  const abort = new AbortController()
+  let timer = 0
+  const timeout = new Promise<null>((resolve) => {
+    timer = window.setTimeout(() => {
+      abort.abort()
+      resolve(null)
+    }, timeoutMs)
+  })
+  try {
+    const data: unknown = await Promise.race([
+      fetch(url, { cache: 'no-store', credentials: 'same-origin', signal: abort.signal }).then((res) =>
+        res.ok ? res.json() : null,
+      ),
+      timeout,
+    ])
+    const list: unknown = Array.isArray(data) ? data : (data as { entries?: unknown } | null)?.entries
+    if (!Array.isArray(list)) return []
+    return list
+      .filter((e): e is WhatsNewEntry => {
+        const { n, text } = (e ?? {}) as Partial<WhatsNewEntry>
+        return typeof n === 'number' && Number.isFinite(n) && n > since && typeof text === 'string' && text.trim() !== ''
+      })
+      .sort((a, b) => b.n - a.n)
+  } catch {
+    return []
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/** Listan i rutan: högst WHATS_NEW_MAX poster plus "+N till", med "Nytt:" för skärmläsare. */
+function newsList(entries: WhatsNewEntry[], labels: UpdateNoticeLabels): HTMLElement {
+  const wrap = el('div', 'booqy-update__news')
+  wrap.append(el('span', 'booqy-update__sr', `${labels.whatsNew}: `))
+  const list = el('ul', 'booqy-update__list')
+  for (const e of entries.slice(0, WHATS_NEW_MAX)) list.append(el('li', 'booqy-update__item', e.text.trim()))
+  const rest = entries.length - WHATS_NEW_MAX
+  if (rest > 0) list.append(el('li', 'booqy-update__item booqy-update__item--more', labels.more.replace('{n}', String(rest))))
+  wrap.append(list)
+  return wrap
 }
 
 /**
@@ -269,7 +348,7 @@ function button(className: string, text: string, onClick: () => void): HTMLButto
 
 type NoticeDeps = Pick<UpdateNoticeOptions, 'hasUnsaved' | 'discardUnsaved' | 'restoreUnsaved'>
 
-function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () => void): void {
+function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () => void, news: WhatsNewEntry[] = []): void {
   if (document.querySelector('.booqy-update')) return
   injectStyle()
   const box = el('div', 'booqy-update')
@@ -278,11 +357,12 @@ function showNotice(labels: UpdateNoticeLabels, deps: NoticeDeps, onDismiss: () 
 
   /** Grundläget: text, Ladda om och stäng. `note` efter ett misslyckat försök. */
   const idle = (note?: string) => {
-    box.className = 'booqy-update'
+    box.className = news.length ? 'booqy-update has-news' : 'booqy-update'
     box.style.width = ''
     delete box.dataset.phase
-    const text = el('span', 'booqy-update__text', labels.text)
+    const text = el(news.length ? 'div' : 'span', 'booqy-update__text', labels.text)
     if (note) text.append(el('span', 'booqy-update__note', note))
+    if (news.length) text.append(newsList(news, labels))
     const reload = button('booqy-update__btn booqy-update__reload', labels.reload, () => {
       if (deps.hasUnsaved?.()) confirmUnsaved()
       else start(false)
@@ -472,10 +552,18 @@ export function startUpdateNotice(options: UpdateNoticeOptions = {}): () => void
       if (baseline === null) baseline = version
       else if (version !== baseline && version !== latest) {
         latest = version
+        const news = options.whatsNew
+          ? await readWhatsNew(options.whatsNew.url ?? '/whats-new.json', options.whatsNew.since)
+          : []
         // "Inte nu" gömmer rutan tills nästa nya version.
-        showNotice(labels, deps, () => {
-          baseline = latest
-        })
+        showNotice(
+          labels,
+          deps,
+          () => {
+            baseline = latest
+          },
+          news,
+        )
       }
     } catch {
       /* offline eller blockerat: försök vid nästa tillfälle */

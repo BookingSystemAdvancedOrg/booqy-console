@@ -152,6 +152,15 @@ npm run dev                 # http://localhost:5173 (an allowed sign-in callback
 npm test                    # vitest: the Finance page, the Billing tab and the date/number helpers
 ```
 
+## What's new (rule)
+
+Every user-visible change adds one entry to `web/src/whatsNew.ts`: the next
+`n`, newest last, and only where the change is, two to four words, no verbs
+(for example `Operators profile picture`, `Finance MRR`). The build embeds
+the highest `n` and ships the list as `/whats-new.json` (no-cache); the "A
+new version is available" notice lists what is newer than the running build
+(at most five, then `+N more`). `web/src/whatsNew.test.ts` checks the file.
+
 ## Deploy
 
 `.github/workflows/deploy.yml`: PRs run the tests; a push to `dev` deploys
