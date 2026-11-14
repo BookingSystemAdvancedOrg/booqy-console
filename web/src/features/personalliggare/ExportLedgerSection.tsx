@@ -3,6 +3,7 @@ import { api } from "../../api";
 import { Card, ErrorNotice, Field, Notice, useAction, useLoad } from "../../components/ui";
 import { SaveButton } from "../../components/save";
 import { exportLedger, type LedgerExport } from "./api";
+import { Select } from "../../components/Select";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -48,9 +49,8 @@ export default function ExportLedgerSection({ tenantId }: { tenantId: string }) 
         <div className="grid">
         <Field label="Location" required>
           {locations.length > 0 ? (
-            <select className="input" value={chosen} onChange={(e) => setLocationId(e.target.value)}>
-              {locations.map((l) => <option key={l.locationId} value={l.locationId}>{l.name || l.locationId}</option>)}
-            </select>
+            <Select value={chosen} required onChange={setLocationId}
+                    options={locations.map((l) => ({ value: l.locationId, label: l.name || l.locationId }))} />
           ) : (
             <input className="input mono" value={locationId} placeholder="Location id" onChange={(e) => setLocationId(e.target.value)} />
           )}

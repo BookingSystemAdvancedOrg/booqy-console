@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
    one stroke icon set, the command palette (Cmd/Ctrl+K), the primary CTA and the
    accordion. Styles in src/ds.css. */
 
-export type IconName = "users" | "plus" | "user-plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate" | "flag";
+export type IconName = "users" | "plus" | "user-plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate" | "flag" | "check";
 
 // 24x24, 1.8 px stroke: the same drawings as admin's Icon.tsx.
 const PATHS: Record<IconName, string> = {
@@ -25,6 +25,7 @@ const PATHS: Record<IconName, string> = {
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   send: '<path d="M20.5 3.5L3.5 10.8l6.6 2.6 2.6 6.6zM20.5 3.5l-10.4 9.9"/>',
   'chevron-down': '<path d="M6.5 9.5L12 15l5.5-5.5"/>',
+  check: '<path d="M5 12.6l4.3 4.2L19 7.2"/>',
   'arrow-right': '<path d="M4.5 12H19M13.5 6.5L19 12l-5.5 5.5"/>',
   close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',

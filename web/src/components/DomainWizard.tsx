@@ -4,6 +4,7 @@ import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, Support
 import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
+import { Select } from "./Select";
 
 type Path = "choose" | "buy" | "connect" | "cname";
 
@@ -403,8 +404,8 @@ function Connect({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => voi
                     <td data-label="Copy"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
                                onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></td>
                     <td className="cell-title"><input className="input mono" aria-label="Name" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
-                    <td data-label="Type"><select className="input" value={r.type} disabled={!!r.skip} onChange={(e) => update(r.id, { type: e.target.value })}>
-                      {(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => <option key={t}>{t}</option>)}</select></td>
+                    <td data-label="Type"><Select aria-label="Type" value={r.type} disabled={!!r.skip} onChange={(v) => update(r.id, { type: v })}
+                      options={(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => ({ value: t, label: t }))} /></td>
                     <td data-label="TTL"><input className="input mono ttl" value={r.ttl} disabled={!!r.skip} onChange={(e) => update(r.id, { ttl: Number(e.target.value) || 0 })} /></td>
                     <td data-label="Value(s)">{r.skip ? <span className="small">{r.skip}</span>
                       : <textarea className="input mono" rows={Math.min(4, Math.max(1, r.valuesText.split("\n").length))}

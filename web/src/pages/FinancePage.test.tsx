@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import FinancePage from "./FinancePage";
+import { selectValue } from "../test/select";
 
 const tenants: TenantSummary[] = [
   { tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", status: "active", planId: "starter", locationCount: 1, chargesEnabled: true },
@@ -115,12 +116,17 @@ describe("FinancePage", () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findAllByText("2 980 kr");
-    const period = screen.getByLabelText("Billing period") as HTMLSelectElement;
-    expect(period.options).toHaveLength(24);
-    expect(period.options[0].textContent).toMatch(/\(now\)$/);
+    const period = screen.getByRole("combobox", { name: "Billing period" });
+    await user.click(period);
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(24);
+    expect(options[0].textContent).toMatch(/\(now\)$/);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByLabelText("From")).toBeNull();                 // no free date pickers any more
-    await user.selectOptions(period, period.options[2].value);
-    const picked = period.options[2].value;
+    const third = options[2].textContent!;
+    await user.click(options[2]);
+    const picked = selectValue(period)!;
+    expect(period).toHaveTextContent(third);
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ from: picked })));
     await user.click(screen.getByRole("button", { name: "3 months" }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(
@@ -151,8 +157,9 @@ describe("FinancePage", () => {
     expect(screen.queryByLabelText("Location")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Filter by customer"), "roma");
     await user.click(await screen.findByRole("option", { name: /Pizzeria Roma/ }));
-    const select = await screen.findByLabelText("Location");
-    await user.selectOptions(select, "loc-2");
+    const select = await screen.findByRole("combobox", { name: "Location" });
+    await user.click(select);
+    await user.click(screen.getByRole("option", { name: "Vasastan" }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "t1", locationId: "loc-2" })));
     expect(await screen.findByText(/One location/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show all customers" }));

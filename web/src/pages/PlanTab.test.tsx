@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({ plans: vi.fn(), setPlan: vi.fn(), tenant: vi.f
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import TenantPage, { PlanTab } from "./TenantPage";
+import { pick, selectValue } from "../test/select";
 
 const tenant: Tenant = {
   tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", status: "active", planId: "starter",
@@ -41,13 +42,13 @@ describe("Plan tab: Free", () => {
       expect(screen.getByRole("radio", { name: /Free for 6 months/ })).not.toBeChecked();
       expect(screen.getByTestId("free-fields").querySelector("input[type=date]")).toBeNull();   // no date picker
       expect(screen.getByText("Free until 13 Feb 2027")).toBeInTheDocument();
-      expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("");
+      expect(selectValue(screen.getByLabelText(/^Then switch to/))).toBe("");
       expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);                 // Free starts at 1
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
       expect(mocks.setPlan).not.toHaveBeenCalled();
       expect(screen.getByText("Pick the plan after Free")).toBeInTheDocument();
       expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();
-      fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "starter" } });
+      pick(screen.getByLabelText(/^Then switch to/), "Starter");
       expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(3950);  // filled in from the plan
       fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));
       expect(screen.getByText("Free until 13 May 2027")).toBeInTheDocument();
@@ -108,7 +109,7 @@ describe("Plan tab: Free", () => {
     await screen.findByText("Free");
     for (const name of [/Free until changed/, /Free for 3 months/, /Free for 6 months/]) expect(screen.getByRole("radio", { name })).not.toBeChecked();
     expect(screen.getByText("Free until 20 Feb 2027")).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("growth");
+    expect(selectValue(screen.getByLabelText(/^Then switch to/))).toBe("growth");
     expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(8295);
     expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
     expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();
@@ -132,7 +133,7 @@ describe("Plan tab: Free", () => {
     await screen.findByText("Free");
     fireEvent.click(screen.getByText("Free"));
     expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(500);
-    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    pick(screen.getByLabelText(/^Then switch to/), "Growth");
     expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(500);        // an own price stays
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", priceSek: 500 }));

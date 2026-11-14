@@ -21,7 +21,7 @@ describe("ExportLedgerSection", () => {
   it("exports the chosen location and reports an intact chain", async () => {
     vi.mocked(exportLedger).mockResolvedValue(FILE);
     render(<ExportLedgerSection tenantId="t1" />);
-    expect(await screen.findByRole("option", { name: "Bistro Söder" })).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: /^Location/ })).toHaveTextContent("Bistro Söder");
     fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
     expect(await screen.findByText(/the chain is intact/)).toBeInTheDocument();
     expect(vi.mocked(exportLedger).mock.calls[0][0]).toBe("t1");
@@ -31,7 +31,7 @@ describe("ExportLedgerSection", () => {
   it("warns when the tamper check fails", async () => {
     vi.mocked(exportLedger).mockResolvedValue({ ...FILE, chainOk: false, firstBadSeq: 2 });
     render(<ExportLedgerSection tenantId="t1" />);
-    await screen.findByRole("option", { name: "Bistro Söder" });
+    await screen.findByRole("combobox", { name: /^Location/ });
     fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
     expect(await screen.findByText(/Tamper check failed at record 2/)).toBeInTheDocument();
   });
@@ -39,7 +39,7 @@ describe("ExportLedgerSection", () => {
   it("shows the error when nothing is there", async () => {
     vi.mocked(exportLedger).mockRejectedValue(new ApiError(404, "not_found", "No staff ledger records for this location."));
     render(<ExportLedgerSection tenantId="t1" />);
-    await screen.findByRole("option", { name: "Bistro Söder" });
+    await screen.findByRole("combobox", { name: /^Location/ });
     fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
     expect(await screen.findByText(/No staff ledger records/)).toBeInTheDocument();
   });

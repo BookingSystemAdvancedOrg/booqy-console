@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { VIEWPORTS, layoutAudit, fullAudit, axeIssues, assertNoIssues, record, setTheme, STABLE_CSS, type Issue } from '../lib/ui-audit'
+import { VIEWPORTS, CROSS_BROWSER, layoutAudit, fullAudit, axeIssues, assertNoIssues, record, setTheme, STABLE_CSS, type Issue } from '../lib/ui-audit'
 import { fakeSession, stubApi } from '../lib/ui-fixtures'
 
 /** Key console interactions at phone (390) and desktop (1440), light and dark. */
@@ -104,6 +104,55 @@ for (const vp of SIZES) {
       issues.push(...(await axeIssues(page)))
       await page.screenshot({ path: info.outputPath('help.png') })
       record(info, 'console', 'interaction:help-panel', vp.name, theme, issues)
+      assertNoIssues(issues)
+    })
+  }
+}
+
+/** The Booqy dropdown (never the system menu): phone sheet, tablet and desktop popover, both themes, Chromium and WebKit. */
+for (const vp of VIEWPORTS.filter((v) => ['390', '820p', '1440'].includes(v.name))) {
+  for (const theme of ['light', 'dark'] as const) {
+    const phone = vp.kind === 'phone'
+    const tag = CROSS_BROWSER.includes(vp.name) ? ' @x' : ''
+    test(`dropdown ${vp.name} ${theme}${tag}`, async ({ page }, info) => {
+      await open(page, '/finance', vp, theme)
+      const issues: Issue[] = []
+      const trigger = page.getByRole('combobox', { name: 'Billing period' })
+      await trigger.scrollIntoViewIfNeeded()
+      await trigger.click()
+      const list = page.getByRole('listbox')
+      await expect(list).toBeVisible()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      if (await page.locator('select').count()) issues.push({ kind: 'native-select', severity: 'high', message: 'A native <select> is still on the page' })
+      const lb = await list.boundingBox(), tb = await trigger.boundingBox()
+      if (!lb || lb.x < -1 || lb.y < -1 || lb.x + lb.width > vp.width + 1 || lb.y + lb.height > vp.height + 1)
+        issues.push({ kind: 'dropdown-bounds', severity: 'high', message: `List outside the window: ${JSON.stringify(lb)}` })
+      const option = page.getByRole('option').first()
+      const ob = await option.boundingBox()
+      if (phone) {
+        if (!(await list.evaluate((el) => el.classList.contains('select-list--sheet')))) issues.push({ kind: 'dropdown-sheet', severity: 'high', message: 'No bottom sheet on a phone' })
+        if (lb && Math.abs(lb.y + lb.height - vp.height) > 1) issues.push({ kind: 'dropdown-sheet', severity: 'medium', message: 'The sheet does not sit on the bottom edge' })
+        if (!ob || ob.height < 47.5) issues.push({ kind: 'dropdown-rows', severity: 'medium', message: `Phone rows under 48 px: ${ob?.height}` })
+      } else if (lb && tb && !(lb.y >= tb.y + tb.height - 1 || lb.y + lb.height <= tb.y + 1)) {
+        issues.push({ kind: 'dropdown-anchor', severity: 'high', message: 'The list covers its trigger' })
+      }
+      const selected = page.locator('[role=option][aria-selected=true]')
+      if ((await selected.count()) !== 1 || !(await selected.locator('svg').count())) issues.push({ kind: 'dropdown-check', severity: 'medium', message: 'The chosen option has no check mark' })
+      issues.push(...(await axeIssues(page)))
+      await page.screenshot({ path: info.outputPath('dropdown-open.png') })
+      const before = await trigger.getAttribute('aria-activedescendant')
+      await page.keyboard.press('ArrowDown')
+      if ((await trigger.getAttribute('aria-activedescendant')) === before) issues.push({ kind: 'dropdown-keys', severity: 'high', message: 'ArrowDown does not move the active option' })
+      await page.keyboard.press('Escape')
+      await expect(list).toBeHidden()
+      await expect(trigger).toBeFocused()
+      const was = await trigger.textContent()
+      await page.keyboard.press('Enter')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await expect(list).toBeHidden()
+      if ((await trigger.textContent()) === was) issues.push({ kind: 'dropdown-keys', severity: 'high', message: 'Enter did not pick the next period' })
+      record(info, 'console', 'interaction:dropdown', vp.name, theme, issues)
       assertNoIssues(issues)
     })
   }

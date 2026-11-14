@@ -201,7 +201,8 @@ describe("BillingTab", () => {
     expect(screen.getByText("faktura@roma.se")).toBeInTheDocument();
     expect(screen.getByText("reminder at day 7")).toBeInTheDocument();
     expect(screen.getByText(/becomes the default by itself/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Collection"), "invoice");
+    await user.click(screen.getByRole("combobox", { name: "Collection" }));
+    await user.click(screen.getByRole("option", { name: "Invoice (pay within 30 days)" }));
     await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "collection", { collectionPreference: "invoice" }));
   });
 

@@ -10,6 +10,7 @@ import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../componen
 import { rowAction } from "../components/rowLink";
 import { RowButton } from "../components/RowButton";
 import { helpSlug } from "../features/help/helpId";
+import { Select } from "../components/Select";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -493,11 +494,9 @@ function LogoPicker(props: {
       </div>
       <div className="logo-colour">
         {!booqy && (
-          <select className="input" value={color === null ? "original" : "one"} aria-label="Logo colours"
-                  onChange={(e) => props.onColor(e.target.value === "original" ? null : BOOQY_INK)}>
-            <option value="original">The file's own colours</option>
-            <option value="one">One colour</option>
-          </select>
+          <Select value={color === null ? "original" : "one"} aria-label="Logo colours"
+                  onChange={(v) => props.onColor(v === "original" ? null : BOOQY_INK)}
+                  options={[{ value: "original", label: "The file's own colours" }, { value: "one", label: "One colour" }]} />
         )}
         {color !== null && (
           <div className="colour-field">

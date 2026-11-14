@@ -17,6 +17,7 @@ import { useRowOpen } from "../components/rowLink";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge } from "../components/FreeFields";
 import { InfoTip } from "../components/StepFlow";
+import { Select } from "../components/Select";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -131,11 +132,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       <div className="toolbar finance-toolbar">
         <div className="range">
           <label className="range__field range__field--period">
-            <select className="input" aria-label="Billing period" title="Billing period" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}>
-              {choices.map((p) => (
-                <option key={p.from} value={p.from}>{periodLabel(p)}{p.current ? " (now)" : ""}</option>
-              ))}
-            </select>
+            <Select aria-label="Billing period" title="Billing period" value={periodFrom} onChange={setPeriodFrom}
+                    options={choices.map((p) => ({ value: p.from, label: `${periodLabel(p)}${p.current ? " (now)" : ""}` }))} />
           </label>
         </div>
         <div className="chips" role="group" aria-label="How many periods">
@@ -150,10 +148,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </label>
         {customer && (data?.locations?.length ?? 0) > 0 && (
           <label className="range__field">
-            <select className="input" value={locationId ?? ""} aria-label="Location" title="Location" onChange={(e) => setLocationId(e.target.value || null)}>
-              <option value="">All locations</option>
-              {data!.locations!.map((l) => <option key={l.locationId} value={l.locationId}>{l.name ?? l.locationId}</option>)}
-            </select>
+            <Select value={locationId ?? ""} aria-label="Location" title="Location" onChange={(v) => setLocationId(v || null)}
+                    options={[{ value: "", label: "All locations" }, ...data!.locations!.map((l) => ({ value: l.locationId, label: l.name ?? l.locationId }))]} />
           </label>
         )}
         <div className="customer-filter">

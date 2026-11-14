@@ -3,6 +3,7 @@ import { FREE_OPTIONS, FREE_PLAN_ID, type FreeForm, fmtFreeDay, freeLabel, isTim
 import type { Plan } from "../types";
 import { Field } from "./ui";
 import "./planFields.css";
+import { Select } from "./Select";
 
 /** The Free plan's period: free until changed, or 3 or 6 months and then
  * the plan and monthly price chosen here (both required). The end date is
@@ -39,11 +40,9 @@ export function FreeFields({ value, onChange, plans, until, errors = {}, changed
       {timed && (
         <>
           <Field label="Then switch to" required error={errors.thenPlanId} changed={changed.thenPlanId}>
-            <select id="f-free.thenPlanId" className="input" value={value.thenPlanId}
-                    onChange={(e) => onChange({ ...value, thenPlanId: e.target.value })}>
-              <option value="" disabled>Choose a plan</option>
-              {paid.map((p) => <option key={p.planId} value={p.planId}>{p.name}</option>)}
-            </select>
+            <Select id="f-free.thenPlanId" required value={value.thenPlanId} placeholder="Choose a plan"
+                    options={paid.map((p) => ({ value: p.planId, label: p.name }))}
+                    onChange={(v) => onChange({ ...value, thenPlanId: v })} />
           </Field>
           <Field label="Monthly price after Free, SEK ex VAT" required error={errors.price} changed={changed.price}>
             <input id={price.id} className="input mono" type="number" min={1} step={1} inputMode="numeric" value={price.value}

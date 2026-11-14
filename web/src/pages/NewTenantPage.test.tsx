@@ -9,6 +9,7 @@ vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import NewTenantPage, { setupFailure } from "./NewTenantPage";
 import { burst, confetti } from "../components/StepFlow";
+import { pick, selectValue } from "../test/select";
 
 const OWNER_TAKEN = "OwnerEmailInUse: The owner email is already registered to another tenant (t-9). Use a different address for this tenant.";
 
@@ -125,13 +126,13 @@ describe("NewTenantPage Free plan", () => {
     expect(screen.getByText("1 location")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Free for 3 months/ })).toBeChecked();
     expect(screen.getByTestId("free-until")).toHaveTextContent(/^Free until \d{1,2} \w{3} \d{4}$/);
-    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("");
+    expect(selectValue(screen.getByLabelText(/^Then switch to/))).toBe("");
     expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);               // Free starts at 1
     done();
     expect(screen.getByText("Pick the plan after Free")).toBeInTheDocument();
     expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();
     expect(document.getElementById("f-locations.0.name")).toBeNull();          // still on step 4
-    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "starter" } });
+    pick(screen.getByLabelText(/^Then switch to/), "Starter");
     expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(499);
     expect(screen.queryByText("Pick the plan after Free")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More locations" }));
@@ -145,12 +146,12 @@ describe("NewTenantPage Free plan", () => {
   it("the price after Free follows the plan after it unless the operator typed one", async () => {
     await pickFree();
     const plan = screen.getByLabelText(/^Then switch to/), price = screen.getByLabelText(/^Monthly price after Free/);
-    fireEvent.change(plan, { target: { value: "starter" } });
+    pick(plan, "Starter");
     expect(price).toHaveValue(499);
-    fireEvent.change(plan, { target: { value: "growth" } });
+    pick(plan, "Growth");
     expect(price).toHaveValue(899);                                            // not Starter's price on Growth
     fireEvent.change(price, { target: { value: "700" } });
-    fireEvent.change(plan, { target: { value: "starter" } });
+    pick(plan, "Starter");
     expect(price).toHaveValue(700);                                            // an own price stays
   });
 
@@ -165,7 +166,7 @@ describe("NewTenantPage Free plan", () => {
   it("six months, then an own price after Free, invoiced with 30 days", async () => {
     await pickFree();
     fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));
-    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    pick(screen.getByLabelText(/^Then switch to/), "Growth");
     fireEvent.change(screen.getByLabelText(/^Monthly price after Free/), { target: { value: "0" } });
     done();
     expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();

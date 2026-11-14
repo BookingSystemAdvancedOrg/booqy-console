@@ -6,6 +6,7 @@ import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from ".
 import { SaveButton, useFlash } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { fmtFreeDay } from "../free";
+import { Select } from "./Select";
 
 const STATUS_TEXT: Record<string, string> = {
   none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
@@ -123,11 +124,9 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           )}
           <dt>Collection</dt>
           <dd>
-            <select className="input" style={{ maxWidth: 320 }} aria-label="Collection" value={pref} disabled={act.busy}
-                    onChange={(e) => doAction("collection", { collectionPreference: e.target.value as "card" | "invoice" })}>
-              <option value="card">Card (automatic)</option>
-              <option value="invoice">Invoice (pay within 30 days)</option>
-            </select>
+            <Select style={{ maxWidth: 320 }} aria-label="Collection" value={pref} disabled={act.busy}
+                    onChange={(v) => doAction("collection", { collectionPreference: v as "card" | "invoice" })}
+                    options={[{ value: "card", label: "Card (automatic)" }, { value: "invoice", label: "Invoice (pay within 30 days)" }]} />
             <div className="muted small">
               {pref === "card"
                 ? b.hasCard ? "The card is charged on the 1st; Stripe retries a failed payment." : "No card yet: emailed, due in 10 days, until the owner adds one in Booqy Admin (or use the card link)."
