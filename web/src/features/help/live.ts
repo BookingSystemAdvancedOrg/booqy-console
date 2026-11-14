@@ -60,10 +60,14 @@ export function fillLive(text: string, value: Value): string {
   return text.replace(/\{([^{}|]*)\|([^{}|]*)\}/g, (_, one: string, many: string) => (value.count === 1 ? one : many)).replace("{value}", value.shown);
 }
 
-/** The answer's text with the number in it ({value}), or null when it can't be had. */
-export async function resolveLive(live: { metric: string; text: string }, src: Source = api): Promise<string | null> {
+/**
+ * The answer's text with the number in it, or null when it can't be had.
+ * countText (with {one|many}) wins over text, which stays plain for
+ * clients from before countText.
+ */
+export async function resolveLive(live: { metric: string; text: string; countText?: string }, src: Source = api): Promise<string | null> {
   const metric = METRICS[live.metric];
   if (!metric) return null;
   const value = await metric(src);
-  return value === null ? null : fillLive(live.text, value);
+  return value === null ? null : fillLive(live.countText ?? live.text, value);
 }

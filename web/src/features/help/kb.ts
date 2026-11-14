@@ -22,8 +22,11 @@ export type HelpAction = {
   highlight?: string[];
 };
 
-/** A live number from the console's own APIs (live.ts), e.g. MRR. */
-export type HelpLive = { metric: string; text: string };
+/**
+ * A live number from the console's own APIs (live.ts), e.g. MRR. text has
+ * {value} only (what older clients read); countText also has {one|many}.
+ */
+export type HelpLive = { metric: string; text: string; countText?: string };
 
 export type HelpEntry = {
   id: string;
