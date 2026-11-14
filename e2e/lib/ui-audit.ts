@@ -233,7 +233,9 @@ export async function fullAudit(page: Page, opts: AuditOpts): Promise<Issue[]> {
       if (/(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight
     }
   })
-  await page.waitForTimeout(150)
+  // a help button that hides while scrolling comes back after about 1 s of rest; audit it once it is back,
+  // otherwise a button that would cover the end of the page is skipped as hidden
+  await page.waitForTimeout(opts.helpSelector ? 1300 : 150)
   const b = await layoutAudit(page, { ...opts, atBottom: true })
   const seen = new Set(a.map((i) => i.kind + i.selector))
   const fresh = b.filter((i) => !seen.has(i.kind + i.selector))
