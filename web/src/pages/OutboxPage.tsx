@@ -5,6 +5,7 @@ import type { OutboxMessage, OutboxSummary } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
+import { InfoTip } from "../components/StepFlow";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -102,8 +103,11 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
         <div>
           {embedded ? <h2>Mail outbox</h2> : <h1>Mail outbox</h1>}
           <p className="muted">
-            Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS -
-            saved instead of sent until the sending domain is verified. Kept 30 days.
+            Kept 30 days{" "}
+            <InfoTip label="About the outbox">
+              Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS,
+              saved instead of sent until the sending domain is verified.
+            </InfoTip>
           </p>
         </div>
         <div className="row">
@@ -125,7 +129,7 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
                 <tr><th>Saved</th><th>Type</th><th>To</th><th>Subject / text</th></tr>
               </thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet. Make a booking or an order in dev.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet.</td></tr>}
                 {rows.map((r) => (
                   <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
                     <td className="nowrap">{fmtDate(r.at)}</td>

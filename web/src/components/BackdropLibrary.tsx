@@ -78,7 +78,7 @@ export function BackdropLibrary() {
       </div>
 
       {lib.loaded && lib.items.length === 0 && (
-        <p className="bg-library-empty">No pictures yet. Upload one and it lands here and becomes your background straight away.</p>
+        <p className="bg-library-empty">No pictures yet.</p>
       )}
 
       <ul className="bg-grid" aria-label="Your pictures">

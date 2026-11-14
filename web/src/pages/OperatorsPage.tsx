@@ -9,6 +9,7 @@ import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "
 import type { OperatorAccount } from "../types";
 import { RefreshButton, SaveButton, useDirty } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
+import { InfoTip } from "../components/StepFlow";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
   if (!o.enabled) return { label: "Disabled", cls: "suspended" };
@@ -44,7 +45,7 @@ export default function OperatorsPage({ me }: { me: string }) {
       <div className="page-head">
         <div>
           <h1>Operators</h1>
-          <p className="muted">People who can sign in to Booqy Console. Everyone here has the same rights.</p>
+          <p className="muted">Same rights for everyone</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
@@ -156,8 +157,11 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
     <Modal title="Add operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <p className="muted small" style={{ margin: 0 }}>
-          They get an email with a temporary password. On first sign-in they choose their own password and set up an
-          authenticator app. They'll have the same rights as you, including managing operators.
+          Invite by email. Same rights as you.{" "}
+          <InfoTip label="About the invite">
+            They get an email with a temporary password. On first sign-in they choose their own password and set up an
+            authenticator app. They'll have the same rights as you, including managing operators.
+          </InfoTip>
         </p>
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
         <Field label="Name" required error={a.fields.name}>
@@ -188,11 +192,11 @@ function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: 
       <form onSubmit={submit} className="stack">
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
         <Field label="Name" required changed={dirty.dirty} error={a.fields.name}
-               hint={op.name ? undefined : "No name yet. Add one so everyone sees who this is."}>
+               hint={undefined}>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100}
                  placeholder={op.name ? undefined : "Add a name"} />
         </Field>
-        <Field label="Email" hint="The email is the sign-in name and can't be changed. Add a new operator instead.">
+        <Field label="Email" hint="Can't be changed">
           <input className="input" value={op.email} disabled />
         </Field>
         <div className="row">

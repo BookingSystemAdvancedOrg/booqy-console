@@ -192,13 +192,13 @@ describe("Integrations tab", () => {
     const tabs = screen.getAllByRole("button").map((b) => b.textContent);
     expect(tabs.indexOf("Integrations")).toBe(tabs.indexOf("Website") + 1);
     fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-    expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
   });
 
   it("shows with only the phone agent on", async () => {
     await renderTenant({ phoneAgent: true });
     fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-    expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
   });
 
   it("stays hidden with only events and tickets on", async () => {

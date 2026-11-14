@@ -8,6 +8,7 @@ import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 import { useRowOpen } from "./rowLink";
 import { helpSlug } from "../features/help/helpId";
+import { InfoTip } from "./StepFlow";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -29,7 +30,12 @@ export default function PaymentsView() {
   return (
     <>
       <div className="row payments-actions">
-        <p className="muted small">Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). Run it by hand after a missed 25th, with a preview first.</p>
+        <p className="muted small">
+          Runs on the 25th{" "}
+          <InfoTip label="About invoicing">
+            Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). Run it by hand after a missed 25th, with a preview first.
+          </InfoTip>
+        </p>
         <button className="btn btn--primary" onClick={() => setInvoicing(true)}>Run invoicing</button>
       </div>
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}

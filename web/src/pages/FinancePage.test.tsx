@@ -92,11 +92,11 @@ describe("FinancePage", () => {
     renderPage();
     expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR
     expect(screen.getAllByText("2 880 kr").length).toBeGreaterThan(0);             // revenue (tile and hero facts)
-    expect(screen.getByText(/96,5 % of every krona invoiced stays as profit/)).toBeInTheDocument();
+    expect(screen.getByText(/AWS cost 3,5 % of revenue/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
     expect(screen.getAllByText(/vs previous period/).length).toBeGreaterThan(0);
-    expect(screen.getByText("AWS cost of 412 parts sent, included in the price")).toBeInTheDocument();   // the SMS tile: cost, no revenue
+    expect(screen.getByText("412 parts")).toBeInTheDocument();   // the SMS tile: cost, no revenue
     expect(screen.queryByText(/SMS revenue|parts charged/)).not.toBeInTheDocument();
     expect(screen.getByText(/, 1 on Free/)).toBeInTheDocument();
     expect(screen.getByText("Free until 14 Feb 2027")).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe("FinancePage", () => {
     const select = await screen.findByLabelText("Location");
     await user.selectOptions(select, "loc-2");
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "t1", locationId: "loc-2" })));
-    expect(await screen.findByText(/Showing one location/)).toBeInTheDocument();
+    expect(await screen.findByText(/One location/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show all customers" }));
     await waitFor(() => expect(screen.queryByLabelText("Location")).not.toBeInTheDocument());
   });

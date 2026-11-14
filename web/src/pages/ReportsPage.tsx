@@ -5,6 +5,7 @@ import { ErrorNotice, fmtDate, useAction, useLoad } from "../components/ui";
 import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import type { SupportReport } from "../types";
+import { InfoTip } from "../components/StepFlow";
 
 type Show = "open" | "handled" | "all";
 
@@ -71,8 +72,11 @@ export default function ReportsPage() {
         <div>
           <h1>Reports</h1>
           <p className="muted">
-            Errors restaurants reported from Booqy Admin with Rapportera till Booqy. Each one is ours to fix: look the
-            request id up in the logs, then mark it handled. Kept 180 days.
+            From Booqy Admin · kept 180 days{" "}
+            <InfoTip label="About reports">
+              Errors restaurants reported from Booqy Admin with Rapportera till Booqy. Each one is ours to fix: look the
+              request id up in the logs, then mark it handled.
+            </InfoTip>
           </p>
         </div>
         <div className="row">

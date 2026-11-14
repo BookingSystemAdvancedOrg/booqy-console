@@ -83,7 +83,7 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
         <Notice kind="info">Managed from the production console. This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
       )}
       {site.status === "failed" && <Notice kind="error"><strong>Setup failed.</strong> {site.lastError}</Notice>}
-      {site.status === "creating" && <Notice kind="info">Setting up the repo, its deploy role and the first deploy… this updates by itself.</Notice>}
+      {site.status === "creating" && <Notice kind="info">Setting up the repo and the first deploy…</Notice>}
       {site.status === "none" && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
       {site.archived && <Notice kind="warn">The repo is archived (read-only). <strong>Set up</strong> brings it back for this environment.</Notice>}
       <dl className="dl">

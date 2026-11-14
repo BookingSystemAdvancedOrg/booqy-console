@@ -52,15 +52,13 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
 
   return (
     <div className="stack">
-      <Card title="Agreement" saved={act.done || started} savedLabel={started ? "Started" : "Saved"} actions={<span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span>}>
-        <p className="muted small">
-          Invoiced in arrears: on the 25th, Stripe sends one invoice for the period from the 25th to the 24th that has just
+      <Card title="Agreement" saved={act.done || started} savedLabel={started ? "Started" : "Saved"} actions={<span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span>}
+            info={<>Invoiced in arrears: on the 25th, Stripe sends one invoice for the period from the 25th to the 24th that has just
           ended, with the monthly price (pro rata by days for a part period) plus 25 % VAT. SMS are included in the price.
           The Free plan has no charge: no invoice while it lasts.
           Emailed invoices are due {b.daysUntilDue} days later; a card on file is charged on the 25th. Unpaid invoices get
           weekly reminders, the statutory late fee after the grace period and interest when paid; past due for{" "}
-          {b.suspendAfterDays} days means suspension until paid.
-        </p>
+          {b.suspendAfterDays} days means suspension until paid.</>}>
         {cardParam === "added" && <Notice kind="ok">The card was added in Stripe. Press "Charge the card" to use it from the next invoice.</Notice>}
         {b.pastDueSince && <Notice kind="error">Past due since {fmtDate(b.pastDueSince)}{b.autoSuspended ? "; the customer was suspended automatically" : ""}.</Notice>}
         {running && b.endsAt && (
@@ -223,7 +221,7 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
             <label className="field">
               <span className="field__label">Monthly price, SEK ex VAT</span>
               <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
-              <span className="field__hint">The plan's price is {fmtSek(billing.plan.priceSek)}; a different amount is this customer's own price.</span>
+              <span className="field__hint">Plan price {fmtSek(billing.plan.priceSek)}</span>
             </label>
           )}
           <label className="field">
@@ -256,7 +254,7 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
           <label className={`choice${method === "charge_automatically" ? " choice--on" : ""}`}>
             <input type="radio" name="method" checked={method === "charge_automatically"} onChange={() => setMethod("charge_automatically")} />
             <strong>Charge a card on file</strong>
-            <span className="muted small">Charged on the 25th. Needs a card added through a card link first.{billing.hasCard ? " A card is on file." : ""}</span>
+            <span className="muted small">Charged on the 25th.{billing.hasCard ? " A card is on file." : " Needs a card link first."}</span>
           </label>
         </div>
         <ErrorNotice error={a.error} />
@@ -276,7 +274,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
   return (
     <Card title="Invoices" saved={remind.done} savedLabel="Reminder sent">
       {invoices.length === 0 ? (
-        <p className="muted small">No invoices yet. The first one is created on the 25th after the first period (and after "Import from Stripe" on the Finance page for older ones).</p>
+        <p className="muted small">No invoices yet.</p>
       ) : (
         <div className="table-wrap table-wrap--inner">
           <ErrorNotice error={remind.error} />

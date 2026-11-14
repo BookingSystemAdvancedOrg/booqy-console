@@ -16,6 +16,7 @@ import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton"
 import { useRowOpen } from "../components/rowLink";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge } from "../components/FreeFields";
+import { InfoTip } from "../components/StepFlow";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -95,9 +96,12 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <div>
           <h1>Finance</h1>
           <p className="muted">
-            {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : "No nightly figures yet. "}
-            {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
-            Revenue and cost in SEK excluding VAT.
+            {data?.asOf ? `As of ${fmtDate(data.asOf)} · SEK ex VAT` : "No nightly figures yet"}{" "}
+            <InfoTip label="About the figures">
+              {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
+              Revenue and cost in SEK excluding VAT. The figures come from the nightly job (Cost Explorer plus each
+              customer's usage) and from Stripe when invoices are created and paid.
+            </InfoTip>
           </p>
         </div>
         <div className="row">
@@ -184,8 +188,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       <ErrorNotice error={error ?? sync.error} />
       {data?.period.locationId && (
         <Notice kind="info">
-          Showing one location: usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
-          restaurant's, since there is one subscription per restaurant.
+          One location{" "}
+          <InfoTip label="One location">
+            Usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
+            restaurant's, since there is one subscription per restaurant.
+          </InfoTip>
         </Notice>
       )}
 
@@ -203,17 +210,16 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <>
           {empty && (
             <Card title="Nothing to add up yet">
-              <p>
-                {customer || includeInactive ? "No figures for this selection." : "No active customers yet."} The figures
-                come from the nightly job (Cost Explorer plus each customer's usage) and from Stripe when invoices are
-                created and paid. Rebuild recomputes a date range once Cost Explorer is enabled in the AWS account.
-              </p>
+              <p>{customer || includeInactive ? "No figures for this selection." : "No active customers yet."}</p>
             </Card>
           )}
           {noFigures && (
             <Notice kind="info">
-              No day rows in this period yet. The nightly job writes yesterday's figures every morning; use Rebuild for
-              older days (requests can be counted for the last 30 days, the logs' retention).
+              No day rows in this period yet.{" "}
+              <InfoTip label="Day rows">
+                The nightly job writes yesterday's figures every morning; use Rebuild for older days (requests can be
+                counted for the last 30 days, the logs' retention).
+              </InfoTip>
             </Notice>
           )}
 
@@ -236,11 +242,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             <div className="kpi kpi--hero">
               <span className="kpi__label">Gross margin</span>
               <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
-              <span className="kpi__insight">
-                {k.marginPct === null ? "No revenue in the period yet." : k.marginSek < 0
-                  ? `AWS cost exceeds revenue by ${fmtSek(-k.marginSek)}.`
-                  : `${fmtPct(k.marginPct)} of every krona invoiced stays as profit.`}
-              </span>
+              {(k.marginPct === null || k.marginSek < 0) && (
+                <span className="kpi__insight">
+                  {k.marginPct === null ? "No revenue yet" : `${fmtSek(-k.marginSek)} loss`}
+                </span>
+              )}
               <Delta trend={trends.margin} />
               <dl className="kpi__facts">
                 <dt>Revenue</dt><dd className={toneClass(trends.revenue.tone).trim()}><CountUp value={k.revenueSek} format={fmtSek} /></dd>
@@ -317,26 +323,17 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
                    trend={trends.costPerOrder} />
               <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />}
-                   sub={`AWS cost of ${fmtInt(k.smsParts)} parts sent, included in the price`}
+                   sub={`${fmtInt(k.smsParts)} parts`}
                    trend={trends.sms} />
             </section>
           </Disclosure>
 
           <div className="charts">
             <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
-              <p className="insight">
-                {mrrEnd !== null && mrrStart !== null
-                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
-                  : "Monthly recurring revenue, as it stood each day."}
-              </p>
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
             <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
-              <p className="insight">
-                {k.revenueSek > 0
-                  ? `AWS cost was ${fmtPct((k.costSek / k.revenueSek) * 100)} of revenue this period; bars are revenue per ${grain}, the line is cost.`
-                  : `Nothing invoiced yet; the line is AWS cost per ${grain}.`}
-              </p>
+              {k.revenueSek > 0 && <p className="insight">AWS cost {fmtPct((k.costSek / k.revenueSek) * 100)} of revenue</p>}
               <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
                             barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
             </Card>
@@ -462,9 +459,12 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
     <Modal title="Rebuild figures" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="small">
-          Recomputes the AWS cost, usage and allocation for a date range (up to 92 days, yesterday at the latest).
-          Use it after changing the exchange rate or the cost allocation, or when a night was missed. The run takes a
-          few minutes; refresh the page afterwards. Request counts exist for the last 30 days only (log retention).
+          Up to 92 days, yesterday at the latest.{" "}
+          <InfoTip label="About Rebuild">
+            Recomputes the AWS cost, usage and allocation for a date range. Use it after changing the exchange rate or
+            the cost allocation, or when a night was missed. The run takes a few minutes; refresh the page afterwards.
+            Request counts exist for the last 30 days only (log retention).
+          </InfoTip>
         </p>
         <div className="range">
           <label className="range__field"><span>From</span><input className="input" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>

@@ -15,6 +15,7 @@ import type { PageRow, VisitRow, WebsiteOverview } from "../website";
 import "./WebsitePage.css";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage } from "../components/Skeleton";
+import { InfoTip } from "../components/StepFlow";
 
 const PLACES = ["Countries", "Regions", "Cities"] as const;
 const TECH = ["Devices", "Browsers", "Operating systems", "Languages"] as const;
@@ -96,12 +97,8 @@ export default function WebsitePage() {
       ) : data && k && trends && (
         <>
           {empty && (
-            <Card title="No visits counted yet">
-              <p>
-                The figures come from booqy.se itself: every page sends one cookieless hit, and the counts are added up
-                every 15 minutes. Open the site (without Global Privacy Control or Do Not Track, which are never counted)
-                and the visit shows here within a quarter of an hour.
-              </p>
+            <Card title="No visits counted yet" info="The figures come from booqy.se itself: every page sends one cookieless hit, and the counts are added up every 15 minutes. Open the site (without Global Privacy Control or Do Not Track, which are never counted) and the visit shows here within a quarter of an hour.">
+              <p className="muted small">Updated every 15 minutes.</p>
             </Card>
           )}
 
@@ -181,7 +178,6 @@ export default function WebsitePage() {
           <Disclosure title="Engagement">
             <div className="charts">
               <Card title="Scroll depth">
-                <p className="insight">How far down the page readers got, of the page views that reported it.</p>
                 <HBarChart rows={scrollReach(data.scroll).map((r) => ({ key: r.band, label: `${r.band} % of the page`, value: r.pct ?? 0 }))}
                            ariaLabel="Share of page views reaching each scroll depth" valueLabel="Page views"
                            format={(n) => fmtPct(n)} />
@@ -201,7 +197,7 @@ export default function WebsitePage() {
                 <VisitTable title="Site" rows={data.breakdowns.referrers} mono />
               </Card>
               <Card title="Time of day">
-                <p className="insight">Visits by the hour they started, Stockholm time.</p>
+                <p className="insight">Stockholm time</p>
                 <HourStrip hours={data.hours} />
               </Card>
             </div>
@@ -218,8 +214,7 @@ function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => Pr
       <div>
         <h1>Website</h1>
         <p className="muted">
-          booqy.se, counted without cookies.{" "}
-          {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : ""}Days in Stockholm time.
+          booqy.se, no cookies{data?.asOf ? ` · as of ${fmtDate(data.asOf)}` : ""}
         </p>
       </div>
       <div className="row">
@@ -320,7 +315,7 @@ function HourStrip({ hours }: { hours: number[] }) {
 
 function CampaignTable({ rows }: { rows: VisitRow[] }) {
   if (!rows.length) {
-    return <p className="web-none">No tagged visits. Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</p>;
+    return <p className="web-none">No tagged visits. <InfoTip label="Tagged visits">Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</InfoTip></p>;
   }
   return (
     <div className="web-scroll">

@@ -360,12 +360,12 @@ export default function NewTenantPage() {
         <div className="page-head">
           <div>
             <h1>{f.name}</h1>
-            <p className="muted">Setting up: inviting {f.ownerEmail}, opening the Stripe account{PLATFORM_DOMAIN ? ` and ${f.slug}.${PLATFORM_DOMAIN}` : ""}. About a minute.</p>
+            <p className="muted">About a minute</p>
           </div>
         </div>
         <Card title="Setting up the customer">
           <Printing label={`Setting up ${f.name}`} />
-          <p className="small muted">You can leave this page: the customer is saved and setup carries on. If something needs fixing, you'll be taken to it here.</p>
+          <p className="small muted">You can leave this page.</p>
         </Card>
       </div>
     );
@@ -467,7 +467,7 @@ export default function NewTenantPage() {
         </StepCard>
       )}
 
-      {saved && reached >= 3 && <Notice kind="info">Plan, invoicing and locations were saved with the customer: change them on the customer page later.</Notice>}
+      {saved && reached >= 3 && <Notice kind="info">Saved. Change plan and locations on the customer page.</Notice>}
       {reached >= 3 && (
         <StepCard {...stepProps(3)} summary={<Summary items={summaries.plan} />} locked={saved}>
           <fieldset className="fieldset-plain" disabled={saved}>
@@ -489,19 +489,19 @@ export default function NewTenantPage() {
             )}
             <div className="grid">
               <Field label="Locations allowed (override)" error={errs["overrides.maxLocations"]}
-                     hint={plan ? `Leave empty for the plan's ${plan.maxLocations}` : "Pick a plan first"}>
+                     hint={plan ? `Plan: ${plan.maxLocations}` : "Pick a plan first"}>
                 <input id="f-overrides.maxLocations" className="input" type="number" min={1} max={100} value={f.maxLocations} onChange={set("maxLocations")} />
               </Field>
               {LIMIT_KEYS.map((k) => (
                 <Field key={k} label={`${LIMIT_LABELS[k]} (override)`} error={errs[`overrides.limits.${k}`]}
-                       hint={plan ? `Leave empty for the plan's ${limitValue(k, plan.limits)}; used with ${featureLabel(LIMITS[k].feature)}` : "Pick a plan first"}>
+                       hint={plan ? `Plan: ${limitValue(k, plan.limits)}` : "Pick a plan first"}>
                   <input id={`f-overrides.limits.${k}`} className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max}
                          value={limitEdits[k] ?? ""} onChange={(e) => setLimitEdits({ ...limitEdits, [k]: e.target.value })} />
                 </Field>
               ))}
               {!isFree && (
                 <Field label="Monthly price, SEK ex VAT" error={errs["billing.priceSek"]}
-                       hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
+                       hint={plan?.priceSek != null ? `Plan: ${plan.priceSek} kr` : "Pick a plan first"}>
                   <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
                          onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
                 </Field>
@@ -533,7 +533,7 @@ export default function NewTenantPage() {
               <label className={`choice${terms === "trial" ? " choice--on" : ""}`}>
                 <input id="f-billing.terms" type="radio" name="terms" checked={terms === "trial"} onChange={() => setTerms("trial")} />
                 <strong>Try-out period</strong>
-                <span className="muted small">Can leave with any period. Becomes a subscription after 6 months.</span>
+                <span className="muted small">Any period · 6 months</span>
               </label>
               <label className={`choice${terms === "subscription" ? " choice--on" : ""}`}>
                 <input type="radio" name="terms" checked={terms === "subscription"} onChange={() => setTerms("subscription")} />
@@ -554,7 +554,7 @@ export default function NewTenantPage() {
                 </Field>
               </div>
             )}
-            {!startInvoicing && <p className="muted small">You can start it later from the customer's Billing tab.</p>}
+            {!startInvoicing && <p className="muted small">Start later on the Billing tab.</p>}
           </fieldset>
         </StepCard>
       )}
@@ -579,7 +579,7 @@ export default function NewTenantPage() {
                 </div>
               );
             })}
-            {locations.length === 0 && <p className="muted small">No locations yet: the owner (or you) can add them later.</p>}
+            {locations.length === 0 && <p className="muted small">No locations yet.</p>}
             <button id="f-locations" type="button" className="btn btn--ghost btn--small step__add" disabled={locations.length >= maxLocations}
                     onClick={() => setLocations([...locations, emptyLocation()])}>+ Add location</button>
           </fieldset>

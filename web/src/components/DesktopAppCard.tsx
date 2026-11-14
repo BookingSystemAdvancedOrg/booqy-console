@@ -98,7 +98,6 @@ function PhoneInstallBody() {
           <p className="strong">The app is installed. Open Booqy Console from your home screen.</p>
         ) : (
           <>
-            <p className="muted small">Add Booqy Console to your home screen and it opens as its own full-screen app, with the same sign-in and features as here.</p>
             {kind === "ios" ? (
               <ol className="phone-install__steps">
                 <li><span className="phone-install__icon"><ShareGlyph /></span><span>Tap <span className="strong">Share</span> in Safari (at the bottom; top right on iPad).</span></li>
@@ -138,16 +137,12 @@ function DesktopAppCardBody({ heading }: { heading: boolean }) {
     <section className={flash ? "card desktop-app-card is-flash" : "card desktop-app-card"} id="desktop-app" data-help="settings:desktop-app" ref={ref} tabIndex={-1}>
       {heading && <div className="card__head"><h2>Desktop app</h2></div>}
       <div className="card__body desktop-app">
-        <p className="muted small">
-          Booqy Console in its own window: same sign-in and features as here, always the latest console. It updates itself
-          without asking.
-        </p>
         {rec !== undefined && (
           <div className="desktop-app__install">
             <h3 className="desktop-app__sub">Install with one command (recommended)</h3>
             <p className="muted small">
               Paste into {installShellFor(rec) === "windows" ? "PowerShell" : installShellFor(rec) === "unix" ? "Terminal" : "Terminal or PowerShell"} and
-              press Return. It checks the file and installs without warning dialogs.
+              press Return.
             </p>
             {installShellFor(rec) !== "windows" && <CommandRow shell="unix" />}
             {installShellFor(rec) !== "unix" && <CommandRow shell="windows" />}

@@ -203,7 +203,7 @@ export function HelpChat() {
           <ol className="help-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation">
             {messages.length === 0 && (
               <li className="help-empty">
-                <p>Ask how something works in the console, and I'll show the steps and take you there.</p>
+                <p>Ask how something works.</p>
                 {suggestions.length > 0 && (
                   <div className="help-suggestions">
                     {suggestions.map((s) => (

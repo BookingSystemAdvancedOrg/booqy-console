@@ -34,7 +34,6 @@ describe("Operators rows", () => {
     await userEvent.click(await screen.findByText("lamo@booqy.se"));
     const dialog = screen.getByRole("dialog", { name: "Edit operator" });
     expect(within(dialog).getByPlaceholderText("Add a name")).toBeInTheDocument();
-    expect(within(dialog).getByText(/No name yet/)).toBeInTheDocument();
   });
 
   it("opens Edit with Enter on the focused row", async () => {

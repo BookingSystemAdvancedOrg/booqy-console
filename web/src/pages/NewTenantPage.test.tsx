@@ -169,7 +169,7 @@ describe("NewTenantPage plan features", () => {
     fireEvent.click(document.getElementById("f-planId")!);
     expect(screen.getByLabelText("Events and tickets")).not.toBeChecked();
     expect(screen.getByLabelText("Phone agent")).not.toBeChecked();
-    expect(screen.getByText("Leave empty for the plan's 0; used with Phone agent")).toBeInTheDocument();
+    expect(screen.getAllByText("Plan: 0").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText(/Phone agent minutes per month/), { target: { value: "300" } });
     fireEvent.click(screen.getByLabelText("Phone agent"));
     done(); done(); done();

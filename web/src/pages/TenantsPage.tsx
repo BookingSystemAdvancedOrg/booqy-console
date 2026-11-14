@@ -50,7 +50,7 @@ export default function TenantsPage() {
       <div className="page-head">
         <div>
           <h1>Customers</h1>
-          <p className="muted" data-help="customers:count">{data ? `${data.length} restaurants on the platform` : " "}</p>
+          <p className="muted" data-help="customers:count">{data ? `${data.length} restaurants` : " "}</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />

@@ -63,7 +63,7 @@ export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
       <div className="page-head">
         <div>
           <h1>Mail</h1>
-          <p className="muted">News, what's coming and important notices to every restaurant owner - sent from Booqy, replies go to support.</p>
+          <p className="muted">To every restaurant owner</p>
         </div>
       </div>
       <nav className="tabs">
@@ -119,7 +119,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
             <dt>From</dt><dd>{template.data.senderName} &lt;{template.data.from}&gt;</dd>
             <dt>Reply-to</dt><dd>{template.data.replyTo}</dd>
             <dt>To</dt>
-            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"} (every active customer)` : <SkelBlock w={220} h={14} />}</dd>
+            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"}` : <SkelBlock w={220} h={14} />}</dd>
           </dl>
         )}
         <div className="stack">
@@ -140,7 +140,6 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
           <button type="button" className="btn btn--primary" disabled={!ready || count === 0 || send.busy} onClick={() => setConfirm(true)}>
             Send to {count} owner{count === 1 ? "" : "s"}
           </button>
-          <span className="muted">Sent as plain text and HTML, with the brand template.</span>
         </div>
       </Card>
       <Preview html={preview.value?.html ?? null} title="Preview" />
@@ -181,7 +180,7 @@ function Sent() {
       <div className="panel-head">
         <div>
           <h2>Sent</h2>
-          <p className="muted">Every send, who it went to and what happened{sending ? " - updating while a send runs." : "."}</p>
+          {sending && <p className="muted">Updating while a send runs</p>}
         </div>
         <div className="row"><RefreshButton reload={reload} /></div>
       </div>
@@ -191,7 +190,7 @@ function Sent() {
           <table className="table">
             <thead><tr><th>Sent</th><th>Subject</th><th>Status</th><th>Recipients</th><th>Delivered</th><th>By</th></tr></thead>
             <tbody>
-              {(data ?? []).length === 0 && <tr><td colSpan={6} className="empty">No news sent yet. Write one under Compose.</td></tr>}
+              {(data ?? []).length === 0 && <tr><td colSpan={6} className="empty">No news sent yet.</td></tr>}
               {(data ?? []).map((n) => (
                 <tr key={n.newsletterId} className="row-link" {...rowAction(() => setOpen(n))}>
                   <td className="small nowrap">{fmtDate(n.createdAt)}</td>
@@ -406,21 +405,17 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
   return (
     <div className="mail-grid">
       <form onSubmit={save} noValidate>
-        <Card title="Brand template">
-          <p className="muted small" style={{ margin: "0 0 14px" }}>
-            Every message is dressed the same way: the logo at the top, your sender name, the accent colour, a signature and a footer line.
-            Replies always go to the reply-to address, never to {template.from}.
-          </p>
+        <Card title="Brand template" info={<>Every message is dressed the same way: the logo at the top, your sender name, the accent colour, a signature and a footer line. Replies always go to the reply-to address, never to {template.from}.</>}>
           <ErrorNotice error={a.error} />
           {saved && <Notice kind="ok">Template saved. New messages use it from now on.</Notice>}
           <div className="grid">
             <Field label="Sender name" required changed={dirty.changed("senderName")} hint={`Shown as "${f.senderName || "Booqy"} <${template.from}>"`} error={a.fields.senderName}>
               <input className="input" value={f.senderName} maxLength={60} onChange={(e) => set("senderName")(e.target.value)} />
             </Field>
-            <Field label="Reply-to address" required changed={dirty.changed("replyTo")} hint="Where an owner's reply or question lands" error={a.fields.replyTo}>
+            <Field label="Reply-to address" required changed={dirty.changed("replyTo")} hint={undefined} error={a.fields.replyTo}>
               <input className="input" type="email" value={f.replyTo} onChange={(e) => set("replyTo")(e.target.value)} />
             </Field>
-            <Field label="Accent colour" changed={dirty.changed("accentColor")} hint="The short rule under the subject and the links" error={a.fields.accentColor}>
+            <Field label="Accent colour" changed={dirty.changed("accentColor")} hint="Rule and links" error={a.fields.accentColor}>
               <div className="colour-field">
                 <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(f.accentColor) ? f.accentColor : "#1a120e"} onChange={(e) => set("accentColor")(e.target.value)} aria-label="Pick accent colour" />
                 <input className="input mono" value={f.accentColor} maxLength={7} onChange={(e) => set("accentColor")(e.target.value)} />
@@ -439,10 +434,10 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
                         onFile={(file) => void pickFile(file)} />
           </Field>
           <div className="grid">
-            <Field label="Signature" wide changed={dirty.changed("signature")} hint="Closes every message, above the footer" error={a.fields.signature}>
+            <Field label="Signature" wide changed={dirty.changed("signature")} hint={undefined} error={a.fields.signature}>
               <textarea className="input" rows={3} value={f.signature} maxLength={600} onChange={(e) => set("signature")(e.target.value)} />
             </Field>
-            <Field label="Footer line" wide changed={dirty.changed("footer")} hint="Small print at the bottom; the reply-to address is always added after it" error={a.fields.footer}>
+            <Field label="Footer line" wide changed={dirty.changed("footer")} hint="Reply-to is added after it" error={a.fields.footer}>
               <textarea className="input" rows={2} value={f.footer} maxLength={600} onChange={(e) => set("footer")(e.target.value)} />
             </Field>
           </div>
@@ -493,7 +488,7 @@ function LogoPicker(props: {
         {props.customName && <span className="muted small">{props.customName}</span>}
         <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
                aria-label="Logo file" onChange={(e) => { props.onFile(e.target.files?.[0]); e.target.value = ""; }} />
-        <span className="muted small logo-file__hint">Any image: PNG, JPEG, SVG, WebP or GIF. It's turned into a PNG at most 480 px wide and sent inline in every message.</span>
+        <span className="muted small logo-file__hint">PNG, JPEG, SVG, WebP or GIF</span>
       </div>
       <div className="logo-colour">
         {!booqy && (
@@ -509,13 +504,6 @@ function LogoPicker(props: {
             <input className="input mono" value={color} maxLength={7} aria-label="Logo colour" onChange={(e) => props.onColor(e.target.value)} />
           </div>
         )}
-        <span className="muted small">
-          {color === null
-            ? "Sent as uploaded. Pick One colour to paint it in your colour."
-            : booqy
-              ? "The Booqy logo in this colour, with no background."
-              : "Every visible part of the logo gets this colour; a white or plain background is removed."}
-        </span>
       </div>
     </div>
   );

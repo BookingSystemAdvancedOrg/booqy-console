@@ -18,6 +18,7 @@ import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, freeForm, freeInput } from "../free";
+import { InfoTip } from "../components/StepFlow";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -124,7 +125,7 @@ function Integrations({ tenant }: { tenant: Tenant }) {
   const props = { tenantId: tenant.tenantId };
   return (
     <div className="stack">
-      <p className="muted small">Connections this customer has made to outside services.</p>
+      <h2 className="sr-only">Integrations</h2>
       {INTEGRATION_SLOTS.map((id) => <Slot key={id} id={id} features={tenant.entitlements.features} props={props} />)}
     </div>
   );
@@ -394,7 +395,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
           <Field label="Phone" changed={!!location && dirty.changed("phone")} error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
           <Field label="Email" changed={!!location && dirty.changed("email")} error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           <Field label="Separate Stripe account" wide changed={!!location && dirty.changed("stripeAccountId")} error={a.fields.stripeAccountId}
-                 hint="Only if this location is a different company (own org. number). Empty = the customer's account.">
+                 hint="Only for a different company. Empty = the customer's account.">
             <input className="input mono" value={f.stripeAccountId} onChange={(e) => setF({ ...f, stripeAccountId: e.target.value })} placeholder="acct_…" />
           </Field>
         </div>
@@ -445,10 +446,10 @@ function Users({ tenant }: { tenant: Tenant }) {
                 <td className="small">{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
-            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet - the owner invite is sent during setup.</td></tr>}
+            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
           </tbody>
         </table>
-        <p className="muted small">Owners invite their own staff from the restaurant admin app.</p>
+        <p className="muted small">Staff are invited from the admin app.</p>
       </Card>
       <Card title="Invite another owner">
         <form noValidate onSubmit={async (e) => {
@@ -533,8 +534,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
 
   return (
-    <Card title="Plan & limits">
-      <p className="muted small">Limits take effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.</p>
+    <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
           <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}${planId === p.planId && dirty.changed("planId") ? " plan--changed" : ""}`}>
@@ -610,12 +610,7 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
   }, [stripeParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Card title="Stripe (Connect)">
-      <p className="muted small">
-        The restaurant gets its own Stripe account connected to your platform account - they're the merchant, money goes to them, and
-        they see everything in their own Stripe dashboard. No keys are exchanged. What's left after setup is Stripe's identity
-        and bank details form, which the owner fills in from their admin app (Settings → Payments) or via a link from here.
-      </p>
+    <Card title="Stripe (Connect)" info="The restaurant gets its own Stripe account connected to your platform account: they're the merchant, money goes to them, and they see everything in their own Stripe dashboard. No keys are exchanged. What's left after setup is Stripe's identity and bank details form, which the owner fills in from their admin app (Settings → Payments) or via a link from here.">
       {stripeParam === "refresh" && <Notice kind="warn">That onboarding link expired - create a new one.</Notice>}
       <dl className="dl">
         <Row label="Connected account" value={s.accountId} />
@@ -688,7 +683,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <NameServerBox key={z.domain} domain={z.domain} nameServers={z.nameServers!} />
         ))}
         {detail.zones.some((z) => z.status === "live") && (
-          <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
+          <p className="small muted">Add live domains (and www.) to Turnstile in Cloudflare.</p>
         )}
       </Card>
       <Card title="Website hostnames" saved={remove.done} savedLabel="Removing" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
@@ -832,10 +827,13 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
           The customer stops using Booqy: all users are signed out and blocked, the website and its domains go offline,
           the website repo is archived and the subscription ends.
         </p>
-        <p>
-          <strong>Restore</strong> brings everything back until the retention period is over (90 days in production).
-          After that, or at once with <strong>Delete customer</strong>, the data and the website repo are deleted for good.
-          Catering documents are kept 7 years for bookkeeping, and their Stripe account stays theirs.
+        <p className="muted small">
+          Restorable for 90 days.{" "}
+          <InfoTip label="About offboarding">
+            <strong>Restore</strong> brings everything back until the retention period is over (90 days in production).
+            After that, or at once with <strong>Delete customer</strong>, the data and the website repo are deleted for good.
+            Catering documents are kept 7 years for bookkeeping, and their Stripe account stays theirs.
+          </InfoTip>
         </p>
         <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
           <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />

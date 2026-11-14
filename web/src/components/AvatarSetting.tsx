@@ -22,7 +22,6 @@ export function AvatarSetting({ name, email }: { name?: string; email?: string }
         <Avatar url={mine.url} name={name} email={email} size="lg" />
         <div>
           <p className="strong">Profile picture</p>
-          <p className="muted small">Shown next to your name in the operator list. Only you can change yours.</p>
         </div>
       </div>
       <div className="avatar-setting__actions">
