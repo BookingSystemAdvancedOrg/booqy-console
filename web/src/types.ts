@@ -32,11 +32,11 @@ export interface FreePeriod {
   noticeSentFor?: string | null;
 }
 
-/** What PUT .../plan and the New customer form send with planId "free". */
-export interface FreeInput {
-  until: string | null;
-  thenPlanId: string;
-}
+/** What PUT .../plan and the New customer form send with planId "free":
+ * a preset (the end date computed by the API) or, for an older customer, the date as saved. */
+export type FreeInput =
+  | { preset: "until_changed" | "3m" | "6m"; thenPlanId?: string }
+  | { until: string | null; thenPlanId: string };
 
 export type BillingTerms = "trial" | "subscription";
 
@@ -92,7 +92,8 @@ export interface Tenant {
   purgeAt?: string;
   purgeStartedAt?: string;
   purgedAt?: string;
-  billing?: Omit<Partial<Billing>, "free"> & { customerId?: string; freeUntil?: string; freeThenPlanId?: string };
+  billing?: Omit<Partial<Billing>, "free"> & { customerId?: string; freeUntil?: string; freeThenPlanId?: string;
+                                                         freeSince?: string; freePreset?: string };
 }
 
 export interface TenantSummary {

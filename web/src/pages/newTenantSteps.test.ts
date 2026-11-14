@@ -40,6 +40,9 @@ describe("stepProblems", () => {
   it("needs a plan, and no more locations than allowed", () => {
     expect(stepProblems("plan", blank)).toEqual({ planId: "Pick a plan" });
     expect(stepProblems("plan", { ...blank, planId: "starter" })).toEqual({});
+    const extra = { "free.thenPlanId": "Pick the plan after Free" };
+    expect(stepProblems("plan", { ...blank, planId: "free", planExtra: extra })).toEqual(extra);
+    expect(stepProblems("plan", { ...blank, planExtra: extra })).toEqual({ planId: "Pick a plan" });
     expect(Object.keys(stepProblems("locations", { ...blank, locationCount: 2 }))).toEqual(["locations"]);
     expect(stepProblems("notes", blank)).toEqual({});
   });

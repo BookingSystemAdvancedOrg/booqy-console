@@ -1,0 +1,17 @@
+/* Plan step and Plan tab: the locations stepper, the Free options, Select all. */
+.stepper { display: inline-flex; align-items: stretch; width: max-content; max-width: 100%; border: 1.5px solid var(--paper-line); border-radius: var(--r-md); background: var(--glass-surface); overflow: hidden; }
+.stepper__btn { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; font: 500 20px/1 var(--mono); cursor: pointer; transition: background 160ms var(--ease); }
+.stepper__btn:hover:not(:disabled) { background: var(--glass-fill); }
+.stepper__btn:disabled { opacity: 0.35; cursor: default; }
+.stepper__btn:focus-visible { outline: 2px solid var(--print); outline-offset: -2px; }
+.stepper .stepper__num { width: 64px; min-height: 44px; border: 0; border-inline: 1.5px solid var(--paper-line); border-radius: 0; text-align: center; background: transparent; -moz-appearance: textfield; appearance: textfield; }
+.stepper .stepper__num::-webkit-outer-spin-button, .stepper .stepper__num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.field--error .stepper { border-color: var(--danger); }
+
+.free-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
+.free-options .choice { min-width: 0; }
+.free-until { grid-column: 1 / -1; margin: 0; }
+
+.features__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.features__all { min-height: 32px; }
+@media (prefers-reduced-motion: reduce) { .stepper__btn { transition: none; } }

@@ -17,7 +17,8 @@ import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../
 import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
-import { FREE_PLAN_ID, freeForm, freeInput } from "../free";
+import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
+import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { InfoTip } from "../components/StepFlow";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -473,7 +474,7 @@ function Users({ tenant }: { tenant: Tenant }) {
 export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const plans = useLoad(() => api.plans());
   const [planId, setPlanId] = useState(tenant.planId);
-  const [maxLocations, setMax] = useState(String(tenant.entitlements.maxLocations));
+  const [maxLocations, setMax] = useState(tenant.entitlements.maxLocations);
   const [features, setFeatures] = useState(tenant.entitlements.features);
   // Every contract limit as input text: the plan's, or the tenant's own (incl. overrides).
   const limitsOf = (p?: { limits?: Tenant["entitlements"]["limits"] }) =>
@@ -481,37 +482,42 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const [limits, setLimits] = useState(limitsOf(tenant.entitlements));
   const ownPrice = tenant.billing?.priceSek;
   const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
-  // The Free plan's period: as saved, or three months then Starter for a new one.
+  // The Free plan's period: as saved, or 3 months for a new one (the plan after it to pick).
   const onFree = tenant.planId === FREE_PLAN_ID;
-  const savedFree = onFree ? freeForm(tenant.billing?.freeUntil ?? null, tenant.billing?.freeThenPlanId) : freeForm();
-  const [free, setFree] = useState(savedFree);
+  const savedFree = onFree ? savedFreeForm(tenant.billing) : null;
+  const [free, setFree] = useState(() => savedFree ?? newFreeForm());
   const isFree = planId === FREE_PLAN_ID;
+  // A preset counts from the day Free began (or today, onto Free); an unchanged one keeps its saved end.
+  const freeStart = onFree && tenant.billing?.freeSince ? tenant.billing.freeSince : stockholmToday();
+  const freeUntil = formUntil(free, freeStart, savedFree);
+  const [tried, setTried] = useState(false);
+  const freeErrs = isFree && tried ? freeProblems(free, price) : {};
   const a = useAction();
   const plan = plans.data?.find((p) => p.planId === planId);
   const current = plans.data?.find((p) => p.planId === tenant.planId);
   // On Free the price field is the price after it: own, else the next plan's.
   const thenPlan = plans.data?.find((p) => p.planId === free.thenPlanId);
-  const savedThen = plans.data?.find((p) => p.planId === savedFree.thenPlanId);
+  const savedThen = plans.data?.find((p) => p.planId === savedFree?.thenPlanId);
   const priceText = (p?: { priceSek?: number | null }) => (p?.priceSek != null ? String(p.priceSek) : "");
   // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
   const savedPrice = ownPrice != null ? String(ownPrice) : priceText(onFree ? savedThen : current);
   const dirty = useDirty(
-    { planId, maxLocations, features, price, ...limits, ...(isFree ? { freeUntil: free.noEnd ? "" : free.until, freeThen: free.thenPlanId } : {}) },
-    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: contractFeatures(tenant.entitlements.features),
+    { planId, maxLocations, features, price, ...limits, ...(isFree ? { freePreset: free.preset ?? "", freeThen: free.thenPlanId } : {}) },
+    { planId: tenant.planId, maxLocations: tenant.entitlements.maxLocations, features: contractFeatures(tenant.entitlements.features),
       price: savedPrice, ...limitsOf(tenant.entitlements),
-      ...(isFree ? { freeUntil: onFree ? savedFree.noEnd ? "" : savedFree.until : "", freeThen: onFree ? savedFree.thenPlanId : "" } : {}) },
+      ...(isFree ? { freePreset: savedFree?.preset ?? "", freeThen: savedFree?.thenPlanId ?? "" } : {}) },
   );
 
   useEffect(() => {
     // Back on the current plan: show the tenant's real limits (incl. overrides)
     // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {
-      setMax(String(tenant.entitlements.maxLocations));
+      setMax(tenant.entitlements.maxLocations);
       setFeatures(tenant.entitlements.features);
       setLimits(limitsOf(tenant.entitlements));
       setPrice(ownPrice != null ? String(ownPrice) : priceText(plan?.free ? thenPlan : plan));
     } else if (plan) {
-      setMax(String(plan.maxLocations));
+      setMax(defaultLocations(plan));
       setFeatures(plan.features);
       setLimits(limitsOf(plan));
       // Onto Free: the own price stays as the price after it.
@@ -520,8 +526,10 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(force = false) {
+    setTried(true);
+    if (isFree && Object.keys(freeProblems(free, price)).length) return;
     const overrides: Record<string, unknown> = {};
-    if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
+    if (plan && maxLocations !== plan.maxLocations) overrides.maxLocations = maxLocations;
     const changed = plan ? Object.fromEntries(Object.entries(contractFeatures(features)).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
     const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];
@@ -534,50 +542,47 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
 
   return (
-    <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
+    <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise Locations, then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
           <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}${planId === p.planId && dirty.changed("planId") ? " plan--changed" : ""}`}>
             <input type="radio" checked={planId === p.planId} onChange={() => setPlanId(p.planId)} />
-            <strong>{p.name}</strong><span>{p.free ? "No charge, Growth's features" : `${p.maxLocations} location(s)`}</span>
+            <strong>{p.name}</strong><span>{planLine(p)}</span>
           </label>
         ))}
       </div>
       {isFree && (
-        <FreeFields value={free} plans={plans.data ?? []} savedUntil={onFree ? tenant.billing?.freeUntil : null}
+        <FreeFields value={free} plans={plans.data ?? []} until={freeUntil}
                     onChange={(next) => {
-                      // A price that was the next plan's follows the next plan.
+                      // A price that was the next plan's (or none) follows the next plan.
                       const nextThen = plans.data?.find((p) => p.planId === next.thenPlanId);
-                      if (next.thenPlanId !== free.thenPlanId && price === priceText(thenPlan)) setPrice(priceText(nextThen));
+                      if (next.thenPlanId !== free.thenPlanId && (price === "" || price === priceText(thenPlan))) setPrice(priceText(nextThen));
                       setFree(next);
                     }}
-                    errors={{ until: a.fields["free.until"], thenPlanId: a.fields["free.thenPlanId"] }}
-                    changed={{ until: dirty.changed("freeUntil"), thenPlanId: dirty.changed("freeThen") }} />
+                    errors={{ preset: a.fields["free.preset"] ?? a.fields["free.until"],
+                              thenPlanId: freeErrs.thenPlanId ?? a.fields["free.thenPlanId"], price: freeErrs.price ?? a.fields.priceSek }}
+                    changed={{ thenPlanId: dirty.changed("freeThen"), price: dirty.changed("price") }}
+                    price={{ value: price, onChange: setPrice }} />
       )}
       <div className="grid">
-        <Field label="Locations allowed" changed={dirty.changed("maxLocations")} error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
-          <input className="input" type="number" min={1} max={100} value={maxLocations} onChange={(e) => setMax(e.target.value)} />
-        </Field>
-        {isFree ? (
-          <Field label="Price after Free, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
-                 hint={thenPlan?.priceSek != null ? `${thenPlan.name}'s price is ${thenPlan.priceSek} kr; a different amount is this customer's own price` : "Pick the next plan"}>
-            <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
-          </Field>
-        ) : (
-          <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
-                 hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
+        <LocationStepper value={maxLocations} onChange={setMax} changed={dirty.changed("maxLocations")}
+                         error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`} />
+        {!isFree && (
+          <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}>
             <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
           </Field>
         )}
         {LIMIT_KEYS.map((k) => (
-          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}
-                 hint={`Used with ${featureLabel(LIMITS[k].feature)}. The plan's is ${limitValue(k, plan?.limits)}`}>
+          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}>
             <input className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max} step={1} value={limits[k]}
                    onChange={(e) => setLimits({ ...limits, [k]: e.target.value })} />
           </Field>
         ))}
-        <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
-          <span className="field__label">Features</span>
+        <div className={`field field--wide${dirty.changed("features") ? " field--changed" : ""}`}>
+          <div className="features__head">
+            <span className="field__label">Features</span>
+            <SelectAllFeatures keys={featureKeys()} features={features} onChange={setFeatures} />
+          </div>
           <div className="checks">
             {featureKeys().map((k) => (
               <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>

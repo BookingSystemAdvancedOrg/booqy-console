@@ -57,42 +57,69 @@ export function freeLabel(until: string | null | undefined): string {
   return until ? `Free until ${fmtFreeDay(until)}` : "Free";
 }
 
-/** The form's state for the Free plan's period. */
-export interface FreeForm {
-  until: string;
-  noEnd: boolean;
-  thenPlanId: string;
-}
+/** The Free plan's three options: free until an operator changes it, or 3 / 6 months then a paid plan. */
+export type FreePreset = "until_changed" | "3m" | "6m";
 
-export function freeForm(until?: string | null, thenPlanId?: string | null, now: Date = new Date()): FreeForm {
-  return { until: until ?? defaultFreeUntil(now), noEnd: until === null, thenPlanId: thenPlanId || "starter" };
-}
-
-export function freeInput(form: FreeForm): FreeInput {
-  return { until: form.noEnd ? null : form.until, thenPlanId: form.thenPlanId };
-}
-
-/** The presets of the Free period: three or six months from today, no end date, or a date of your own. */
-export type FreePreset = "3m" | "6m" | "none" | "custom";
-
-export const FREE_PRESETS: { id: FreePreset; label: string }[] = [
-  { id: "3m", label: "3 months" },
-  { id: "6m", label: "6 months" },
-  { id: "none", label: "No end date" },
-  { id: "custom", label: "Custom" },
+export const FREE_OPTIONS: { id: FreePreset; label: string; sub: string }[] = [
+  { id: "until_changed", label: "Free until changed", sub: "No end" },
+  { id: "3m", label: "Free for 3 months", sub: "Then a paid plan" },
+  { id: "6m", label: "Free for 6 months", sub: "Then a paid plan" },
 ];
 
-/** The form after picking a preset (custom keeps the date and opens the date field). */
-export function applyFreePreset(form: FreeForm, preset: FreePreset, now: Date = new Date()): FreeForm {
-  if (preset === "none") return { ...form, noEnd: true, until: form.until || defaultFreeUntil(now) };
-  if (preset === "custom") return { ...form, noEnd: false, until: form.until || defaultFreeUntil(now) };
-  return { ...form, noEnd: false, until: freeUntilAfter(preset === "3m" ? 3 : 6, now) };
+const PRESET_MONTHS: Record<FreePreset, number | null> = { until_changed: null, "3m": 3, "6m": 6 };
+
+/** The last free day of a preset from its first day (the backend computes the same): the day before the same date 3 or 6 months on. */
+export function presetUntil(preset: FreePreset, start: string): string | null {
+  const months = PRESET_MONTHS[preset];
+  return months === null ? null : addDays(addMonths(start, months), -1);
 }
 
-/** Which preset the form matches (a date that is not 3 or 6 months from today is custom). */
-export function freePresetOf(form: FreeForm, now: Date = new Date()): FreePreset {
-  if (form.noEnd) return "none";
-  if (form.until === freeUntilAfter(3, now)) return "3m";
-  if (form.until === freeUntilAfter(6, now)) return "6m";
-  return "custom";
+/** The form's state for the Free plan's period. preset null = an older
+ * customer's own end date (`keptUntil`), kept as it is until a preset is picked. */
+export interface FreeForm {
+  preset: FreePreset | null;
+  thenPlanId: string;
+  keptUntil?: string | null;
+}
+
+/** A new Free period: 3 months, the plan after it still to pick. */
+export function newFreeForm(): FreeForm {
+  return { preset: "3m", thenPlanId: "" };
+}
+
+/** A saved Free period as the form: its preset, or one read from the dates of an older customer. */
+export function savedFreeForm(billing: { freeUntil?: string | null; freeThenPlanId?: string | null; freePreset?: string | null; freeSince?: string | null } | undefined): FreeForm {
+  const until = billing?.freeUntil ?? null;
+  const then = billing?.freeThenPlanId ?? "";
+  const stored = billing?.freePreset;
+  if (stored === "until_changed" || stored === "3m" || stored === "6m") return { preset: stored, thenPlanId: then, keptUntil: until };
+  if (!until) return { preset: "until_changed", thenPlanId: then };
+  const since = billing?.freeSince;
+  const match = since ? (["3m", "6m"] as const).find((p) => presetUntil(p, since) === until) : undefined;
+  return { preset: match ?? null, thenPlanId: then, keptUntil: until };
+}
+
+/** The last free day the form shows: the saved one while the preset is unchanged, else computed from `start`. */
+export function formUntil(form: FreeForm, start: string, saved?: FreeForm | null): string | null {
+  if (form.preset === null) return form.keptUntil ?? null;
+  if (saved && saved.preset === form.preset && saved.keptUntil !== undefined) return saved.keptUntil ?? null;
+  return presetUntil(form.preset, start);
+}
+
+/** Has an end, so the plan and price after it are needed. */
+export const isTimed = (form: FreeForm) => form.preset !== "until_changed";
+
+/** What stops a Free period from being saved: the plan and a price above 0 after a timed one. */
+export function freeProblems(form: FreeForm, price: string): { thenPlanId?: string; price?: string } {
+  if (!isTimed(form)) return {};
+  const out: { thenPlanId?: string; price?: string } = {};
+  if (!form.thenPlanId) out.thenPlanId = "Pick the plan after Free";
+  if (!(Number(price) > 0)) out.price = "Set the monthly price after Free";
+  return out;
+}
+
+/** What the API gets: the preset (the end computed there), or an older customer's date as it is. */
+export function freeInput(form: FreeForm): FreeInput {
+  if (form.preset === null) return { until: form.keptUntil ?? null, thenPlanId: form.thenPlanId || "starter" };
+  return form.preset === "until_changed" ? { preset: "until_changed" } : { preset: form.preset, thenPlanId: form.thenPlanId };
 }

@@ -14,7 +14,8 @@ import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, r
 import { playChime } from "../press";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
 import { FreeFields } from "../components/FreeFields";
-import { FREE_PLAN_ID, freeForm, freeInput, freeLabel } from "../free";
+import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
+import { FREE_PLAN_ID, formUntil, freeInput, freeLabel, freeProblems, newFreeForm, stockholmToday } from "../free";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -51,7 +52,8 @@ const LABELS: Record<string, string> = {
   "address.city": "City", ownerName: "Owner full name", ownerEmail: "Owner business email", ownerPhone: "Owner phone",
   contactEmail: "Contact email", contactPhone: "Contact phone", billingEmail: "Billing email",
   senderName: "Sender name", replyToEmail: "Reply-to email", planId: "Plan",
-  "overrides.maxLocations": "Locations allowed",
+  "overrides.maxLocations": "Locations", "free.preset": "Free period", "free.until": "Free period",
+  "free.thenPlanId": "Then switch to",
   ...Object.fromEntries(LIMIT_KEYS.map((k) => [`overrides.limits.${k}`, LIMIT_LABELS[k]])),
   "overrides.features": "Features", locations: "Locations", notes: "Notes",
   "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "Agreement start date",
@@ -107,7 +109,7 @@ const BLANK = {
   street: "", postalCode: "", city: "",
   ownerName: "", ownerEmail: "", ownerPhone: "",
   contactEmail: "", contactPhone: "", billingEmail: "", senderName: "", replyToEmail: "",
-  planId: "", maxLocations: "", notes: "",
+  planId: "", notes: "",
 };
 
 export default function NewTenantPage() {
@@ -135,11 +137,13 @@ export default function NewTenantPage() {
   const [startDate, setStartDate] = useState("");
   // Card (charged automatically, the default) or invoice with 30 days to pay.
   const [collection, setCollection] = useState<"card" | "invoice">("card");
-  // The Free plan's period: three months from today (Stockholm), then Starter.
-  const [free, setFree] = useState(() => freeForm());
-  // Features ticked differently from the plan; cleared when another plan is picked.
+  // The Free plan's period: 3 months by default; the plan and price after it are picked here.
+  const [free, setFree] = useState(newFreeForm);
+  const [freePrice, setFreePrice] = useState("");
+  // Features ticked differently from the plan, and the stepper's number; both start over on another plan.
   const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
-  useEffect(() => setFeatureEdits({}), [f.planId]);
+  const [locationsAllowed, setLocationsAllowed] = useState<number | null>(null);
+  useEffect(() => { setFeatureEdits({}); setLocationsAllowed(null); }, [f.planId]);
   // Created: the celebration runs before setup (the customer exists already).
   const [won, setWon] = useState(false);
   const celebrateTimer = useRef<number | null>(null);
@@ -158,15 +162,16 @@ export default function NewTenantPage() {
   };
 
   const plan = plans.data?.find((p) => p.planId === f.planId) ?? null;
-  const maxLocations = f.maxLocations ? Number(f.maxLocations) : plan?.maxLocations ?? 1;
+  const maxLocations = locationsAllowed ?? (plan ? defaultLocations(plan) : 1);
   const features = { ...(plan?.features ?? {}), ...featureEdits };
   const featureOverrides = plan ? Object.fromEntries(Object.entries(featureEdits).filter(([k, on]) => !!plan.features[k] !== on)) : {};
   const limitOverrides: Limits = Object.fromEntries(LIMIT_KEYS.filter((k) => limitEdits[k]).map((k) => [k, Number(limitEdits[k])]));
   const isFree = f.planId === FREE_PLAN_ID;
-  // On Free the price is the one after it (the plan it switches to, unless typed over).
-  const thenPlan = plans.data?.find((p) => p.planId === free.thenPlanId) ?? null;
-  const pricePlan = isFree ? thenPlan : plan;
-  const shownPrice = priceTouched ? price : pricePlan?.priceSek != null ? String(pricePlan.priceSek) : "";
+  // On Free the price is the one after it, typed (or filled in from the plan picked after it).
+  const shownPrice = isFree ? freePrice : priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
+  // The free period counts from the agreement's first day (the API computes the same).
+  const freeUntil = formUntil(free, startInvoicing && startDate ? startDate : stockholmToday());
+  const freeErrs = isFree ? freeProblems(free, freePrice) : {};
   const addressGiven = f.street || f.postalCode || f.city;
   // In advance: the first invoice is on the start day for the rest of that month, then every 1st.
   const firstStart = startDate || isoDay(new Date());
@@ -189,7 +194,8 @@ export default function NewTenantPage() {
     return out;
   }, [f]);
   const tooManyLocations = locations.length > maxLocations;
-  const canSubmit = missing.length === 0 && !tooManyLocations;
+  const freeMissing = Object.keys(freeErrs).length > 0;
+  const canSubmit = missing.length === 0 && !tooManyLocations && !freeMissing;
 
 
   // The steps: only the first is open at first; Done folds a step into its
@@ -208,6 +214,8 @@ export default function NewTenantPage() {
     name: f.name, slug: f.slug, orgProblem, ownerName: f.ownerName, ownerEmail: f.ownerEmail,
     contactEmail: f.contactEmail, billingEmail: f.billingEmail, replyToEmail: f.replyToEmail,
     planId: f.planId, locationCount: locations.length, maxLocations,
+    planExtra: { ...(freeErrs.thenPlanId ? { "free.thenPlanId": freeErrs.thenPlanId } : {}),
+                 ...(freeErrs.price ? { "billing.priceSek": freeErrs.price } : {}) },
   };
   // A step's own problems show once Done was pressed on it, and go as they are fixed.
   const stepErrors: Record<string, string> = Object.assign({}, ...[...attempted].map((i) => stepProblems(STEPS[i].id, stepInput)));
@@ -287,9 +295,9 @@ export default function NewTenantPage() {
         senderName: f.senderName, replyToEmail: f.replyToEmail, notes: f.notes,
       }),
       ...(addressGiven ? { address: { street: f.street, postalCode: postalCodeDigits(f.postalCode), city: f.city } } : {}),
-      ...(f.maxLocations || Object.keys(limitOverrides).length || Object.keys(featureOverrides).length ? {
+      ...(plan || Object.keys(limitOverrides).length || Object.keys(featureOverrides).length ? {
         overrides: {
-          ...(f.maxLocations ? { maxLocations: Number(f.maxLocations) } : {}),
+          ...(plan ? { maxLocations } : {}),
           ...(Object.keys(featureOverrides).length ? { features: featureOverrides } : {}),
           ...(Object.keys(limitOverrides).length ? { limits: limitOverrides } : {}),
         },
@@ -382,14 +390,14 @@ export default function NewTenantPage() {
     company: [["Name", f.name], ["Site", PLATFORM_DOMAIN ? `${f.slug}.${PLATFORM_DOMAIN}` : f.slug], ["Org. no.", f.orgNumber], ["City", f.city]],
     owner: [["Owner", f.ownerName], ["Email", f.ownerEmail], ["Phone", f.ownerPhone]],
     contact: [["Contact", f.contactEmail || f.contactPhone], ["Billing", f.billingEmail], ["Sender", f.senderName], ["Reply-to", f.replyToEmail]],
-    plan: [["Plan", plan?.name], ["Price", isFree ? freeLabel(free.noEnd ? null : free.until)
+    plan: [["Plan", plan?.name], ["Price", isFree ? freeLabel(freeUntil)
                                     : shownPrice !== "" ? <CountUp value={Number(shownPrice)} format={(n) => `${Math.round(n)} kr/mo`} /> : ""],
            ["Terms", terms === "trial" ? "Try-out" : "Subscription"], ["Starts", startInvoicing ? (startDate ? fmtDay(startDate) : "Today") : "Later"]],
     locations: [["Locations", <CountUp value={filledLocations.length} format={(n) => `${Math.round(n)} of ${maxLocations}`} />],
                 ["Names", filledLocations.map((l) => l.name || l.address).join(", ")]],
     notes: [["Notes", f.notes.length > 60 ? `${f.notes.slice(0, 60)}…` : f.notes]],
   };
-  const submitText = `On submit: tenant + locations are saved, owner invited by email, Stripe connected account created${PLATFORM_DOMAIN ? `, ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""}, status becomes Active (about a minute).${startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} ${isFree ? `with no charge (${freeLabel(free.noEnd ? null : free.until)})` : `at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT`} (${terms === "trial" ? "try-out" : "subscription"}). ${isFree ? "" : firstInvoiceText}` : ""}`;
+  const submitText = `On submit: tenant + locations are saved, owner invited by email, Stripe connected account created${PLATFORM_DOMAIN ? `, ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""}, status becomes Active (about a minute).${startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} ${isFree ? `with no charge (${freeLabel(freeUntil)})` : `at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT`} (${terms === "trial" ? "try-out" : "subscription"}). ${isFree ? "" : firstInvoiceText}` : ""}`;
 
   return (
     <form onSubmit={submit} className={`form-page${saved ? " form-page--back" : ""}`} noValidate>
@@ -483,39 +491,46 @@ export default function NewTenantPage() {
                 <label key={p.planId} className={`plan${f.planId === p.planId ? " plan--on" : ""}`}>
                   <input id={i === 0 ? "f-planId" : undefined} type="radio" name="plan" value={p.planId} checked={f.planId === p.planId} onChange={set("planId")} />
                   <strong>{p.name}</strong>
-                  <span>{p.free ? `No charge, ${p.maxLocations} locations` : `${p.maxLocations} location${p.maxLocations > 1 ? "s" : ""}`}</span>
+                  <span>{planLine(p)}</span>
                   <span className="small muted">{Object.entries(contractFeatures(p.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(" · ")}</span>
                 </label>
               ))}
             </div>
             {errs.planId && <p className="field__msg">{errs.planId}</p>}
             {isFree && (
-              <FreeFields value={free} onChange={(next) => { if (next.thenPlanId !== free.thenPlanId) setPriceTouched(false); setFree(next); }}
-                          plans={plans.data ?? []}
-                          errors={{ until: errs["free.until"], thenPlanId: errs["free.thenPlanId"], price: errs["billing.priceSek"] }}
-                          price={{ id: "f-billing.priceSek", value: priceTouched ? price : "", onChange: (v) => { setPriceTouched(true); setPrice(v); } }} />
+              <FreeFields value={free} plans={plans.data ?? []} until={freeUntil}
+                          onChange={(next) => {
+                            // Picking the plan after Free fills in its price while none is typed.
+                            const then = plans.data?.find((p) => p.planId === next.thenPlanId);
+                            if (next.thenPlanId !== free.thenPlanId && !freePrice && then?.priceSek) setFreePrice(String(then.priceSek));
+                            setFree(next);
+                          }}
+                          errors={{ preset: errs["free.preset"] ?? errs["free.until"], thenPlanId: errs["free.thenPlanId"], price: errs["billing.priceSek"] }}
+                          price={{ id: "f-billing.priceSek", value: freePrice, onChange: setFreePrice }} />
             )}
             <div className="grid">
-              <Field label="Locations allowed (override)" error={errs["overrides.maxLocations"]}
-                     hint={plan ? `Plan: ${plan.maxLocations}` : "Pick a plan first"}>
-                <input id="f-overrides.maxLocations" className="input" type="number" min={1} max={100} value={f.maxLocations} onChange={set("maxLocations")} />
-              </Field>
+              {plan && (
+                <LocationStepper id="f-overrides.maxLocations" value={maxLocations} onChange={setLocationsAllowed}
+                                 error={errs["overrides.maxLocations"]} />
+              )}
               {LIMIT_KEYS.map((k) => (
-                <Field key={k} label={`${LIMIT_LABELS[k]} (override)`} error={errs[`overrides.limits.${k}`]}
-                       hint={plan ? `Plan: ${limitValue(k, plan.limits)}` : "Pick a plan first"}>
+                <Field key={k} label={`${LIMIT_LABELS[k]} (override)`} error={errs[`overrides.limits.${k}`]}>
                   <input id={`f-overrides.limits.${k}`} className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max}
+                         placeholder={plan ? limitValue(k, plan.limits) : undefined}
                          value={limitEdits[k] ?? ""} onChange={(e) => setLimitEdits({ ...limitEdits, [k]: e.target.value })} />
                 </Field>
               ))}
               {!isFree && (
-                <Field label="Monthly price, SEK ex VAT" error={errs["billing.priceSek"]}
-                       hint={plan?.priceSek != null ? `Plan: ${plan.priceSek} kr` : "Pick a plan first"}>
+                <Field label="Monthly price, SEK ex VAT" error={errs["billing.priceSek"]}>
                   <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
                          onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
                 </Field>
               )}
-              <div className="field">
-                <span className="field__label">Features</span>
+              <div className="field field--wide">
+                <div className="features__head">
+                  <span className="field__label">Features</span>
+                  {plan && <SelectAllFeatures keys={featureKeys()} features={features} onChange={(all) => setFeatureEdits(all)} />}
+                </div>
                 {plan ? (
                   <div className="checks">
                     {featureKeys().map((k) => (
@@ -570,7 +585,7 @@ export default function NewTenantPage() {
             {startInvoicing && (
               <div className="grid">
                 <Field label="Agreement starts (optional)" error={errs["billing.startDate"]}
-                       hint={`Empty = today. ${isFree ? "No invoice while on Free; the first paid day is invoiced at once." : firstInvoiceText}`}>
+                       hint="Empty = today">
                   <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </Field>
               </div>
@@ -632,7 +647,8 @@ export default function NewTenantPage() {
             ) : !canSubmit ? (
               <div className="small muted">
                 {missing.length > 0 ? `Fill in ${missing.join(", ")} to create the customer.` : ""}
-                {tooManyLocations ? ` The plan allows ${maxLocations} location${maxLocations > 1 ? "s" : ""} - remove one or raise "Locations allowed".` : ""}
+                {freeMissing ? " Pick the plan and price after Free." : ""}
+                {tooManyLocations ? ` ${maxLocations} location${maxLocations > 1 ? "s" : ""} allowed: remove one or raise Locations in step 4.` : ""}
               </div>
             ) : (
               <div className="submit-ready">

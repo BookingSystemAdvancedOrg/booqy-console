@@ -30,6 +30,8 @@ export interface StepInput {
   contactEmail: string; billingEmail: string; replyToEmail: string;
   planId: string;
   locationCount: number; maxLocations: number;
+  /** More problems of the plan step (the Free period's plan and price after it), by field key. */
+  planExtra?: Record<string, string>;
 }
 
 /** What stops a step from being done, by the field key the form uses
@@ -50,8 +52,9 @@ export function stepProblems(step: StepId, s: StepInput): Record<string, string>
     out.replyToEmail = emailProblem(s.replyToEmail);
   } else if (step === "plan") {
     if (!s.planId) out.planId = "Pick a plan";
+    else Object.assign(out, s.planExtra);
   } else if (step === "locations") {
-    if (s.locationCount > s.maxLocations) out.locations = `The plan allows ${s.maxLocations}: remove one or raise "Locations allowed"`;
+    if (s.locationCount > s.maxLocations) out.locations = `${s.maxLocations} allowed: remove one or raise Locations in Plan & invoicing`;
   }
   return Object.fromEntries(Object.entries(out).filter((e): e is [string, string] => !!e[1]));
 }

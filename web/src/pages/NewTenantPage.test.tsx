@@ -9,7 +9,6 @@ vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import NewTenantPage, { setupFailure } from "./NewTenantPage";
 import { burst, confetti } from "../components/StepFlow";
-import { defaultFreeUntil } from "../free";
 
 const OWNER_TAKEN = "OwnerEmailInUse: The owner email is already registered to another tenant (t-9). Use a different address for this tenant.";
 
@@ -119,38 +118,62 @@ describe("NewTenantPage Free plan", () => {
     fireEvent.click(screen.getAllByRole("radio", { name: /Free/ })[0]);
   }
 
-  it("prefills three months, then Starter at its price, and sends the price after Free", async () => {
+  it("Free for 3 months by default; Done waits for the plan and price after it, then sends the preset", async () => {
     await pickFree();
-    expect(screen.getByRole("radio", { name: "3 months" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
-    expect(screen.getByRole("radio", { name: "No end date" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(499);
+    expect(screen.getByText("No charge")).toBeInTheDocument();
+    expect(screen.getByText("Multiple locations")).toBeInTheDocument();
+    expect(screen.getByText("1 location")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Free for 3 months/ })).toBeChecked();
+    expect(screen.getByTestId("free-until")).toHaveTextContent(/^Free until \d{1,2} \w{3} \d{4}$/);
+    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("");
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);               // Free starts at 1
+    done();
+    expect(screen.getByText("Pick the plan after Free")).toBeInTheDocument();
+    expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();
+    expect(document.getElementById("f-locations.0.name")).toBeNull();          // still on step 4
+    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "starter" } });
+    expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(499);
+    expect(screen.queryByText("Pick the plan after Free")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More locations" }));
     done(); done(); done();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     const body = mocks.createTenant.mock.calls[0][0];
-    expect(body).toMatchObject({ planId: "free", free: { until: defaultFreeUntil(), thenPlanId: "starter" } });
+    expect(body).toMatchObject({ planId: "free", free: { preset: "3m", thenPlanId: "starter" }, overrides: { maxLocations: 2 } });
     expect(body.billing).toMatchObject({ priceSek: 499, collectionPreference: "card" });
   });
 
   it("six months, then an own price after Free, invoiced with 30 days", async () => {
     await pickFree();
-    fireEvent.click(screen.getByRole("radio", { name: "6 months" }));
-    fireEvent.change(screen.getByLabelText(/^Price after Free/), { target: { value: "350" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));
+    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    fireEvent.change(screen.getByLabelText(/^Monthly price after Free/), { target: { value: "0" } });
+    done();
+    expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^Monthly price after Free/), { target: { value: "350" } });
     fireEvent.click(screen.getByRole("radio", { name: /Invoice \(pay within 30 days\)/ }));
     done(); done(); done();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     const body = mocks.createTenant.mock.calls[0][0];
-    expect(body.free.until > defaultFreeUntil()).toBe(true);
+    expect(body.free).toEqual({ preset: "6m", thenPlanId: "growth" });
     expect(body.billing).toMatchObject({ priceSek: 350, collectionPreference: "invoice" });
   });
 
-  it("no end date and Growth afterwards", async () => {
+  it("the end counts from the agreement's start date", async () => {
     await pickFree();
-    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
-    fireEvent.click(screen.getByRole("radio", { name: "No end date" }));
+    fireEvent.change(document.getElementById("f-billing.startDate")!, { target: { value: "2027-01-31" } });
+    expect(screen.getByTestId("free-until")).toHaveTextContent("Free until 29 Apr 2027");   // 31 Jan + 3 months clamps to 30 Apr, the first paid day
+    fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));
+    expect(screen.getByTestId("free-until")).toHaveTextContent("Free until 30 Jul 2027");
+  });
+
+  it("free until changed: no end, no plan or price needed", async () => {
+    await pickFree();
+    fireEvent.click(screen.getByRole("radio", { name: /Free until changed/ }));
+    expect(screen.queryByLabelText(/^Then switch to/)).toBeNull();
+    expect(screen.queryByTestId("free-until")).toBeNull();
     done(); done(); done();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
-    expect(mocks.createTenant.mock.calls[0][0]).toMatchObject({ planId: "free", free: { until: null, thenPlanId: "growth" } });
+    expect(mocks.createTenant.mock.calls[0][0]).toMatchObject({ planId: "free", free: { preset: "until_changed" } });
   });
 });
 
@@ -169,7 +192,7 @@ describe("NewTenantPage plan features", () => {
     mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     expect(mocks.createTenant).toHaveBeenCalledWith(expect.objectContaining({
-      overrides: { features: { giftCards: true }, limits: { siteBuilderAiEditsPerMonth: 10 } },
+      overrides: { maxLocations: 1, features: { giftCards: true }, limits: { siteBuilderAiEditsPerMonth: 10 } },
     }));
   });
 
@@ -181,21 +204,55 @@ describe("NewTenantPage plan features", () => {
     fireEvent.click(document.getElementById("f-planId")!);
     expect(screen.getByLabelText("Events and tickets")).not.toBeChecked();
     expect(screen.getByLabelText("Phone agent")).not.toBeChecked();
-    expect(screen.getAllByText("Plan: 0").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText(/Phone agent minutes per month/), { target: { value: "300" } });
     fireEvent.click(screen.getByLabelText("Phone agent"));
     done(); done(); done();
     mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     expect(mocks.createTenant).toHaveBeenCalledWith(expect.objectContaining({
-      overrides: { features: { phoneAgent: true }, limits: { phoneAgentMinutesPerMonth: 300 } },
+      overrides: { maxLocations: 1, features: { phoneAgent: true }, limits: { phoneAgentMinutesPerMonth: 300 } },
     }));
   });
 
-  it("sends no overrides when nothing is typed", async () => {
+  it("sends only the plan's number of locations when nothing else is changed", async () => {
     renderPage();
     await fillAndCreate();
-    expect(mocks.createTenant.mock.calls[0][0].overrides).toBeUndefined();
+    expect(mocks.createTenant.mock.calls[0][0].overrides).toEqual({ maxLocations: 1 });
+  });
+
+  it("Select all ticks every feature and sends them; Clear all unticks them", async () => {
+    mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
+    renderPage();
+    company("lamo@example.se");
+    done();
+    await screen.findByText("Starter");
+    fireEvent.click(document.getElementById("f-planId")!);
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByLabelText("Gift cards")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(screen.getByLabelText("Gift cards")).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    done(); done(); done();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    const features = mocks.createTenant.mock.calls[0][0].overrides.features;
+    expect(Object.values(features).every(Boolean)).toBe(true);
+    expect(features.giftCards).toBe(true);
+  });
+
+  it("Growth starts at 3 locations; the stepper's number is sent", async () => {
+    mocks.plans.mockResolvedValue([{ planId: "starter", name: "Starter", maxLocations: 1, features: {}, priceSek: 499 },
+                                   { planId: "growth", name: "Growth", maxLocations: 3, features: {}, priceSek: 899 }]);
+    mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
+    renderPage();
+    company("lamo@example.se");
+    done();
+    fireEvent.click(await screen.findByText("Growth"));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    done(); done(); done();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    expect(mocks.createTenant.mock.calls[0][0]).toMatchObject({ planId: "growth", overrides: { maxLocations: 2 },
+                                                                billing: { priceSek: 899 } });
   });
 });
 
@@ -257,7 +314,7 @@ describe("NewTenantPage steps", () => {
     expect(progress()).toHaveAttribute("aria-valuenow", "75");
   });
 
-  it("sends the same create payload as before", async () => {
+  it("sends the same create payload as before, plus the number of locations", async () => {
     mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
     renderPage();
     fireEvent.change(document.getElementById("f-name")!, { target: { value: "Test Pizza" } });
@@ -282,6 +339,7 @@ describe("NewTenantPage steps", () => {
       orgNumber: "556677-8899", vatNumber: expect.stringMatching(/^SE5566778899/), senderName: "Roma", notes: "VIP",
       address: { street: "", postalCode: "", city: "Malmö" },
       locations: [{ name: "Roma City" }],
+      overrides: { maxLocations: 1 },
       billing: { terms: "trial", startInvoicing: true, priceSek: 499, collectionPreference: "card" },
     });
   });
