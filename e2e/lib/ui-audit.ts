@@ -156,6 +156,13 @@ export async function layoutAudit(page: Page, opts: AuditOpts): Promise<Issue[]>
         const fr = fixedAnc.getBoundingClientRect()
         // a top bar that content scrolls under is normal
         if (fr.top <= vh * 0.15 && fr.height < vh * 0.3) continue
+        // mid-page content may scroll under a floating bottom bar, as under the floating
+        // help button (check 5), but only when scrolling can bring it clear of the bar;
+        // at the end of the page (atBottom) nothing may be covered
+        if (!atBottom && fr.bottom >= vh - 40 && fr.height < vh * 0.2) {
+          const docBottom = r.bottom + window.scrollY
+          if (docBottom < document.documentElement.scrollHeight - (vh - fr.top)) continue
+        }
       }
       const topInDialog = top.closest('[role=dialog], [aria-modal=true], dialog, [class*=backdrop], [class*=overlay], [class*=scrim], [class*=modal]')
       if (topInDialog && !el.closest('[role=dialog], [aria-modal=true], dialog')) continue
