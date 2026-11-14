@@ -1571,6 +1571,18 @@ def _start_after_free(tenant_id: str, profile: dict, actor: str, start_day: str)
     return None
 
 
+def _kept_locations(profile: dict, then: dict) -> dict | None:
+    """The number of locations the operator chose on Free stays on the plan
+    after it, never below that plan's own (Free 1 then Growth = 3). A number
+    equal to the Free plan's own (never chosen, as on older customers) gives
+    the next plan's."""
+    chosen = (profile.get("entitlements") or {}).get("maxLocations")
+    free_default = (get_plan(FREE_PLAN_ID) or {}).get("maxLocations")
+    if chosen is None or (free_default is not None and int(chosen) == int(free_default)):
+        return None
+    return {"maxLocations": max(int(chosen), int(then.get("maxLocations", 1)))}
+
+
 def free_step(profile: dict, today: date, actor: str) -> dict:
     """The daily look at one customer on Free with an end date. The owner is
     emailed and the operators get a line in the summary 14 days before the
@@ -1608,7 +1620,8 @@ def free_step(profile: dict, today: date, actor: str) -> dict:
     if today >= switch_on and told:
         own = int(billing["priceSek"]) if billing.get("priceSek") is not None else None
         try:
-            apply_plan(tenant_id, profile, then, actor, force=True, price_sek=own, expect_free_until=until.isoformat(),
+            apply_plan(tenant_id, profile, then, actor, overrides=_kept_locations(profile, then), force=True,
+                       price_sek=own, expect_free_until=until.isoformat(),
                        price_from=switch_on, agreement_pending=switch_on.isoformat())
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":

@@ -524,3 +524,43 @@ def test_an_old_free_customer_with_a_date_still_saves(finance, stripe, aws, tena
     assert status == 200, body
     p = _profile(aws, tenant)
     assert p["billing"]["freeUntil"] == until and p["entitlements"]["maxLocations"] == 2
+
+
+def test_the_chosen_number_of_locations_stays_after_free(finance, stripe, aws, tenant):
+    from app.billing import free_step
+    _activate(aws, tenant)
+    _free(aws, tenant, _today() - timedelta(days=1), then="starter", told=True, overrides={"maxLocations": 2})
+    assert _profile(aws, tenant)["entitlements"]["maxLocations"] == 2
+    assert "now Starter" in free_step(_profile(aws, tenant), _today(), "dunning")["switched"]
+    profile = _profile(aws, tenant)
+    assert profile["planId"] == "starter" and profile["entitlements"]["maxLocations"] == 2
+
+
+def test_free_with_one_location_then_growth_gets_growths_number(finance, stripe, aws, tenant):
+    from app.billing import free_step
+    _activate(aws, tenant)
+    _free(aws, tenant, _today() - timedelta(days=1), then="growth", told=True, overrides={"maxLocations": 1})
+    assert "now Growth" in free_step(_profile(aws, tenant), _today(), "dunning")["switched"]
+    assert _profile(aws, tenant)["entitlements"]["maxLocations"] == 3
+
+
+def test_a_preset_that_is_not_a_string_is_a_400(aws, tenant):
+    for preset in ([], {}, 3):
+        status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant},
+                            body={"planId": "free", "free": {"preset": preset, "thenPlanId": "starter"}, "priceSek": 500})
+        assert status == 400 and "free.preset" in body["fields"], (preset, body)
+
+
+def test_a_timed_preset_with_price_zero_is_refused(aws, tenant):
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant},
+                        body={"planId": "free", "free": {"preset": "3m", "thenPlanId": "starter"}, "priceSek": 0})
+    assert status == 400 and "priceSek" in body["fields"], body
+
+
+def test_free_since_is_the_stockholm_day(aws, tenant, monkeypatch):
+    from app import website
+    day = date(2027, 3, 2)                       # e.g. 00:30 in Stockholm, still 1 March in UTC
+    monkeypatch.setattr(website, "stockholm_today", lambda: day)
+    assert call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant},
+                body={"planId": "free", "free": {"preset": "until_changed"}})[0] == 200
+    assert _profile(aws, tenant)["billing"]["freeSince"] == day.isoformat()

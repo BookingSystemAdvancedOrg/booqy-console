@@ -104,6 +104,12 @@ def default_free_until(today: date | None = None) -> date:
     return add_months(today or stockholm_today(), FREE_MONTHS) - timedelta(days=1)
 
 
+def _stockholm_today() -> date:
+    """Today in Stockholm: the day a free period counts from (freeSince), like its end."""
+    from .website import stockholm_today          # website imports nothing from here
+    return stockholm_today()
+
+
 FREE_PRESETS = {"until_changed": None, "3m": 3, "6m": 6}
 
 
@@ -139,7 +145,7 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
     out = {"until": None, "thenPlanId": "starter"}
     preset = raw.get("preset")
     if preset is not None:
-        if preset not in FREE_PRESETS:
+        if not isinstance(preset, str) or preset not in FREE_PRESETS:
             f.fail(f"{field}.preset", "Pick until_changed, 3m or 6m")
             return None
         out["preset"] = preset
@@ -391,7 +397,7 @@ def create_tenant(req) -> tuple[int, dict]:
     # On Free an own price is the price after it (compared with the next plan's).
     price_plan = (get_plan(free.get("thenPlanId") or "starter") or {}) if free is not None else plan
     if free is not None:
-        billing.update({k: val for k, val in free_fields(free, (free_start.isoformat() if free_start else now[:10])).items()
+        billing.update({k: val for k, val in free_fields(free, (free_start or _stockholm_today()).isoformat()).items()
                         if val is not None})
     if billing_input.get("priceSek") is not None and price_plan and billing_input["priceSek"] != price_plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
@@ -672,7 +678,7 @@ def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrid
         values[":pending"] = {"S": agreement_pending}
         expression += ", billing.freeSwitchAgreementPending = :pending"
     was_free = profile.get("planId") == FREE_PLAN_ID
-    since = old_billing.get("freeSince") if was_free and old_billing.get("freeSince") else now_iso()[:10]
+    since = old_billing.get("freeSince") if was_free and old_billing.get("freeSince") else _stockholm_today().isoformat()
     fields = free_fields(free if is_free else None, since)
     if is_free and old_billing.get("freeNoticeFor") and old_billing.get("freeNoticeFor") != free.get("until"):
         fields["freeNoticeFor"] = None          # a new end date gets its own notice
