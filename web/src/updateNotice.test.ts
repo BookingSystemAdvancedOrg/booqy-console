@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startUpdateNotice } from './updateNotice'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FAILSAFE_MS, FETCH_TIMEOUT_MS, page, reloadProgress, showUpdatedIfFlagged, startUpdateNotice } from './updateNotice'
 
 function headWith(etags: string[]) {
   let i = 0
@@ -16,8 +16,11 @@ describe('updateNotice', () => {
   afterEach(() => {
     stop?.()
     document.body.innerHTML = ''
+    document.head.querySelectorAll('script,link').forEach((n) => n.remove())
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
     vi.useRealTimers()
+    sessionStorage.clear()
   })
 
   it('stays quiet while the version is unchanged', async () => {
@@ -56,6 +59,7 @@ describe('updateNotice', () => {
     await flush()
     expect(document.querySelector('.booqy-update')).not.toBeNull()
   })
+
   it('combines several files, so a css-only deploy also counts', async () => {
     let round = 0
     vi.stubGlobal('fetch', vi.fn(async (u: string) => {
@@ -68,5 +72,167 @@ describe('updateNotice', () => {
     window.dispatchEvent(new Event('focus'))
     await flush()
     expect(document.querySelector('.booqy-update')).not.toBeNull()
+  })
+})
+
+describe('reloadProgress', () => {
+  it('reaches 80 % within the rush and never 100 % while waiting', () => {
+    expect(reloadProgress(0)).toBe(0)
+    expect(reloadProgress(300)).toBeGreaterThan(0.6)
+    expect(reloadProgress(600)).toBeCloseTo(0.8, 5)
+    expect(reloadProgress(3_000)).toBeGreaterThan(0.85)
+    expect(reloadProgress(600_000)).toBeLessThanOrEqual(0.95)
+    for (let ms = 0; ms < 20_000; ms += 50) expect(reloadProgress(ms + 50)).toBeGreaterThanOrEqual(reloadProgress(ms))
+  })
+})
+
+describe('reloading', () => {
+  let stop: (() => void) | undefined
+  let reload: ReturnType<typeof vi.fn<() => void>>
+  let fileFetch: (u: string, init?: RequestInit) => Promise<Response>
+
+  /** Shows the notice with a new version and returns its box. */
+  async function noticeShown(opts: Parameters<typeof startUpdateNotice>[0] = {}) {
+    const s = document.createElement('script')
+    s.src = `${location.origin}/assets/app.js`
+    document.head.appendChild(s)
+    let round = 0
+    vi.stubGlobal('fetch', vi.fn((u: string, init?: RequestInit) =>
+      init?.method === 'HEAD' ? Promise.resolve(new Response(null, { headers: { etag: round++ ? '"b"' : '"a"' } })) : fileFetch(u, init)))
+    stop = startUpdateNotice({ intervalMs: 600_000, ...opts })
+    await vi.advanceTimersByTimeAsync(0)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+    const box = document.querySelector<HTMLElement>('.booqy-update')
+    expect(box).not.toBeNull()
+    return box!
+  }
+
+  const click = (sel: string) => document.querySelector<HTMLButtonElement>(sel)!.click()
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    reload = vi.fn<() => void>()
+    vi.spyOn(page, 'reload').mockImplementation(reload)
+    fileFetch = async () => new Response('ok')
+    // Reduced motion: the states are instant, so the steps are easy to read.
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {} }))
+  })
+  afterEach(() => {
+    stop?.()
+    document.body.innerHTML = ''
+    document.head.querySelectorAll('script').forEach((n) => n.remove())
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+    sessionStorage.clear()
+  })
+
+  it('asks first when there are unsaved changes; Avbryt keeps the notice', async () => {
+    const discard = vi.fn()
+    const box = await noticeShown({ hasUnsaved: () => true, discardUnsaved: discard })
+    click('.booqy-update__reload')
+    expect(box.textContent).toContain('Du har osparade ändringar')
+    click('.booqy-update__cancel')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(reload).not.toHaveBeenCalled()
+    expect(discard).not.toHaveBeenCalled()
+    const again = document.querySelector<HTMLButtonElement>('.booqy-update__reload')
+    expect(again?.textContent).toBe('Ladda om')
+    expect(again?.disabled).toBe(false)
+  })
+
+  it('"Ladda om ändå" drops the guard and reloads', async () => {
+    const discard = vi.fn()
+    await noticeShown({ hasUnsaved: () => true, discardUnsaved: discard })
+    click('.booqy-update__reload')
+    click('.booqy-update__anyway')
+    expect(discard).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(reload).toHaveBeenCalledOnce()
+    expect(sessionStorage.getItem('booqy-updated')).toBe('1')
+  })
+
+  it('reloads after 3 s even if the fresh files hang', async () => {
+    const signals: AbortSignal[] = []
+    fileFetch = (_u, init) => {
+      signals.push(init!.signal!)
+      return new Promise<Response>(() => {})
+    }
+    const box = await noticeShown()
+    click('.booqy-update__reload')
+    expect(box.dataset.progress).toBe('80')
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS - 100)
+    expect(reload).not.toHaveBeenCalled()
+    expect(box.dataset.progress).not.toBe('100')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(signals[0].aborted).toBe(true)
+    expect(box.dataset.progress).toBe('100')
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('brings the button back if the page is still alive 8 s after reload()', async () => {
+    const box = await noticeShown()
+    click('.booqy-update__reload')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(reload).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(FAILSAFE_MS - 100)
+    expect(box.querySelector('.booqy-update__reload')).toBeNull()
+    await vi.advanceTimersByTimeAsync(200)
+    const btn = box.querySelector<HTMLButtonElement>('.booqy-update__reload')
+    expect(btn?.textContent).toBe('Ladda om')
+    expect(btn?.disabled).toBe(false)
+    expect(box.textContent).toContain('Kunde inte ladda om. Försök igen.')
+    expect(sessionStorage.getItem('booqy-updated')).toBeNull()
+    expect(document.querySelector('.booqy-curtain')).toBeNull()
+  })
+
+  it('races to 80 % in the rush and shows 100 % only once the files are in', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
+    let release: () => void = () => {}
+    fileFetch = () => new Promise<Response>((r) => { release = () => r(new Response('ok')) })
+    const box = await noticeShown()
+    click('.booqy-update__reload')
+    await vi.advanceTimersByTimeAsync(700)
+    expect(Number(box.dataset.progress)).toBeGreaterThanOrEqual(80)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(Number(box.dataset.progress)).toBeLessThan(96)
+    expect(box.dataset.phase).toBe('crawl')
+    release()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(box.dataset.phase).toBe('done')
+    expect(box.dataset.progress).toBe('100')
+    expect(reload).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(reload).toHaveBeenCalledOnce()
+  })
+})
+
+describe('"Uppdaterad" after the reload', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    sessionStorage.clear()
+    vi.useRealTimers()
+  })
+
+  it('shows once, only with the flag, and fades away', () => {
+    vi.useFakeTimers()
+    expect(showUpdatedIfFlagged()).toBe(false)
+    expect(document.querySelector('.booqy-updated')).toBeNull()
+    sessionStorage.setItem('booqy-updated', '1')
+    expect(showUpdatedIfFlagged()).toBe(true)
+    expect(document.querySelector('.booqy-updated')?.textContent).toContain('Uppdaterad')
+    expect(sessionStorage.getItem('booqy-updated')).toBeNull()
+    expect(showUpdatedIfFlagged()).toBe(false)
+    vi.advanceTimersByTime(2_000)
+    expect(document.querySelector('.booqy-updated')).toBeNull()
+  })
+
+  it('stays quiet when storage throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    expect(showUpdatedIfFlagged()).toBe(false)
+    vi.restoreAllMocks()
   })
 })

@@ -40,7 +40,16 @@ export function confirmLeave(): boolean {
   return ok;
 }
 
-/** Tests only. */
+/**
+ * Drops the leave guard without asking, for a navigation the operator has
+ * already confirmed elsewhere (the update notice's "Reload anyway"). The
+ * desktop app would otherwise cancel that reload silently.
+ */
+export function discardUnsaved(): void {
+  pending.clear();
+}
+
+/** True while a dirty form guards the page (the update notice asks first). */
 export function hasUnsaved(): boolean {
   return pending.size > 0;
 }

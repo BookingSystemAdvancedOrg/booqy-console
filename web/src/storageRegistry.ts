@@ -24,6 +24,7 @@ export const SOUND_KEY = "booqy-sound";
 export const SOUND_VOLUME_KEY = "booqy-sound-volume";
 export const APP_HINT_KEY = "booqy-app-hint";
 export const GLASS_BACKDROP_KEY = "booqy-glass-backdrop";
+export const UPDATED_FLAG_KEY = "booqy-updated";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
@@ -61,5 +62,11 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
     kind: "localStorage",
     purpose: "That the tip about the desktop app was already shown in this browser, so it appears only once.",
     lifetime: "Until you clear the browser",
+  },
+  {
+    name: UPDATED_FLAG_KEY,
+    kind: "sessionStorage",
+    purpose: "Set for a moment when you reload for a new version, so the new page can say \"Updated\" once. Removed straight after.",
+    lifetime: "Until the page has reloaded",
   },
 ];

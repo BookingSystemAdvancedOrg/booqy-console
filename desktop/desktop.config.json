@@ -11,5 +11,11 @@
   "downloads": {
     "dev": "https://dev.booqy.se/downloads/console",
     "prod": "https://booqy.se/downloads/console"
+  },
+  "leave": {
+    "message": "Leave this page?",
+    "detail": "Unsaved changes will be lost.",
+    "leave": "Leave",
+    "stay": "Stay"
   }
 }

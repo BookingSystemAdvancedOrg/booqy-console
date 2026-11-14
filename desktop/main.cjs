@@ -5,7 +5,7 @@
 // sidan, ingen egen preload, inga hemligheter. Se README.md i den här mappen.
 'use strict'
 
-const { app, BrowserWindow, Menu, nativeTheme, net, session, shell, systemPreferences } = require('electron')
+const { app, BrowserWindow, Menu, dialog, nativeTheme, net, session, shell, systemPreferences } = require('electron')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -284,6 +284,13 @@ function createWindow() {
 }
 
 // ---- Spärrar för allt innehåll i alla fönster ---------------------------
+const LEAVE_DEFAULT = {
+  message: 'Lämna sidan?',
+  detail: 'Osparade ändringar försvinner.',
+  leave: 'Lämna',
+  stay: 'Stanna',
+}
+
 app.on('web-contents-created', (_e, contents) => {
   contents.on('will-attach-webview', (e) => e.preventDefault())
 
@@ -297,6 +304,23 @@ app.on('web-contents-created', (_e, contents) => {
       return
     }
     openOutside(url)
+  })
+  // En sida som spärrar omladdning eller stängning (beforeunload, t.ex. osparade
+  // ändringar) får här en riktig fråga. Utan den avbryter Electron tyst och
+  // appen ser ut att hänga (som "Laddar om..." efter en ny version).
+  contents.on('will-prevent-unload', (e) => {
+    const leave = { ...LEAVE_DEFAULT, ...config.leave }
+    const win = BrowserWindow.fromWebContents(contents)
+    const options = {
+      type: 'question',
+      buttons: [leave.leave, leave.stay],
+      defaultId: 0,
+      cancelId: 1,
+      message: leave.message,
+      detail: leave.detail,
+    }
+    const choice = win ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options)
+    if (choice === 0) e.preventDefault()
   })
   contents.on('will-redirect', (e, url) => {
     if (isAppUrl(url)) return

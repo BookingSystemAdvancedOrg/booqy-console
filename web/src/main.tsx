@@ -8,7 +8,7 @@ import { Logo } from "./components/Logo";
 import { Modal } from "./components/ui";
 import { installPress } from "./press";
 import { BusyBar } from "./components/BusyBar";
-import { confirmLeave } from "./components/save";
+import { confirmLeave, discardUnsaved, hasUnsaved } from "./components/save";
 import { installGlide } from "./glide";
 import { installGlassFilter } from "./glassFilter";
 import { installDesktopGlass } from "./desktopGlass";
@@ -65,7 +65,14 @@ if (import.meta.env.PROD) installPwa();
 // "A new version is available" after a deploy (built app only, not npm run dev).
 if (import.meta.env.PROD) {
   startUpdateNotice({
-    labels: { text: "A new version is available", reload: "Reload", reloading: "Reloading...", later: "Not now", hint: "Loads the new version. Save what you are working on first." },
+    labels: {
+      text: "A new version is available", reload: "Reload", reloading: "Reloading", later: "Not now",
+      hint: "Loads the new version. Save what you are working on first.",
+      unsaved: "You have unsaved changes", reloadAnyway: "Reload anyway", cancel: "Cancel",
+      failed: "Could not reload. Try again.", updated: "Updated",
+    },
+    hasUnsaved,
+    discardUnsaved,
   });
 }
 
