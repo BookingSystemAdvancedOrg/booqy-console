@@ -1,0 +1,131 @@
+/* Steps on one page (StepFlow.tsx): the sticky progress bar, the step cards
+   and their rewards. Motion is transform and opacity only. */
+
+:root { --flow-spring: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* --- the progress bar: a glass pill under the top bar ---------------------------- */
+.flow-progress {
+  position: sticky; top: var(--flow-top, 84px); z-index: 4;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "track pct" "step step";
+  align-items: center; gap: 8px 14px; margin: 0 0 22px; padding: 12px 18px;
+  border-radius: var(--r-lg); background: rgb(var(--bq-snow-rgb) / 0.96); box-shadow: var(--rim), var(--lift-sm);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6); backdrop-filter: blur(16px) saturate(1.6);
+  color: var(--print);
+}
+/* opaque enough that the steps scrolling under it never read through */
+:root[data-theme="dark"] .flow-progress { background: rgb(36 25 19 / 0.97); }
+@media (min-width: 768px) {
+  .flow-progress { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "track pct step"; }
+}
+.flow-progress__track {
+  grid-area: track; position: relative; height: 12px; border-radius: var(--r-pill); overflow: hidden;
+  background: color-mix(in srgb, var(--paper-line) 55%, transparent); box-shadow: inset 0 1px 2px rgb(58 36 24 / 0.18);
+}
+.flow-progress__fill {
+  position: absolute; inset: 0; transform-origin: left center; border-radius: inherit;
+  background: linear-gradient(90deg, #350001, #9e1d26 55%, #a88462);
+  transition: transform 900ms var(--flow-spring);
+}
+:root[data-theme="dark"] .flow-progress__fill { background: linear-gradient(90deg, #9e1d26, #c2554d 50%, #d5c4ae); }
+.flow-progress__glow {
+  position: absolute; inset: -6px; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(60% 140% at var(--glow-x, 50%) 50%, rgb(255 236 214 / 0.95), transparent 70%);
+  animation: flow-glow 900ms ease-out 120ms both;
+}
+@keyframes flow-glow { 0% { opacity: 0; } 30% { opacity: 0.9; } 100% { opacity: 0; } }
+.flow-progress__shine {
+  position: absolute; inset: 0; width: 40%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.85), transparent);
+  animation: flow-shine 1100ms ease-in-out 2 both;
+}
+@keyframes flow-shine { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+.flow-progress--won { animation: save-pop 520ms var(--flow-spring) both; }
+.flow-progress__pct { grid-area: pct; font: 760 15px/1 var(--mono); font-variant-numeric: tabular-nums; min-width: 4.6ch; text-align: right; }
+.flow-progress__step {
+  grid-area: step; display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  font: 600 11px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--print-2); white-space: nowrap;
+}
+.flow-progress__name { overflow: hidden; text-overflow: ellipsis; }
+.flow-progress__step .drawn-tick { color: var(--ok); }
+
+/* --- the info dot ------------------------------------------------------------------------ */
+.info-tip { position: relative; display: inline-flex; vertical-align: middle; }
+.info-tip__btn {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--print-2); transition: color 160ms var(--ease), background-color 160ms var(--ease);
+}
+.info-tip__btn:hover, .info-tip__btn:focus-visible { color: var(--print); background: var(--glass-fill); }
+.info-tip__pop {
+  position: absolute; top: calc(100% + 6px); right: -6px; z-index: 30; width: max-content; max-width: min(300px, calc(100vw - 48px));
+  padding: 10px 12px; border-radius: var(--r-md); background: var(--glass-pop, var(--paper)); color: var(--print);
+  box-shadow: var(--glass-edge, var(--rim)), 0 14px 30px -14px rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  font: 500 13px/1.45 var(--sans); text-transform: none; letter-spacing: 0; text-align: left; white-space: normal;
+  display: none; pointer-events: none;
+}
+/* shown only while hovered or focused (display, so a closed one never widens the page) */
+.info-tip:hover .info-tip__pop, .info-tip:focus-within .info-tip__pop { display: block; animation: tip-in 140ms var(--ease) both; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.page-head .info-tip__pop { left: -6px; right: auto; }
+/* phones: the tip spans the screen under its dot, never off the edge */
+@media (max-width: 600px) {
+  .info-tip__pop { position: fixed; top: auto; left: 16px; right: 16px; width: auto; max-width: none; margin-top: 34px; }
+  .page-head .info-tip__pop { left: 16px; right: 16px; }
+}
+
+/* --- step cards ------------------------------------------------------------------------------ */
+.step { scroll-margin-top: calc(var(--flow-top, 84px) + 96px); }
+.form-page .step { animation: none; }
+.form-page .step.step--enter { animation: step-in 480ms var(--flow-spring) both; }
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.step__head h2 { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.step__num {
+  flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  font: 760 12px/1 var(--mono); background: var(--glass-fill); color: var(--print); box-shadow: inset 0 0 0 1.5px var(--paper-line);
+}
+.step--done .step__num { background: var(--ok); color: var(--bq-snow, #fff); box-shadow: none; animation: save-pop 420ms var(--flow-spring) both; }
+.drawn-tick path { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.step--done .step__num .drawn-tick path { animation: tick-draw 420ms ease-out 80ms both; }
+@keyframes tick-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.step__edit { font-size: 13px; padding: 6px 4px; }
+.step__summary { padding: 12px 22px 16px; }
+.step-sum { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; }
+.step-sum__item { display: grid; gap: 1px; min-width: 0; }
+.step-sum dt { font: 600 10.5px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--print-2); }
+.step-sum dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.step__foot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.step__foot .btn { min-width: 150px; }
+.step__sub { margin: 22px 0 6px; padding-top: 14px; border-top: 1.5px dashed var(--paper-line); display: flex; align-items: center; gap: 4px; }
+.step__sub h3 { font: 760 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; margin: 0; }
+.submit-bar--enter { animation: step-in 480ms var(--flow-spring) both; }
+.submit-ready { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.submit-ready .drawn-tick { color: var(--ok); }
+@media (max-width: 860px) {
+  .step__summary { padding: 12px 16px 14px; }
+  .step__foot .btn { width: 100%; }
+  .flow-progress { padding: 10px 14px; margin-bottom: 18px; }
+}
+
+/* --- sparks and confetti ------------------------------------------------------------------ */
+.spark-layer { position: fixed; z-index: 300; width: 0; height: 0; pointer-events: none; }
+.spark-layer i { position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 50%; will-change: transform, opacity; }
+.confetti-layer { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 300; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-progress__fill { transition: none; }
+  .flow-progress__glow, .flow-progress__shine { display: none; }
+  .flow-progress--won, .form-page .step.step--enter, .submit-bar--enter, .step--done .step__num,
+  .step--done .step__num .drawn-tick path { animation: none !important; }
+  .info-tip__pop { animation: none !important; }
+}
+
+/* a plan's radio stays reachable by keyboard (arrows) under its card */
+.step .plan { position: relative; }
+.step .plan input { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
+.step .plan:has(input:focus-visible) { outline: 2px solid var(--print); outline-offset: 2px; }
+.step__body[hidden] { display: none; }
+.step-sum--none { color: var(--print-2); font-size: 13px; }
+.step__add { margin-top: 12px; }

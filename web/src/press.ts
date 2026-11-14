@@ -23,6 +23,42 @@ const VOICES: Record<"tick" | "press" | "cta", [number, number]> = {
   cta: [3864, 0.56],
 };
 
+/**
+ * Rewards, as ready-made samples like the click (Safari): a bright two-note
+ * chime when a step is done, a rising four-note one when something big is
+ * done. Notes as [Hz, start s]; each a sine with a soft overtone and a quick
+ * decay. Played with play(), so the sound setting and volume apply.
+ */
+const CHIMES = {
+  chime: [[1318.5, 0], [1975.5, 0.075]],
+  fanfare: [[1046.5, 0], [1318.5, 0.08], [1568, 0.16], [2093, 0.24]],
+} satisfies Record<string, [number, number][]>;
+type Chime = keyof typeof CHIMES;
+type Voice = keyof typeof VOICES | Chime;
+
+function chimeSamples(sr: number, notes: [number, number][]): Float32Array {
+  const tail = 0.42;
+  const n = Math.ceil(sr * (notes[notes.length - 1][1] + tail));
+  const out = new Float32Array(n);
+  for (const [hz, at] of notes) {
+    const from = Math.floor(at * sr);
+    for (let i = from; i < n; i++) {
+      const t = (i - from) / sr;
+      const env = Math.min(1, t / 0.004) * Math.exp(-t / 0.12);
+      out[i] += env * (Math.sin(2 * Math.PI * hz * t) + 0.18 * Math.sin(2 * Math.PI * hz * 2.01 * t));
+    }
+  }
+  let max = 0;
+  for (let i = 0; i < n; i++) max = Math.max(max, Math.abs(out[i]));
+  for (let i = 0; i < n; i++) out[i] *= 0.32 / max;
+  return out;
+}
+
+/** The reward chime: "chime" for a step, "fanfare" for the finish. Silent when sound is off. */
+export function playChime(kind: Chime = "chime") {
+  play(kind);
+}
+
 function reducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -166,7 +202,7 @@ function needsNew(c: AudioContext): boolean {
  * click, a release or a key, not on the press itself, so the click plays when
  * the finger or mouse button comes up (unlock) instead of staying silent.
  */
-let pending: { kind: keyof typeof VOICES; at: number } | null = null;
+let pending: { kind: Voice; at: number } | null = null;
 
 /** Plays a waiting click once the engine runs; one older than a second is dropped. */
 function flush() {
@@ -207,12 +243,11 @@ function wake(c: AudioContext): Promise<void> {
 const buffers = new Map<string, AudioBuffer>();
 
 /** The voice as an audio buffer, built once per audio context and sample rate. */
-function clickBuffer(c: AudioContext, kind: keyof typeof VOICES): AudioBuffer {
+function clickBuffer(c: AudioContext, kind: Voice): AudioBuffer {
   const key = `${kind}@${c.sampleRate}`;
   let buf = buffers.get(key);
   if (!buf) {
-    const [pitch, peak] = VOICES[kind];
-    const samples = clickSamples(c.sampleRate, pitch, peak);
+    const samples = kind in CHIMES ? chimeSamples(c.sampleRate, CHIMES[kind as Chime]) : clickSamples(c.sampleRate, ...VOICES[kind as keyof typeof VOICES]);
     buf = c.createBuffer(1, samples.length, c.sampleRate);
     buf.getChannelData(0).set(samples);
     buffers.set(key, buf);
@@ -220,7 +255,7 @@ function clickBuffer(c: AudioContext, kind: keyof typeof VOICES): AudioBuffer {
   return buf;
 }
 
-function play(kind: keyof typeof VOICES) {
+function play(kind: Voice) {
   if (!on || volume <= 0) return;
   try {
     const c = ctx;
@@ -238,7 +273,7 @@ function play(kind: keyof typeof VOICES) {
   }
 }
 
-function sound(c: AudioContext, kind: keyof typeof VOICES) {
+function sound(c: AudioContext, kind: Voice) {
   try {
     const src = c.createBufferSource();
     src.buffer = clickBuffer(c, kind);
