@@ -604,7 +604,7 @@ select.input { appearance: none; padding-right: 30px; background-image: var(--se
 }
 
 /* --- finance: the till roll ------------------------------------------------------ */
-.finance-toolbar { align-items: flex-end; row-gap: 14px; }
+.finance-toolbar { align-items: center; row-gap: 14px; }
 .range { display: flex; gap: 10px; align-items: flex-end; }
 .range__field { display: grid; gap: 4px; }
 .range__field span { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ox-2); }

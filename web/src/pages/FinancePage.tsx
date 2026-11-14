@@ -129,8 +129,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       <div className="toolbar finance-toolbar">
         <div className="range">
           <label className="range__field range__field--period">
-            <span>Billing period</span>
-            <select className="input" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}>
+            <select className="input" aria-label="Billing period" title="Billing period" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}>
               {choices.map((p) => (
                 <option key={p.from} value={p.from}>{periodLabel(p)}{p.current ? " (now)" : ""}</option>
               ))}
@@ -149,8 +148,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </label>
         {customer && (data?.locations?.length ?? 0) > 0 && (
           <label className="range__field">
-            <span>Location</span>
-            <select className="input" value={locationId ?? ""} aria-label="Location" onChange={(e) => setLocationId(e.target.value || null)}>
+            <select className="input" value={locationId ?? ""} aria-label="Location" title="Location" onChange={(e) => setLocationId(e.target.value || null)}>
               <option value="">All locations</option>
               {data!.locations!.map((l) => <option key={l.locationId} value={l.locationId}>{l.name ?? l.locationId}</option>)}
             </select>
