@@ -154,3 +154,23 @@ export function showDownloadNav(nav: Pick<Navigator, 'userAgent' | 'platform' | 
   if (isDesktopShell(nav.userAgent)) return false
   return !isPhoneOrTablet({ ua: nav.userAgent, platform: nav.platform, maxTouchPoints: nav.maxTouchPoints })
 }
+
+/**
+ * Installation med ett kommando (desktop/install/, publiceras av publish.mjs):
+ * filen hämtas med curl eller PowerShell, som inte märker den som nedladdad
+ * från internet, så varken Gatekeeper eller SmartScreen frågar. Skriptet
+ * kontrollerar SHA-256 innan något installeras.
+ */
+export type InstallShell = 'unix' | 'windows'
+
+export function installCommand(slug: string, shell: InstallShell, base = downloadsBase()): string {
+  return shell === 'windows'
+    ? `irm ${base}/${slug}/install.ps1 | iex`
+    : `curl -fsSL ${base}/${slug}/install.sh | sh`
+}
+
+/** Vilket kommando passar datorn? null = visa båda. */
+export function installShellFor(rec: Recommendation | null | undefined): InstallShell | null {
+  if (!rec) return null
+  return rec.os === 'win' ? 'windows' : 'unix'
+}

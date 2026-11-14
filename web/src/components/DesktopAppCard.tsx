@@ -2,7 +2,7 @@ import "./desktopApp.css";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { phoneKind, usePwaInstall } from "../pwa";
-import { desktopFiles, isDesktopShell, isPhoneOrTablet, readSignals, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
+import { desktopFiles, installCommand, installShellFor, isDesktopShell, isPhoneOrTablet, readSignals, type InstallShell, recommend, type DesktopOs, type Recommendation } from "../desktopDownloads";
 
 /** Labels in the console's language; URLs from desktopDownloads (shared with admin). */
 const LABELS: Record<DesktopOs, { title: string; detail: string; button: string }> = {
@@ -31,6 +31,24 @@ export function DesktopAppCard({ heading = true }: { heading?: boolean }) {
     return <PhoneInstallBody />;
   }
   return <DesktopAppCardBody heading={heading} />;
+}
+
+/** One install command with a Copy button. */
+function CommandRow({ shell }: { shell: InstallShell }) {
+  const command = installCommand("console", shell);
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(command); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setCopied(false); }
+  }
+  return (
+    <div className="desktop-app__cmd">
+      <span className="muted small">{shell === "windows" ? "Windows: in PowerShell" : "Mac and Linux: in Terminal"}</span>
+      <div className="desktop-app__cmd-row">
+        <code>{command}</code>
+        <button type="button" className="btn btn--small" onClick={() => void copy()}>{copied ? "Copied" : "Copy"}</button>
+      </div>
+    </div>
+  );
 }
 
 /** The menu's "Download app" / "Install app" goes to /settings#desktop-app: scroll here, focus, light up briefly (every click). */
@@ -121,9 +139,21 @@ function DesktopAppCardBody({ heading }: { heading: boolean }) {
       {heading && <div className="card__head"><h2>Desktop app</h2></div>}
       <div className="card__body desktop-app">
         <p className="muted small">
-          Booqy Console in its own window: same sign-in and features as here, always the latest console. The app asks when
-          the app itself has a new version.
+          Booqy Console in its own window: same sign-in and features as here, always the latest console. It updates itself
+          without asking.
         </p>
+        {rec !== undefined && (
+          <div className="desktop-app__install">
+            <h3 className="desktop-app__sub">Install with one command (recommended)</h3>
+            <p className="muted small">
+              Paste into {installShellFor(rec) === "windows" ? "PowerShell" : installShellFor(rec) === "unix" ? "Terminal" : "Terminal or PowerShell"} and
+              press Return. It checks the file and installs without warning dialogs.
+            </p>
+            {installShellFor(rec) !== "windows" && <CommandRow shell="unix" />}
+            {installShellFor(rec) !== "unix" && <CommandRow shell="windows" />}
+            <h3 className="desktop-app__sub">Or download the file</h3>
+          </div>
+        )}
         {mine && rec ? (
           <p><a className="btn btn--primary" href={mine.url} download>{LABELS[rec.os].button}</a></p>
         ) : rec === null ? (
