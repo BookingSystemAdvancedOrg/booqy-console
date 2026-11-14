@@ -1,6 +1,8 @@
 import { ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiError } from "../api";
+import { Link } from "react-router-dom";
+import { describeError, errorDetails, type ErrorInfo } from "../errors";
 import { CheckMark, useFlash } from "./save";
 import { helpSlug } from "../features/help/helpId";
 import { quietly, sameData, useLiveRefresh } from "../live";
@@ -111,19 +113,53 @@ export function Printing({ label = "Loading", inline = false }: { label?: string
   );
 }
 
-/** What to show for any thrown value: our API's message, an Error's, or a
- * plain fallback; never "[object Object]" or a browser's "Failed to fetch". */
+/** What to show for any thrown value: who acts (errors.ts), never "[object Object]",
+ * a browser's "Failed to fetch" or a bare "try again". */
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message || "Something went wrong. Try again.";
-  if (error instanceof TypeError) return "Couldn't reach the API. Check your internet connection and try again.";
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return "Something went wrong. Try again in a moment.";
+  return describeError(error).text;
 }
 
-export function ErrorNotice({ error }: { error: unknown }) {
+/**
+ * An error with what to do next: a link to the place the operator fixes it,
+ * or, for a Booqy fault, the details to copy (code, status, request id, page,
+ * time) and Try again when the page can retry.
+ */
+export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
-  return <Notice kind="error">{errorMessage(error)}</Notice>;
+  const info = describeError(error);
+  return (
+    <Notice kind="error">
+      <span>{info.text}</span>
+      {(info.link || info.actor === "booqy") && (
+        <span className="error-notice__actions">
+          {info.link && <Link className="btn btn--ghost btn--small" to={info.link.to}>{info.link.label}</Link>}
+          {info.actor === "booqy" && onRetry && <button type="button" className="btn btn--ghost btn--small" onClick={onRetry}>Try again</button>}
+          {info.actor === "booqy" && <CopyDetails info={info} />}
+        </span>
+      )}
+    </Notice>
+  );
+}
+
+function CopyDetails({ info }: { info: ErrorInfo }) {
+  const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
+  const details = errorDetails(info);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(details);
+      setCopied(true);
+    } catch {
+      setOpen(true); // no clipboard (http, permissions): show them to select by hand
+    }
+  };
+  return (
+    <>
+      <button type="button" className="btn btn--ghost btn--small" onClick={() => void copy()}>{copied ? "Copied" : "Copy details"}</button>
+      <button type="button" className="btn btn--ghost btn--small" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? "Hide details" : "Details"}</button>
+      {open && <pre className="error-notice__details">{details}</pre>}
+    </>
+  );
 }
 
 /** After a save the API refused field by field: the first marked field gets focus, so the

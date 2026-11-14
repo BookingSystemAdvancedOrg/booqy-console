@@ -7,10 +7,11 @@ import { createPortal } from "react-dom";
    one stroke icon set, the command palette (Cmd/Ctrl+K), the primary CTA and the
    accordion. Styles in src/ds.css. */
 
-export type IconName = "users" | "plus" | "user-plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate";
+export type IconName = "users" | "plus" | "user-plus" | "badge" | "staff" | "mail" | "chart" | "globe" | "gear" | "logout" | "search" | "send" | "chevron-down" | "arrow-right" | "close" | "menu" | "home" | "download" | "rotate" | "flag";
 
 // 24x24, 1.8 px stroke: the same drawings as admin's Icon.tsx.
 const PATHS: Record<IconName, string> = {
+  flag: '<path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"/>',
   users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.2a5.5 5.5 0 0 1 3 5.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   "user-plus": '<circle cx="9.5" cy="8" r="3.5"/><path d="M3 19.5a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>',

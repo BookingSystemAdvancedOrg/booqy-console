@@ -701,3 +701,22 @@ export interface SiteStatus {
     domain?: string;
   };
 }
+
+/** An error report from Booqy Admin (support-reports Lambda). Never holds tokens or form contents. */
+export type SupportReport = {
+  reportId: string;
+  tenantId: string;
+  tenantName: string | null;
+  userSub: string;
+  role: string | null;
+  code: string;
+  status: number;
+  path: string;
+  requestId: string | null;
+  appVersion: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  handled: boolean;
+  handledAt: string | null;
+  handledBy: string | null;
+};

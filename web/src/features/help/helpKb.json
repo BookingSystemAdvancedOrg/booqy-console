@@ -475,6 +475,38 @@
       ]
     },
     {
+      "id": "support-reports",
+      "route": "/reports",
+      "title": "Error reports from restaurants",
+      "audience": "all",
+      "keywords": [
+        "reports",
+        "error reports",
+        "rapportera till booqy",
+        "bug report",
+        "errors",
+        "request id",
+        "mark handled",
+        "support reports"
+      ],
+      "answer": "Reports under Platform lists the errors restaurants sent with Rapportera till Booqy in Booqy Admin, newest first. Each one is a Booqy fault: look the request id up in the logs, fix or explain it, then mark it handled. Reports are kept 180 days and every new one is also emailed to the operators.",
+      "steps": [
+        "Open Reports in the menu.",
+        "Pick Open, Handled or All.",
+        "Look the request id up in the logs, then press Mark handled."
+      ],
+      "actions": [
+        {
+          "id": "support-reports-open",
+          "label": "Open Reports",
+          "to": "/reports",
+          "highlight": [
+            "help:nav:/reports"
+          ]
+        }
+      ]
+    },
+    {
       "id": "operator-add",
       "route": "/operators",
       "title": "Add an operator",

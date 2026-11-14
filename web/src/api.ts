@@ -4,13 +4,16 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
+  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, SupportReport, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
 
 export class ApiError extends Error {
+  /** The API's own message when it had a useful one (errors.ts builds the who-acts text from it). */
+  serverMessage?: string;
+
   constructor(
     public status: number,
     public code: string,
@@ -25,14 +28,19 @@ export class ApiError extends Error {
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
 /** What to say when the response has no message of its own (a gateway
- * error page, a crash, a throttle). */
+ * error page, a crash, a throttle): who acts, as in errors.ts. */
 function fallbackMessage(status: number, requestId?: unknown): string {
-  const ref = requestId ? ` (reference ${requestId})` : "";
-  if (status === 403) return "You don't have access to this. Sign out and in again; if it persists, check that your account is an operator.";
-  if (status === 404) return "Not found - it may have been removed elsewhere. The page shows what is left by itself.";
+  const ref = requestId ? ` (request ${requestId})` : "";
+  if (status === 403) return "Your account isn't allowed to do this. Sign out and in again; if it persists, another operator checks your account under Operators.";
+  if (status === 404) return "Not found: it may have been removed elsewhere. The page shows what is left by itself.";
   if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
-  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, the page shows by itself whether it went through.";
-  return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
+  return `Something failed on Booqy's side${ref}. This is a Booqy fault (a bug or an outage), not something you did. Try again; if it keeps failing, copy the details and look the request up in the logs.`;
+}
+
+/** API Gateway's request id: the body's (platform-tenants puts it in 500s), else the header when it is readable. */
+function requestIdOf(res: Response, extra: Record<string, unknown>): string | undefined {
+  const raw = typeof extra.requestId === "string" ? extra.requestId : res.headers?.get?.("apigw-requestid");
+  return raw && /^[A-Za-z0-9=_.:-]{1,100}$/.test(raw) ? raw : undefined;
 }
 
 // Every call shows the busy bar (busy.ts), so no load is ever silent; only
@@ -92,15 +100,19 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Try again in a moment.");
+    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. This is a Booqy fault, not something you did. Try again; if it keeps failing, look the request up in the logs.");
   }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
+    const requestId = requestIdOf(res, extra);
+    if (requestId) extra.requestId = requestId;
     // The generic 500 text says nothing useful - give what to do instead.
     const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
-    throw new ApiError(res.status, (error as string) ?? "error",
-                       useful ? (message as string) : fallbackMessage(res.status, extra.requestId),
-                       (fields as Record<string, string>) ?? {}, extra);
+    const err = new ApiError(res.status, typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error",
+                             useful ? (message as string) : fallbackMessage(res.status, requestId),
+                             (fields as Record<string, string>) ?? {}, extra);
+    if (useful) err.serverMessage = message as string;
+    throw err;
   }
   return data as T;
 }
@@ -224,6 +236,12 @@ export const api = {
   outbox: (after?: string) =>
     request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  // Error reports from Booqy Admin ("Rapportera till Booqy"), newest first.
+  supportReports: (status: "all" | "open" | "handled" = "all", cursor?: string | null) =>
+    request<{ items: SupportReport[]; cursor: string | null }>(
+      "GET", `/platform/support/reports?status=${status}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`),
+  markReport: (reportId: string, handled: boolean) =>
+    request<SupportReport>("POST", `/platform/support/reports/${encodeURIComponent(reportId)}/handled`, { handled }),
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 

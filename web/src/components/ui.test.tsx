@@ -8,7 +8,7 @@ import { ErrorNotice, Field, errorMessage } from "./ui";
 
 describe("errorMessage", () => {
   it("never shows [object Object] or the browser's network text", () => {
-    expect(errorMessage({ a: 1 })).toMatch(/^Something went wrong/);
+    expect(errorMessage({ a: 1 })).toMatch(/^Something failed on Booqy's side\. This is a Booqy fault/);
     expect(errorMessage(new TypeError("Failed to fetch"))).toMatch(/^Couldn't reach the API/);
     expect(errorMessage(new ApiError(409, "self", "You can't disable your own account"))).toBe("You can't disable your own account");
     expect(errorMessage("Plain text.")).toBe("Plain text.");

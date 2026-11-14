@@ -1714,3 +1714,15 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .status--free { color: var(--ok); }
 .free-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px 18px; align-items: start; margin: 12px 0 4px; }
 .free-fields__noend { grid-column: 1 / -1; margin: 0; }
+
+/* ErrorNotice: who acts. A link to the place to fix it, or a Booqy fault's details to copy. */
+.error-notice__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.error-notice__actions .btn { color: inherit; }
+.error-notice__details { flex-basis: 100%; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r-sm, 8px); background: var(--glass-surface); font: 12px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+
+/* Reports (pages/ReportsPage): error reports from Booqy Admin. */
+.reports-filter { gap: 4px; }
+.reports-who { display: block; }
+.reports-id { overflow-wrap: anywhere; }
+.reports-row--handled td { color: var(--muted, inherit); }
+.reports-table .btn { white-space: nowrap; }

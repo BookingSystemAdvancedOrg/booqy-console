@@ -36,6 +36,7 @@ const pages = {
   mail: () => import("./pages/MailPage"),
   finance: () => import("./pages/FinancePage"),
   website: () => import("./pages/WebsitePage"),
+  reports: () => import("./pages/ReportsPage"),
   settings: () => import("./pages/SettingsPage"),
 };
 const TenantsPage = lazy(pages.tenants);
@@ -45,6 +46,7 @@ const OperatorsPage = lazy(pages.operators);
 const MailPage = lazy(pages.mail);
 const FinancePage = lazy(pages.finance);
 const WebsitePage = lazy(pages.website);
+const ReportsPage = lazy(pages.reports);
 const SettingsPage = lazy(pages.settings);
 
 let preloaded = false;
@@ -91,6 +93,7 @@ const NAV: { label: string; items: NavItem[] }[] = [
   { label: "Platform", items: [
     { to: "/operators", label: "Operators", icon: "staff" },
     { to: "/mail", label: "Mail", icon: "mail" },
+    { to: "/reports", label: "Reports", icon: "flag" },
   ] },
   { label: "Numbers", items: [
     { to: "/finance", label: "Finance", icon: "chart" },
@@ -247,6 +250,7 @@ function Shell() {
           <Route path="/mail" element={<MailPage />} />
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
