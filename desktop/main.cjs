@@ -248,6 +248,11 @@ app.on('web-contents-created', (_e, contents) => {
   contents.on('will-navigate', (e, url) => {
     if (isAppUrl(url)) return
     e.preventDefault()
+    // Uppdateringsrutans knapp (updates.cjs): booqy-shell://restart eller /download.
+    if (url.startsWith('booqy-shell://')) {
+      updates?.handleAction(url.slice('booqy-shell://'.length).replace(/\/$/, ''))
+      return
+    }
     openOutside(url)
   })
   contents.on('will-redirect', (e, url) => {

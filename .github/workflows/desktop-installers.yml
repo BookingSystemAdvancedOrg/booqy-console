@@ -55,6 +55,9 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
+      # The updater's version check, checksum and swap script (needs /bin/sh).
+      - if: runner.os != 'Windows'
+        run: npm test
       - run: node build.mjs --env ${{ env.BOOQY_ENV }}
       - uses: actions/upload-artifact@v4
         with:
@@ -66,6 +69,9 @@ jobs:
             desktop/release/${{ env.BOOQY_ENV }}/*.exe
             desktop/release/${{ env.BOOQY_ENV }}/*.AppImage
             desktop/release/${{ env.BOOQY_ENV }}/*.deb
+            desktop/release/${{ env.BOOQY_ENV }}/*.zip
+            desktop/release/${{ env.BOOQY_ENV }}/*.blockmap
+            desktop/release/${{ env.BOOQY_ENV }}/latest*.yml
 
   publish:
     needs: build

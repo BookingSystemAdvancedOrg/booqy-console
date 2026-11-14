@@ -10,7 +10,8 @@
 // latest.json pekar på de oföränderliga filerna och laddas upp sist, så en
 // klient ser aldrig en version vars filer inte finns ännu.
 import { execFileSync } from 'node:child_process'
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -68,12 +69,33 @@ for (const kind of kinds) {
   console.log(`${kind.key}: ${latest[kind.key]}`)
 }
 
+// macOS: zip med den nya .app för appens egna tysta uppdatering (updates.cjs).
+// SHA-256 i latest.json; appen byter inte ut sig själv om summan inte stämmer.
+const macZip = {}
+for (const arch of ['arm64', 'x64']) {
+  const file = found.find((f) => f.endsWith(`mac-${arch}.zip`))
+  if (!file) continue
+  const local = join(values.dir, file)
+  const sha256 = createHash('sha256').update(readFileSync(local)).digest('hex')
+  put(local, `versions/${slug}/${versionDir}/${file}`, 'public, max-age=31536000, immutable')
+  macZip[arch] = { url: `${root}/versions/${slug}/${versionDir}/${encodeURIComponent(file)}`, sha256, size: statSync(local).size }
+  console.log(`mac zip ${arch}: ${sha256}`)
+}
+
+// Windows och AppImage: electron-updaters kanal under <app>/updates/. Filerna
+// heter som i latest.yml; .blockmap ger differentiella nedladdningar (äldre
+// versioners filer ligger kvar). yml-filerna sist, så att de aldrig pekar på
+// något som inte finns ännu.
+for (const file of found.filter((f) => /\.(exe|AppImage)$|\.(exe|AppImage)\.blockmap$/.test(f))) {
+  put(join(values.dir, file), `${slug}/updates/${file}`, 'public, max-age=31536000, immutable')
+}
+
 if (Object.keys(files).length === 0) {
   console.error('Inga installationsfiler hittades i', values.dir)
   process.exit(1)
 }
 
-const manifest = { app: slug, env: values.env, version, sha: values.sha, date: new Date().toISOString(), files, latest }
+const manifest = { app: slug, env: values.env, version, sha: values.sha, date: new Date().toISOString(), files, latest, macZip }
 const manifestPath = join(values.dir, 'latest.json')
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
 execFileSync(
@@ -81,4 +103,7 @@ execFileSync(
   ['s3', 'cp', manifestPath, `s3://${values.bucket}/downloads/${slug}/latest.json`, '--cache-control', 'public, max-age=60', '--content-type', 'application/json', '--only-show-errors'],
   { stdio: 'inherit' },
 )
+for (const yml of ['latest.yml', 'latest-linux.yml']) {
+  if (found.includes(yml)) put(join(values.dir, yml), `${slug}/updates/${yml}`, 'public, max-age=60')
+}
 console.log(`latest.json: ${baseUrl}/latest.json (${version})`)

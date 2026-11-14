@@ -121,6 +121,12 @@ With an identity set, hardened runtime and the entitlements in
 `build/entitlements.mac.plist` are used. Notarization runs only when the three
 `APPLE_*` variables are set too.
 
+Prices checked 2026-11-14 (nothing bought): Apple Developer Program USD 99 a
+year (Developer ID plus notarization; also allows Squirrel.Mac updates and
+turns cookie encryption back on without keychain prompts). Azure Artifact
+Signing (formerly Trusted Signing) Basic USD 9.99 a month (5,000 signatures,
+then USD 0.005 each), for organisations in the US, Canada and Europe.
+
 ## Where users download it
 
 `https://dev.booqy.se/downloads/console/latest/` (dev) and
@@ -131,16 +137,59 @@ under `/downloads/versions/console/<version>-<sha7>/`, and `latest.json` lists
 them. The download card in settings (and booqy.se/ladda-ner for the admin)
 picks the file for the visitor's computer.
 
-## Updates
+## Updates (silent, no installer windows)
 
 - **The web app** (what the window shows) updates with every web deploy. The
   page compares `index.html`'s ETag every 60 s and on focus and shows
   "Ny version finns" with a Ladda om button. It never reloads by itself.
-- **The shell** (this folder) checks `latest.json` 15 s after start and every
-  6 hours, and from Hjälp > Sök efter uppdateringar. When `version` in
-  `package.json` is higher than the installed one it offers Uppdatera, which
-  downloads the installer to Hämtade filer and opens it. Bump `version` when
-  you change the shell, or nobody is offered the new build.
+- **The shell** (this folder) checks 15 s after start, every 6 hours and from
+  Hjälp > Sök efter uppdateringar. It downloads a newer version in the
+  background and shows a glass toast "Uppdatering klar (x.y.z) / Starta om".
+  Without a click it installs when the app quits. No installer, no DMG, no
+  Finder or SmartScreen dialog (`updates.cjs`, logic in `update-core.cjs`):
+  - **Windows:** electron-updater with the NSIS installer run silently
+    (per-user, no UAC), differential download via `.blockmap`. Feed:
+    `<downloads>/<app>/updates/latest.yml`. A file the app downloads itself
+    has no Mark-of-the-Web, so SmartScreen does not step in.
+  - **macOS** (unsigned, so Squirrel.Mac cannot be used): the app downloads
+    the `.zip` of the new `.app`, checks its SHA-256 against `latest.json`
+    (`macZip`), unpacks it next to itself, checks bundle id and version, and
+    after quitting a small script swaps the bundle in place and relaunches.
+    It falls back to a toast with a download link when it cannot swap: no
+    write permission to the folder, running from the disk image, or macOS App
+    Translocation (run once from Applications to fix).
+    Cookie encryption is off for unsigned macOS builds: an unsigned app gets
+    a new signature with every version, and macOS would ask about the
+    keychain after every update. It turns on by itself once the app is signed.
+  - **Linux:** the AppImage updates itself like Windows
+    (`latest-linux.yml`). A `.deb` cannot be replaced without sudo, so it
+    gets a toast linking to the new file.
+- **The very first install** still shows the OS warning (Gatekeeper,
+  SmartScreen): that is only fixable with signing (below).
+- **Moving from 1.3.x:** 1.3.x only knows the old flow (download and open the
+  installer), so the step to 1.4.0 shows the installer once. From 1.4.0 on,
+  updates are silent.
+
+### When to release a new shell version
+
+Rarely. The window loads the live web app, so web changes never need an
+installer. Bump `version` in `package.json` only for real shell changes
+(main.cjs, updates, window, icons, Electron upgrades). Every bump builds three
+platforms in CI (macOS minutes are expensive) and every running app installs it.
+
+### Test the update locally (macOS)
+
+```bash
+BOOQY_TEST_SUFFIX=Updatetest node build.mjs --env dev --mac --only zip --arch arm64
+# copy release/dev/mac-arm64/*.app to a writable folder ("old"), then:
+BOOQY_TEST_SUFFIX=Updatetest BOOQY_TEST_VERSION=1.4.1 node build.mjs --env dev --mac --only zip --arch arm64
+# serve a folder with the new zip and a latest.json {version, macZip: {arm64: {url, sha256}}}
+BOOQY_UPDATE_TEST=1 BOOQY_UPDATE_FEED=http://127.0.0.1:8790/feed "<old>.app/Contents/MacOS/<name>"
+```
+
+The suffix gives the test app its own name and profile. The feed override and
+`http://127.0.0.1` are only honoured with `BOOQY_UPDATE_TEST=1`.
+`npm test` runs the version check, checksum and swap tests.
 
 ## CI
 

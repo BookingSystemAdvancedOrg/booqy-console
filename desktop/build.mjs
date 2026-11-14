@@ -35,9 +35,12 @@ if (!url) {
   process.exit(1)
 }
 const isProd = env === 'prod'
-const productName = isProd ? config.productName : `${config.productName} Dev`
-const appId = isProd ? config.appId : `${config.appId}.dev`
-const fileBase = isProd ? config.fileName : `${config.fileName}-dev`
+// Bara för det lokala testet av uppdateringen (README): ett eget appnamn och
+// en egen version, så att testappen inte delar profil med en installerad app.
+const testSuffix = process.env.BOOQY_TEST_SUFFIX ?? ''
+const productName = (isProd ? config.productName : `${config.productName} Dev`) + (testSuffix ? ` ${testSuffix}` : '')
+const appId = (isProd ? config.appId : `${config.appId}.dev`) + (testSuffix ? `.${testSuffix.toLowerCase()}` : '')
+const fileBase = (isProd ? config.fileName : `${config.fileName}-dev`) + (testSuffix ? `-${testSuffix.toLowerCase()}` : '')
 
 // Adressen bakas in i appen; main.cjs läser den här filen.
 writeFileSync(new URL('./env.json', import.meta.url), JSON.stringify({ env, url }, null, 2) + '\n')
@@ -69,13 +72,16 @@ const builderConfig = {
   copyright: 'Booqy',
   artifactName: `${fileBase}-\${version}-\${os}-\${arch}.\${ext}`,
   directories: { output: `release/${env}`, buildResources: 'build' },
-  files: ['main.cjs', 'updates.cjs', 'desktop.config.json', 'env.json', 'package.json'],
-  extraMetadata: { name: fileBase, productName },
+  files: ['main.cjs', 'updates.cjs', 'update-core.cjs', 'desktop.config.json', 'env.json', 'package.json'],
+  extraMetadata: { name: fileBase, productName, ...(process.env.BOOQY_TEST_VERSION ? { version: process.env.BOOQY_TEST_VERSION } : {}) },
   asar: true,
   // Härdning av själva Electron-binären.
   electronFuses: {
     runAsNode: false,
-    enableCookieEncryption: true,
+    // Kakorna krypteras med en nyckel i macOS nyckelring. En osignerad app får
+    // en ny signatur vid varje version, och då frågar macOS om nyckeln efter
+    // varje uppdatering. Därför av för osignerad macOS, på när appen signeras.
+    enableCookieEncryption: macIdentity ? true : process.platform !== 'darwin',
     enableNodeOptionsEnvironmentVariable: false,
     enableNodeCliInspectArguments: false,
     enableEmbeddedAsarIntegrityValidation: true,
@@ -83,7 +89,11 @@ const builderConfig = {
   },
   mac: {
     category: 'public.app-category.business',
-    target: [{ target: 'dmg', arch: ['arm64', 'x64'] }],
+    // dmg för första installationen, zip för appens egna tysta uppdateringar.
+    target: [
+      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'zip', arch: ['arm64', 'x64'] },
+    ],
     icon: 'build/icon.png',
     // Utan certifikat: ad hoc-signerad ("-"), kör lokalt men Gatekeeper
     // varnar på andra datorer. Se README.md, "Signering".
@@ -110,7 +120,6 @@ const builderConfig = {
     installerLanguages: ['sv_SE'],
     language: '1053',
     shortcutName: productName,
-    differentialPackage: false,
   },
   linux: {
     target: [
@@ -125,7 +134,9 @@ const builderConfig = {
     synopsis: config.description,
     executableName: fileBase,
   },
-  publish: null,
+  // Uppdateringskanalen (latest.yml, latest-linux.yml) för electron-updater på
+  // Windows och AppImage. Inget laddas upp härifrån: publish.mjs gör det i CI.
+  publish: [{ provider: 'generic', url: `${config.downloads[env]}/updates` }],
 }
 
 await build({ ...platforms, config: builderConfig, publish: 'never' })
