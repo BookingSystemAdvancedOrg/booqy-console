@@ -7,12 +7,32 @@ import { useEffect, type RefObject } from "react";
  * gone. Content that scrolls past is left alone (it can be scrolled free).
  * The lift is the CSS variable --dodge, used by `translate` in the CSS.
  */
+/** What the button may never rest on: anything the operator can press or type in. */
+const CONTROL = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=link], [role=switch], [role=checkbox], [contenteditable=true]'
+
+/** How long the button stays away after the last scroll (owner 2026-11-14: about a second). */
+export const SCROLL_IDLE_MS = 1000
+
+/**
+ * It also slides out of view (class is-away) while the page scrolls down and
+ * comes back on a scroll up or after SCROLL_IDLE_MS without scrolling, and it
+ * stays away while its resting place would sit on top of a button, link or
+ * field: it never covers anything. Keyboard focus keeps it in view.
+ */
 export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): void {
   useEffect(() => {
     const el = ref.current
     if (!el || !active || typeof document.elementsFromPoint !== 'function') return
     let raf = 0
     let lift = 0
+    let scrolledAway = false
+    let overControl = false
+    let lastY = window.scrollY
+    let idle = 0
+    const apply = () => {
+      const away = (scrolledAway || overControl) && document.activeElement !== el
+      if (el.classList.contains('is-away') !== away) el.classList.toggle('is-away', away)
+    }
     const pinnedAncestor = (node: Element | null): Element | null => {
       for (let e = node; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
         const pos = getComputedStyle(e).position
@@ -66,9 +86,31 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
         el.style.setProperty('--dodge', `${lift}px`)
         el.style.setProperty('--dodge-x', `${shift}px`)
       }
+      // Where it ends up (lifted and shifted): is a control under it?
+      overControl = false
+      for (const x of xs) for (const y of ys) {
+        for (const n of document.elementsFromPoint(x - nextShift, y - nextLift)) {
+          if (el.contains(n) || pinnedAncestor(n)) continue
+          const c = n.closest(CONTROL)
+          if (c && !c.contains(el) && !c.closest('[aria-hidden="true"], [inert]')) { overControl = true; break }
+        }
+      }
+      apply()
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(run) }
+    // The page itself scrolling (not a table or list inside it): down hides, up or a pause brings it back.
+    const onPageScroll = () => {
+      const y = window.scrollY
+      if (y > lastY + 2) scrolledAway = true
+      else if (y < lastY - 2) scrolledAway = false
+      lastY = y
+      window.clearTimeout(idle)
+      idle = window.setTimeout(() => { scrolledAway = false; schedule() }, SCROLL_IDLE_MS)
+      schedule()
+    }
     schedule()
+    window.addEventListener('scroll', onPageScroll, { passive: true })
+    el.addEventListener('focus', apply)
     window.addEventListener('scroll', schedule, { capture: true, passive: true })
     window.addEventListener('resize', schedule)
     const mo = new MutationObserver(schedule)
@@ -76,6 +118,10 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
     const tick = window.setInterval(schedule, 1000)
     return () => {
       if (raf) cancelAnimationFrame(raf)
+      window.clearTimeout(idle)
+      window.removeEventListener('scroll', onPageScroll)
+      el.removeEventListener('focus', apply)
+      el.classList.remove('is-away')
       window.removeEventListener('scroll', schedule, { capture: true })
       window.removeEventListener('resize', schedule)
       mo.disconnect()

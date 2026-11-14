@@ -262,7 +262,7 @@ function SourcesTable({ data }: { data: WebsiteOverview }) {
   const total = rows.reduce((a, r) => a + r.visits, 0);
   if (!rows.length) return <p className="web-none">No visits in this period.</p>;
   return (
-    <div className="web-scroll">
+    <div className="web-scroll" tabIndex={0} role="region" aria-label="Traffic sources">
       <table className="table web-table">
         <thead><tr><th>Source</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -311,7 +311,7 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
     return <p className="web-none">No tagged visits. <InfoTip label="Tagged visits">Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</InfoTip></p>;
   }
   return (
-    <div className="web-scroll">
+    <div className="web-scroll" tabIndex={0} role="region" aria-label="Campaigns">
       <table className="table web-table">
         <thead><tr><th>Source</th><th>Medium</th><th>Campaign</th><th className="num">Visits</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -336,7 +336,7 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
 function VisitTable({ title, rows, label, mono, heading }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean; heading?: boolean }) {
   const total = rows.reduce((a, r) => a + r.visits, 0);
   const body = !rows.length ? <p className="web-none">Nothing in this period.</p> : (
-    <div className="web-scroll">
+    <div className="web-scroll" tabIndex={0} role="region" aria-label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -362,7 +362,7 @@ function VisitTable({ title, rows, label, mono, heading }: { title: string; rows
 function PageTable({ rows }: { rows: PageRow[] }) {
   if (!rows.length) return <p className="web-none">Nothing in this period.</p>;
   return (
-    <div className="web-scroll">
+    <div className="web-scroll" tabIndex={0} role="region" aria-label="Pages">
       <table className="table web-table">
         <thead><tr><th>Page</th><th className="num">Views</th><th className="num">Engaged time</th></tr></thead>
         <tbody>
@@ -381,7 +381,7 @@ function PageTable({ rows }: { rows: PageRow[] }) {
 
 function EventTable({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
   return (
-    <div className="web-scroll">
+    <div className="web-scroll" tabIndex={0} role="region" aria-label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Clicks</th></tr></thead>
         <tbody>

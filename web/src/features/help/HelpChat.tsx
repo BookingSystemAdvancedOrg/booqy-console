@@ -48,7 +48,7 @@ export function HelpChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   useDodge(launcherRef, enabled && !open);
-  const logRef = useRef<HTMLOListElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const panelId = useId();
@@ -200,7 +200,8 @@ export function HelpChat() {
             </div>
           </header>
 
-          <ol className="help-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation">
+          <div className="help-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation">
+          <ol className="help-list">
             {messages.length === 0 && (
               <li className="help-empty">
                 <p>Ask how something works.</p>
@@ -240,6 +241,7 @@ export function HelpChat() {
               </li>
             )}
           </ol>
+          </div>
 
           <form className="help-compose" onSubmit={onSubmit}>
             <label className="sr-only" htmlFor={`${panelId}-q`}>Your question</label>

@@ -21,10 +21,19 @@
   cursor: pointer;
   /* --dodge (dodge.ts): floats up above a sticky or fixed bar under the button. */
   translate: calc(-1 * var(--dodge-x, 0px)) calc(-1 * var(--dodge, 0px));
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out);
+  transition: transform var(--dur-base, 220ms) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out), opacity var(--dur-base, 220ms) var(--ease-out), visibility 0s;
 }
 
-.help-launcher:hover {
+/* dodge.ts: out of view while the page scrolls down, or while it would rest on a control. */
+.help-launcher.is-away {
+  transform: translateY(calc(100% + 40px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--dur-base, 220ms) var(--ease-out), opacity var(--dur-base, 220ms) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out), visibility 0s linear var(--dur-base, 220ms);
+}
+
+.help-launcher:not(.is-away):hover {
   transform: translateY(-1px);
   box-shadow: var(--glass-edge), var(--elev-3);
 }
@@ -108,11 +117,15 @@
 
 .help-log {
   flex: 1 1 auto;
-  margin: 0;
   padding: var(--space-4) var(--space-5);
-  list-style: none;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.help-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -262,8 +275,8 @@
   cursor: default;
 }
 
-/* Phones: full screen, the launcher above the home indicator. */
-@media (max-width: 600px) {
+/* Phones: the launcher is an icon-only 48 px circle (its name is the aria-label). */
+@media (max-width: 640px) {
   .help-launcher-text {
     display: none;
   }
@@ -274,7 +287,10 @@
     justify-content: center;
     padding: 0;
   }
+}
 
+/* Phones: the panel is full screen. */
+@media (max-width: 600px) {
   .help-panel {
     inset: 0;
     width: 100%;
@@ -286,12 +302,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .help-panel,
-  .help-launcher {
+  .help-launcher,
+  .help-launcher.is-away {
     animation: none;
     transition: none;
   }
 
-  .help-launcher:hover {
+  .help-launcher:hover,
+  .help-launcher.is-away {
     transform: none;
   }
 }

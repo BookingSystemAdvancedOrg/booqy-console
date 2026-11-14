@@ -221,10 +221,12 @@ export function CommandPalette({ items }: { items: () => PaletteItem[] }) {
 
 export function PaletteTrigger() {
   return (
-    <button type="button" className="palette-trigger" onClick={openPalette} aria-label={`Search (${paletteShortcut()})`}>
+    // The name is the visible word; the shortcut is announced by aria-keyshortcuts, not read twice.
+    <button type="button" className="palette-trigger" onClick={openPalette} title={`Search (${paletteShortcut()})`}
+            aria-keyshortcuts={paletteShortcut() === "⌘K" ? "Meta+K" : "Control+K"}>
       <Icon name="search" size={16} />
       <span className="palette-trigger-text">Search</span>
-      <kbd className="palette-trigger-kbd">{paletteShortcut()}</kbd>
+      <kbd className="palette-trigger-kbd" aria-hidden="true">{paletteShortcut()}</kbd>
     </button>
   );
 }

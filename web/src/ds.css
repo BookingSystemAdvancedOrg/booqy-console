@@ -651,8 +651,10 @@
 }
 
 @media (max-width: 600px) {
-  .palette-trigger-text, .palette-trigger-kbd { display: none; }
-  .palette-trigger { width: 40px; height: 40px; justify-content: center; padding: 0; }
+  .palette-trigger-kbd { display: none; }
+  /* icon only: the word stays for screen readers */
+  .palette-trigger-text { position: absolute; width: 1px; height: 1px; min-width: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .palette-trigger { width: 44px; height: 44px; justify-content: center; padding: 0; }
   .palette-backdrop { padding-top: var(--space-4); }
   .palette-foot { display: none; }
 }
@@ -1231,6 +1233,7 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
   font: 700 0.8125rem/1 var(--sans);
   letter-spacing: 0.02em;
 }
+.avatar__initials::before { content: attr(data-initials); }
 .avatar--sm { inline-size: var(--avatar-sm); block-size: var(--avatar-sm); font-size: 0.6875rem; }
 .avatar--lg { inline-size: var(--avatar-lg); block-size: var(--avatar-lg); font-size: 1.125rem; }
 .avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }

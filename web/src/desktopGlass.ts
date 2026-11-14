@@ -5,7 +5,6 @@
  * then gets is-desktop-glass and data-desktop-glass=<mode>, and the CSS makes
  * the page clear so the desktop shows through. In a browser nothing happens.
  */
-import { showDesktopHint } from './desktopHint'
 import { installGlassBackdrop } from './glassBackdrop'
 
 export type DesktopGlass = 'vibrancy' | 'acrylic' | 'tint'
@@ -25,11 +24,8 @@ export function installDesktopGlass(): DesktopGlass | null {
   }
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return null
   const mode = desktopGlassMode(navigator.userAgent)
-  if (!mode) {
-    // In a browser: once, a tip about the app (it sees the desktop, a page cannot).
-    window.setTimeout(showDesktopHint, 2500)
-    return null
-  }
+  // In a browser the shell shows a tip about the app once (DesktopHint.tsx).
+  if (!mode) return null
   const root = document.documentElement
   root.classList.add('is-desktop-glass')
   root.dataset.desktopGlass = mode

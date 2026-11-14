@@ -59,7 +59,7 @@ describe("Operators rows", () => {
     render(<OperatorsPage me="me" />);
     await userEvent.click(await screen.findByRole("button", { name: "Show the profile picture of lamo@booqy.se" }));
     const box = screen.getByRole("dialog", { name: "Profile picture: lamo@booqy.se" });
-    expect(box.querySelector(".avatar--xl")?.textContent).toBe("L");
+    expect(box.querySelector(".avatar--xl .avatar__initials")?.getAttribute("data-initials")).toBe("L");
   });
 
   it("leaves the action buttons to themselves", async () => {

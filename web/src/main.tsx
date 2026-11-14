@@ -17,11 +17,13 @@ import { MyAvatar } from "./components/MyAvatar";
 import { startUpdateNotice } from "./updateNotice";
 import { showDownloadNav } from "./desktopDownloads";
 import { DownloadRedirect } from "./components/DownloadRedirect";
+import { DesktopHint, useDesktopHint } from "./components/DesktopHint";
 import { installPwa, showPhoneInstallNav } from "./pwa";
 import "@booqy/brand/styles.css";
 import "./styles.css";
 import "./ds.css";
 import "./phoneTables.css";
+import "./phoneTargets.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";
@@ -145,6 +147,7 @@ function Shell() {
   const location = useLocation();
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [appHint, closeAppHint] = useDesktopHint();
   // Phones: the links sit behind a Menu button. The menu belongs to the page
   // it was opened on, so going to another page closes it.
   const [menuAt, setMenuAt] = useState<string | null>(null);
@@ -216,6 +219,7 @@ function Shell() {
           ))}
         </nav>
         <div className="topbar__user">
+          {appHint && <DesktopHint where="side" onClose={closeAppHint} />}
           <div className="topbar__me">
             <MyAvatar email={user.email} />
             <span className="topbar__me-name">{user.email ?? user.username}</span>
@@ -241,6 +245,7 @@ function Shell() {
         </Modal>
       )}
       <main className="main">
+        {appHint && <DesktopHint where="flow" onClose={closeAppHint} />}
         <div className="page" key={location.pathname}>
         <Suspense fallback={<SkelPage label="Loading the page"><SkelKpis /><SkelCard /></SkelPage>}>
         <Routes>
