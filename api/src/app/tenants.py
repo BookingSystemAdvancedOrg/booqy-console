@@ -104,12 +104,28 @@ def default_free_until(today: date | None = None) -> date:
     return add_months(today or stockholm_today(), FREE_MONTHS) - timedelta(days=1)
 
 
-def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_until: str | None = None) -> dict | None:
-    """The `free` object next to planId "free": {until: yyyy-mm-dd | null
-    (no end date), thenPlanId (the plan after it, default starter)}. Left
-    out: three months, then Starter. A new last free day is at least 14
-    days ahead, so the owner can be told 14 days before the first paid day
-    (`current_until`, the one already set, may stay)."""
+FREE_PRESETS = {"until_changed": None, "3m": 3, "6m": 6}
+
+
+def free_until_for(preset: str, start: date) -> date | None:
+    """The last free day of a preset: none for until_changed, else the day
+    before the same date 3 or 6 calendar months on (from 14 Nov 2026, 3m
+    ends 13 Feb 2027; from 31 Aug, 6m ends 27 Feb as 28 Feb is the first paid day)."""
+    months = FREE_PRESETS[preset]
+    return None if months is None else add_months(start, months) - timedelta(days=1)
+
+
+def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_until: str | None = None,
+               start: date | None = None, current_preset: str | None = None) -> dict | None:
+    """The `free` object next to planId "free". Either a preset,
+    {preset: "until_changed" | "3m" | "6m", thenPlanId}, the end computed
+    here from `start` (the free period's first day, Stockholm; today when
+    left out) and thenPlanId required for 3m/6m; or, for older callers,
+    {until: yyyy-mm-dd | null (no end date), thenPlanId (default starter)}.
+    Left out: three months, then Starter. A new last free day is at least
+    14 days ahead, so the owner can be told 14 days before the first paid
+    day (`current_until`, the one already set, may stay, and so does the
+    saved end of an unchanged preset, `current_preset`)."""
     if plan_id != FREE_PLAN_ID:
         return None
     from .website import stockholm_today
@@ -121,27 +137,52 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
         f.fail(field, "Must be an object")
         return None
     out = {"until": None, "thenPlanId": "starter"}
-    until = raw.get("until")
-    if until is not None:
-        try:
-            day = date.fromisoformat(str(until)[:10]) if isinstance(until, str) else None
-        except ValueError:
-            day = None
-        if day is None:
-            f.fail(f"{field}.until", "Use yyyy-mm-dd, or null for no end date")
-        elif day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
-            f.fail(f"{field}.until", f"At least {FREE_NOTICE_DAYS} days ahead, so the owner is told "
-                                     f"{FREE_NOTICE_DAYS} days before the first paid day")
-        elif day > today + timedelta(days=3 * 366):
-            f.fail(f"{field}.until", "At most three years ahead")
+    preset = raw.get("preset")
+    if preset is not None:
+        if preset not in FREE_PRESETS:
+            f.fail(f"{field}.preset", "Pick until_changed, 3m or 6m")
+            return None
+        out["preset"] = preset
+        if preset == current_preset and current_until is not None:
+            out["until"] = current_until          # unchanged: the saved end stays
         else:
-            out["until"] = day.isoformat()
+            day = free_until_for(preset, start or today)
+            if day is not None and day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
+                f.fail(f"{field}.preset", f"Less than {FREE_NOTICE_DAYS} days of that period are left: "
+                                          "pick a longer one or Free until changed")
+            out["until"] = day.isoformat() if day else None
+        if preset != "until_changed" and not raw.get("thenPlanId"):
+            f.fail(f"{field}.thenPlanId", "Pick the plan after Free")
+            return out
+    else:
+        until = raw.get("until")
+        if until is not None:
+            try:
+                day = date.fromisoformat(str(until)[:10]) if isinstance(until, str) else None
+            except ValueError:
+                day = None
+            if day is None:
+                f.fail(f"{field}.until", "Use yyyy-mm-dd, or null for no end date")
+            elif day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
+                f.fail(f"{field}.until", f"At least {FREE_NOTICE_DAYS} days ahead, so the owner is told "
+                                         f"{FREE_NOTICE_DAYS} days before the first paid day")
+            elif day > today + timedelta(days=3 * 366):
+                f.fail(f"{field}.until", "At most three years ahead")
+            else:
+                out["until"] = day.isoformat()
     then = raw.get("thenPlanId") or "starter"
     if not isinstance(then, str) or then == FREE_PLAN_ID or _plan_row(then) is None:
         f.fail(f"{field}.thenPlanId", "Pick Starter or Growth")
     else:
         out["thenPlanId"] = then
     return out
+
+
+def free_price_problem(free: dict | None, price_sek: int | None) -> str | None:
+    """A timed preset (3m, 6m) needs the monthly price after Free, above 0."""
+    if free and free.get("preset") in ("3m", "6m") and not price_sek:
+        return "Set the monthly price after Free"
+    return None
 
 
 def _profile_fields(f: v.Fields) -> dict:
@@ -304,7 +345,11 @@ def create_tenant(req) -> tuple[int, dict]:
     fields = _profile_fields(f)
     overrides = _overrides(f)
     billing_input = _billing_input(f)
-    free = free_input(f, plan_id)
+    free_start = _start_day(billing_input)
+    free = free_input(f, plan_id, start=free_start)
+    price_problem = free_price_problem(free, billing_input.get("priceSek"))
+    if price_problem:
+        f.fail("billing.priceSek", price_problem)
     raw_locations = req.body.get("locations") or []
     if not isinstance(raw_locations, list):
         f.fail("locations", "Must be a list")
@@ -346,7 +391,8 @@ def create_tenant(req) -> tuple[int, dict]:
     # On Free an own price is the price after it (compared with the next plan's).
     price_plan = (get_plan(free.get("thenPlanId") or "starter") or {}) if free is not None else plan
     if free is not None:
-        billing.update({k: val for k, val in free_fields(free, now[:10]).items() if val is not None})
+        billing.update({k: val for k, val in free_fields(free, (free_start.isoformat() if free_start else now[:10])).items()
+                        if val is not None})
     if billing_input.get("priceSek") is not None and price_plan and billing_input["priceSek"] != price_plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
     profile = {
@@ -529,11 +575,24 @@ def update_tenant(req) -> tuple[int, dict]:
     return 200, {"tenant": public(from_ddb(out["Attributes"]))}
 
 
+def _day(text) -> date | None:
+    try:
+        return date.fromisoformat(str(text)[:10]) if text else None
+    except ValueError:
+        return None
+
+
+def _start_day(billing_input: dict) -> date | None:
+    """The agreement's first day when given (create form), else None = today."""
+    return _day(billing_input.get("startDate")) if billing_input.get("startInvoicing") else None
+
+
 def free_fields(free: dict | None, since: str | None = None) -> dict:
     """PROFILE.billing fields of a free period (None values = REMOVE)."""
     if free is None:
-        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None}
-    return {"freeUntil": free.get("until"), "freeThenPlanId": free.get("thenPlanId") or "starter", "freeSince": since}
+        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None, "freePreset": None}
+    return {"freeUntil": free.get("until"), "freeThenPlanId": free.get("thenPlanId") or "starter", "freeSince": since,
+            "freePreset": free.get("preset")}
 
 
 def set_plan(req) -> tuple[int, dict]:
@@ -544,8 +603,13 @@ def set_plan(req) -> tuple[int, dict]:
     force = f.boolean("force") or False
     price_sek = price_field(f)
     profile = get_profile(tenant_id)
-    current = (profile.get("billing") or {}).get("freeUntil") if profile.get("planId") == FREE_PLAN_ID else None
-    free = free_input(f, plan_id, current_until=current)
+    old = (profile.get("billing") or {}) if profile.get("planId") == FREE_PLAN_ID else {}
+    since = _day(old.get("freeSince"))
+    free = free_input(f, plan_id, current_until=old.get("freeUntil"), start=since,
+                      current_preset=old.get("freePreset"))
+    price_problem = free_price_problem(free, price_sek)
+    if price_problem:
+        f.fail("priceSek", price_problem)
     f.done()
     plan = get_plan(plan_id)
     if plan is None:

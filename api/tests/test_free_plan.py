@@ -420,3 +420,107 @@ def test_an_agreement_that_did_not_start_at_the_switch_is_tried_again(finance, s
     assert b["status"] == "active" and b["startsAt"] == _today().isoformat() and "freeSwitchAgreementPending" not in b
     assert billing.free_step(_profile(aws, tenant), _today() + timedelta(days=3), "dunning") == \
         {"notice": None, "switched": None, "failed": None}
+
+
+# ------------------------------------------------------------------ presets
+def test_preset_end_dates_are_calendar_months_minus_a_day():
+    from app.tenants import free_until_for
+    assert free_until_for("3m", date(2026, 11, 14)) == date(2027, 2, 13)
+    assert free_until_for("6m", date(2026, 11, 14)) == date(2027, 5, 13)
+    assert free_until_for("3m", date(2026, 11, 30)) == date(2027, 2, 27)       # 30 Feb does not exist: first paid 28 Feb
+    assert free_until_for("6m", date(2026, 8, 31)) == date(2027, 2, 27)
+    assert free_until_for("3m", date(2027, 11, 30)) == date(2028, 2, 28)       # leap year: first paid 29 Feb
+    assert free_until_for("until_changed", date(2026, 11, 14)) is None
+    from app.tenants import add_months
+    assert add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+
+
+def test_set_plan_with_a_timed_preset(finance, stripe, aws, tenant):
+    path = {"tenantId": tenant}
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"preset": "6m", "thenPlanId": "growth"}, "priceSek": 700})
+    assert status == 200, body
+    b = _profile(aws, tenant)["billing"]
+    assert b["freeUntil"] == (_add_months(_today(), 6) - timedelta(days=1)).isoformat()
+    assert b["freeThenPlanId"] == "growth" and b["freePreset"] == "6m" and b["priceSek"] == 700
+    status, view = call("GET /platform/tenants/{tenantId}/billing", path)
+    assert view["billing"]["free"]["preset"] == "6m"
+
+
+def test_a_timed_preset_needs_the_plan_and_the_price_after_free(aws, tenant):
+    path = {"tenantId": tenant}
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path, body={"planId": "free", "free": {"preset": "3m"}})
+    assert status == 400 and set(body["fields"]) == {"free.thenPlanId", "priceSek"}
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"preset": "3m", "thenPlanId": "starter"}, "priceSek": 0})
+    assert status == 400 and set(body["fields"]) == {"priceSek"}
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path, body={"planId": "free", "free": {"preset": "1y"}})
+    assert status == 400 and "free.preset" in body["fields"]
+
+
+def test_until_changed_has_no_end_and_needs_no_price(finance, stripe, aws, tenant, mails):
+    from app.billing import free_step
+    path = {"tenantId": tenant}
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path, body={"planId": "free", "free": {"preset": "until_changed"}})
+    assert status == 200, body
+    profile = _profile(aws, tenant)
+    assert "freeUntil" not in profile["billing"] and profile["billing"]["freePreset"] == "until_changed"
+    assert free_step(profile, _today() + timedelta(days=3650), "dunning") == {"notice": None, "switched": None, "failed": None}
+
+
+def test_an_unchanged_preset_keeps_its_end_and_a_changed_one_counts_from_the_start(finance, stripe, aws, tenant):
+    path = {"tenantId": tenant}
+    start = _today() - timedelta(days=20)
+    call("PUT /platform/tenants/{tenantId}/plan", path,
+         body={"planId": "free", "free": {"preset": "3m", "thenPlanId": "starter"}, "priceSek": 500})
+    _set_billing(aws, tenant, freeSince=start.isoformat(), freeUntil="2099-01-01")
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"preset": "3m", "thenPlanId": "growth"}, "priceSek": 500})
+    assert status == 200, body
+    assert _profile(aws, tenant)["billing"]["freeUntil"] == "2099-01-01"                    # kept
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"preset": "6m", "thenPlanId": "growth"}, "priceSek": 500})
+    assert status == 200, body
+    b = _profile(aws, tenant)["billing"]
+    assert b["freeUntil"] == (_add_months(start, 6) - timedelta(days=1)).isoformat() and b["freeSince"] == start.isoformat()
+
+
+def test_a_preset_with_less_than_fourteen_days_left_is_refused(aws, tenant):
+    path = {"tenantId": tenant}
+    call("PUT /platform/tenants/{tenantId}/plan", path, body={"planId": "free", "free": {"preset": "until_changed"}})
+    _set_billing(aws, tenant, freeSince=(_add_months(_today(), -3) + timedelta(days=5)).isoformat())
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"preset": "3m", "thenPlanId": "starter"}, "priceSek": 500})
+    assert status == 400 and "14 days" in body["fields"]["free.preset"]
+
+
+def test_create_on_free_with_a_preset_counts_from_the_start_date(finance, stripe, aws):
+    start = _today() + timedelta(days=10)
+    status, body = call("POST /platform/tenants", body={
+        **NEW_TENANT, "planId": "free", "overrides": {"maxLocations": 2},
+        "free": {"preset": "3m", "thenPlanId": "growth"},
+        "billing": {"terms": "trial", "priceSek": 600, "startInvoicing": True, "startDate": start.isoformat()}})
+    assert status == 202, body
+    profile = _profile(aws, body["tenantId"])
+    b = profile["billing"]
+    assert b["freeUntil"] == (_add_months(start, 3) - timedelta(days=1)).isoformat() and b["freePreset"] == "3m"
+    assert b["freeThenPlanId"] == "growth" and b["priceSek"] == 600 and b["freeSince"] == start.isoformat()
+    assert profile["entitlements"]["maxLocations"] == 2                       # the stepper's number
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-2", "ownerEmail": "o2@roma.se",
+                                                        "planId": "free", "free": {"preset": "6m"}})
+    assert status == 400 and set(body["fields"]) == {"free.thenPlanId", "billing.priceSek"}
+
+
+def test_an_old_free_customer_with_a_date_still_saves(finance, stripe, aws, tenant):
+    path = {"tenantId": tenant}
+    until = (_today() + timedelta(days=40)).isoformat()
+    assert call("PUT /platform/tenants/{tenantId}/plan", path,
+                body={"planId": "free", "free": {"until": until, "thenPlanId": "growth"}})[0] == 200
+    b = _profile(aws, tenant)["billing"]
+    assert b["freeUntil"] == until and "freePreset" not in b
+    status, body = call("PUT /platform/tenants/{tenantId}/plan", path,
+                        body={"planId": "free", "free": {"until": until, "thenPlanId": "growth"}, "priceSek": 450,
+                              "overrides": {"maxLocations": 2}})
+    assert status == 200, body
+    p = _profile(aws, tenant)
+    assert p["billing"]["freeUntil"] == until and p["entitlements"]["maxLocations"] == 2

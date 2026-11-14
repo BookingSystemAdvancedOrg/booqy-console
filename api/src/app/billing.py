@@ -1499,7 +1499,8 @@ def free_view(profile: dict) -> dict | None:
             "switchOn": (until + timedelta(days=1)).isoformat() if until else None,
             "thenPlanId": billing.get("freeThenPlanId") or "starter", "thenPlanName": then.get("name"),
             "thenPriceSek": _then_price(billing, then) if then else None,
-            "thenOwnPrice": billing.get("priceSek") is not None, "noticeSentFor": billing.get("freeNoticeFor")}
+            "thenOwnPrice": billing.get("priceSek") is not None, "noticeSentFor": billing.get("freeNoticeFor"),
+            "preset": billing.get("freePreset")}
 
 
 def _claim_notice(tenant_id: str, until: str, new_until: str) -> bool:

@@ -55,9 +55,9 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 |---|---|
 | `GET /platform/plans` | plan catalog, Free last (Growth's features, price 0) and `freeDefaultUntil` |
 | `GET /platform/tenants` | all customers |
-| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`); `planId: "free"` with `free: {until, thenPlanId}` |
+| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`); `planId: "free"` with `free: {preset, thenPlanId}` (as on the plan route; the end counts from `startDate`, else today) |
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
-| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice. `planId: "free"` takes `free: {until: yyyy-mm-dd \| null, thenPlanId}` (default three months, then Starter; a new `until` at least 14 days ahead): no charge, Growth's features, and onto or off Free applies from the day itself; with Free, `priceSek` is the price after it |
+| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice. `planId: "free"` takes `free: {preset: "until_changed" \| "3m" \| "6m", thenPlanId}`: no end, or the last free day the day before the same date 3 or 6 calendar months after the day Free began (Stockholm; an unchanged preset keeps its end); 3m and 6m need `thenPlanId` and a `priceSek` above 0. Older callers may still send `free: {until: yyyy-mm-dd \| null, thenPlanId}` (left out: three months, then Starter; a new end at least 14 days ahead): no charge, Growth's features, and onto or off Free applies from the day itself; with Free, `priceSek` is the price after it |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
 | `POST .../offboard` | `{confirmSlug}`; users disabled, domains detached, website repo archived, data kept until `purgeAt` |
 | `POST .../restore` | an offboarded customer before `purgeAt`: active again, users enabled, setup re-run (slug address, website repo) |
@@ -129,8 +129,8 @@ Stripe webhook; see the infrastructure repo's `docs/FINANCE.md`.
 one row per invoice with days late, reminders sent, fees and a Send
 reminder button, and **Run invoicing**: a preview of every invoice the
 monthly run would create now (period, fee, amount), then the run. The
-customer page's **Plan** tab sets Starter, Growth or Free (an end date,
-three months by default, or no end date, and the plan after it). The
+customer page's **Plan** tab sets Starter, Growth or Free (until changed, or 3 or 6
+months and then the plan and price after it) and the number of locations. The
 **Billing** tab starts, cancels and converts the agreement, shows the free
 period and the next invoice as it builds up, invoices pending periods,
 creates card links and lists the invoices.
