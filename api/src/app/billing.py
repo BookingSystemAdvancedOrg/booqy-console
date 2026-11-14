@@ -1573,12 +1573,19 @@ def _start_after_free(tenant_id: str, profile: dict, actor: str, start_day: str)
 
 def _kept_locations(profile: dict, then: dict) -> dict | None:
     """The number of locations the operator chose on Free stays on the plan
-    after it, never below that plan's own (Free 1 then Growth = 3). A number
-    equal to the Free plan's own (never chosen, as on older customers) gives
-    the next plan's."""
+    after it, never below that plan's own (Free 1 then Growth = 3).
+    billing.freeLocationsChosen says whether it was chosen, so the Free
+    plan's own number chosen on purpose stays too. Saved before the flag:
+    a number equal to the Free plan's own counts as not chosen."""
     chosen = (profile.get("entitlements") or {}).get("maxLocations")
-    free_default = (get_plan(FREE_PLAN_ID) or {}).get("maxLocations")
-    if chosen is None or (free_default is not None and int(chosen) == int(free_default)):
+    if chosen is None:
+        return None
+    flag = _billing(profile).get("freeLocationsChosen")
+    if flag is None:
+        free_default = (get_plan(FREE_PLAN_ID) or {}).get("maxLocations")
+        if free_default is not None and int(chosen) == int(free_default):
+            return None
+    elif not flag:
         return None
     return {"maxLocations": max(int(chosen), int(then.get("maxLocations", 1)))}
 

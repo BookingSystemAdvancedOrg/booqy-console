@@ -397,7 +397,7 @@ def create_tenant(req) -> tuple[int, dict]:
     # On Free an own price is the price after it (compared with the next plan's).
     price_plan = (get_plan(free.get("thenPlanId") or "starter") or {}) if free is not None else plan
     if free is not None:
-        billing.update({k: val for k, val in free_fields(free, (free_start or _stockholm_today()).isoformat()).items()
+        billing.update({k: val for k, val in free_fields(free, (free_start or _stockholm_today()).isoformat(), overrides).items()
                         if val is not None})
     if billing_input.get("priceSek") is not None and price_plan and billing_input["priceSek"] != price_plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
@@ -593,12 +593,17 @@ def _start_day(billing_input: dict) -> date | None:
     return _day(billing_input.get("startDate")) if billing_input.get("startInvoicing") else None
 
 
-def free_fields(free: dict | None, since: str | None = None) -> dict:
-    """PROFILE.billing fields of a free period (None values = REMOVE)."""
+def free_fields(free: dict | None, since: str | None = None, overrides: dict | None = None) -> dict:
+    """PROFILE.billing fields of a free period (None values = REMOVE).
+    freeLocationsChosen: the operator set the number of locations on Free
+    (kept after it, billing._kept_locations), so a number equal to the Free
+    plan's own still counts as chosen."""
     if free is None:
-        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None, "freePreset": None}
+        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None, "freePreset": None,
+                "freeLocationsChosen": None}
     return {"freeUntil": free.get("until"), "freeThenPlanId": free.get("thenPlanId") or "starter", "freeSince": since,
-            "freePreset": free.get("preset")}
+            "freePreset": free.get("preset"),
+            "freeLocationsChosen": (overrides or {}).get("maxLocations") is not None}
 
 
 def set_plan(req) -> tuple[int, dict]:
@@ -679,7 +684,7 @@ def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrid
         expression += ", billing.freeSwitchAgreementPending = :pending"
     was_free = profile.get("planId") == FREE_PLAN_ID
     since = old_billing.get("freeSince") if was_free and old_billing.get("freeSince") else _stockholm_today().isoformat()
-    fields = free_fields(free if is_free else None, since)
+    fields = free_fields(free if is_free else None, since, overrides)
     if is_free and old_billing.get("freeNoticeFor") and old_billing.get("freeNoticeFor") != free.get("until"):
         fields["freeNoticeFor"] = None          # a new end date gets its own notice
     for i, (key, val) in enumerate(fields.items()):

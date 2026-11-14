@@ -564,3 +564,38 @@ def test_free_since_is_the_stockholm_day(aws, tenant, monkeypatch):
     assert call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant},
                 body={"planId": "free", "free": {"preset": "until_changed"}})[0] == 200
     assert _profile(aws, tenant)["billing"]["freeSince"] == day.isoformat()
+
+
+def test_free_with_exactly_frees_own_number_chosen_keeps_it(finance, stripe, aws, tenant):
+    from app.billing import free_step
+    from app.tenants import get_plan
+    free_max = int(get_plan("free")["maxLocations"])
+    _activate(aws, tenant)
+    _free(aws, tenant, _today() - timedelta(days=1), then="starter", told=True, overrides={"maxLocations": free_max})
+    assert _profile(aws, tenant)["billing"]["freeLocationsChosen"] is True
+    assert "now Starter" in free_step(_profile(aws, tenant), _today(), "dunning")["switched"]
+    profile = _profile(aws, tenant)
+    assert profile["planId"] == "starter" and profile["entitlements"]["maxLocations"] == free_max
+    assert "freeLocationsChosen" not in profile["billing"]                      # off Free: gone
+
+
+def test_free_without_a_chosen_number_gets_the_next_plans(finance, stripe, aws, tenant):
+    from app.billing import free_step
+    _activate(aws, tenant)
+    _free(aws, tenant, _today() - timedelta(days=1), then="starter", told=True)
+    assert _profile(aws, tenant)["billing"]["freeLocationsChosen"] is False
+    assert "now Starter" in free_step(_profile(aws, tenant), _today(), "dunning")["switched"]
+    assert _profile(aws, tenant)["entitlements"]["maxLocations"] == 1
+
+
+def test_free_saved_before_the_flag_treats_frees_own_number_as_not_chosen(finance, stripe, aws, tenant):
+    from app.billing import free_step
+    from app.tenants import get_plan
+    _activate(aws, tenant)
+    _free(aws, tenant, _today() - timedelta(days=1), then="starter", told=True,
+          overrides={"maxLocations": int(get_plan("free")["maxLocations"])})
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="REMOVE billing.freeLocationsChosen")
+    assert "freeLocationsChosen" not in _profile(aws, tenant)["billing"]
+    assert "now Starter" in free_step(_profile(aws, tenant), _today(), "dunning")["switched"]
+    assert _profile(aws, tenant)["entitlements"]["maxLocations"] == 1
