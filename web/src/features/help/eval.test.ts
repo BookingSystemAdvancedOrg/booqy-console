@@ -46,3 +46,11 @@ describe("help eval (console)", () => {
     if (e.live !== undefined) expect(a.live?.metric ?? null).toBe(e.live);
   });
 });
+
+describe("follow-ups (console)", () => {
+  it("a short question that stands on its own is not read with the previous one", () => {
+    const a = answerLocally(corpus, "Where is the outbox?", "How do I add another operator?");
+    expect(a.known).toBe(true);
+    expect(a.sources[0]).not.toBe("operator-add");
+  });
+});

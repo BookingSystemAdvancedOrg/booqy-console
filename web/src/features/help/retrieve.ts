@@ -233,11 +233,23 @@ export function unknownAnswer(): HelpAnswer {
   return { known: false, text: UNKNOWN_TEXT, steps: [], actions: [], sources: [] };
 }
 
+const FOLLOW_UP = /^ (och|men|samma|an|and|but|what about|how about) /;
+
+/** Does the question alone find a document about what it names (its title or keywords)? */
+function standsAlone(corpus: HelpCorpus, asked: string): boolean {
+  const top = candidates(corpus, asked)[0]?.doc;
+  if (!top) return false;
+  const head = tokens([top.title, ...(top.keywords ?? [])].join(" "));
+  return tokens(asked).some((q) => q !== "idag" && head.some((d) => matchWeight(q, d) > 0));
+}
+
 /** The answer without a model, with the previous question as support for follow-ups. */
 export function answerLocally(corpus: HelpCorpus, question: string, previousQuestion = ""): HelpAnswer {
   if (isSecretQuestion(question)) return refusal();
-  // A short follow-up ("And for last month?") is read together with the previous question.
-  const short = Boolean(previousQuestion) && tokens(question).length <= 2;
+  // A short follow-up ("And for last month?") is read together with the previous question;
+  // a short question that stands on its own ("Where is MRR?") is not.
+  const short = Boolean(previousQuestion) && tokens(question).length <= 2 &&
+    (FOLLOW_UP.test(` ${fold(question)} `) || !standsAlone(corpus, question));
   let found = candidates(corpus, short ? `${previousQuestion} ${question}` : question);
   if (found.length === 0 && previousQuestion) found = candidates(corpus, short ? question : `${previousQuestion} ${question}`);
   return found.length ? composeAnswer(found, question) : unknownAnswer();
