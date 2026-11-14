@@ -104,22 +104,16 @@ export default function WebsitePage() {
 
           {/* 1. Reach and the one conversion that matters: a booked demo. */}
           <section className="kpis kpis--lead" aria-label="Visitors and demo bookings">
-            <Kpi label="Visitors" value={<CountUp value={k.visitors} format={fmtCount} />} trend={trends.visitors}
-                 sub="unique per day, summed" />
-            <Kpi label="Visits" value={<CountUp value={k.visits} format={fmtCount} />} trend={trends.visits}
-                 sub={k.pagesPerVisit === null ? "no visits" : `${fmtInt(k.pagesPerVisit)} pages per visit`} />
+            <Kpi label="Visitors" value={<CountUp value={k.visitors} format={fmtCount} />} trend={trends.visitors} />
+            <Kpi label="Visits" value={<CountUp value={k.visits} format={fmtCount} />} trend={trends.visits} />
             <Kpi label="Page views" value={<CountUp value={k.pageviews} format={fmtCount} />} trend={trends.pageviews} />
-            <Kpi label="Demo bookings" value={<CountUp value={k.conversions} format={fmtCount} />} trend={trends.conversions}
-                 sub={k.conversionRate === null ? "conversion rate -" : `${fmtPct(k.conversionRate)} of visits booked`} />
+            <Kpi label="Demo bookings" value={<CountUp value={k.conversions} format={fmtCount} />} trend={trends.conversions} />
           </section>
 
           <section className="kpis kpis--units" aria-label="Engagement">
-            <Kpi label="Conversion rate" value={k.conversionRate === null ? "-" : fmtPct(k.conversionRate)} trend={trends.rate}
-                 sub={`${fmtInt(k.convertedVisits)} visits with a demo booking`} />
-            <Kpi label="Bounce rate" value={k.bounceRate === null ? "-" : fmtPct(k.bounceRate)} trend={trends.bounce}
-                 sub="one page, under 10 s, no booking" />
-            <Kpi label="Engaged time" value={fmtDuration(k.avgEngagedSeconds)} trend={trends.seconds}
-                 sub="average per visit, tab in view" />
+            <Kpi label="Conversion rate" value={k.conversionRate === null ? "-" : fmtPct(k.conversionRate)} trend={trends.rate} />
+            <Kpi label="Bounce rate" value={k.bounceRate === null ? "-" : fmtPct(k.bounceRate)} trend={trends.bounce} />
+            <Kpi label="Engaged time" value={fmtDuration(k.avgEngagedSeconds)} trend={trends.seconds} />
           </section>
 
           <div className="charts">
@@ -240,16 +234,15 @@ function placeLabel(key: string): string {
   return `${place}, ${country}`;
 }
 
-/** A key figure, green or red by how it is doing against the previous period (src/trend.ts). */
-function Kpi({ label, value, sub, trend }: { label: string; value: ReactNode; sub?: string; trend: Trend }) {
+/** A key figure: only its label and number, green or red by how it is doing
+ * against the previous period (src/trend.ts), the change as a chip by the label. */
+function Kpi({ label, value, trend }: { label: string; value: ReactNode; trend: Trend }) {
   const shade: TrendTone = trend.tone;
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className="kpi">
-      <span className="kpi__label">{label}</span>
+      <span className="kpi__head"><span className="kpi__label">{label}</span><Delta trend={trend} /></span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
-      {trend.text && <span className="kpi__delta"><Delta trend={trend} /></span>}
     </div>
   );
 }

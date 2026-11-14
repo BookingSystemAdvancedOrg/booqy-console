@@ -69,10 +69,10 @@ export default function PaymentsView() {
       {loading && !data ? <SkelPage label="Checking payments"><SkelKpis className="kpis--row" /><SkelTable rows={5} cols={8} /></SkelPage> : data && s && (
         <>
           <section className="kpis kpis--row" aria-label={`Payments ${monthLabel(month)}`}>
-            <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} sub={`${fmtSek(s.collectedSek)} of ${fmtSek(s.invoicedSek)} ex VAT`} />
-            <Kpi label="Outstanding" value={fmtSek(s.outstandingSek)} sub={`${fmtInt(s.open)} open invoices`} tone={s.outstandingSek > 0 ? "warn" : undefined} />
-            <Kpi label="Overdue" value={fmtSek(s.overdueSek)} sub={`${fmtInt(s.overdue)} past the due date`} tone={s.overdue > 0 ? "bad" : "good"} />
-            <Kpi label="Fees and interest" value={fmtSek(s.lateFeesSek + s.interestSek)} sub={`${fmtSek(s.lateFeesSek)} fees, ${fmtSek(s.interestSek, { decimals: true })} interest`} />
+            <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} />
+            <Kpi label="Outstanding" value={fmtSek(s.outstandingSek)} tone={s.outstandingSek > 0 ? "warn" : undefined} />
+            <Kpi label="Overdue" value={fmtSek(s.overdueSek)} tone={s.overdue > 0 ? "bad" : "good"} />
+            <Kpi label="Fees and interest" value={fmtSek(s.lateFeesSek + s.interestSek)} />
           </section>
           {rows.length === 0 ? (
             <Notice kind="info">
@@ -188,12 +188,12 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   );
 }
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" }) {
+/** A key figure: only its label and number. */
+function Kpi({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" | "warn" }) {
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
       <span className="kpi__label">{label}</span>
       <strong className="kpi__value">{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
     </div>
   );
 }

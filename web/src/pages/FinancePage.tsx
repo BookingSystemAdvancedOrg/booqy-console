@@ -86,8 +86,6 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const pastDue = data?.attention.pastDue.length ?? 0;
-  const invoiced = k ? k.collectedSek + k.outstandingSek : 0;
-  const collectedPct = k && invoiced > 0 ? (k.collectedSek / invoiced) * 100 : null;
   const noFigures = !!data && !empty && data.series.length === 0;
 
   return (
@@ -225,39 +223,19 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
 
           {/* 1. Recurring revenue, customers and cash: what the founder checks first (docs/DASHBOARD.md). */}
           <section className="kpis kpis--lead" aria-label="Recurring revenue and cash">
-            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtSek(k.mrrSek * 12)} a year at this rate`}
-                 trend={trends.mrr} deltaLabel="since the period started" />
+            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} trend={trends.mrr} />
             <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
-                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}${k.freeCustomers ? `, ${fmtInt(k.freeCustomers)} on Free` : ""}`}
                  trend={trends.customers} />
-            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
-                 sub={collectedPct === null ? "nothing invoiced yet" : `${fmtPct(collectedPct)} of what is invoiced`} />
+            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />} />
             <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
-                 sub={pastDue > 0 ? `${fmtInt(pastDue)} ${pastDue === 1 ? "customer" : "customers"} past due` : "open invoices, ex VAT"}
                  tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
           </section>
 
           {/* 2. Is it profitable: gross margin, AWS cost against revenue. */}
           <section className="hero" aria-label="The period at a glance">
             <div className="kpi kpi--hero">
-              <span className="kpi__label">Gross margin</span>
+              <span className="kpi__head"><span className="kpi__label">Gross margin</span><Delta trend={trends.margin} /></span>
               <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
-              {(k.marginPct === null || k.marginSek < 0) && (
-                <span className="kpi__insight">
-                  {k.marginPct === null ? "No revenue yet" : `${fmtSek(-k.marginSek)} loss`}
-                </span>
-              )}
-              <Delta trend={trends.margin} />
-              <dl className="kpi__facts">
-                <dt>Revenue</dt><dd className={toneClass(trends.revenue.tone).trim()}><CountUp value={k.revenueSek} format={fmtSek} /></dd>
-                <dt>{wholeBill ? "AWS bill" : "AWS cost"}</dt><dd className={toneClass(trends.cost.tone).trim()}><CountUp value={k.costSek} format={fmtSek} /></dd>
-                {wholeBill && (
-                  <>
-                    <dt>Allocated to customers</dt><dd>{fmtSek(k.allocatedCostSek ?? 0)}</dd>
-                  </>
-                )}
-                <dt>Period</dt><dd>{fmtDay(data.period.from)} to {fmtDay(data.period.to)}, {data.period.days} days</dd>
-              </dl>
             </div>
             <div className="kpi kpi--rings">
               <Ring title="Where the revenue goes" total={Math.max(k.revenueSek, k.costSek, 0)} centerLabel="profit" empty="No revenue yet"
@@ -310,21 +288,14 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           {/* 4. Revenue and unit economics, then the charts and the per-customer detail. */}
           <Disclosure title="Revenue and unit economics" meta="ARPU, cost per booking and order, SMS">
             <section className="kpis kpis--units" aria-label="Revenue and unit economics">
-              <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub="invoiced in the period"
-                   trend={trends.revenue} />
-              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
-                   sub={wholeBill
-                     ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
-                     : `${fmtInt(k.requests)} requests`}
-                   trend={trends.cost} />
-              <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
-              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
+              <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} trend={trends.revenue} />
+              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />} trend={trends.cost} />
+              <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} trend={trends.arpu} />
+              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />}
                    trend={trends.costPerBooking} />
-              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
+              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />}
                    trend={trends.costPerOrder} />
-              <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />}
-                   sub={`${fmtInt(k.smsParts)} parts`}
-                   trend={trends.sms} />
+              <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />} trend={trends.sms} />
             </section>
           </Disclosure>
 
@@ -385,19 +356,17 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   );
 }
 
-/** A key figure. With a `trend` the figure turns green or red by how it is
- * doing (src/trend.ts) and the change stands under it. */
-function Kpi({ label, value, sub, tone, trend, deltaLabel }: {
-  label: string; value: ReactNode; sub?: string; tone?: "warn"; trend?: Trend; deltaLabel?: string;
+/** A key figure: only its label and number. With a `trend` the figure turns
+ * green or red by how it is doing (src/trend.ts) and the change is a chip by the label. */
+function Kpi({ label, value, tone, trend }: {
+  label: string; value: ReactNode; tone?: "warn"; trend?: Trend;
 }) {
   const shade: TrendTone = trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
-      <span className="kpi__label">{label}</span>
+      <span className="kpi__head"><span className="kpi__label">{label}</span>{trend && <Delta trend={trend} />}</span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
-      {trend && <span className="kpi__delta"><Delta trend={trend} label={deltaLabel} /></span>}
     </div>
   );
 }

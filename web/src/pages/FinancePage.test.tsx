@@ -74,9 +74,8 @@ describe("FinancePage", () => {
     });
     renderPage();
     expect(await screen.findByText(/AWS cost known up to 20 okt/)).toBeInTheDocument();
-    expect(screen.getAllByText("AWS bill").length).toBe(2);                       // hero fact and the tile
-    expect(screen.getByText(/^100\skr allocated to customers, 40,00\skr not$/)).toBeInTheDocument();
-    expect(screen.getByText("Allocated to customers")).toBeInTheDocument();
+    expect(screen.getAllByText("AWS bill").length).toBe(1);                       // the tile: label and number only
+    expect(screen.queryByText(/allocated to customers/i)).not.toBeInTheDocument();
   });
 
   it("puts MRR, paying customers and cash first, with the past due count", async () => {
@@ -84,8 +83,8 @@ describe("FinancePage", () => {
     const lead = await screen.findByRole("region", { name: "Recurring revenue and cash" });
     const labels = Array.from(lead.querySelectorAll(".kpi__label"), (el) => el.textContent);
     expect(labels).toEqual(["MRR", "Paying customers", "Collected", "Outstanding"]);
-    expect(within(lead).getByText(/customer past due$/)).toBeInTheDocument();
-    expect(within(lead).getByText(/of what is invoiced$/)).toBeInTheDocument();
+    // Each tile shows only its label and number: no line under it.
+    expect(lead).not.toHaveTextContent(/past due|invoiced|a year at this rate/);
   });
 
   it("shows the key figures, the charts and the customers", async () => {
@@ -95,10 +94,10 @@ describe("FinancePage", () => {
     expect(screen.getByText(/AWS cost 3,5 % of revenue/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
-    expect(screen.getAllByText(/vs previous period/).length).toBeGreaterThan(0);
-    expect(screen.getByText("412 parts")).toBeInTheDocument();   // the SMS tile: cost, no revenue
+    expect(document.querySelectorAll(".kpi .delta").length).toBeGreaterThan(0);   // trends are chips
+    expect(document.querySelector(".delta__label")).toBeNull();                   // with no words
+    expect(screen.queryByText("412 parts")).not.toBeInTheDocument();              // the SMS tile: cost only
     expect(screen.queryByText(/SMS revenue|parts charged/)).not.toBeInTheDocument();
-    expect(screen.getByText(/, 1 on Free/)).toBeInTheDocument();
     expect(screen.getByText("Free until 14 Feb 2027")).toBeInTheDocument();
     expect(mocks.financeOverview).toHaveBeenCalledTimes(2);                        // this period and the one before
     expect(screen.getByRole("img", { name: /Revenue and AWS cost per day/ })).toBeInTheDocument();

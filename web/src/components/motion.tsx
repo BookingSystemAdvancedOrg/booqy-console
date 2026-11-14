@@ -172,16 +172,21 @@ function TrendArrow({ direction }: { direction: "up" | "down" }) {
   );
 }
 
-/** The change against the comparison, as a stamp: an arrow, "+12 %" and the
- * label; for screen readers the whole sentence. Green or red by the trend's
- * tone, the normal print when it is noise. */
-export function Delta({ trend, label = "vs previous period" }: { trend: Trend; label?: string }) {
-  if (!trend.text) return <span className="delta delta--none">no comparison yet</span>;
-  const arrow = trend.direction === "down" ? "down" : trend.direction === "up" && trend.tone !== "neutral" ? "up" : null;
+/** The change against the comparison, as a small chip: an arrow and "+12 %",
+ * no words (a tile shows only its label and number): "unchanged" reads
+ * "0 %" and "new" (from zero) is the arrow alone; for screen readers the
+ * whole sentence. Green or red by the trend's tone, the normal print when it
+ * is noise. Nothing to compare with: no chip. */
+export function Delta({ trend }: { trend: Trend }) {
+  if (!trend.text) return null;
+  const fresh = trend.text === "new";
+  const text = trend.direction === "flat" ? "0\u00a0%" : fresh ? "" : trend.text;
+  const arrow = trend.direction === "down" ? "down" : trend.direction === "up" && (!fresh || trend.tone !== "neutral") ? "up" : null;
+  if (!text && !arrow) return null;
   return (
     <span className={`delta delta--${trend.tone}`} title={trend.spoken}>
       {arrow && <TrendArrow direction={arrow} />}
-      <span aria-hidden="true">{trend.text}</span> <span className="delta__label" aria-hidden="true">{label}</span>
+      {text && <span aria-hidden="true">{text}</span>}
       <span className="sr-only">{trend.spoken}</span>
     </span>
   );
