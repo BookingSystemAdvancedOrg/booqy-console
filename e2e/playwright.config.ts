@@ -11,6 +11,8 @@ if (/\/\/admin\.booqy\.se/.test(baseURL)) throw new Error('Refusing to run again
 
 export default defineConfig({
   testDir: 'specs',
+  // *.e2e.ts, not *.spec.ts: the app's vitest would pick those up
+  testMatch: /\.e2e\.ts$/,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

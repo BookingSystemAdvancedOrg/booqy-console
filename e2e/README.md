@@ -1,7 +1,7 @@
 # Console end-to-end tests (live dev)
 
 Playwright specs that drive the real dev Booqy Console (`admin.dev.booqy.se`)
-as a dedicated test operator. `10-new-customer.spec.ts` creates the `E2E`
+as a dedicated test operator. `10-new-customer.e2e.ts` creates the `E2E`
 test restaurant that the admin suite (`admin-front-end/e2e`) uses.
 
 Never point them at prod (the config refuses `admin.booqy.se`).
