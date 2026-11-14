@@ -60,3 +60,29 @@ export function freeForm(until?: string | null, thenPlanId?: string | null, now:
 export function freeInput(form: FreeForm): FreeInput {
   return { until: form.noEnd ? null : form.until, thenPlanId: form.thenPlanId };
 }
+
+/** The presets of the Free period: three or six months from today, no end date, or a date of your own. */
+export type FreePreset = "3m" | "6m" | "none" | "custom";
+
+export const FREE_PRESETS: { id: FreePreset; label: string }[] = [
+  { id: "3m", label: "3 months" },
+  { id: "6m", label: "6 months" },
+  { id: "none", label: "No end date" },
+  { id: "custom", label: "Custom" },
+];
+
+/** The form after picking a preset (custom keeps the date and opens the date field). */
+export function applyFreePreset(form: FreeForm, preset: FreePreset, now: Date = new Date()): FreeForm {
+  if (preset === "none") return { ...form, noEnd: true, until: form.until || defaultFreeUntil(now) };
+  if (preset === "custom") return { ...form, noEnd: false, until: form.until || defaultFreeUntil(now) };
+  return { ...form, noEnd: false, until: addMonths(stockholmToday(now), preset === "3m" ? 3 : 6) };
+}
+
+/** Which preset the form matches (a date that is not 3 or 6 months from today is custom). */
+export function freePresetOf(form: FreeForm, now: Date = new Date()): FreePreset {
+  if (form.noEnd) return "none";
+  const today = stockholmToday(now);
+  if (form.until === addMonths(today, 3)) return "3m";
+  if (form.until === addMonths(today, 6)) return "6m";
+  return "custom";
+}

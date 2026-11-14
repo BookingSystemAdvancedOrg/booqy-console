@@ -131,9 +131,10 @@ def test_free_has_no_charge(finance, stripe, aws, tenant):
     assert status == 201, body
     assert body["billing"]["monthlySek"] == 0 and body["billing"]["priceSek"] is None
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 10, 25))
+    # in advance: August, September and October, all at 0 kr
     assert out["invoices"] == [] and len(out["skipped"]) == 3
     assert stripe["items"] == [] and stripe["oneoff"] == [] and stripe["paid"] == []
-    assert _profile(aws, tenant)["billing"]["lastInvoicedPeriodEnd"] == "2026-10-24"
+    assert _profile(aws, tenant)["billing"]["paidThrough"] == "2026-10-31"
 
 
 def test_the_period_free_ends_in_is_charged_pro_rata_from_the_first_paid_day(finance, stripe, aws, tenant):
@@ -143,11 +144,11 @@ def test_the_period_free_ends_in_is_charged_pro_rata_from_the_first_paid_day(fin
     _set_billing(aws, tenant, priceHistory=[{"from": "2026-08-01", "monthlySek": 0, "planName": "Free"},
                                             {"from": "2026-09-10", "monthlySek": 990, "planName": "Starter", "exact": True},
                                             {"from": "2026-09-15", "monthlySek": 1990, "planName": "Growth"}])
-    plan = invoice_plan(_profile(aws, tenant), date(2026, 8, 25), date(2026, 9, 24))
-    # 10 to 24 Sep at Starter's price; the later (not exact) change waits for the next period
-    assert plan["feeSek"] == Decimal("479.03") and plan["billedDays"] == 15 and plan["activeDays"] == 31
-    assert plan["feeText"] == "Booqy Starter, 25 aug till 24 sep 2026 (15 av 31 dagar)"
-    after = invoice_plan(_profile(aws, tenant), date(2026, 9, 25), date(2026, 10, 24))
+    plan = invoice_plan(_profile(aws, tenant), date(2026, 9, 1), date(2026, 9, 30))
+    # 10 to 30 Sep at Starter's price; the later (not exact) change waits for the next month
+    assert plan["feeSek"] == Decimal("693.00") and plan["billedDays"] == 21 and plan["activeDays"] == 30
+    assert plan["feeText"] == "Booqy Starter, 10 sep till 30 sep 2026 (21 av 30 dagar)"
+    after = invoice_plan(_profile(aws, tenant), date(2026, 10, 1), date(2026, 10, 31))
     assert after["feeSek"] == Decimal("1990.00") and after["feeText"].startswith("Booqy Growth,")
 
 
@@ -163,7 +164,7 @@ def test_notice_once_fourteen_days_before_the_first_paid_day(finance, stripe, aw
     to, subject, body = mails[0]
     assert to == "owner@roma.se" and subject.startswith("Er gratisperiod hos Booqy slutar ")
     assert "Booqy Starter, 990 kr per månad exklusive moms" in body and "SMS ingår" in body
-    assert "Fakturan kommer i efterhand" in body
+    assert "kommer fakturan i förskott den 1:a varje månad" in body and "Lägg till ett kort" in body
     assert "\u2013" not in body + subject and "\u2014" not in body + subject
     assert _profile(aws, tenant)["billing"]["freeNoticeFor"] == until.isoformat()
     # the next days: no second email, no switch yet
@@ -314,9 +315,9 @@ def test_the_notice_to_a_card_customer_says_the_card_is_charged(finance, stripe,
     from app.billing import free_step
     _activate(aws, tenant)
     _free(aws, tenant, _today() + timedelta(days=13))
-    _set_billing(aws, tenant, collectionMethod="charge_automatically")
+    _set_billing(aws, tenant, collectionPreference="card", defaultPaymentMethod="pm_card1")
     assert free_step(_profile(aws, tenant), _today(), "dunning")["notice"]
-    assert "Kortet på filen dras" in mails[0][2] and "Fakturan" not in mails[0][2]
+    assert "dras månadsavgiften från ert kort i förskott den 1:a" in mails[0][2] and "Lägg till ett kort" not in mails[0][2]
 
 
 def test_an_own_price_is_kept_through_free(finance, stripe, aws, tenant, mails):
@@ -395,23 +396,23 @@ def test_an_agreement_that_did_not_start_at_the_switch_is_tried_again(finance, s
     from app.core import ApiError
     _activate(aws, tenant)
     _free(aws, tenant, _today() - timedelta(days=1), told=True)
-    _set_billing(aws, tenant, collectionMethod="charge_automatically")
+    _set_billing(aws, tenant, collectionPreference="card")
     real, seen = billing.start_for, []
 
     def broken(*_a, **kw):
-        seen.append(kw["method"])
+        seen.append(kw["preference"])
         raise ApiError(409, "no_card", "No card on file yet")
     monkeypatch.setattr(billing, "start_for", broken)
     out = billing.free_step(_profile(aws, tenant), _today(), "dunning")
-    assert "NO AGREEMENT" in out["switched"] and seen == ["charge_automatically"]
+    assert "NO AGREEMENT" in out["switched"] and seen == ["card"]
     profile = _profile(aws, tenant)
     assert profile["planId"] == "starter" and profile["billing"]["freeSwitchAgreementPending"] == _today().isoformat()
     out = billing.free_step(profile, _today() + timedelta(days=1), "dunning")     # still failing: said again
     assert "NO AGREEMENT" in out["failed"]
 
     def works(tenant_id, profile, **kw):
-        seen.append(kw["method"])
-        return real(tenant_id, profile, **{**kw, "method": "send_invoice"})
+        seen.append(kw["preference"])
+        return real(tenant_id, profile, **{**kw, "preference": "invoice"})
     monkeypatch.setattr(billing, "start_for", works)
     out = billing.free_step(_profile(aws, tenant), _today() + timedelta(days=2), "dunning")
     assert "agreement after Free started" in out["switched"], out

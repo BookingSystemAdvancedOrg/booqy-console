@@ -267,7 +267,7 @@ export interface NewTenantInput {
   senderName?: string;
   replyToEmail?: string;
   billing?: { terms: BillingTerms; priceSek?: number; startInvoicing?: boolean; startDate?: string;
-              collectionMethod?: "send_invoice" | "charge_automatically" };
+              collectionMethod?: "send_invoice" | "charge_automatically"; collectionPreference?: "card" | "invoice" };
   address?: Address;
   notes?: string;
   overrides?: { maxLocations?: number; features?: Features; limits?: Limits };
@@ -419,8 +419,24 @@ export interface Billing {
   monthlySek?: number | null;
   /** On the Free plan: its period; null on any other plan. */
   free?: FreePeriod | null;
+  /** How the next invoice is collected: the card (preference card and a card on file), else emailed. */
   collectionMethod: "send_invoice" | "charge_automatically";
+  /** card = charged automatically (default, emailed with 10 days until a card exists); invoice = emailed, 30 days. */
+  collectionPreference: "card" | "invoice";
   hasCard: boolean;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+  cardAddedAt?: string | null;
+  /** advance = calendar months on the 1st; arrears = the old 25th cycle until its closing invoice. */
+  cycle?: "advance" | "arrears";
+  /** The last day invoiced. */
+  paidThrough?: string | null;
+  /** Where invoices go (the billing email, else the owner's). */
+  billingEmail?: string | null;
+  reminderSteps?: number[];
+  finalNoticeDays?: number;
+  /** Booqy's own invoice details missing from the configuration. */
+  sellerMissing?: string[];
   pastDueSince?: string;
   autoSuspended: boolean;
   lastPaidAt?: string;
@@ -437,7 +453,7 @@ export interface Billing {
   legacySubscriptionId?: string | null;
   pendingSubscriptionId?: string | null;
   /** The current period so far; null when nothing runs. */
-  nextInvoice: (InvoicePlan & { date: string; dueDate: string }) | null;
+  nextInvoice: (InvoicePlan & { date: string; dueDate: string; kind?: "advance" | "closing" }) | null;
   /** Complete periods not invoiced yet (a missed run). */
   pendingPeriods: number;
   /** Earlier agreements that ended but are still on the next invoice (left and came back). */
@@ -470,6 +486,9 @@ export interface Invoice {
   lateFeeSek?: number | null;
   interestSek?: number | null;
   collectionMethod?: "send_invoice" | "charge_automatically" | null;
+  /** advance (a month), closing (the switch from arrears), fees (reminder fee, förseningsersättning, interest), period (old). */
+  kind?: string | null;
+  reminderStep?: number | null;
   /** The period's lines, when the console built the invoice; SMS only on invoices from before SMS were included. */
   feeSek?: number | null;
   smsParts?: number | null;

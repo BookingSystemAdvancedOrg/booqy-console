@@ -366,8 +366,11 @@ def invoices(req) -> tuple[int, dict]:
         if not isinstance(p.get("billing"), dict) or not p["billing"].get("customerId"):
             continue
         for inv in list_invoices(p["tenantId"], limit=1000):
-            # The month an invoice belongs to is the one its period ends in (its date).
-            when = (inv.get("periodEnd") or inv.get("createdAt") or "")[:10]
+            # The month an invoice belongs to: the month it pays for (in
+            # advance, its first day), on the old cycle the one its period
+            # ended in.
+            when = ((inv.get("periodStart") if inv.get("kind") in ("advance", "closing") else inv.get("periodEnd"))
+                    or inv.get("createdAt") or "")[:10]
             if not (first <= when <= last):
                 continue
             late = inv["daysLate"]
@@ -377,7 +380,9 @@ def invoices(req) -> tuple[int, dict]:
                 continue
             rows.append({**inv, "tenantId": p["tenantId"], "name": p.get("name"), "slug": p.get("slug"),
                          "orgNumber": p.get("orgNumber"), "tenantStatus": p.get("status")})
+    # Overdue first (the most days late on top), then by month, newest first.
     rows.sort(key=lambda r: ((r.get("month") or ""), (r.get("name") or "").lower()), reverse=True)
+    rows.sort(key=lambda r: -(r["daysLate"] if r["status"] == "open" else 0))
     paid = sum(1 for r in rows if r["status"] == "paid")
     overdue = [r for r in rows if r["status"] == "open" and r["daysLate"] > 0]
     return 200, {

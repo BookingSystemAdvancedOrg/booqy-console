@@ -119,23 +119,35 @@ describe("NewTenantPage Free plan", () => {
     fireEvent.click(screen.getAllByRole("radio", { name: /Free/ })[0]);
   }
 
-  it("prefills three months, then Starter, and sends no price", async () => {
+  it("prefills three months, then Starter at its price, and sends the price after Free", async () => {
     await pickFree();
-    expect(screen.getByLabelText(/^Free until/)).toHaveValue(defaultFreeUntil());
+    expect(screen.getByRole("radio", { name: "3 months" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
-    expect(screen.getByLabelText("No end date")).not.toBeChecked();
-    expect(document.getElementById("f-billing.priceSek")).toBeNull();
+    expect(screen.getByRole("radio", { name: "No end date" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(499);
     done(); done(); done();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     const body = mocks.createTenant.mock.calls[0][0];
     expect(body).toMatchObject({ planId: "free", free: { until: defaultFreeUntil(), thenPlanId: "starter" } });
-    expect(body.billing).not.toHaveProperty("priceSek");
+    expect(body.billing).toMatchObject({ priceSek: 499, collectionPreference: "card" });
+  });
+
+  it("six months, then an own price after Free, invoiced with 30 days", async () => {
+    await pickFree();
+    fireEvent.click(screen.getByRole("radio", { name: "6 months" }));
+    fireEvent.change(screen.getByLabelText(/^Price after Free/), { target: { value: "350" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Invoice \(pay within 30 days\)/ }));
+    done(); done(); done();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    const body = mocks.createTenant.mock.calls[0][0];
+    expect(body.free.until > defaultFreeUntil()).toBe(true);
+    expect(body.billing).toMatchObject({ priceSek: 350, collectionPreference: "invoice" });
   });
 
   it("no end date and Growth afterwards", async () => {
     await pickFree();
     fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
-    fireEvent.click(screen.getByLabelText("No end date"));
+    fireEvent.click(screen.getByRole("radio", { name: "No end date" }));
     done(); done(); done();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     expect(mocks.createTenant.mock.calls[0][0]).toMatchObject({ planId: "free", free: { until: null, thenPlanId: "growth" } });
@@ -270,7 +282,7 @@ describe("NewTenantPage steps", () => {
       orgNumber: "556677-8899", vatNumber: expect.stringMatching(/^SE5566778899/), senderName: "Roma", notes: "VIP",
       address: { street: "", postalCode: "", city: "Malmö" },
       locations: [{ name: "Roma City" }],
-      billing: { terms: "trial", startInvoicing: true, priceSek: 499 },
+      billing: { terms: "trial", startInvoicing: true, priceSek: 499, collectionPreference: "card" },
     });
   });
 

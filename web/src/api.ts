@@ -185,11 +185,11 @@ export const api = {
 
   // Subscriptions (Stripe Billing on the platform account) and the Finance page
   billing: (id: string) => request<BillingView>("GET", `${t(id)}/billing`),
-  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
+  startSubscription: (id: string, body: { collectionPreference: "card" | "invoice"; startDate?: string;
                                           terms?: "trial" | "subscription"; priceSek?: number }) =>
     request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
-  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card",
-                       options: { offboardAtEnd?: boolean } = {}) =>
+  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "collection",
+                       options: { offboardAtEnd?: boolean; collectionPreference?: "card" | "invoice" } = {}) =>
     request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
   invoiceNow: (id: string) => request<InvoicingRun>("POST", `${t(id)}/billing/invoice`, {}),
   financeInvoicing: (dryRun: boolean) => request<InvoicingRun>("POST", "/platform/finance/invoicing", { dryRun }),

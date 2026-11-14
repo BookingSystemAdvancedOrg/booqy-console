@@ -254,9 +254,12 @@ def _billing_input(f: v.Fields) -> dict:
     if terms not in ("trial", "subscription"):
         sub.fail("terms", "trial (try-out period) or subscription")
     out = {"terms": terms, "priceSek": price_field(sub), "startInvoicing": sub.boolean("startInvoicing") or False,
-           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10)}
+           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10),
+           "collectionPreference": sub.text("collectionPreference", max_len=20)}
     if out["collectionMethod"] not in (None, "send_invoice", "charge_automatically"):
         sub.fail("collectionMethod", "send_invoice or charge_automatically")
+    if out["collectionPreference"] not in (None, "card", "invoice"):
+        sub.fail("collectionPreference", "card (charged automatically) or invoice (pay within 30 days)")
     for k, msg in sub.errors.items():
         f.fail(f"billing.{k}", msg)
     return out
@@ -391,7 +394,8 @@ def create_tenant(req) -> tuple[int, dict]:
         from .billing import start_for                 # billing imports this module
         try:
             out["billing"] = start_for(tenant_id, get_profile(tenant_id), actor=req.actor,
-                                       method=billing_input.get("collectionMethod") or "send_invoice",
+                                       method=billing_input.get("collectionMethod"),
+                                       preference=billing_input.get("collectionPreference"),
                                        start_day=billing_input.get("startDate"), price_sek=billing_input.get("priceSek"),
                                        terms=billing_input["terms"])
         except ApiError as e:

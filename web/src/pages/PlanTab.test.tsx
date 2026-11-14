@@ -34,11 +34,17 @@ describe("Plan tab: Free", () => {
       await screen.findByText("Free");
       expect(screen.getByText("No charge, Growth's features")).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole("radio")[2]);
-      expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-02-14");
+      // presets: 3 months (the default), 6 months, no end date, a date of your own
+      expect(screen.getByRole("radio", { name: "3 months" })).toHaveAttribute("aria-checked", "true");
+      expect(screen.queryByLabelText(/^Free until/)).not.toBeInTheDocument();
       expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
       expect(screen.queryByLabelText(/^Monthly price/)).not.toBeInTheDocument();
       expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(3950);
+      fireEvent.click(screen.getByRole("radio", { name: "6 months" }));
+      fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+      expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-05-14");
       expect(screen.getByLabelText(/^Free until/)).toHaveAttribute("min", "2026-11-28");
+      fireEvent.click(screen.getByRole("radio", { name: "3 months" }));
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
       expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
         planId: "free", free: { until: "2027-02-14", thenPlanId: "starter" }, priceSek: 3950 }));
@@ -53,8 +59,8 @@ describe("Plan tab: Free", () => {
     fireEvent.click(screen.getAllByRole("radio")[2]);
     fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
     expect(screen.getByLabelText(/^Price after Free/)).toHaveValue(8295);       // follows the next plan
-    fireEvent.click(screen.getByLabelText("No end date"));
-    expect(screen.getByLabelText(/^Free until/)).toBeDisabled();
+    fireEvent.click(screen.getByRole("radio", { name: "No end date" }));
+    expect(screen.queryByLabelText(/^Free until/)).not.toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", free: { until: null, thenPlanId: "growth" } }));
   });
@@ -63,6 +69,7 @@ describe("Plan tab: Free", () => {
     const onFree = { ...tenant, planId: "free", billing: { freeUntil: "2027-02-14", freeThenPlanId: "growth" } };
     render(<PlanTab tenant={onFree} onSaved={() => {}} />);
     await screen.findByText("Free");
+    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
     expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-02-14");
     expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("growth");
     expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();

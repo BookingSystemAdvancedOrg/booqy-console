@@ -126,8 +126,12 @@ describe("billing periods from the 25th to the 24th", () => {
     expect(periodOf("2026-01-03")).toEqual({ start: "2025-12-25", end: "2026-01-24" });
     expect(nextPeriod("2026-09-24")).toEqual({ start: "2026-09-25", end: "2026-10-24" });
     expect(periodText("2026-08-25", "2026-09-24")).toBe("25 aug till 24 sep 2026");
-    expect(endDateFor("trial", 3, "2026-10-21")).toBe("2026-10-24");
-    expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-24");
+    expect(endDateFor("trial", 3, "2026-10-21")).toBe("2026-10-31");
+    expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-31");
+    const { monthOf, firstInvoiceText } = await import("./finance");
+    expect(monthOf("2026-02-10")).toEqual({ start: "2026-02-01", end: "2026-02-28" });
+    expect(firstInvoiceText("2026-11-25", "25 Nov 2026")).toBe(
+      "First invoice on 25 Nov 2026, for 25 nov till 30 nov 2026 (pro rata); then on the 1st of every month, in advance.");
   });
 });
 

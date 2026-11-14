@@ -247,11 +247,26 @@ export function periodText(startIso: string, endIso: string): string {
   return `${a.getDate()} ${SV_MONTHS[a.getMonth()]} till ${b.getDate()} ${SV_MONTHS[b.getMonth()]} ${b.getFullYear()}`;
 }
 
-/** When a cancellation takes effect: a try-out with the current period, a subscription `noticeMonths` periods later. */
+// --- invoicing: calendar months, in advance -------------------------------------------
+
+/** The calendar month a day falls in (what an invoice pays for, in advance). */
+export function monthOf(iso: string): { start: string; end: string } {
+  const d = parseDay(iso.slice(0, 10));
+  return { start: isoDay(new Date(d.getFullYear(), d.getMonth(), 1)), end: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+}
+
+/** What the first invoice covers for an agreement from `startIso`: that day to the month's end, on that day. */
+export function firstInvoiceText(startIso: string, startLabel = fmtDay(startIso)): string {
+  const { start, end } = monthOf(startIso);
+  const full = startIso === start;
+  return `First invoice on ${startLabel}, for ${periodText(startIso, end)}${full ? "" : " (pro rata)"}; then on the 1st of every month, in advance.`;
+}
+
+/** When a cancellation takes effect: a try-out at the end of this month, a subscription `noticeMonths` months after that. */
 export function endDateFor(terms: "trial" | "subscription", noticeMonths: number, today = isoDay(new Date())): string {
-  let { end } = periodOf(today);
+  let { end } = monthOf(today);
   if (terms === "trial") return end;
-  for (let i = 0; i < noticeMonths; i++) end = nextPeriod(end).end;
+  for (let i = 0; i < noticeMonths; i++) end = monthOf(addDays(end, 1)).end;
   return end;
 }
 

@@ -1,7 +1,7 @@
 import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { addDays, fmtDay, isoDay, periodOf, periodText } from "../finance";
+import { firstInvoiceText as firstInvoiceFor, fmtDay, isoDay } from "../finance";
 import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
@@ -56,6 +56,7 @@ const LABELS: Record<string, string> = {
   "overrides.features": "Features", locations: "Locations", notes: "Notes",
   "billing.priceSek": "Monthly price", "billing.terms": "Terms", "billing.startDate": "Agreement start date",
   "billing.collectionMethod": "Invoicing",
+  "billing.collectionPreference": "Invoicing",
 };
 const LOCATION_LABELS: Record<string, string> = { name: "name", address: "address", phone: "phone", email: "email" };
 
@@ -132,6 +133,8 @@ export default function NewTenantPage() {
   const [terms, setTerms] = useState<"trial" | "subscription">("trial");
   const [startInvoicing, setStartInvoicing] = useState(true);
   const [startDate, setStartDate] = useState("");
+  // Card (charged automatically, the default) or invoice with 30 days to pay.
+  const [collection, setCollection] = useState<"card" | "invoice">("card");
   // The Free plan's period: three months from today (Stockholm), then Starter.
   const [free, setFree] = useState(() => freeForm());
   // Features ticked differently from the plan; cleared when another plan is picked.
@@ -160,11 +163,14 @@ export default function NewTenantPage() {
   const featureOverrides = plan ? Object.fromEntries(Object.entries(featureEdits).filter(([k, on]) => !!plan.features[k] !== on)) : {};
   const limitOverrides: Limits = Object.fromEntries(LIMIT_KEYS.filter((k) => limitEdits[k]).map((k) => [k, Number(limitEdits[k])]));
   const isFree = f.planId === FREE_PLAN_ID;
-  const shownPrice = isFree ? "" : priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
+  // On Free the price is the one after it (the plan it switches to, unless typed over).
+  const thenPlan = plans.data?.find((p) => p.planId === free.thenPlanId) ?? null;
+  const pricePlan = isFree ? thenPlan : plan;
+  const shownPrice = priceTouched ? price : pricePlan?.priceSek != null ? String(pricePlan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
-  // Billing counts from the start date; the first invoice is the 25th after that period (in arrears).
-  const firstPeriod = periodOf(startDate || isoDay(new Date()));
-  const firstInvoiceText = `First invoice on ${fmtDay(addDays(firstPeriod.end, 1))}, for ${periodText(firstPeriod.start, firstPeriod.end)}, pro rata from ${startDate ? fmtDay(startDate) : "today"}.`;
+  // In advance: the first invoice is on the start day for the rest of that month, then every 1st.
+  const firstStart = startDate || isoDay(new Date());
+  const firstInvoiceText = firstInvoiceFor(firstStart, startDate ? fmtDay(startDate) : "today");
 
   const errorsFor = (prefix: string) =>
     Object.fromEntries(Object.entries(fields).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k.slice(prefix.length), v]));
@@ -290,7 +296,7 @@ export default function NewTenantPage() {
       } : {}),
       locations: locations.filter((l) => l.name || l.address).map((l) => compact(l) as LocationInput),
       billing: compact({
-        terms, startInvoicing, priceSek: shownPrice !== "" ? Number(shownPrice) : undefined,
+        terms, startInvoicing, priceSek: shownPrice !== "" ? Number(shownPrice) : undefined, collectionPreference: collection,
         startDate: startInvoicing && startDate ? startDate : undefined,
       }),
       ...(isFree ? { free: freeInput(free) } : {}),
@@ -484,8 +490,10 @@ export default function NewTenantPage() {
             </div>
             {errs.planId && <p className="field__msg">{errs.planId}</p>}
             {isFree && (
-              <FreeFields value={free} onChange={setFree} plans={plans.data ?? []}
-                          errors={{ until: errs["free.until"], thenPlanId: errs["free.thenPlanId"] }} />
+              <FreeFields value={free} onChange={(next) => { if (next.thenPlanId !== free.thenPlanId) setPriceTouched(false); setFree(next); }}
+                          plans={plans.data ?? []}
+                          errors={{ until: errs["free.until"], thenPlanId: errs["free.thenPlanId"], price: errs["billing.priceSek"] }}
+                          price={{ id: "f-billing.priceSek", value: priceTouched ? price : "", onChange: (v) => { setPriceTouched(true); setPrice(v); } }} />
             )}
             <div className="grid">
               <Field label="Locations allowed (override)" error={errs["overrides.maxLocations"]}
@@ -523,9 +531,10 @@ export default function NewTenantPage() {
             <div className="step__sub">
               <h3>Invoicing</h3>
               <InfoTip label="How invoicing works">
-                Invoiced in arrears through Stripe: on the 25th, one invoice for the period from the 25th to the 24th that has just
-                ended, with the monthly price (pro rata by days for a part period) plus 25 % VAT, emailed with 30 days to pay.
-                SMS are included in the price; Free has no charge. A try-out customer can leave with any period and becomes a subscription by itself after
+                Invoiced in advance through Stripe: on the 1st, one invoice for that month (the first month pro rata from the start
+                day, invoiced that day) with the monthly price plus 25 % VAT. Card: the owner adds a card in Booqy Admin and it is
+                charged automatically; until then the invoice is emailed with 10 days to pay. Invoice: emailed with 30 days to pay.
+                SMS are included in the price; Free has no charge, and when it ends the customer rolls over to the price after Free. A try-out customer can leave with any period and becomes a subscription by itself after
                 6 months, or when you convert them; a subscription customer has 3 months' notice.
               </InfoTip>
             </div>
@@ -533,7 +542,7 @@ export default function NewTenantPage() {
               <label className={`choice${terms === "trial" ? " choice--on" : ""}`}>
                 <input id="f-billing.terms" type="radio" name="terms" checked={terms === "trial"} onChange={() => setTerms("trial")} />
                 <strong>Try-out period</strong>
-                <span className="muted small">Any period · 6 months</span>
+                <span className="muted small">Any month · 6 months</span>
               </label>
               <label className={`choice${terms === "subscription" ? " choice--on" : ""}`}>
                 <input type="radio" name="terms" checked={terms === "subscription"} onChange={() => setTerms("subscription")} />
@@ -542,6 +551,18 @@ export default function NewTenantPage() {
               </label>
             </div>
             {errs["billing.terms"] && <p className="field__msg">{errs["billing.terms"]}</p>}
+            <div className="choices">
+              <label className={`choice${collection === "card" ? " choice--on" : ""}`}>
+                <input id="f-billing.collectionPreference" type="radio" name="collection" checked={collection === "card"} onChange={() => setCollection("card")} />
+                <strong>Card (automatic)</strong>
+                <span className="muted small">Charged on the 1st. Emailed with 10 days to pay until the owner adds a card.</span>
+              </label>
+              <label className={`choice${collection === "invoice" ? " choice--on" : ""}`}>
+                <input type="radio" name="collection" checked={collection === "invoice"} onChange={() => setCollection("invoice")} />
+                <strong>Invoice (pay within 30 days)</strong>
+                <span className="muted small">Emailed on the 1st.</span>
+              </label>
+            </div>
             <label className="check">
               <input type="checkbox" checked={startInvoicing} onChange={(e) => setStartInvoicing(e.target.checked)} />
               Start the agreement when the customer is created
@@ -549,7 +570,7 @@ export default function NewTenantPage() {
             {startInvoicing && (
               <div className="grid">
                 <Field label="Agreement starts (optional)" error={errs["billing.startDate"]}
-                       hint={`Empty = today. Nothing is charged now. ${isFree ? "No invoice while on Free." : firstInvoiceText}`}>
+                       hint={`Empty = today. ${isFree ? "No invoice while on Free; the first paid day is invoiced at once." : firstInvoiceText}`}>
                   <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </Field>
               </div>

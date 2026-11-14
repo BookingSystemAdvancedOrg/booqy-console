@@ -153,6 +153,7 @@ def test_payments_view_lists_invoices_by_month_and_status(two_tenants, finance):
     assert status == 200, body
     ids = {r["invoiceId"] for r in body["invoices"]}
     assert ids == {"in_x", "in_y"}          # in_1 / in_2 of the fixture carry no dates
+    assert body["invoices"][0]["invoiceId"] == "in_x"                  # overdue first
     x = next(r for r in body["invoices"] if r["invoiceId"] == "in_x")
     assert x["name"] == "Pizzeria Roma" and x["month"] == "2026-10" and x["daysLate"] == 3 and x["remindersSent"] == 1
     assert x["lateFeeSek"] == 450 and x["outstandingSek"] == 990
