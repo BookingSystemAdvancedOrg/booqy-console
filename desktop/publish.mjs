@@ -48,6 +48,8 @@ const found = readdirSync(values.dir)
 const versionDir = `${version}-${values.sha.slice(0, 7)}`
 const files = {}
 const latest = {}
+const checksums = {}
+const sha256Of = (local) => createHash('sha256').update(readFileSync(local)).digest('hex')
 
 function put(local, key, cacheControl, downloadName) {
   const args = ['s3', 'cp', local, `s3://${values.bucket}/downloads/${key}`, '--cache-control', cacheControl, '--only-show-errors']
@@ -65,6 +67,7 @@ for (const kind of kinds) {
   put(local, `versions/${slug}/${versionDir}/${file}`, 'public, max-age=31536000, immutable', kind.name)
   put(local, `${slug}/latest/${kind.name}`, 'public, max-age=300', kind.name)
   files[kind.key] = `${root}/versions/${slug}/${versionDir}/${encodeURIComponent(file)}`
+  checksums[kind.key] = sha256Of(local)
   latest[kind.key] = `${baseUrl}/latest/${kind.name}`
   console.log(`${kind.key}: ${latest[kind.key]}`)
 }
@@ -76,7 +79,7 @@ for (const arch of ['arm64', 'x64']) {
   const file = found.find((f) => f.endsWith(`mac-${arch}.zip`))
   if (!file) continue
   const local = join(values.dir, file)
-  const sha256 = createHash('sha256').update(readFileSync(local)).digest('hex')
+  const sha256 = sha256Of(local)
   put(local, `versions/${slug}/${versionDir}/${file}`, 'public, max-age=31536000, immutable')
   macZip[arch] = { url: `${root}/versions/${slug}/${versionDir}/${encodeURIComponent(file)}`, sha256, size: statSync(local).size }
   console.log(`mac zip ${arch}: ${sha256}`)
@@ -95,7 +98,7 @@ if (Object.keys(files).length === 0) {
   process.exit(1)
 }
 
-const manifest = { app: slug, env: values.env, version, sha: values.sha, date: new Date().toISOString(), files, latest, macZip }
+const manifest = { app: slug, env: values.env, version, sha: values.sha, date: new Date().toISOString(), files, latest, checksums, macZip }
 const manifestPath = join(values.dir, 'latest.json')
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
 execFileSync(
@@ -103,6 +106,36 @@ execFileSync(
   ['s3', 'cp', manifestPath, `s3://${values.bucket}/downloads/${slug}/latest.json`, '--cache-control', 'public, max-age=60', '--content-type', 'application/json', '--only-show-errors'],
   { stdio: 'inherit' },
 )
+// Installation med ett kommando (desktop/install/): skripten får den här
+// versionens adresser och SHA-256 inskrivna, så de behöver inte läsa JSON.
+//   curl -fsSL <app>/install.sh | sh      (macOS, Linux)
+//   irm <app>/install.ps1 | iex            (Windows)
+const isProd = values.env === 'prod'
+const fill = (template) =>
+  template
+    .replaceAll('__NAME__', isProd ? config.productName : `${config.productName} Dev`)
+    .replaceAll('__FILEBASE__', isProd ? config.fileName : `${config.fileName}-dev`)
+    .replaceAll('__VERSION__', version)
+    .replaceAll('__BASE__', baseUrl)
+    .replaceAll('__MAC_ARM64_URL__', macZip.arm64?.url ?? '')
+    .replaceAll('__MAC_ARM64_SHA__', macZip.arm64?.sha256 ?? '')
+    .replaceAll('__MAC_X64_URL__', macZip.x64?.url ?? '')
+    .replaceAll('__MAC_X64_SHA__', macZip.x64?.sha256 ?? '')
+    .replaceAll('__APPIMAGE_URL__', files['linux-appimage'] ?? '')
+    .replaceAll('__APPIMAGE_SHA__', checksums['linux-appimage'] ?? '')
+    .replaceAll('__WIN_URL__', files['win-x64'] ?? '')
+    .replaceAll('__WIN_SHA__', checksums['win-x64'] ?? '')
+for (const name of ['install.sh', 'install.ps1']) {
+  const out = join(values.dir, name)
+  writeFileSync(out, fill(readFileSync(new URL(`./install/${name}`, import.meta.url), 'utf8')))
+  execFileSync(
+    'aws',
+    ['s3', 'cp', out, `s3://${values.bucket}/downloads/${slug}/${name}`, '--cache-control', 'public, max-age=60', '--content-type', 'text/plain; charset=utf-8', '--only-show-errors'],
+    { stdio: 'inherit' },
+  )
+}
+put(new URL('./build/icons/256x256.png', import.meta.url).pathname, `${slug}/icon.png`, 'public, max-age=86400')
+
 for (const yml of ['latest.yml', 'latest-linux.yml']) {
   if (found.includes(yml)) put(join(values.dir, yml), `${slug}/updates/${yml}`, 'public, max-age=60')
 }
