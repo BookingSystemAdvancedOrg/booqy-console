@@ -142,8 +142,19 @@ export function notifySignedOut() {
   Hub.dispatch("booqy", { event: "signedOut" });
 }
 
+/**
+ * Calls `cb` when the operator signs in or out. A failed token refresh counts
+ * only when Cognito says the session is over: Amplify dispatches
+ * tokenRefresh_failure on every transient error too, and reacting to those
+ * would refresh again at once, in a loop. retryUntilReachable is the only
+ * retry path.
+ */
 export function onAuthChange(cb: () => void): () => void {
-  const a = Hub.listen("auth", cb);
+  const a = Hub.listen("auth", ({ payload }) => {
+    const { event } = payload;
+    const error = (payload as { data?: { error?: unknown } }).data?.error;
+    if (event === "signedIn" || event === "signedOut" || (event === "tokenRefresh_failure" && isSignedOutError(error))) cb();
+  });
   const b = Hub.listen("booqy", cb);
   return () => {
     a();

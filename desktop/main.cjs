@@ -221,10 +221,14 @@ function flushCookies() {
   } catch {
     /* finns inte i äldre Electron */
   }
-  return Promise.race([
-    session.defaultSession.cookies.flushStore().catch(() => {}),
-    new Promise((resolve) => setTimeout(resolve, 1500)),
-  ])
+  let flushed
+  try {
+    flushed = session.defaultSession.cookies.flushStore().catch(() => {})
+  } catch {
+    // Före ready finns ingen session; avslutet får aldrig fastna här.
+    flushed = Promise.resolve()
+  }
+  return Promise.race([flushed, new Promise((resolve) => setTimeout(resolve, 1500))])
 }
 function keepSessionOnDisk() {
   session.defaultSession.cookies.on('changed', (_e, cookie) => {
@@ -233,7 +237,9 @@ function keepSessionOnDisk() {
 }
 let flushingForQuit = false
 app.on('before-quit', (e) => {
-  if (flushingForQuit) return
+  // En andra instans avslutas före ready: då finns inget att skriva, och
+  // preventDefault skulle lämna en process utan fönster kvar.
+  if (!app.isReady() || flushingForQuit) return
   e.preventDefault()
   flushingForQuit = true
   void flushCookies().then(() => {

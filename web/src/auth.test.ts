@@ -1,11 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const amp = vi.hoisted(() => ({ fetchAuthSession: vi.fn(), signOut: vi.fn(async () => undefined), dispatch: vi.fn() }));
+const amp = vi.hoisted(() => {
+  // A Hub that really calls its listeners, like Amplify's (synchronously).
+  const listeners = new Map<string, Set<(e: { payload: unknown }) => void>>();
+  return {
+    fetchAuthSession: vi.fn(),
+    signOut: vi.fn(async () => undefined),
+    dispatch: vi.fn(),
+    listeners,
+    listen: (channel: string, cb: (e: { payload: unknown }) => void) => {
+      if (!listeners.has(channel)) listeners.set(channel, new Set());
+      listeners.get(channel)!.add(cb);
+      return () => listeners.get(channel)!.delete(cb);
+    },
+    fire: (channel: string, payload: unknown) => listeners.get(channel)?.forEach((cb) => cb({ payload })),
+  };
+});
 
 vi.mock("aws-amplify", () => ({ Amplify: { configure: vi.fn() } }));
 vi.mock("aws-amplify/auth", () => ({ fetchAuthSession: amp.fetchAuthSession, signOut: amp.signOut }));
 vi.mock("aws-amplify/auth/cognito", () => ({ cognitoUserPoolsTokenProvider: { setKeyValueStorage: vi.fn() } }));
-vi.mock("aws-amplify/utils", () => ({ Hub: { dispatch: amp.dispatch, listen: vi.fn(() => () => undefined) }, defaultStorage: {} }));
+vi.mock("aws-amplify/utils", () => ({ Hub: { dispatch: amp.dispatch, listen: amp.listen }, defaultStorage: {} }));
 
 const tokens = (access = "acc") => ({
   tokens: {
@@ -25,6 +40,7 @@ async function load() {
 beforeEach(() => {
   amp.fetchAuthSession.mockReset();
   amp.dispatch.mockReset();
+  amp.listeners.clear();
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -81,5 +97,38 @@ describe("console auth: only real auth failures sign out", () => {
     window.dispatchEvent(new Event("online"));
     await vi.advanceTimersByTimeAsync(120_000);
     expect(attempt).toHaveBeenCalledTimes(3);
+  });
+
+  it("a transient refresh failure does not trigger another refresh at once (no retry storm)", async () => {
+    const auth = await load();
+    // Amplify 6 dispatches tokenRefresh_failure synchronously, then throws.
+    amp.fetchAuthSession.mockImplementation(async () => {
+      const error = named("NetworkError");
+      amp.fire("auth", { event: "tokenRefresh_failure", data: { error } });
+      throw error;
+    });
+    const refresh = vi.fn(() => {
+      auth.currentOperator().catch(() => undefined);
+    });
+    const stop = auth.onAuthChange(refresh);
+    refresh();
+    await new Promise((r) => setTimeout(r, 20));
+    stop();
+    expect(amp.fetchAuthSession).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("sign-in, sign-out and a definitive refresh failure still reach the shell", async () => {
+    const auth = await load();
+    const cb = vi.fn();
+    const stop = auth.onAuthChange(cb);
+    amp.fire("auth", { event: "signedIn" });
+    amp.fire("auth", { event: "signedOut" });
+    amp.fire("auth", { event: "tokenRefresh_failure", data: { error: named("NotAuthorizedException") } });
+    amp.fire("auth", { event: "tokenRefresh" });
+    amp.fire("booqy", { event: "signedOut" });
+    stop();
+    amp.fire("auth", { event: "signedOut" });
+    expect(cb).toHaveBeenCalledTimes(4);
   });
 });
