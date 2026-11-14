@@ -19,10 +19,11 @@
 .app-hint__close:hover, .app-hint__close:focus-visible { background: var(--glass-fill); opacity: 1; }
 .app-hint__close:focus-visible, .app-hint__text a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 
-/* page flow below 1,024 px: a card above the page head */
+/* page flow: a card above the page head. In the side menu only from 1,024 px wide
+   and 900 px tall, so it never pushes Settings and Sign out out of a short menu. */
 .app-hint--flow { margin: 0 0 20px; }
 .app-hint--side { display: none; }
-@media (min-width: 1024px) {
+@media (min-width: 1024px) and (min-height: 900px) {
   .app-hint--flow { display: none; }
   /* the bottom of the side menu, above the operator */
   .topbar__user .app-hint--side { display: flex; margin: 0 0 10px; font-size: 13px; }

@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { CtaButton, Disclosure } from "../components/ds";
 import { api } from "../api";
 import { BarLineChart, HBarChart, countTick } from "../components/charts";
@@ -257,12 +257,34 @@ function Tabs<T extends string>({ names, on, set }: { names: readonly T[]; on: T
   );
 }
 
+/** A table that may scroll sideways: a named region, a tab stop only when it actually scrolls. */
+function WebScroll({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="web-scroll" tabIndex={scrolls ? 0 : undefined} role="region" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
 function SourcesTable({ data }: { data: WebsiteOverview }) {
   const rows = data.breakdowns.sources;
   const total = rows.reduce((a, r) => a + r.visits, 0);
   if (!rows.length) return <p className="web-none">No visits in this period.</p>;
   return (
-    <div className="web-scroll" tabIndex={0} role="region" aria-label="Traffic sources">
+    <WebScroll label="Traffic sources">
       <table className="table web-table">
         <thead><tr><th>Source</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -285,7 +307,7 @@ function SourcesTable({ data }: { data: WebsiteOverview }) {
           })}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
@@ -311,7 +333,7 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
     return <p className="web-none">No tagged visits. <InfoTip label="Tagged visits">Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</InfoTip></p>;
   }
   return (
-    <div className="web-scroll" tabIndex={0} role="region" aria-label="Campaigns">
+    <WebScroll label="Campaigns">
       <table className="table web-table">
         <thead><tr><th>Source</th><th>Medium</th><th>Campaign</th><th className="num">Visits</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -329,14 +351,14 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
           })}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
 function VisitTable({ title, rows, label, mono, heading }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean; heading?: boolean }) {
   const total = rows.reduce((a, r) => a + r.visits, 0);
   const body = !rows.length ? <p className="web-none">Nothing in this period.</p> : (
-    <div className="web-scroll" tabIndex={0} role="region" aria-label={title}>
+    <WebScroll label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -351,7 +373,7 @@ function VisitTable({ title, rows, label, mono, heading }: { title: string; rows
           ))}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
   // On phones the column header is hidden, so a table without a card title
   // of its own says what it is in a small line above it.
@@ -362,7 +384,7 @@ function VisitTable({ title, rows, label, mono, heading }: { title: string; rows
 function PageTable({ rows }: { rows: PageRow[] }) {
   if (!rows.length) return <p className="web-none">Nothing in this period.</p>;
   return (
-    <div className="web-scroll" tabIndex={0} role="region" aria-label="Pages">
+    <WebScroll label="Pages">
       <table className="table web-table">
         <thead><tr><th>Page</th><th className="num">Views</th><th className="num">Engaged time</th></tr></thead>
         <tbody>
@@ -375,13 +397,13 @@ function PageTable({ rows }: { rows: PageRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
 function EventTable({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
   return (
-    <div className="web-scroll" tabIndex={0} role="region" aria-label={title}>
+    <WebScroll label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Clicks</th></tr></thead>
         <tbody>
@@ -391,7 +413,7 @@ function EventTable({ title, rows }: { title: string; rows: { key: string; count
           {rows.length === 0 && <tr><td colSpan={2} className="web-none">No clicks.</td></tr>}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 

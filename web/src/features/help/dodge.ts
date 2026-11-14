@@ -29,9 +29,15 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
     let overControl = false
     let lastY = window.scrollY
     let idle = 0
+    // is-away: faded out and not clickable. is-scrolling: also hidden
+    // (visibility) while the page scrolls down. Away only because a control
+    // is under it, it stays in the tab order, and focus brings it back.
     const apply = () => {
-      const away = (scrolledAway || overControl) && document.activeElement !== el
+      const focused = document.activeElement === el
+      const away = (scrolledAway || overControl) && !focused
+      const gone = scrolledAway && !focused
       if (el.classList.contains('is-away') !== away) el.classList.toggle('is-away', away)
+      if (el.classList.contains('is-scrolling') !== gone) el.classList.toggle('is-scrolling', gone)
     }
     const pinnedAncestor = (node: Element | null): Element | null => {
       for (let e = node; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
@@ -111,6 +117,7 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
     schedule()
     window.addEventListener('scroll', onPageScroll, { passive: true })
     el.addEventListener('focus', apply)
+    el.addEventListener('blur', apply)
     window.addEventListener('scroll', schedule, { capture: true, passive: true })
     window.addEventListener('resize', schedule)
     const mo = new MutationObserver(schedule)
@@ -121,7 +128,8 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
       window.clearTimeout(idle)
       window.removeEventListener('scroll', onPageScroll)
       el.removeEventListener('focus', apply)
-      el.classList.remove('is-away')
+      el.removeEventListener('blur', apply)
+      el.classList.remove('is-away', 'is-scrolling')
       window.removeEventListener('scroll', schedule, { capture: true })
       window.removeEventListener('resize', schedule)
       mo.disconnect()

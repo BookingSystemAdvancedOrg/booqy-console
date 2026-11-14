@@ -24,13 +24,22 @@
   transition: transform var(--dur-base, 220ms) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out), opacity var(--dur-base, 220ms) var(--ease-out), visibility 0s;
 }
 
-/* dodge.ts: out of view while the page scrolls down, or while it would rest on a control. */
+/* dodge.ts: out of view while the page scrolls down, or while it would rest on a control.
+   Over a control it stays in the tab order (no visibility: hidden), so Tab still reaches it. */
 .help-launcher.is-away {
   transform: translateY(calc(100% + 40px));
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
+}
+
+.help-launcher.is-scrolling {
+  visibility: hidden;
   transition: transform var(--dur-base, 220ms) var(--ease-out), opacity var(--dur-base, 220ms) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out), visibility 0s linear var(--dur-base, 220ms);
+}
+
+.help-launcher.is-away:focus-visible {
+  transform: none;
+  opacity: 1;
 }
 
 .help-launcher:not(.is-away):hover {

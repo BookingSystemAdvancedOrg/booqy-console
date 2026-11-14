@@ -33,8 +33,10 @@ describe("Ask Booqy launcher", () => {
     expect(btn).not.toHaveClass("is-away");
     act(() => { scrollTo(200); vi.advanceTimersByTime(50); });
     expect(btn).toHaveClass("is-away");
+    expect(btn).toHaveClass("is-scrolling");
     act(() => { vi.advanceTimersByTime(SCROLL_IDLE_MS + 50); });
     expect(btn).not.toHaveClass("is-away");
+    expect(btn).not.toHaveClass("is-scrolling");
   });
 
   it("comes back at once on a scroll up", () => {
@@ -53,6 +55,22 @@ describe("Ask Booqy launcher", () => {
     const { getByRole } = render(<Launcher />);
     act(() => { vi.advanceTimersByTime(50); });
     expect(getByRole("button", { name: "Ask Booqy" })).toHaveClass("is-away");
+    control.remove();
+  });
+
+  it("stays in the tab order over a control and shows on focus", () => {
+    const control = document.createElement("button");
+    document.body.appendChild(control);
+    under = [control];
+    const { getByRole } = render(<Launcher />);
+    const btn = getByRole("button", { name: "Ask Booqy" });
+    act(() => { vi.advanceTimersByTime(50); });
+    expect(btn).toHaveClass("is-away");
+    expect(btn).not.toHaveClass("is-scrolling");
+    act(() => { btn.focus(); });
+    expect(btn).not.toHaveClass("is-away");
+    act(() => { btn.blur(); });
+    expect(btn).toHaveClass("is-away");
     control.remove();
   });
 });

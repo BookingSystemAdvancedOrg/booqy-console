@@ -54,7 +54,11 @@ for (const vp of SIZES) {
     test(`dialog on customer page ${vp.name} ${theme}`, async ({ page }, info) => {
       await open(page, '/tenants/t1', vp, theme)
       const issues: Issue[] = []
-      const btn = page.getByRole('button', { name: /Add location|Edit|Change plan|Suspend|Offboard|Delete/i }).first()
+      // The Overview tab has no dialog: the old /Edit|Suspend/ match picked the
+      // "Suspend or offboard" tab or the inline Company edit. Locations has one.
+      const locations = page.getByRole('button', { name: /^Locations/ }).first()
+      if (await locations.count()) { await locations.click(); await page.waitForTimeout(300) }
+      const btn = page.getByRole('button', { name: /Add location/i }).first()
       if (await btn.count()) {
         await btn.click()
         await page.waitForTimeout(400)
