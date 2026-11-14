@@ -20,7 +20,7 @@
   color: var(--ink);
   cursor: pointer;
   /* --dodge (dodge.ts): floats up above a sticky or fixed bar under the button. */
-  translate: 0 calc(-1 * var(--dodge, 0px));
+  translate: calc(-1 * var(--dodge-x, 0px)) calc(-1 * var(--dodge, 0px));
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), translate var(--dur-base, 220ms) var(--ease-out);
 }
 

@@ -20,16 +20,21 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
       }
       return null
     }
+    let shift = 0
     const run = () => {
       raf = 0
-      const r = el.getBoundingClientRect()
-      // Where the button rests without the lift, from its CSS bottom (not its
-      // box, which is mid-move while the lift animates).
+      // Where the button rests without the lift, from its CSS bottom and right
+      // (not its box, which is mid-move while the lift animates).
+      const cs = getComputedStyle(el)
       const vh = window.innerHeight
-      const bottom = vh - (parseFloat(getComputedStyle(el).bottom) || 0)
+      const vw = document.documentElement.clientWidth
+      const bottom = vh - (parseFloat(cs.bottom) || 0)
       const top = bottom - el.offsetHeight
-      const xs = [r.left + 6, r.left + r.width / 2, r.right - 6]
+      const right = vw - (parseFloat(cs.right) || 0)
+      const left = right - el.offsetWidth
+      const xs = [left + 6, left + el.offsetWidth / 2, right - 6]
       const ys = [top + 6, top + el.offsetHeight / 2, bottom - 6]
+      let obstacle: Element | null = null
       let obstacleTop = Infinity
       for (const x of xs) for (const y of ys) {
         for (const n of document.elementsFromPoint(x, y)) {
@@ -38,13 +43,27 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
           if (!pin || pin.contains(el)) continue
           const pr = pin.getBoundingClientRect()
           if (pr.height > vh * 0.5) continue // page frames and backgrounds, not bars
-          if (pr.bottom > top && pr.top < bottom) obstacleTop = Math.min(obstacleTop, pr.top)
+          if (pr.bottom > top && pr.top < bottom && pr.top < obstacleTop) {
+            obstacleTop = pr.top
+            obstacle = pin
+          }
         }
       }
-      const next = obstacleTop === Infinity ? 0 : Math.max(0, Math.ceil(bottom - obstacleTop + 10))
-      if (next !== lift) {
-        lift = next
+      const nextLift = obstacle ? Math.max(0, Math.ceil(bottom - obstacleTop + 10)) : 0
+      // Line the button's right edge up with the bar's last button (owner
+      // 2026-11-14: Fråga Booqy and Spara utkast end on the same vertical line).
+      let nextShift = 0
+      if (obstacle) {
+        const controls = obstacle.querySelectorAll('button, a[href], [role="button"]')
+        let edge = -Infinity
+        controls.forEach((c) => { const cr = c.getBoundingClientRect(); if (cr.width > 0) edge = Math.max(edge, cr.right) })
+        if (edge > -Infinity && edge < right && right - edge <= 240) nextShift = Math.min(Math.round(right - edge), Math.max(0, left - 12))
+      }
+      if (nextLift !== lift || nextShift !== shift) {
+        lift = nextLift
+        shift = nextShift
         el.style.setProperty('--dodge', `${lift}px`)
+        el.style.setProperty('--dodge-x', `${shift}px`)
       }
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(run) }
