@@ -315,6 +315,32 @@ function signal(x: number, y: number) {
 let installed = false;
 
 /** Listens once on the document; every press anywhere in the console gets the feedback. */
+/**
+ * Touch screens: a press that turns into a scroll must stay silent. On touch
+ * and pen the sound and ripple wait for the finger to lift without having
+ * moved (a scroll cancels the pointer or moves it); the mouse stays instant.
+ */
+function onTap(fire: (e: PointerEvent) => void) {
+  let pending: { id: number; x: number; y: number; down: PointerEvent } | null = null;
+  const SLOP = 10;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") { fire(e); return; }
+    pending = { id: e.pointerId, x: e.clientX, y: e.clientY, down: e };
+  }, { passive: true });
+  document.addEventListener("pointermove", (e) => {
+    if (pending && e.pointerId === pending.id && Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > SLOP) pending = null;
+  }, { passive: true });
+  const drop = () => { pending = null; };
+  document.addEventListener("pointercancel", drop, { passive: true });
+  document.addEventListener("scroll", drop, { capture: true, passive: true })
+  document.addEventListener("pointerup", (e) => {
+    if (!pending || e.pointerId !== pending.id) return;
+    const down = pending.down;
+    pending = null;
+    fire(down);
+  }, { passive: true });
+}
+
 export function installPress() {
   if (installed || typeof document === "undefined") return;
   installed = true;
@@ -343,9 +369,7 @@ export function installPress() {
   document.addEventListener("visibilitychange", () => {
     if (ctx && document.visibilityState === "visible") stale = true;
   });
-  document.addEventListener(
-    "pointerdown",
-    (e) => {
+  onTap((e) => {
       if (e.button !== 0) return;
       const el = (e.target as Element | null)?.closest?.(TARGETS);
       if (!el || (el as HTMLButtonElement).disabled) {
@@ -354,9 +378,7 @@ export function installPress() {
       }
       play(kindOf(el));
       visual(el, e.clientX, e.clientY);
-    },
-    { passive: true },
-  );
+    });
   document.addEventListener("keydown", (e) => {
     if (e.repeat || (e.key !== "Enter" && e.key !== " ")) return;
     const el = document.activeElement;
