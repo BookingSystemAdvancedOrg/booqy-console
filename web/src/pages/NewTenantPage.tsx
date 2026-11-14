@@ -1,4 +1,4 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { addDays, fmtDay, isoDay, periodOf, periodText } from "../finance";
@@ -9,7 +9,7 @@ import { PhoneInput } from "../components/PhoneInput";
 import type { Features, Limits, LocationInput } from "../types";
 import { FEATURE_KEYS, FEATURE_LABELS, LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { SaveButton, useDirty } from "../components/save";
-import { CountUp } from "../components/motion";
+import { CountUp, prefersReducedMotion } from "../components/motion";
 import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, revealStep } from "../components/StepFlow";
 import { playChime } from "../press";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
@@ -133,8 +133,12 @@ export default function NewTenantPage() {
   // Features ticked differently from the plan; cleared when another plan is picked.
   const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
   useEffect(() => setFeatureEdits({}), [f.planId]);
-  // Anything typed is unsaved until Create; leaving asks first (not once setup runs).
-  const dirty = useDirty({ f, locations, limitEdits }, { f: BLANK, locations: [emptyLocation()], limitEdits: {} }, { guard: phase !== "setup" });
+  // Created: the celebration runs before setup (the customer exists already).
+  const [won, setWon] = useState(false);
+  const celebrateTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current); }, []);
+  // Anything typed is unsaved until Create; leaving asks first (not once it is created).
+  const dirty = useDirty({ f, locations, limitEdits }, { f: BLANK, locations: [emptyLocation()], limitEdits: {} }, { guard: phase !== "setup" && !won });
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
     const value = k === "orgNumber" ? formatOrgNumber(e.target.value)
@@ -185,7 +189,6 @@ export default function NewTenantPage() {
   const [entering, setEntering] = useState<number | null>(0);
   const [attempted, setAttempted] = useState<Set<number>>(() => new Set());
   const [announce, setAnnounce] = useState("");
-  const [won, setWon] = useState(false);
   const [reveal, setReveal] = useState<{ to: number | "submit"; n: number } | null>(null);
   const doneCount = done.filter(Boolean).length;
   const allDone = doneCount === STEPS.length;
@@ -238,7 +241,7 @@ export default function NewTenantPage() {
     if (!reveal) return;
     if (reveal.to === "submit") {
       const btn = document.querySelector<HTMLElement>(".submit-bar button[type='submit']");
-      btn?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+      btn?.scrollIntoView?.({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
       btn?.focus({ preventScroll: true });
     } else {
       revealStep(document.getElementById(`step-${STEPS[reveal.to].id}`));
@@ -264,6 +267,7 @@ export default function NewTenantPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (won || busy) return;   // created already (the celebration runs), or on its way
     const body = {
       ...compact({
         name: f.name, slug: f.slug, planId: f.planId, ownerName: f.ownerName, ownerEmail: f.ownerEmail,
@@ -308,7 +312,7 @@ export default function NewTenantPage() {
       setAnnounce(`${f.name} created`);
       playChime("fanfare");
       const shower = confetti();
-      if (shower) window.setTimeout(() => setPhase("setup"), CELEBRATE_MS);
+      if (shower) celebrateTimer.current = window.setTimeout(() => { celebrateTimer.current = null; setPhase("setup"); }, CELEBRATE_MS);
       else setPhase("setup");
     }
   }
@@ -326,6 +330,7 @@ export default function NewTenantPage() {
           setSetupFields(failure.fields);
           setSetupError(Object.keys(failure.fields).length ? null : failure.message);
           setWon(false);
+          setEntering(null);   // back on the form: nothing rises in again
           setPhase("failed");
         } else if (tenant.status !== "provisioning" || Date.now() - started > SETUP_MAX_MS) {
           navigate(`/tenants/${tenantId}${tenant.status === "provisioning" ? "?created=1" : ""}`);
@@ -374,14 +379,14 @@ export default function NewTenantPage() {
   const submitText = `On submit: tenant + locations are saved, owner invited by email, Stripe connected account created${PLATFORM_DOMAIN ? `, ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""}, status becomes Active (about a minute).${startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT (${terms === "trial" ? "try-out" : "subscription"}). ${firstInvoiceText}` : ""}`;
 
   return (
-    <form onSubmit={submit} className="form-page" noValidate>
+    <form onSubmit={submit} className={`form-page${saved ? " form-page--back" : ""}`} noValidate>
       <div className="page-head">
         <div>
           <h1>New customer <InfoTip label="What Create does">Creates the tenant, invites the owner, opens their Stripe account and sets up their site. No deploy needed.</InfoTip></h1>
         </div>
       </div>
 
-      <StepProgress pct={pct} done={doneCount} total={STEPS.length} current={STEPS[Math.min(doneCount, STEPS.length - 1)].title} won={won} />
+      <StepProgress pct={pct} done={doneCount} total={STEPS.length} current={STEPS[Math.min(doneCount, STEPS.length - 1)].title} won={won} still={saved} />
       <div className="sr-only" role="status" aria-live="polite">{announce}</div>
 
       <StepCard {...stepProps(0)} summary={<Summary items={summaries.company} />}>

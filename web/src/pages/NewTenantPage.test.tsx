@@ -89,6 +89,9 @@ describe("NewTenantPage", () => {
     expect(email.closest(".field")).toHaveClass("field--error");
     expect(screen.getByText(/Setup stopped/)).toBeInTheDocument();
     expect(document.getElementById("f-slug")).toBeDisabled();
+    // back on the form: nothing rises in or replays
+    expect(document.querySelector(".step--enter")).toBeNull();
+    expect(document.querySelector("form")).toHaveClass("form-page--back");
     fireEvent.change(email, { target: { value: "new@example.se" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save and retry" })); });
     expect(mocks.updateTenant).toHaveBeenCalledWith("t1", expect.objectContaining({ ownerEmail: "new@example.se", name: "Test Pizza" }));
@@ -237,6 +240,31 @@ describe("NewTenantPage steps", () => {
     await fillAndCreate();
     expect(document.querySelector(".spark-layer, .confetti-layer")).toBeNull();
     expect(screen.getByRole("status", { name: "Setting up Test Pizza" })).toBeInTheDocument();
+  });
+
+  it("with motion: celebrates once, ignores a second Create, then sets up", async () => {
+    const mm = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ ...mm(q), matches: false })) as typeof window.matchMedia;
+    const ctx = { scale() {}, clearRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, fillRect() {}, beginPath() {}, arc() {}, fill() {} };
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as never);
+    try {
+      mocks.tenant.mockResolvedValue({ tenant: { status: "provisioning" } });
+      renderPage();
+      await fillAndCreate();
+      // the celebration: the button says Created, the form is still there
+      const btn = screen.getByRole("button", { name: "Created" });
+      expect(document.querySelector(".confetti-layer")).not.toBeNull();
+      await act(async () => { fireEvent.click(btn); });
+      await act(async () => { fireEvent.submit(btn.closest("form")!); });
+      expect(mocks.createTenant).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("status", { name: "Setting up Test Pizza" })).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+      expect(screen.getByRole("status", { name: "Setting up Test Pizza" })).toBeInTheDocument();
+      expect(mocks.createTenant).toHaveBeenCalledTimes(1);
+    } finally {
+      getContext.mockRestore();
+      window.matchMedia = mm;
+    }
   });
 
   it("with motion: a burst of sparks from the tick", () => {

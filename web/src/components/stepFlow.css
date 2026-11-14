@@ -75,7 +75,14 @@
 
 /* --- step cards ------------------------------------------------------------------------------ */
 .step { scroll-margin-top: calc(var(--flow-top, 84px) + 96px); }
+/* sparks and info tips may reach past a short card (cards clip by default) */
+.form-page .step { overflow: visible; }
+/* an open info tip sits over the cards after it (still under the sticky bar, z-index 4) */
+.step:has(.info-tip:hover, .info-tip:focus-within) { position: relative; z-index: 3; }
 .form-page .step { animation: none; }
+/* back on the form after a failed setup: everything as it was, nothing replays */
+.form-page--back .step--done .step__num, .form-page--back .step--done .step__num .drawn-tick path,
+.form-page--back .submit-bar--enter, .form-page--back .submit-ready .drawn-tick path { animation: none; }
 .form-page .step.step--enter { animation: step-in 480ms var(--flow-spring) both; }
 @keyframes step-in {
   from { opacity: 0; transform: translateY(28px) scale(0.97); }
@@ -110,7 +117,9 @@
 }
 
 /* --- sparks and confetti ------------------------------------------------------------------ */
-.spark-layer { position: fixed; z-index: 300; width: 0; height: 0; pointer-events: none; }
+/* inside the tick (.step__num), so the sparks scroll with it and stay under the sticky bars */
+.step__num { position: relative; }
+.spark-layer { position: absolute; left: 50%; top: 50%; z-index: 2; width: 0; height: 0; pointer-events: none; }
 .spark-layer i { position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 50%; will-change: transform, opacity; }
 .confetti-layer { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 300; pointer-events: none; }
 

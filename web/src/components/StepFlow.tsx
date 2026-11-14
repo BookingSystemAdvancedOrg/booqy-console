@@ -3,7 +3,7 @@
  * way (the tick draws itself, the bar glows, a chime, a burst of sparks; a
  * confetti shower at the end). With "reduce motion" nothing moves: states
  * change at once, the chime stays (as the click does). */
-import { KeyboardEvent, ReactNode, useId, useLayoutEffect } from "react";
+import { CSSProperties, KeyboardEvent, ReactNode, useId, useLayoutEffect } from "react";
 import { CountUp, prefersReducedMotion } from "./motion";
 import "./stepFlow.css";
 
@@ -60,9 +60,10 @@ function useTopbarOffset() {
   }, []);
 }
 
-/** The bar: fill, the percentage counting up, and "Step 3 of 6". `won` runs the shimmer. */
-export function StepProgress({ pct, done, total, current, won = false }: {
-  pct: number; done: number; total: number; current: string; won?: boolean;
+/** The bar: fill, the percentage counting up, and "Step 3 of 6". `won` runs the shimmer;
+ * `still` shows it as it is, without counting or glowing (back on the form after a failed setup). */
+export function StepProgress({ pct, done, total, current, won = false, still = false }: {
+  pct: number; done: number; total: number; current: string; won?: boolean; still?: boolean;
 }) {
   useTopbarOffset();
   const step = Math.min(done + 1, total);
@@ -70,11 +71,15 @@ export function StepProgress({ pct, done, total, current, won = false }: {
     <div className={`flow-progress${won ? " flow-progress--won" : ""}`} data-done={done}>
       <div className="flow-progress__track" role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100}
            aria-valuenow={Math.round(pct)} aria-valuetext={`${Math.round(pct)} %`}>
-        <div className="flow-progress__fill" style={{ transform: `scaleX(${pct / 100})` }} />
-        {done > 0 && <span key={done} className="flow-progress__glow" aria-hidden="true" />}
+        {/* full width, slid in from the left, so the rounded end keeps its shape */}
+        <div className="flow-progress__fill" style={{ transform: `translateX(${pct - 100}%)` }} />
+        {done > 0 && !still && <span key={done} className="flow-progress__glow" aria-hidden="true"
+                                    style={{ "--glow-x": `${pct}%` } as CSSProperties} />}
         {won && <span className="flow-progress__shine" aria-hidden="true" />}
       </div>
-      <span className="flow-progress__pct"><CountUp value={Math.round(pct)} format={(n) => `${Math.round(n)} %`} /></span>
+      <span className="flow-progress__pct">
+        {still ? `${Math.round(pct)} %` : <CountUp value={Math.round(pct)} format={(n) => `${Math.round(n)} %`} />}
+      </span>
       <span className="flow-progress__step">
         {done >= total ? <><DrawnTick /> {total} of {total}</> : <>Step {step} of {total}<span className="flow-progress__name"> · {current}</span></>}
       </span>
@@ -165,16 +170,14 @@ export function revealStep(el: HTMLElement | null) {
   (first ?? el).focus?.({ preventScroll: true });
 }
 
-/** A small burst of sparks from an element (the tick of a done step). */
+/** A small burst of sparks from an element (the tick of a done step). The
+ * sparks live inside it, so they move with it while the page scrolls on. */
 export function burst(origin: Element | null, count = 14): HTMLElement | null {
   if (!origin || prefersReducedMotion() || typeof document === "undefined") return null;
-  const r = origin.getBoundingClientRect();
-  const layer = document.createElement("div");
+  const layer = document.createElement("span");
   layer.className = "spark-layer";
-  layer.style.left = `${r.left + r.width / 2}px`;
-  layer.style.top = `${r.top + r.height / 2}px`;
   layer.setAttribute("aria-hidden", "true");
-  document.body.appendChild(layer);
+  origin.appendChild(layer);
   let left = count;
   for (let i = 0; i < count; i++) {
     const s = document.createElement("i");

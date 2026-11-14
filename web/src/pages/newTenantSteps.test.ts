@@ -21,8 +21,10 @@ describe("progressPct", () => {
 });
 
 describe("stepProblems", () => {
-  it("asks for the name and slug, and a valid org. number", () => {
-    expect(stepProblems("company", blank)).toEqual({ name: "Required", slug: "Required" });
+  it("asks for the name, then the slug, and a valid org. number", () => {
+    // one error for an empty name: the slug fills itself in from it
+    expect(stepProblems("company", blank)).toEqual({ name: "Required" });
+    expect(stepProblems("company", { ...blank, name: "Roma" })).toEqual({ slug: "Required" });
     expect(stepProblems("company", { ...blank, name: "Roma", slug: "roma", orgProblem: "check digit" })).toEqual({ orgNumber: "check digit" });
     expect(stepProblems("company", { ...blank, name: "Roma", slug: "roma" })).toEqual({});
   });

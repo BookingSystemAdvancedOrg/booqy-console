@@ -38,7 +38,8 @@ export function stepProblems(step: StepId, s: StepInput): Record<string, string>
   const out: Record<string, string | undefined> = {};
   if (step === "company") {
     if (!s.name.trim()) out.name = "Required";
-    if (!s.slug) out.slug = "Required";
+    // the slug fills itself in from the name: only its own problem once there is a name
+    if (s.name.trim() && !s.slug) out.slug = "Required";
     out.orgNumber = s.orgProblem;
   } else if (step === "owner") {
     if (!s.ownerName.trim()) out.ownerName = "Required";
