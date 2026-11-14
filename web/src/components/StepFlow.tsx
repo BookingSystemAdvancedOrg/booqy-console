@@ -60,13 +60,12 @@ function useTopbarOffset() {
   }, []);
 }
 
-/** The bar: fill, the percentage counting up, and "Step 3 of 6". `won` runs the shimmer;
+/** The bar: fill, the percentage counting up, and the current step's name (owner: no "Step 3 of 6", it reads as too much work). `won` runs the shimmer;
  * `still` shows it as it is, without counting or glowing (back on the form after a failed setup). */
 export function StepProgress({ pct, done, total, current, won = false, still = false }: {
   pct: number; done: number; total: number; current: string; won?: boolean; still?: boolean;
 }) {
   useTopbarOffset();
-  const step = Math.min(done + 1, total);
   return (
     <div className={`flow-progress${won ? " flow-progress--won" : ""}`} data-done={done}>
       <div className="flow-progress__track" role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100}
@@ -81,7 +80,7 @@ export function StepProgress({ pct, done, total, current, won = false, still = f
         {still ? `${Math.round(pct)} %` : <CountUp value={Math.round(pct)} format={(n) => `${Math.round(n)} %`} />}
       </span>
       <span className="flow-progress__step">
-        {done >= total ? <><DrawnTick /> {total} of {total}</> : <>Step {step} of {total}<span className="flow-progress__name"> · {current}</span></>}
+        {done >= total ? <><DrawnTick /> Ready</> : <span className="flow-progress__name">{current}</span>}
       </span>
     </div>
   );

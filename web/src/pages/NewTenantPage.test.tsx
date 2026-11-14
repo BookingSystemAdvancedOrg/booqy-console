@@ -163,7 +163,7 @@ describe("NewTenantPage steps", () => {
     done();
     expect(document.getElementById("f-ownerName")).toBeVisible();
     expect(document.getElementById("f-name")).not.toBeVisible();
-    expect(screen.getByText("Step 2 of 6: Owner login")).toBeInTheDocument();
+    expect(screen.getByText("Next: Owner login")).toBeInTheDocument();
     expect(progress()).toHaveAttribute("aria-valuenow", "50");
     expect(document.activeElement).toBe(document.getElementById("f-ownerName"));
   });

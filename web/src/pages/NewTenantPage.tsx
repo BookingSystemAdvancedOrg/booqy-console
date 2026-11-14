@@ -225,8 +225,8 @@ export default function NewTenantPage() {
     const stillOpen = [...open].filter((j) => j !== i).sort((a, b) => a - b)[0];
     const to = next ?? stillOpen ?? (count === STEPS.length ? "submit" : null);
     if (to !== null) setReveal({ to, n: Date.now() });
-    setAnnounce(next !== null ? `Step ${next + 1} of ${STEPS.length}: ${STEPS[next].title}`
-      : count === STEPS.length ? `All ${STEPS.length} steps done. Ready to create.` : `${STEPS[i].title} done`);
+    setAnnounce(next !== null ? `Next: ${STEPS[next].title}`
+      : count === STEPS.length ? "All done. Ready to create." : `${STEPS[i].title} done`);
     playChime("chime");
     window.requestAnimationFrame?.(() => burst(document.querySelector(`#step-${STEPS[i].id} .step__num`)));
   }
