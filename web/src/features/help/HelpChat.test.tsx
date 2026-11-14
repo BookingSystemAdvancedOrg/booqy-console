@@ -98,7 +98,7 @@ describe("HelpChat", () => {
     renderChat();
     await openPanel(user);
     await user.type(question(), "How many customers are waiting for Stripe?{Enter}");
-    await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("1 active customers can't take card payments yet"));
+    await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("1 active customer can't take card payments yet"));
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/$/);
   });
 

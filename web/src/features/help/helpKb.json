@@ -240,7 +240,7 @@
       ],
       "live": {
         "metric": "waitingForStripe",
-        "text": "{value} active customers can't take card payments yet: their Stripe setup isn't finished. The Payments column on Customers shows which."
+        "text": "{value} active {customer can't|customers can't} take card payments yet: their Stripe setup isn't finished. The Payments column on Customers shows which."
       }
     },
     {
@@ -271,7 +271,7 @@
       ],
       "live": {
         "metric": "customers",
-        "text": "There are {value} customers on the platform, counting every status."
+        "text": "There {is|are} {value} {customer|customers} on the platform, counting every status."
       }
     },
     {
@@ -299,7 +299,7 @@
       ],
       "live": {
         "metric": "activeCustomers",
-        "text": "{value} customers are active right now."
+        "text": "{value} {customer is|customers are} active right now."
       }
     },
     {
@@ -330,7 +330,7 @@
       ],
       "live": {
         "metric": "setupFailed",
-        "text": "{value} customers have a failed setup."
+        "text": "{value} {customer has|customers have} a failed setup."
       }
     },
     {
@@ -681,7 +681,7 @@
       ],
       "live": {
         "metric": "outboxMessages",
-        "text": "The outbox has {value} messages from the last 30 days."
+        "text": "The outbox has {value} {message|messages} from the last 30 days."
       }
     },
     {
@@ -774,7 +774,7 @@
       ],
       "live": {
         "metric": "payingCustomers",
-        "text": "{value} customers are paying this billing period."
+        "text": "{value} {customer is|customers are} paying this billing period."
       }
     },
     {
