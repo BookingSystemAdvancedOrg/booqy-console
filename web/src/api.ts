@@ -1,4 +1,4 @@
-import { accessToken, notifySignedOut, signOut } from "./auth";
+import { AuthUnavailableError, accessToken, notifySignedOut, refreshedAccessToken, signOut } from "./auth";
 import { withBusy } from "./busy";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
@@ -40,22 +40,37 @@ function request<T>(method: string, path: string, body?: unknown): Promise<T> {
 }
 
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = await accessToken();
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      method,
-      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
-  }
+  const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+  const call = async (token: string) => {
+    try {
+      return await fetch(`${BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw offline();
+    }
+  };
+  // Cognito unreachable while refreshing the token: a network error, never signed out.
+  const orOffline = async <R>(get: () => Promise<R>) => {
+    try {
+      return await get();
+    } catch (err) {
+      throw err instanceof AuthUnavailableError ? offline() : err;
+    }
+  };
+  let res = await call(await orOffline(accessToken));
   if (res.status === 401) {
-    // token rejected (revoked, account disabled/deleted) - back to the login page
-    await signOut().catch(() => undefined);
-    notifySignedOut();
-    throw new ApiError(401, "unauthorized", "Signed out");
+    // One rejected token is not a sign-out: refresh once and try again.
+    const fresh = await orOffline(refreshedAccessToken);
+    if (fresh) res = await call(fresh);
+    if (!fresh || res.status === 401) {
+      // token rejected (revoked, account disabled/deleted) - back to the login page
+      await signOut().catch(() => undefined);
+      notifySignedOut();
+      throw new ApiError(401, "unauthorized", "Signed out");
+    }
   }
   const text = await res.text();
   let data: Record<string, unknown> = {};

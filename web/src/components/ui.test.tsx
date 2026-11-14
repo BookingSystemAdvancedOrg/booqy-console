@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../auth", () => ({ accessToken: async () => "t", notifySignedOut: () => undefined, signOut: async () => undefined }));
+vi.mock("../auth", () => ({ AuthUnavailableError: class extends Error {}, accessToken: async () => "t", refreshedAccessToken: async () => "t", notifySignedOut: () => undefined, signOut: async () => undefined }));
 
 import { ApiError } from "../api";
 import { ErrorNotice, Field, errorMessage } from "./ui";

@@ -1,7 +1,8 @@
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { currentOperator, onAuthChange, signOut, type Operator } from "./auth";
+import { currentOperator, onAuthChange, retryUntilReachable, signOut, type Operator } from "./auth";
+import "./connectionNotice.css";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import { Logo } from "./components/Logo";
 import { Modal } from "./components/ui";
@@ -136,13 +137,24 @@ function Shell() {
   // it was opened on, so going to another page closes it.
   const [menuAt, setMenuAt] = useState<string | null>(null);
   const menuOpen = menuAt === location.pathname;
+  // Cognito unreachable (offline, waking from sleep, an outage): still signed
+  // in, the current page stays and the check runs again until it answers.
+  const [offline, setOffline] = useState(false);
   const refresh = useCallback(() => {
-    currentOperator().then(setUser);
+    currentOperator().then(
+      (u) => {
+        setOffline(false);
+        setUser(u);
+      },
+      () => setOffline(true),
+    );
   }, []);
   useEffect(() => {
     refresh();
     return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
   }, [refresh]);
+  useEffect(() => (offline ? retryUntilReachable(refresh) : undefined), [offline, refresh]);
+  const notice = offline ? <div className="connection-notice" role="status" aria-live="polite">Can't reach the server, retrying...</div> : null;
 
   useEffect(() => {
     if (user) preloadPages();
@@ -156,11 +168,12 @@ function Shell() {
   // The emailed reset link works signed in or out (LoginPage signs out
   // once the new password is set).
   if (location.pathname === RESET_PATH) return <LoginPage onSignedIn={refresh} />;
-  if (user === undefined) return <SkelShell label="Signing in" />;
+  if (user === undefined) return <>{notice}<SkelShell label="Signing in" /></>;
   if (!user) return <LoginPage onSignedIn={refresh} />;
 
   return (
     <div className="app">
+      {notice}
       {/* A dirty form asks before any top bar link takes the operator away. */}
       <header className={menuOpen ? "topbar is-open" : "topbar"} onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>

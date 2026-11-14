@@ -206,6 +206,43 @@ function showOffline(win) {
   }, 5000)
 }
 
+// ---- Inloggningen överlever omstart och uppdatering ------------------------
+// Refresh-tokenen (30 dagar) ligger i en HttpOnly-cookie och byts vid varje
+// förnyelse (rotation). Chromium skriver cookies till disk först efter en
+// stund, så en ny token som bara fanns i minnet när appen stängdes (eller
+// uppdaterades) skulle ge en utloggning vid nästa start. Därför skrivs
+// cookie-lagret till disk så fort den cookien ändras och innan appen avslutas.
+// Lagringen (userData) rensas aldrig, inte heller vid uppdatering.
+const REFRESH_COOKIE = '__Secure-booqy_rt'
+function flushCookies() {
+  // localStorage (konsolens inloggning) skrivs också ut direkt.
+  try {
+    session.defaultSession.flushStorageData()
+  } catch {
+    /* finns inte i äldre Electron */
+  }
+  return Promise.race([
+    session.defaultSession.cookies.flushStore().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 1500)),
+  ])
+}
+function keepSessionOnDisk() {
+  session.defaultSession.cookies.on('changed', (_e, cookie) => {
+    if (cookie.name === REFRESH_COOKIE) void flushCookies()
+  })
+}
+let flushingForQuit = false
+app.on('before-quit', (e) => {
+  if (flushingForQuit) return
+  e.preventDefault()
+  flushingForQuit = true
+  void flushCookies().then(() => {
+    app.quit()
+    // Avbröts avslutet (t.ex. osparade ändringar) skrivs det igen nästa gång.
+    flushingForQuit = false
+  })
+})
+
 let updates = null
 
 // ---- Huvudfönstret --------------------------------------------------------
@@ -376,10 +413,11 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     setUpPermissions()
+    keepSessionOnDisk()
     buildMenu()
     mainWindow = createWindow()
     // Nya versioner av skalet (latest.json bredvid installationsfilerna).
-    updates = setUpUpdates({ baseUrl: config.downloads?.[target.env], getWindow: () => mainWindow })
+    updates = setUpUpdates({ baseUrl: config.downloads?.[target.env], getWindow: () => mainWindow, flush: flushCookies })
     mainWindow.on('closed', () => (mainWindow = null))
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

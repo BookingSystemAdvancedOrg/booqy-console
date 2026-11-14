@@ -64,7 +64,7 @@ function toastScript({ text, button, action }) {
 })()`
 }
 
-function setUpUpdates({ baseUrl, getWindow }) {
+function setUpUpdates({ baseUrl, getWindow, flush = () => Promise.resolve() }) {
   // Bara för det lokala testet av hela flödet (README, "Testa uppdateringen").
   const testFeed = process.env.BOOQY_UPDATE_TEST === '1' ? process.env.BOOQY_UPDATE_FEED : null
   const feed = testFeed || baseUrl
@@ -232,8 +232,9 @@ function setUpUpdates({ baseUrl, getWindow }) {
     if (action === 'restart') {
       toast = null
       if (autoUpdater) {
-        // Tyst installation (NSIS /S) och omstart.
-        setImmediate(() => autoUpdater.quitAndInstall(true, true))
+        // Tyst installation (NSIS /S) och omstart. Cookies (inloggningen)
+        // skrivs till disk först, så att installationen inte tappar dem.
+        void flush().then(() => autoUpdater.quitAndInstall(true, true))
         return true
       }
       if (startSwap(true)) {
