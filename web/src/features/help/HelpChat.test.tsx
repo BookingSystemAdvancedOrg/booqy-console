@@ -68,6 +68,12 @@ describe("HelpChat", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("names the launcher itself, so it still has a name on phones where the label is hidden", async () => {
+    renderChat();
+    const launcher = await screen.findByRole("button", { name: "Ask Booqy" });
+    expect(launcher).toHaveAttribute("aria-label", "Ask Booqy");
+  });
+
   it("answers today's Background question and lights the setting up in Settings", async () => {
     const user = userEvent.setup();
     renderChat();

@@ -58,4 +58,15 @@ describe("MetaAdsTenantSection", () => {
     await waitFor(() => expect(metaAdsApi.setPaused).toHaveBeenCalledWith("t1", true));
     expect(await screen.findByRole("button", { name: "Resume Meta ads" })).toBeInTheDocument();
   });
+
+  it("offers no pause before Meta is connected, but can lift an earlier pause", async () => {
+    vi.mocked(metaAdsApi.tenant).mockResolvedValue({ status: "disconnected", paused: false, spendThisMonthSek: 0 });
+    const { unmount } = render(<MetaAdsTenantSection tenantId="t1" />);
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    unmount();
+    vi.mocked(metaAdsApi.tenant).mockResolvedValue({ status: "disconnected", paused: true, spendThisMonthSek: 0 });
+    render(<MetaAdsTenantSection tenantId="t1" />);
+    expect(await screen.findByRole("button", { name: "Resume Meta ads" })).toBeInTheDocument();
+  });
 });

@@ -40,7 +40,9 @@ function useDebounced<T>(fn: () => Promise<T>, deps: unknown[], wait = 400) {
   return { value, error };
 }
 
-/** The email as it will arrive, in a sandbox: nothing in it can run. */
+/** The email as it will arrive, in a sandbox: nothing in it can run. Keep sandbox="" (no
+ *  allow-scripts): the server-rendered HTML has no script, and a "Blocked script execution
+ *  in 'about:srcdoc'" log only comes from test tools that inject scripts into every frame. */
 function Preview({ html, title }: { html: string | null; title: string }) {
   return (
     <div className="card mail-preview">

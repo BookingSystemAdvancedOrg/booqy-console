@@ -13,6 +13,14 @@ export default function PhoneAgentTenantSection({ tenantId }: { tenantId: string
   }
   if (error) return <Card title="Phone agent"><ErrorNotice error={error} /></Card>;
   if (!data) return null;
+  if (!data.paused && data.locations.length === 0 && data.usage.length === 0) {
+    return (
+      <Card title="Phone agent">
+        <dl className="dl"><dt>Status</dt><dd>Not connected</dd></dl>
+        <p className="muted">No location has set up the phone agent yet.</p>
+      </Card>
+    );
+  }
 
   async function toggle() {
     if (!data) return;
