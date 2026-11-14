@@ -138,8 +138,8 @@ export default function WebsitePage() {
             <CampaignTable rows={data.breakdowns.campaigns} />
             {(data.breakdowns.contents.length > 0 || data.breakdowns.terms.length > 0) && (
               <div className="web-pair">
-                <VisitTable title="utm_content" rows={data.breakdowns.contents} />
-                <VisitTable title="utm_term" rows={data.breakdowns.terms} />
+                <VisitTable title="utm_content" heading rows={data.breakdowns.contents} />
+                <VisitTable title="utm_term" heading rows={data.breakdowns.terms} />
               </div>
             )}
           </Card>
@@ -340,10 +340,9 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
   );
 }
 
-function VisitTable({ title, rows, label, mono }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean }) {
+function VisitTable({ title, rows, label, mono, heading }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean; heading?: boolean }) {
   const total = rows.reduce((a, r) => a + r.visits, 0);
-  if (!rows.length) return <p className="web-none">Nothing in this period.</p>;
-  return (
+  const body = !rows.length ? <p className="web-none">Nothing in this period.</p> : (
     <div className="web-scroll">
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Bounce</th></tr></thead>
@@ -361,6 +360,10 @@ function VisitTable({ title, rows, label, mono }: { title: string; rows: VisitRo
       </table>
     </div>
   );
+  // On phones the column header is hidden, so a table without a card title
+  // of its own says what it is in a small line above it.
+  if (!heading) return body;
+  return <div className="web-block"><div className="web-sub">{title}</div>{body}</div>;
 }
 
 function PageTable({ rows }: { rows: PageRow[] }) {

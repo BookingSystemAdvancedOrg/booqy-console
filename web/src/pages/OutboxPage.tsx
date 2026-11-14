@@ -5,6 +5,7 @@ import type { OutboxMessage, OutboxSummary } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
+import { RowButton } from "../components/RowButton";
 import { InfoTip } from "../components/StepFlow";
 import { usePagedList } from "../paging";
 
@@ -129,8 +130,8 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
                   <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
                     <td className="nowrap" data-label="Saved">{fmtDate(r.at)}</td>
                     <td data-label="Type">{r.channel === "sms" ? "SMS" : "Email"}</td>
-                    <td data-label="To">{r.to}</td>
-                    <td className="cell-title">{r.subject}</td>
+                    <td className="cell-stack" data-label="To">{r.to}</td>
+                    <td className="cell-title"><RowButton onClick={() => setSelected(r.id)} current={selected === r.id}>{r.subject || "(no subject)"}</RowButton></td>
                   </tr>
                 ))}
               </tbody>

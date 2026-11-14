@@ -36,10 +36,11 @@ describe("Operators rows", () => {
     expect(within(dialog).getByPlaceholderText("Add a name")).toBeInTheDocument();
   });
 
-  it("opens Edit with Enter on the focused row", async () => {
+  it("opens Edit from the row's named button with the keyboard", async () => {
     render(<OperatorsPage me="me" />);
-    const row = await rowOf("Zach");
-    row.focus();
+    const name = await screen.findByRole("button", { name: "Edit Zach" });
+    expect((await rowOf("Zach")).hasAttribute("tabindex")).toBe(false);
+    name.focus();
     await userEvent.keyboard("{Enter}");
     expect(screen.getByRole("dialog", { name: "Edit operator" })).toBeInTheDocument();
   });

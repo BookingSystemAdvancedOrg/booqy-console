@@ -8,6 +8,7 @@ import OutboxPage from "./OutboxPage";
 import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
 import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
+import { RowButton } from "../components/RowButton";
 import { helpSlug } from "../features/help/helpId";
 
 // Production is the default and is never labelled; only dev says so.
@@ -194,7 +195,7 @@ function Sent() {
               {(data ?? []).map((n) => (
                 <tr key={n.newsletterId} className="row-link" {...rowAction(() => setOpen(n))}>
                   <td className="small nowrap" data-label="Sent">{fmtDate(n.createdAt)}</td>
-                  <td className="strong row-link__name cell-title">{n.subject}</td>
+                  <td className="strong cell-title"><RowButton onClick={() => setOpen(n)}>{n.subject || "(no subject)"}</RowButton></td>
                   <td className="cell-badge"><Status value={n.status} /></td>
                   <td className="mono cell-fact" data-label="Recipients">{n.recipientCount}</td>
                   <td className="mono cell-fact" data-label="Delivered">{n.sentCount} sent{n.failedCount ? ` · ${n.failedCount} failed` : ""}</td>
@@ -239,7 +240,7 @@ function RecipientList({ recipients }: { recipients: NewsletterRecipient[] }) {
       <tbody>
         {recipients.map((r) => (
           <tr key={r.email}>
-            <td className="small" data-label="Owner">{r.email}</td>
+            <td className="small cell-stack" data-label="Owner">{r.email}</td>
             <td className="small cell-title">{r.tenantName}</td>
             <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Failed{r.error ? `: ${r.error}` : ""}</span> : r.status}</td>
           </tr>

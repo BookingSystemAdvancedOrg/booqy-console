@@ -35,6 +35,14 @@ describe("WebsitePage", () => {
     expect(screen.getByText("Göteborg, SE")).toBeInTheDocument();
   });
 
+  it("names the utm_content and utm_term tables above them, also when one is empty", async () => {
+    const { container } = renderPage();
+    await screen.findByText("video");
+    const subs = [...container.querySelectorAll(".web-sub")].map((n) => n.textContent);
+    expect(subs).toEqual(["utm_content", "utm_term"]);
+    expect(container.querySelectorAll(".web-block")[1]).toHaveTextContent("utm_termNothing in this period.");
+  });
+
   it("asks for the chosen period and a custom range", async () => {
     renderPage();
     await screen.findByText("Search");

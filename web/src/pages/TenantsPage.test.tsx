@@ -96,4 +96,11 @@ describe("phone table styles", () => {
     expect(phone).toContain('[data-glide="track"] { flex-wrap: wrap !important');
     expect(css.indexOf("@media (max-width: 640px) {")).toBeLessThan(css.indexOf(".table.table"));
   });
+  it("stacks long values, keeps the you tag whole and leaves room for the Ask Booqy button", () => {
+    const phone = css.slice(css.indexOf("@media (max-width: 640px) {"));
+    expect(phone).toMatch(/td\.cell-stack::before \{ float: none; display: block;/);
+    expect(phone).toContain(".operator-name .tag { flex: none; white-space: nowrap; }");
+    expect(phone).toContain("margin-bottom: 72px");
+    expect(css.slice(0, css.indexOf("@media (max-width: 640px) {"))).toContain(".web-sub { display: none; }");
+  });
 });

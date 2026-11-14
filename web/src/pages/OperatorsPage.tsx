@@ -2,6 +2,7 @@ import { Avatar } from "../components/Avatar";
 import { emailName, getMyAvatar, subscribeMyAvatar } from "../avatar";
 import { AvatarLightbox } from "../components/AvatarLightbox";
 import { rowAction } from "../components/rowLink";
+import { RowButton } from "../components/RowButton";
 import { RowActions } from "../components/RowActions";
 import { FormEvent, useState, useSyncExternalStore } from "react";
 import { api } from "../api";
@@ -73,17 +74,19 @@ export default function OperatorsPage({ me }: { me: string }) {
                   // Every operator may edit every operator: the whole row opens Edit
                   // (click, Enter or Space). The picture opens the lightbox and the
                   // action buttons do their own thing (rowLink.ts skips buttons).
-                  <tr key={o.username} className="row-link operator-row" aria-label={`${o.name || o.email}, open to edit`} {...rowAction(() => setEditing(o))}>
+                  <tr key={o.username} className="row-link operator-row" {...rowAction(() => setEditing(o))}>
                     <td className="strong cell-title">
                       <span className="operator-name">
                         <button type="button" className="avatar-btn" aria-label={`Show the profile picture of ${o.name || o.email}`} onClick={() => setViewing(o)}>
                           <Avatar url={avatarFor(o)} name={o.name} email={o.email} size="sm" />
                         </button>
-                        {o.name || <span className="operator-name__fallback" title="No name yet">{emailName(o.email)}</span>}
-                        {self && <span className="tag">you</span>}
+                        <RowButton onClick={() => setEditing(o)} label={`Edit ${o.name || o.email}${self ? " (you)" : ""}`}>
+                          {o.name || <span className="operator-name__fallback" title="No name yet">{emailName(o.email)}</span>}
+                        </RowButton>
+                        {self && <span className="tag" aria-hidden="true">you</span>}
                       </span>
                     </td>
-                    <td data-label="Email">{o.email}</td>
+                    <td className="cell-stack" data-label="Email">{o.email}</td>
                     <td className="cell-badge"><span className={`status status--${s.cls}`}>{s.label}</span></td>
                     <td className="muted small" data-label="Added">{fmtDate(o.createdAt)}</td>
                     <td className="right">

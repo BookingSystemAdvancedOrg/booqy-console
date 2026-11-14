@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 
 /**
  * Whole-row clicks for lists. A row with class "row-link" lights up on hover
@@ -26,17 +26,13 @@ export function useRowOpen() {
 }
 
 /**
- * For rows that open something in place (a modal, a reading pane): the click,
- * plus Enter and Space when the row has keyboard focus. Spread on the <tr>.
+ * For rows that open something in place (a modal, a reading pane): a click
+ * anywhere on the row. Spread on the <tr>. Keyboards and screen readers use
+ * the row's own button instead (<RowButton> in the title cell), because a
+ * focusable <tr> has no role once phones lay the table out as cards.
  */
 export function rowAction(run: () => void) {
   return {
-    tabIndex: 0,
     onClick: (e: MouseEvent) => { if (!ignore(e)) run(); },
-    onKeyDown: (e: KeyboardEvent) => {
-      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      run();
-    },
   };
 }

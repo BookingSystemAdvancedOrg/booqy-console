@@ -318,8 +318,8 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
           {detail.locations.map((l) => (
             <tr key={l.locationId}>
               <td className="strong cell-title">{l.name}<div className="muted small mono">{l.locationId}</div></td>
-              <td data-label="Address">{l.address}</td>
-              <td className="small" data-label="Contact">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
+              <td className="cell-stack" data-label="Address">{l.address}</td>
+              <td className="small cell-stack" data-label="Contact">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
               <td className="small mono" data-label="Stripe override">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
               <td className="right">
                 <button className="btn btn--ghost btn--small" onClick={() => setEdit(l)}>Edit</button>

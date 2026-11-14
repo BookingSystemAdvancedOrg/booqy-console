@@ -6,10 +6,15 @@
      cell-title  the card's heading (default: the first cell)
      cell-badge  a status, right under the heading
      cell-fact   a short figure: label over value, three across (td.num too)
+     cell-stack  a long value (an email, an address): label above, full width
      phone-hide  left out on phones (the detail page has it)
    A list that is the page's own content (.table-wrap outside a card or a
    dialog) becomes separate glass cards; a table inside a card becomes rows
    with a line between them. Tablet and desktop are untouched. */
+/* a table title only phones need: wider screens read it in the header */
+.web-sub { display: none; }
+.web-block { min-width: 0; }
+
 @media (max-width: 640px) {
   .table.table, .table.table > tbody { display: block; width: 100%; min-width: 0; }
   .table.table > thead { display: none; }
@@ -62,6 +67,16 @@
   .table.table > tbody > tr > td:is(.cell-fact, .num)::before { float: none; display: block; max-width: none; margin: 0 0 1px; }
   .table.table > tbody > tr > td:is(.cell-fact, .num) :is(div, .small, .muted) { font-weight: 500; font-size: 12.5px; }
 
+  /* long values: the label above, the value across the whole card */
+  .table.table > tbody > tr > td.cell-stack { text-align: left !important; }
+  .table.table > tbody > tr > td.cell-stack::before { float: none; display: block; max-width: none; margin: 0 0 2px; }
+
+  /* the "you" tag never breaks in half */
+  .operator-name .tag { flex: none; white-space: nowrap; }
+
+  /* a table's own title (its column header is hidden on phones) */
+  .web-sub { display: block; margin: 14px 0 2px; font: 600 13px/1.4 var(--sans); color: var(--print-2); }
+
   /* nothing to show: centred and short */
   .table.table > tbody > tr:has(> td.empty) { display: block; padding: 0; border: 0; }
   .table.table > tbody > tr > td.empty { display: block; padding: 28px 12px !important; text-align: center !important; font-size: 15px; }
@@ -83,6 +98,9 @@
   .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table > tbody > tr:has(> td.empty) {
     padding: 0; border-radius: var(--r-lg); background: var(--glass-text-bg) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--card-shadow);
   }
+
+  /* the last card scrolls clear of the floating Ask Booqy button */
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) { margin-bottom: 72px; }
 
   /* rows that open something: the whole card is the button */
   .table.table > tbody > tr.row-link { -webkit-tap-highlight-color: transparent; }
