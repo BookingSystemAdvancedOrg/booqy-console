@@ -117,12 +117,20 @@ export function useLiveRefresh(refetch: () => unknown, opts: { enabled?: boolean
   useEffect(() => {
     if (!enabled) return;
     let running = false;
+    // A save, 409 or focus that arrives while a refetch is running is not
+    // dropped: that refetch may have started before the save and bring old
+    // data, so one more runs right after it.
+    let pending: LiveReason | null = null;
+    let stopped = false;
     let failures = 0;
     let notBefore = 0;
-    return subscribeLive(async (reason) => {
-      if (running) return;
+    const run = async (reason: LiveReason): Promise<void> => {
       if (reason === "online") failures = 0;
       if (reason === "interval" && Date.now() < notBefore) return;
+      if (running) {
+        if (reason !== "interval" || pending === null) pending = reason;
+        return;
+      }
       running = true;
       try {
         if ((await latest.current()) === false) throw new Error("refetch failed");
@@ -134,7 +142,15 @@ export function useLiveRefresh(refetch: () => unknown, opts: { enabled?: boolean
       } finally {
         running = false;
       }
-    });
+      const again = pending;
+      pending = null;
+      if (again !== null && !stopped) void run(again);
+    };
+    const unsubscribe = subscribeLive((reason) => void run(reason));
+    return () => {
+      stopped = true;
+      unsubscribe();
+    };
   }, [enabled]);
 }
 

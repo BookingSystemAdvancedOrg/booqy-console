@@ -6,6 +6,7 @@ import { RefreshButton } from "../components/save";
 import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
 import { InfoTip } from "../components/StepFlow";
+import { usePagedList } from "../paging";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -69,6 +70,10 @@ function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+const outboxKey = (m: OutboxSummary) => m.id;
+/** Outbox ids start with the inverted time, so a smaller one is newer (listed first). */
+const newerMessage = (a: OutboxSummary, b: OutboxSummary) => a.id < b.id;
+
 /**
  * Dev mail outbox: what the platform would have emailed (and a copy of each
  * SMS) while the sending domain isn't verified in SES. Saved by the
@@ -76,25 +81,15 @@ function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
  */
 export default function OutboxPage({ embedded = false }: { embedded?: boolean }) {
   const { data, error, loading, reload } = useLoad(() => api.outbox());
-  const [more, setMore] = useState<OutboxSummary[]>([]);
-  const [next, setNext] = useState<string | null>(null);
+  // Live: a quiet refetch of the first page keeps the older pages already loaded (and the scroll).
+  const { rows, cursor: next, append } = usePagedList(data?.messages, data?.next ?? null, outboxKey, newerMessage);
   const [selected, setSelected] = useState<string | null>(null);
   const paging = useAction();
-
-  useEffect(() => {
-    setMore([]);
-    setNext(data?.next ?? null);
-  }, [data]);
-
-  const rows = [...(data?.messages ?? []), ...more];
 
   const loadMore = async () => {
     if (!next) return;
     const page = await paging.run(() => api.outbox(next));
-    if (page) {
-      setMore((m) => [...m, ...page.messages]);
-      setNext(page.next ?? null);
-    }
+    if (page) append(page.messages, page.next ?? null);
   };
 
   return (

@@ -6,6 +6,7 @@ import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import type { SupportReport } from "../types";
 import { InfoTip } from "../components/StepFlow";
+import { usePagedList } from "../paging";
 
 type Show = "open" | "handled" | "all";
 
@@ -26,6 +27,10 @@ export function browserOf(ua: string | null): string {
   return os ? `${app} on ${os}` : app;
 }
 
+const reportKey = (r: SupportReport) => r.reportId;
+/** Report ids start with the time, so a larger one is newer (listed first). */
+const newerReport = (a: SupportReport, b: SupportReport) => a.reportId > b.reportId;
+
 /**
  * Reports: errors restaurants sent with "Rapportera till Booqy" in Booqy
  * Admin, newest first. Each is a Booqy fault (5xx, *_unavailable, unknown
@@ -35,28 +40,30 @@ export function browserOf(ua: string | null): string {
 export default function ReportsPage() {
   const [show, setShow] = useState<Show>("open");
   const { data, error, loading, reload } = useLoad(() => api.supportReports(show), [show]);
-  const [more, setMore] = useState<SupportReport[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  // Live: a quiet refetch of the first page keeps the older pages already
+  // loaded (and the scroll); only a new filter starts over.
+  const { rows: listed, cursor, append } = usePagedList(data?.items, data?.cursor, reportKey, newerReport);
   const [changed, setChanged] = useState<Record<string, SupportReport>>({});
   const paging = useAction();
   const marking = useAction();
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  useEffect(() => setChanged({}), [show]);
+  // The server's answer wins over a local mark for every row the new first page has.
   useEffect(() => {
-    setMore([]);
-    setCursor(data?.cursor ?? null);
-    setChanged({});
+    if (!data) return;
+    setChanged((c) => {
+      const keep = Object.fromEntries(Object.entries(c).filter(([id]) => !data.items.some((r) => r.reportId === id)));
+      return Object.keys(keep).length === Object.keys(c).length ? c : keep;
+    });
   }, [data]);
 
-  const rows = [...(data?.items ?? []), ...more].map((r) => changed[r.reportId] ?? r);
+  const rows = listed.map((r) => changed[r.reportId] ?? r);
 
   const loadMore = async () => {
     if (!cursor) return;
     const page = await paging.run(() => api.supportReports(show, cursor));
-    if (page) {
-      setMore((m) => [...m, ...page.items]);
-      setCursor(page.cursor);
-    }
+    if (page) append(page.items, page.cursor);
   };
 
   const mark = async (r: SupportReport) => {

@@ -46,6 +46,22 @@ describe("useLiveRefresh", () => {
     expect(refetch).toHaveBeenCalledTimes(3);
   });
 
+  it("a save during a running refetch is not dropped: one more runs right after", async () => {
+    const finishers: Array<() => void> = [];
+    const refetch = vi.fn(() => new Promise<void>((resolve) => { finishers.push(resolve); }));
+    renderHook(() => useLiveRefresh(refetch));
+    await tick(LIVE_INTERVAL_MS);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(LIVE_SAVED_EVENT));
+      window.dispatchEvent(new CustomEvent(LIVE_SAVED_EVENT));
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+    await act(async () => finishers[0]());
+    expect(refetch).toHaveBeenCalledTimes(2);
+    await act(async () => finishers[1]());
+    expect(refetch).toHaveBeenCalledTimes(2);
+  });
+
   it("backs off after a failure", async () => {
     expect(backoffMs(1)).toBe(30_000);
     const refetch = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
