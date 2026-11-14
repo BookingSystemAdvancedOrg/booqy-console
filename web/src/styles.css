@@ -104,7 +104,6 @@
   --notice-ok-bg: #eef4ee; --notice-ok-line: #c4d8c7; --notice-ok-text: #1f4c2c;
   --notice-warn-bg: #fbf4e4; --notice-warn-line: #ead7a8; --notice-warn-text: #5c3d00;
   --notice-error-bg: #fbeeed; --notice-error-line: #ebc6c3; --notice-error-text: #7a141b;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231c1918' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   /* text colour follows the material: on-ox on the wall, print on paper */
   --fg: var(--on-ox);
@@ -159,7 +158,6 @@
   --notice-ok-bg: #223a2a; --notice-ok-line: #3b5f45; --notice-ok-text: #9ad6ae;
   --notice-warn-bg: #3a2f16; --notice-warn-line: #6a5526; --notice-warn-text: #e8c478;
   --notice-error-bg: #432326; --notice-error-line: #6e3a3e; --notice-error-text: #f4a3a8;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f6ece9' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 :root[data-theme="dark"] .paper, :root[data-theme="dark"] .card, :root[data-theme="dark"] .table-wrap, :root[data-theme="dark"] .modal__panel,
@@ -930,7 +928,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   --sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --display: "Bricolage Grotesque", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --serif: Athelas, Newsreader, Georgia, serif;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a120e' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: light;
   accent-color: var(--print);
   background: var(--ox-800);
@@ -954,7 +951,6 @@ html.is-busy .btn:disabled { opacity: .85; }
   --lift-sm: 0 14px 30px -20px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.3);
   --hang: 0 14px 18px rgb(0 0 0 / 0.5), 0 2px 3px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(213 196 174 / 0.1);
   --backdrop-veil: rgb(26 18 14 / 0.72);
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f6f1ea' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 :root:not([data-theme="dark"]) .paper, :root:not([data-theme="dark"]) .card, :root:not([data-theme="dark"]) .table-wrap,

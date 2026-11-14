@@ -119,6 +119,17 @@ describe("Plan tab: Free", () => {
       planId: "free", free: { until: "2027-02-20", thenPlanId: "growth" }, overrides: expect.objectContaining({ maxLocations: 4 }) }));
   });
 
+  it("Free with Locations at Growth's own number still sends it, so it is kept after Free", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: String(GROWTH.maxLocations) } });
+    pick(screen.getByLabelText(/^Then switch to/), "Starter");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
+      planId: "free", overrides: expect.objectContaining({ maxLocations: GROWTH.maxLocations }) }));
+  });
+
   it("an older Free customer without an end loads as Free until changed", async () => {
     const onFree = { ...tenant, planId: "free", billing: { freeThenPlanId: "starter" } };
     render(<PlanTab tenant={onFree} onSaved={() => {}} />);

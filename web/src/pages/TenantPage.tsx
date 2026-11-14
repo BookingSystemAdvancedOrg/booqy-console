@@ -530,7 +530,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     setTried(true);
     if (isFree && Object.keys(freeProblems(free, price)).length) return;
     const overrides: Record<string, unknown> = {};
-    if (plan && maxLocations !== plan.maxLocations) overrides.maxLocations = maxLocations;
+    // On Free the number is always sent, so the api records it as chosen (billing.freeLocationsChosen).
+    if (plan && (plan.free || maxLocations !== plan.maxLocations)) overrides.maxLocations = maxLocations;
     const changed = plan ? Object.fromEntries(Object.entries(contractFeatures(features)).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
     const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];

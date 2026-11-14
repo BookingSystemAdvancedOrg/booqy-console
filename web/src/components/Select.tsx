@@ -34,7 +34,7 @@ export type SelectProps = {
 };
 
 const isGroup = (i: Item): i is SelectGroup => "options" in i;
-const PHONE = "(max-width: 599px)";
+const PHONE = "(max-width: 640px)";   // the phone layout (phoneTargets.css)
 const GAP = 4, EDGE = 8, MAX_H = 320;
 
 function isPhone(): boolean {
