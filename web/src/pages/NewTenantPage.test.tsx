@@ -9,6 +9,7 @@ vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import NewTenantPage, { setupFailure } from "./NewTenantPage";
 import { burst, confetti } from "../components/StepFlow";
+import { defaultFreeUntil } from "../free";
 
 const OWNER_TAKEN = "OwnerEmailInUse: The owner email is already registered to another tenant (t-9). Use a different address for this tenant.";
 
@@ -98,6 +99,46 @@ describe("NewTenantPage", () => {
     expect(mocks.retryOnboarding).toHaveBeenCalledWith("t1");
     expect(mocks.createTenant).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("status", { name: "Setting up Test Pizza" })).toBeInTheDocument();
+  });
+});
+
+describe("NewTenantPage Free plan", () => {
+  const PLANS = [
+    { planId: "starter", name: "Starter", maxLocations: 1, features: {}, priceSek: 499 },
+    { planId: "growth", name: "Growth", maxLocations: 3, features: { catering: true }, priceSek: 899 },
+    { planId: "free", name: "Free", maxLocations: 3, features: { catering: true }, priceSek: 0, free: true },
+  ];
+
+  async function pickFree() {
+    mocks.plans.mockResolvedValue(PLANS);
+    mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
+    renderPage();
+    company("lamo@example.se");
+    done();
+    await screen.findByText("Free");
+    fireEvent.click(screen.getAllByRole("radio", { name: /Free/ })[0]);
+  }
+
+  it("prefills three months, then Starter, and sends no price", async () => {
+    await pickFree();
+    expect(screen.getByLabelText(/^Free until/)).toHaveValue(defaultFreeUntil());
+    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
+    expect(screen.getByLabelText("No end date")).not.toBeChecked();
+    expect(document.getElementById("f-billing.priceSek")).toBeNull();
+    done(); done(); done();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    const body = mocks.createTenant.mock.calls[0][0];
+    expect(body).toMatchObject({ planId: "free", free: { until: defaultFreeUntil(), thenPlanId: "starter" } });
+    expect(body.billing).not.toHaveProperty("priceSek");
+  });
+
+  it("no end date and Growth afterwards", async () => {
+    await pickFree();
+    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    fireEvent.click(screen.getByLabelText("No end date"));
+    done(); done(); done();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
+    expect(mocks.createTenant.mock.calls[0][0]).toMatchObject({ planId: "free", free: { until: null, thenPlanId: "growth" } });
   });
 });
 

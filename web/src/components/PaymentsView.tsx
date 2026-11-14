@@ -29,7 +29,7 @@ export default function PaymentsView() {
   return (
     <>
       <div className="row payments-actions">
-        <p className="muted small">Invoices are created on the 25th for the period from the 25th to the 24th (monthly price plus SMS parts). Run it by hand after a missed 25th, with a preview first.</p>
+        <p className="muted small">Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). Run it by hand after a missed 25th, with a preview first.</p>
         <button className="btn btn--primary" onClick={() => setInvoicing(true)}>Run invoicing</button>
       </div>
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}
@@ -106,20 +106,19 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
             ) : (
               <div className="table-wrap table-wrap--inner">
                 <table className="table">
-                  <thead><tr><th>Customer</th><th>Period</th><th>Fee</th><th>SMS</th><th>Total ex VAT</th>{result && <th>Result</th>}</tr></thead>
+                  <thead><tr><th>Customer</th><th>Period</th><th>Fee</th><th>Total ex VAT</th>{result && <th>Result</th>}</tr></thead>
                   <tbody>
                     {shown.invoices.map((i) => (
                       <tr key={`${i.tenantId}-${i.periodEnd}`}>
                         <td className="strong">{i.name}</td>
                         <td className="small">{i.period}{i.activeDays < i.days ? ` (${i.activeDays} of ${i.days} days)` : ""}</td>
                         <td className="num">{fmtSek(i.feeSek, { decimals: true })}</td>
-                        <td className="num">{fmtInt(i.smsParts)} × {fmtSek(i.smsPriceSek, { decimals: true })} = {fmtSek(i.smsSek, { decimals: true })}</td>
                         <td className="num">{fmtSek(i.totalSek, { decimals: true })}</td>
                         {result && <td className="small">{i.number ?? i.invoiceId}, {i.delivery}</td>}
                       </tr>
                     ))}
                     {shown.errors.map((e) => (
-                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 5 : 4} className="bad">{e.error}</td></tr>
+                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad">{e.error}</td></tr>
                     ))}
                   </tbody>
                 </table>

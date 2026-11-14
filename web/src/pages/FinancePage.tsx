@@ -15,6 +15,7 @@ import { RefreshButton, SaveButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
 import { useRowOpen } from "../components/rowLink";
 import { helpSlug } from "../features/help/helpId";
+import { FreeBadge } from "../components/FreeFields";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -77,11 +78,10 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
     costPerBooking: trendOf(k.costPerBookingSek, before?.costPerBookingSek, "unitCost", prev),
     costPerOrder: trendOf(k.costPerOrderSek, before?.costPerOrderSek, "unitCost", prev),
-    sms: trendOf(k.smsRevenueSek, before?.smsRevenueSek, "sms", prev),
+    sms: trendOf(k.smsCostSek, before?.smsCostSek, "cost", prev),
   };
-  // A loss is red whatever the period before was; so is SMS sold below its AWS cost.
+  // A loss is red whatever the period before was.
   const marginTone: TrendTone = k && k.marginSek < 0 ? "bad" : trends?.margin.tone ?? "neutral";
-  const smsTone: TrendTone = k && k.smsMarginSek < 0 && k.smsCostSek > 0 ? "bad" : trends?.sms.tone ?? "neutral";
   const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const pastDue = data?.attention.pastDue.length ?? 0;
@@ -224,7 +224,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtSek(k.mrrSek * 12)} a year at this rate`}
                  trend={trends.mrr} deltaLabel="since the period started" />
             <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
-                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`}
+                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}${k.freeCustomers ? `, ${fmtInt(k.freeCustomers)} on Free` : ""}`}
                  trend={trends.customers} />
             <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
                  sub={collectedPct === null ? "nothing invoiced yet" : `${fmtPct(collectedPct)} of what is invoiced`} />
@@ -318,9 +318,9 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                    trend={trends.costPerBooking} />
               <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
                    trend={trends.costPerOrder} />
-              <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
-                   sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
-                   trend={trends.sms} valueTone={smsTone} />
+              <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />}
+                   sub={`AWS cost of ${fmtInt(k.smsParts)} parts sent, included in the price`}
+                   trend={trends.sms} />
             </section>
           </Disclosure>
 
@@ -430,7 +430,10 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
         <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
         <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
-      <td><span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span></td>
+      <td>
+        <span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span>
+        {t.free && <div><FreeBadge until={t.freeUntil ?? null} /></div>}
+      </td>
       <td className="num">{fmtSek(t.mrrSek)}</td>
       <td className="num">{fmtSek(t.revenueSek)}</td>
       <td className="num">{fmtSek(t.collectedSek)}</td>
@@ -441,7 +444,7 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
       </td>
       <td className="num">{fmtInt(t.bookings)}</td>
       <td className="num">{fmtInt(t.orders)}</td>
-      <td className="num">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsRevenueSek)}</div></td>
+      <td className="num">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsCostSek, { decimals: true })} cost</div></td>
     </tr>
   );
 }

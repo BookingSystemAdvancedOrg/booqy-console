@@ -20,6 +20,56 @@ beforeEach(() => {
   mocks.setPlan.mockResolvedValue({ tenant });
 });
 
+const GROWTH = { planId: "growth", name: "Growth", maxLocations: 3, features: { reservations: true, ordering: true, catering: true, marketing: true }, priceSek: 8295 };
+const FREE = { ...GROWTH, planId: "free", name: "Free", priceSek: 0, free: true };
+
+describe("Plan tab: Free", () => {
+  beforeEach(() => mocks.plans.mockResolvedValue([STARTER, GROWTH, FREE]));
+
+  it("sets Free with the default end date and Starter afterwards", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-14T10:00:00Z"));
+    try {
+      render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+      await screen.findByText("Free");
+      expect(screen.getByText("No charge, Growth's features")).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("radio")[2]);
+      expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-02-14");
+      expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("starter");
+      expect(screen.queryByLabelText(/^Monthly price/)).not.toBeInTheDocument();
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+      expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
+        planId: "free", free: { until: "2027-02-14", thenPlanId: "starter" } }));
+      expect(mocks.setPlan.mock.calls[0][1]).not.toHaveProperty("priceSek");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("no end date, and the plan after it", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getAllByRole("radio")[2]);
+    fireEvent.change(screen.getByLabelText(/^Then switch to/), { target: { value: "growth" } });
+    fireEvent.click(screen.getByLabelText("No end date"));
+    expect(screen.getByLabelText(/^Free until/)).toBeDisabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", free: { until: null, thenPlanId: "growth" } }));
+  });
+
+  it("extends a free period that is saved", async () => {
+    const onFree = { ...tenant, planId: "free", billing: { freeUntil: "2027-02-14", freeThenPlanId: "growth" } };
+    render(<PlanTab tenant={onFree} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    expect(screen.getByLabelText(/^Free until/)).toHaveValue("2027-02-14");
+    expect(screen.getByLabelText(/^Then switch to/)).toHaveValue("growth");
+    expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/^Free until/), { target: { value: "2027-05-14" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", free: { until: "2027-05-14", thenPlanId: "growth" } }));
+  });
+});
+
 describe("Plan tab", () => {
   it("lists every contract feature by its label, new ones unchecked", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);

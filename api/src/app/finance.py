@@ -36,7 +36,7 @@ from .tenants import get_profile
 MAX_RANGE_DAYS = 400
 ACTIVE_DEFAULT = ("active",)
 SUM_FIELDS = ("requests", "bookings", "orders", "emails", "sms", "marketingEmails",
-              "smsParts", "smsBooking", "smsReminder", "smsOrder", "smsCatering", "smsRevenueSek",
+              "smsParts", "smsBooking", "smsReminder", "smsOrder", "smsCatering",
               "costSek", "invoicedSek", "paidSek", "creditedSek")
 CENTS = Decimal("0.01")
 
@@ -148,10 +148,12 @@ def _plans() -> dict:
 
 
 def _mrr(profile: dict, plans: dict | None = None) -> Decimal:
-    """The monthly price of a running agreement (own price or the plan's)."""
+    """The monthly price of a running agreement (own price or the plan's);
+    0 on the Free plan."""
     from .billing import agreement_running          # billing imports tenants, not this module
+    from .tenants import FREE_PLAN_ID
     billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
-    if not agreement_running(billing):
+    if not agreement_running(billing) or profile.get("planId") == FREE_PLAN_ID:
         return Decimal(0)
     if billing.get("priceSek") is not None:
         return _q(billing["priceSek"])
@@ -205,7 +207,6 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         point["orders"] += int(row.get("orders") or 0)
         point["requests"] += int(row.get("requests") or 0)
         point["smsParts"] = point.get("smsParts", 0) + int(row.get("smsParts") or 0)
-        point["smsRevenueSek"] = point.get("smsRevenueSek", Decimal(0)) + Decimal(row.get("smsRevenueSek") or 0)
         if row.get("active"):
             point["activeTenants"] += 1
     invoices = _invoices(tenant_id)
@@ -213,7 +214,6 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
     overdue_since = min((i["dueDate"] for i in invoices if i.get("status") == "open" and i.get("dueDate") and days_late(i) > 0),
                         default=None)
     sms_cost = _q(split["sms"])
-    sms_revenue = _q(sums["smsRevenueSek"])
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
     cost = _q(sums["costSek"])
     margin = _q(revenue - cost)
@@ -230,8 +230,10 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "marginSek": margin, "marginPct": _pct(margin, revenue),
         "bookings": int(sums["bookings"]), "orders": int(sums["orders"]), "requests": int(sums["requests"]),
         "emails": int(sums["emails"]), "sms": int(sums["sms"]), "marketingEmails": int(sums["marketingEmails"]),
-        "smsParts": int(sums["smsParts"]), "smsRevenueSek": sms_revenue, "smsCostSek": sms_cost,
-        "smsMarginSek": _q(sms_revenue - sms_cost),
+        "smsParts": int(sums["smsParts"]), "smsCostSek": sms_cost,
+        "free": profile.get("planId") == "free",
+        "freeUntil": (profile.get("billing") or {}).get("freeUntil") if profile.get("planId") == "free"
+        and isinstance(profile.get("billing"), dict) else None,
         "smsByType": {"booking": int(sums["smsBooking"]), "reminder": int(sums["smsReminder"]),
                       "order": int(sums["smsOrder"]), "catering": int(sums["smsCatering"])},
         "costPerBookingSek": _ratio(cost, sums["bookings"]), "costPerOrderSek": _ratio(cost, sums["orders"]),
@@ -314,18 +316,16 @@ def overview(req) -> tuple[int, dict]:
             "unallocatedSek": max(_q(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
             "costSplitSek": cost_split,
             "customers": len(tenants), "activeCustomers": active_now, "payingCustomers": paying,
+            "freeCustomers": sum(1 for t in tenants if t["free"] and t["status"] == "active"),
             "newCustomers": new_customers, "churnedCustomers": churned,
             "churnPct": _pct(churned, customers_at_start) if customers_at_start else None,
             "arpuSek": _ratio(mrr, paying), "bookings": bookings, "orders": orders,
             "costPerBookingSek": _ratio(cost, bookings), "costPerOrderSek": _ratio(cost, orders),
             "requests": sum(t["requests"] for t in tenants), "emails": sum(t["emails"] for t in tenants),
             "sms": sum(t["sms"] for t in tenants),
-            # SMS: what the restaurants are charged for the parts against the SMS share of the AWS bill
+            # SMS are included in the monthly price: the parts sent and their share of the AWS bill (our cost)
             "smsParts": sum(t["smsParts"] for t in tenants),
-            "smsRevenueSek": _q(sum((t["smsRevenueSek"] for t in tenants), Decimal(0))),
             "smsCostSek": _q(cost_split["sms"]) if cost_split else _q(sum((t["smsCostSek"] for t in tenants), Decimal(0))),
-            "smsMarginSek": _q(sum((t["smsRevenueSek"] for t in tenants), Decimal(0))
-                               - (cost_split["sms"] if cost_split else sum((t["smsCostSek"] for t in tenants), Decimal(0)))),
         },
         "series": [series[d] for d in sorted(series)],
         "tenants": tenants,

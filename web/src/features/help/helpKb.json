@@ -111,6 +111,44 @@
       ]
     },
     {
+      "id": "free-plan",
+      "route": "/tenants/:tenantId",
+      "title": "Give a customer the Free plan",
+      "audience": "all",
+      "keywords": [
+        "free",
+        "free plan",
+        "free period",
+        "free trial",
+        "free months",
+        "no charge",
+        "for free",
+        "free until",
+        "extend free",
+        "end date"
+      ],
+      "answer": "Free has no monthly charge and Growth's features. Pick Free on the Plan tab (or in step 4 of New customer): it lasts three months by default, or tick No end date. The owner gets an email 14 days before it ends, and the day after it the customer moves to the plan in Then switch to. Change the date or the plan any time.",
+      "steps": [
+        "Open Customers and click the customer.",
+        "Press the Plan tab and pick Free.",
+        "Set Free until (or tick No end date) and Then switch to.",
+        "Press Save plan."
+      ],
+      "actions": [
+        {
+          "id": "customers-open-free",
+          "label": "Open Customers",
+          "to": "/",
+          "highlight": [
+            "help:nav:/"
+          ]
+        }
+      ],
+      "highlight": [
+        "help:tenant-tab:plan"
+      ]
+    },
+    {
       "id": "location-add",
       "route": "/tenants/:tenantId",
       "title": "Add a location",
@@ -827,7 +865,7 @@
         "missed invoices",
         "invoices on the 25th"
       ],
-      "answer": "Invoices are created on the 25th for the period from the 25th to the 24th (monthly price plus SMS parts). After a missed 25th you run it by hand on Finance, Payments, with a preview first.",
+      "answer": "Invoices are created on the 25th for the period from the 25th to the 24th (the monthly price; SMS are included, Free has no charge). After a missed 25th you run it by hand on Finance, Payments, with a preview first.",
       "steps": [
         "Open Finance and press Payments.",
         "Press Run invoicing and check the preview.",

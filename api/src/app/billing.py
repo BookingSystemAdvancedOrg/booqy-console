@@ -5,11 +5,13 @@ Stripe subscriptions. The agreement lives on PROFILE.billing: status
 (active, ended), startsAt, endsAt, terms (trial = try-out period: leaves
 with the current period and becomes a subscription after
 BILLING_TRIAL_MONTHS; subscription = BILLING_NOTICE_MONTHS notice),
-priceSek (own monthly price, else the plan's), smsPriceSek (own price per
-SMS part, else BILLING_SMS_PRICE_SEK), collectionMethod,
+priceSek (own monthly price, else the plan's), collectionMethod,
 lastInvoicedPeriodEnd, offboardAtEnd, priceHistory ([{from, monthlySek,
-planName, smsPriceSek}]: a change applies from the next period),
-previous (earlier agreements,
+planName, exact?}]: a change applies from the next period; an `exact` one,
+a move onto or off the Free plan, from its own day, pro rata),
+freeUntil / freeThenPlanId / freeSince / freeNoticeFor (the Free plan:
+its last free day, none = no end date, the plan after it and the day the
+owner was told), previous (earlier agreements,
 [{startsAt, endsAt}], that ended but are not invoiced in full yet: a
 customer who leaves and comes back in the same period pays for both
 stretches on the same invoice).
@@ -17,9 +19,10 @@ stretches on the same invoice).
 Billing periods run from the 25th to the 24th. On the 25th (financeTask
 "invoice", EventBridge Scheduler) every agreement that ran in the period
 just ended gets one Stripe invoice: the monthly price (pro rata by days
-for a part period), one SMS line (parts x price, with the per-location
-split in the description), plus any pending late fee or interest items;
-25 % VAT on every line. Emailed invoices are due BILLING_DAYS_UNTIL_DUE
+for a part period), plus any pending late fee or interest items; 25 % VAT
+on every line. SMS are included in the price: they are counted (the
+finance table) and their AWS cost shows on the Finance page, but never
+invoiced. A period with nothing to charge (Free) gets no invoice. Emailed invoices are due BILLING_DAYS_UNTIL_DUE
 days later; a card on file is charged at once. The webhook writes the
 ledger row and the revenue; reminders, late fee, interest and suspension
 (dunning_task) act on the invoices. The ledger rows mirror those
@@ -35,10 +38,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from botocore.exceptions import BotoCoreError, ClientError
 
 from . import validation as v
-from .core import (ApiError, client, env, location_table, log, now_iso, query_all, tenant_table, to_ddb,
+from .core import (ApiError, client, env, log, now_iso, query_all, tenant_table, to_ddb,
                    to_ddb_value, write_audit)
 from .stripe_connect import stripe_request
-from .tenants import ensure_billing_map, get_plan, get_profile, offboard_tenant, resume_tenant, suspend_tenant, tkey
+from .tenants import (FREE_PLAN_ID, add_months, apply_plan, ensure_billing_map, get_plan, get_profile, offboard_tenant,
+                      resume_tenant, suspend_tenant, tkey)
 
 COLLECTION_METHODS = ("send_invoice", "charge_automatically")
 TERMS = ("trial", "subscription")
@@ -359,21 +363,19 @@ def monthly_price(profile: dict, plan: dict | None = None) -> int:
     return int(plan.get("priceSek") or 0)
 
 
-def sms_price(profile: dict) -> Decimal:
-    billing = _billing(profile)
-    if billing.get("smsPriceSek") is not None:
-        return Decimal(billing["smsPriceSek"]).quantize(CENTS)
-    return _env_num("BILLING_SMS_PRICE_SEK", "0.70").quantize(CENTS)
-
-
-def record_price(tenant_id: str, profile: dict, plan: dict | None = None, *, on: date | None = None) -> None:
-    """Remembers the prices in force from `on` (today): the period running
-    keeps the prices it began with, a change applies from the next one."""
+def record_price(tenant_id: str, profile: dict, plan: dict | None = None, *, on: date | None = None,
+                 exact: bool = False) -> None:
+    """Remembers the price in force from `on` (today): the period running
+    keeps the price it began with, a change applies from the next one.
+    `exact` (onto or off Free): from `on` itself, the days before and after
+    it pro rata."""
     plan = plan if plan is not None else plan_of(profile)
     day = (on or datetime.now(timezone.utc).date()).isoformat()
     history = [h for h in _billing(profile).get("priceHistory") or [] if h.get("from") != day]
-    history.append({"from": day, "monthlySek": monthly_price(profile, plan),
-                    "planName": plan.get("name") or profile.get("planId") or "", "smsPriceSek": sms_price(profile)})
+    entry = {"from": day, "monthlySek": monthly_price(profile, plan), "planName": plan.get("name") or profile.get("planId") or ""}
+    if exact:
+        entry["exact"] = True
+    history.append(entry)
     _write_billing(tenant_id, {"priceHistory": sorted(history, key=lambda h: h["from"])})
 
 
@@ -384,7 +386,6 @@ def price_drift(profile: dict) -> bool:
         return True
     plan, last = plan_of(profile), history[-1]
     return (int(last.get("monthlySek") or 0) != monthly_price(profile, plan)
-            or Decimal(str(last.get("smsPriceSek") or 0)).quantize(CENTS) != sms_price(profile)
             or (last.get("planName") or "") != (plan.get("name") or profile.get("planId") or ""))
 
 
@@ -394,6 +395,15 @@ def prices_for(billing: dict, first_day: date) -> dict | None:
     history = sorted(billing.get("priceHistory") or [], key=lambda h: h.get("from") or "")
     before = [h for h in history if (h.get("from") or "") <= first_day.isoformat()]
     return before[-1] if before else (history[0] if history else None)
+
+
+def price_on(billing: dict, first_day: date, day: date) -> dict | None:
+    """The price entry for one day of a period whose first active day is
+    `first_day`: the one in force then, or an exact change (Free) since."""
+    base = prices_for(billing, first_day)
+    later = [h for h in billing.get("priceHistory") or [] if h.get("exact")
+             and first_day.isoformat() < (h.get("from") or "") <= day.isoformat()]
+    return max([h for h in [base, *later] if h], key=lambda h: h.get("from") or "", default=None)
 
 
 def phase(billing: dict, today: date | None = None) -> str:
@@ -449,79 +459,44 @@ def migrate_legacy(tenant_id: str, profile: dict, actor: str) -> dict | None:
 
 
 # ------------------------------------------------------------- what a period costs
-def _location_names(tenant_id: str) -> dict:
-    rows = query_all(TableName=location_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :l)",
-                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":l": {"S": "LOCATION#"}})
-    return {r["locationId"]: r.get("name") or r["locationId"] for r in rows if r.get("locationId")}
-
-
-def _sum_rows(tenant_id: str, prefix: str, first: date, last: date) -> dict:
-    rows = query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND SK BETWEEN :a AND :b",
-                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"},
-                                                ":a": {"S": f"{prefix}{first.isoformat()}"}, ":b": {"S": f"{prefix}{last.isoformat()}"}})
-    out = {"smsParts": 0, "sms": 0, "smsBooking": 0, "smsReminder": 0, "smsOrder": 0, "smsCatering": 0}
-    for r in rows:
-        for k in out:
-            out[k] += int(r.get(k) or 0)
-    return out
-
-
-def sms_in_period(tenant_id: str, first: date, last: date, locations: dict | None = None) -> dict:
-    """SMS parts sent between the days (inclusive), in total, by type and
-    by location."""
-    totals = _sum_rows(tenant_id, "DAY#", first, last)
-    by_location = {}
-    for location_id, name in (locations or {}).items():
-        parts = _sum_rows(tenant_id, f"LOC#{location_id}#DAY#", first, last)["smsParts"]
-        if parts:
-            by_location[name] = parts
-    return {"parts": totals["smsParts"], "messages": totals["sms"],
-            "byType": {"booking": totals["smsBooking"], "reminder": totals["smsReminder"],
-                       "order": totals["smsOrder"], "catering": totals["smsCatering"]},
-            "byLocation": by_location}
-
-
-def invoice_plan(profile: dict, start: date, end: date, plan: dict | None = None, locations: dict | None = None) -> dict:
-    """What one period's invoice would carry for the customer."""
+def invoice_plan(profile: dict, start: date, end: date, plan: dict | None = None) -> dict:
+    """What one period's invoice would carry for the customer: the monthly
+    price for the days the agreement ran, at the price of each day."""
     billing = _billing(profile)
     plan = plan if plan is not None else plan_of(profile)
     ends_at = _date(billing.get("endsAt"))
-    days, active, first_day = period_days(start, end), 0, None
-    sms = {"parts": 0, "messages": 0, "byType": {}, "byLocation": {}}
+    days = period_days(start, end)
+    active_set: set[date] = set()
     for a, b in stints(billing):
-        n = active_days(a, b, start, end)
-        if n <= 0:
-            continue
-        active += n
-        first_day = min(first_day or end, max(start, a))
-        part = sms_in_period(profile["tenantId"], max(start, a), min(end, b) if b else end, locations)
-        sms["parts"] += part["parts"]
-        sms["messages"] += part["messages"]
-        for key in ("byType", "byLocation"):
-            for k, v in part[key].items():
-                sms[key][k] = sms[key].get(k, 0) + v
-    active = min(active, days)
-    # A plan or price changed during the period applies from the next one.
-    prices = prices_for(billing, first_day or start)
-    price = int(prices["monthlySek"]) if prices else monthly_price(profile, plan)
-    unit = Decimal(str(prices["smsPriceSek"])).quantize(CENTS) if prices else sms_price(profile)
-    plan_name = prices.get("planName") if prices else plan.get("name") or profile.get("planId") or ""
-    fee = prorate(price, active, days)
-    sms_sek = (Decimal(sms["parts"]) * unit).quantize(CENTS, rounding=ROUND_HALF_UP)
+        first, last = max(start, a), min(end, b) if b else end
+        while first <= last:
+            active_set.add(first)
+            first += timedelta(days=1)
+    active = len(active_set)
+    first_day = min(active_set) if active_set else start
+    fallback = {"monthlySek": monthly_price(profile, plan), "planName": plan.get("name") or profile.get("planId") or ""}
+    # A plan or price changed during the period applies from the next one;
+    # onto or off Free from its own day.
+    by_entry: dict = {}
+    for day in sorted(active_set):
+        entry = price_on(billing, first_day, day) or fallback
+        key = (int(entry.get("monthlySek") or 0), entry.get("planName") or "")
+        by_entry[key] = by_entry.get(key, 0) + 1
+    fee = sum((prorate(price, n, days) for (price, _name), n in by_entry.items()), Decimal("0.00"))
+    paid = [(name, n) for (price, name), n in by_entry.items() if price > 0]
+    paid_days = sum(n for _name, n in paid)
+    last_entry = price_on(billing, first_day, max(active_set)) if active_set else prices_for(billing, start)
+    price = int((last_entry or fallback).get("monthlySek") or 0)
+    names = list(dict.fromkeys(name for name, _n in paid)) or [(last_entry or fallback).get("planName") or ""]
     period = period_text(start, end)
-    fee_text = f"Booqy {plan_name}, {period}".strip()
-    if 0 < active < days:
-        fee_text += f" ({active} av {days} dagar)"
-    sms_text = f"SMS {period}: {sms['parts']} delar x {unit:.2f} kr".replace(".", ",")
-    if sms["byLocation"]:
-        sms_text += " (" + ", ".join(f"{name} {n}" for name, n in sorted(sms["byLocation"].items())) + ")"
+    fee_text = f"Booqy {' och '.join(names)}, {period}".strip()
+    if 0 < paid_days < days:
+        fee_text += f" ({paid_days} av {days} dagar)"
     return {
         "periodStart": start.isoformat(), "periodEnd": end.isoformat(), "period": period,
-        "days": days, "activeDays": active, "monthlySek": price, "feeSek": fee, "feeText": fee_text,
-        "smsParts": sms["parts"], "smsMessages": sms["messages"], "smsByType": sms["byType"],
-        "smsByLocation": sms["byLocation"], "smsPriceSek": unit, "smsSek": sms_sek, "smsText": sms_text,
-        "totalSek": (fee + sms_sek).quantize(CENTS), "final": bool(ends_at and ends_at <= end),
-        "nothingToInvoice": fee + sms_sek == 0,
+        "days": days, "activeDays": active, "billedDays": paid_days, "monthlySek": price, "feeSek": fee.quantize(CENTS),
+        "feeText": fee_text, "totalSek": fee.quantize(CENTS), "final": bool(ends_at and ends_at <= end),
+        "nothingToInvoice": fee == 0,
     }
 
 
@@ -560,8 +535,7 @@ def _view(profile: dict, today: date | None = None) -> dict:
         "startsAt": billing.get("startsAt"), "endsAt": billing.get("endsAt"),
         "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
         "monthlySek": monthly_price(profile, plan),
-        "smsPriceSek": (Decimal(billing["smsPriceSek"]).quantize(CENTS) if billing.get("smsPriceSek") is not None else None),
-        "smsPrice": sms_price(profile), "smsPriceDefaultSek": _env_num("BILLING_SMS_PRICE_SEK", "0.70").quantize(CENTS),
+        "free": free_view(profile),
         "collectionMethod": billing.get("collectionMethod") or "send_invoice",
         "hasCard": bool(billing.get("defaultPaymentMethod")),
         "pastDueSince": billing.get("pastDueSince"), "autoSuspended": bool(billing.get("autoSuspended")),
@@ -570,16 +544,17 @@ def _view(profile: dict, today: date | None = None) -> dict:
         "lastInvoicedPeriodEnd": billing.get("lastInvoicedPeriodEnd"), "offboardAtEnd": bool(billing.get("offboardAtEnd")),
         "noticeMonths": int(_env_num("BILLING_NOTICE_MONTHS", "3")), "trialMonths": trial_months,
         "daysUntilDue": int(env("BILLING_DAYS_UNTIL_DUE", "30")), "suspendAfterDays": int(env("BILLING_SUSPEND_AFTER_DAYS", "14")),
-        "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek")},
+        "plan": {"planId": plan.get("planId"), "name": plan.get("name"), "priceSek": plan.get("priceSek"),
+                 "free": bool(plan.get("free"))},
         "legacySubscriptionId": billing.get("legacySubscriptionId"), "pendingSubscriptionId": billing.get("subscriptionId"),
         "nextInvoice": None, "pendingPeriods": len(pending_periods(billing, today)),
         "previous": [{"startsAt": s.get("startsAt"), "endsAt": s.get("endsAt")} for s in billing.get("previous") or []],
     }
     if ph in ("active", "ending") or (ph == "scheduled" and view["previous"]):
         start, end = period_of(today)
-        current = invoice_plan(profile, start, end, plan, _location_names(profile["tenantId"]))
+        current = invoice_plan(profile, start, end, plan)
         view["nextInvoice"] = {**current, "date": (end + timedelta(days=1)).isoformat(),
-                               "smsSoFar": True, "dueDate": (end + timedelta(days=1 + view["daysUntilDue"])).isoformat()
+                               "dueDate": (end + timedelta(days=1 + view["daysUntilDue"])).isoformat()
                                if view["collectionMethod"] == "send_invoice" else (end + timedelta(days=1)).isoformat()}
     return view
 
@@ -657,7 +632,7 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str = "send_
     plan = plan_of(profile)
     if not plan:
         raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
-    if price_sek is not None and int(price_sek) == int(plan.get("priceSek") or -1):
+    if plan.get("free") or (price_sek is not None and int(price_sek) == int(plan.get("priceSek") or -1)):
         price_sek = None
     elif price_sek is None and billing.get("priceSek") is not None:
         price_sek = int(billing["priceSek"])
@@ -701,28 +676,16 @@ def update_subscription(req) -> tuple[int, dict]:
     period, a subscription after the notice period; `offboardAtEnd`
     default true), cancel_now (ends today, the days used are invoiced on
     the next 25th), keep (undo a cancellation), convert (try-out ->
-    subscription), use_card (charge the card the restaurant added),
-    set_sms_price (`smsPriceSek`, null = the default)."""
+    subscription), use_card (charge the card the restaurant added)."""
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
     action = f.text("action", required=True, max_len=20)
     offboard_at_end = f.boolean("offboardAtEnd")
-    raw_sms_price = f.data.get("smsPriceSek")
     f.done()
     profile = get_profile(tenant_id)
     billing = _billing(profile)
     customer_id = billing.get("customerId")
     today = datetime.now(timezone.utc).date()
-    if action == "set_sms_price":
-        if raw_sms_price is not None and (isinstance(raw_sms_price, bool) or not isinstance(raw_sms_price, (int, float, Decimal))
-                                          or Decimal(str(raw_sms_price)) < 0 or Decimal(str(raw_sms_price)) > 100):
-            raise ApiError(400, "validation_failed", "SMS price must be 0 to 100 kr", fields={"smsPriceSek": "0 to 100"})
-        value = Decimal(str(raw_sms_price)).quantize(CENTS) if raw_sms_price is not None else None
-        _write_billing(tenant_id, {"smsPriceSek": value})
-        if agreement_running(billing, today):
-            record_price(tenant_id, get_profile(tenant_id))
-        write_audit(tenant_id, "sms_price_set", req.actor, {"smsPriceSek": value})
-        return 200, {"billing": _view(get_profile(tenant_id))}
     if not agreement_running(billing, today):
         raise ApiError(409, "not_subscribed", "The customer has no running agreement")
     details: dict = {}
@@ -756,7 +719,7 @@ def update_subscription(req) -> tuple[int, dict]:
         details = {"paymentMethod": card}
     else:
         raise ApiError(400, "validation_failed", "Unknown action",
-                       fields={"action": "cancel, cancel_now, keep, convert, use_card or set_sms_price"})
+                       fields={"action": "cancel, cancel_now, keep, convert or use_card"})
     write_audit(tenant_id, f"subscription_{action}", req.actor, details)
     return 200, {"billing": _view(get_profile(tenant_id))}
 
@@ -777,16 +740,19 @@ def card_link(req) -> tuple[int, dict]:
 
 
 # ------------------------------------------------------------- hooks from tenants
-def after_plan_change(tenant_id: str, profile: dict, plan: dict, actor: str) -> dict | None:
+def after_plan_change(tenant_id: str, profile: dict, plan: dict, actor: str, *, exact: bool = False,
+                      on: date | None = None) -> dict | None:
     """A changed plan or price applies from the next period: the one
-    running is invoiced at the prices it began with (priceHistory)."""
+    running is invoiced at the prices it began with (priceHistory). Onto or
+    off Free (`exact`) applies from `on` (today), pro rata."""
     billing = _billing(profile)
     if not agreement_running(billing):
         return None
-    record_price(tenant_id, profile, plan)
-    _start, end = period_of(datetime.now(timezone.utc).date())
+    today = on or datetime.now(timezone.utc).date()
+    record_price(tenant_id, profile, plan, on=today, exact=exact)
+    _start, end = period_of(today)
     return {"monthlySek": monthly_price(profile, plan), "priceSek": int(billing["priceSek"]) if billing.get("priceSek") is not None else None,
-            "from": (end + timedelta(days=1)).isoformat()}
+            "from": today.isoformat() if exact else (end + timedelta(days=1)).isoformat()}
 
 
 def cancel_for_offboarding(tenant_id: str, profile: dict, actor: str) -> dict | None:
@@ -856,18 +822,18 @@ def _stripe_pending_kinds(customer_id: str, end: date) -> set:
             if (i.get("metadata") or {}).get("periodEnd") == end.isoformat()}
 
 
-def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: dict, actor: str, locations: dict) -> dict:
-    """One Stripe invoice for the period: the fee line, the SMS line, any
-    pending late fee or interest items, emailed or charged by Stripe."""
+def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: dict, actor: str) -> dict:
+    """One Stripe invoice for the period: the fee line and any pending late
+    fee or interest items, emailed or charged by Stripe."""
     billing = _billing(profile)
-    customer_id = billing.get("customerId") or ensure_customer(tenant_id, profile, actor)
-    plan_ = invoice_plan(profile, start, end, plan, locations)
-    result = {"tenantId": tenant_id, "name": profile.get("name"), **{k: v for k, v in plan_.items() if k not in ("smsByType",)}}
+    plan_ = invoice_plan(profile, start, end, plan)
+    result = {"tenantId": tenant_id, "name": profile.get("name"), **plan_}
     if plan_["nothingToInvoice"]:
         _write_billing(tenant_id, {**_invoiced_to(billing, end),
                                    **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
         result["invoiceId"] = None
         return result
+    customer_id = billing.get("customerId") or ensure_customer(tenant_id, profile, actor)
     if _already_invoiced(tenant_id, end):
         _write_billing(tenant_id, _invoiced_to(billing, end))
         result["invoiceId"] = "exists"
@@ -887,11 +853,6 @@ def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: d
             stripe_request("POST", "/invoiceitems", {**common, "amount": int((plan_["feeSek"] * 100).to_integral_value(rounding=ROUND_HALF_UP)),
                                                      "description": plan_["feeText"], "metadata[kind]": "fee"},
                            idempotency_key=f"fee-{tenant_id}-{end.isoformat()}")
-        if plan_["smsParts"] > 0 and "sms" not in pending:
-            stripe_request("POST", "/invoiceitems", {**common, "quantity": int(plan_["smsParts"]),
-                                                     "unit_amount_decimal": f"{plan_['smsPriceSek'] * 100:.2f}".rstrip("0").rstrip("."),
-                                                     "description": plan_["smsText"], "metadata[kind]": "sms"},
-                           idempotency_key=f"sms-{tenant_id}-{end.isoformat()}")
         invoice = _new_period_invoice(customer_id, tenant_id, start, end, method, plan_["period"])
     if invoice.get("status") == "draft":
         invoice = stripe_request("POST", f"/invoices/{invoice['id']}/finalize", {})
@@ -907,13 +868,12 @@ def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: d
             delivery = f"not {'sent' if method == 'send_invoice' else 'charged'}: {e.message}"
     record_invoice(tenant_id, invoice)
     row = _invoice_row(tenant_id, invoice)
-    _mark(row, periodStart=start.isoformat(), periodEnd=end.isoformat(), feeSek=plan_["feeSek"], smsParts=plan_["smsParts"],
-          smsSek=plan_["smsSek"], billedDays=plan_["activeDays"], collectionMethod=method)
+    _mark(row, periodStart=start.isoformat(), periodEnd=end.isoformat(), feeSek=plan_["feeSek"],
+          billedDays=plan_["billedDays"], collectionMethod=method)
     _write_billing(tenant_id, {**_invoiced_to(billing, end),
                                **({"status": "ended", "endedAt": now_iso()} if plan_["final"] else {})})
     write_audit(tenant_id, "invoice_created", actor, {"invoiceId": invoice["id"], "number": invoice.get("number"),
                                                       "period": plan_["period"], "feeSek": plan_["feeSek"],
-                                                      "smsParts": plan_["smsParts"], "smsSek": plan_["smsSek"],
                                                       "totalSek": plan_["totalSek"], "delivery": delivery})
     result.update({"invoiceId": invoice["id"], "number": invoice.get("number"), "delivery": delivery,
                    "hostedInvoiceUrl": invoice.get("hosted_invoice_url")})
@@ -958,14 +918,13 @@ def run_invoicing(actor: str, *, dry_run: bool = False, only: str | None = None,
                 summary["unfinished"].append({"tenantId": tenant_id, "name": profile.get("name"), "periods": len(periods)})
                 continue
             plan = plan_of(profile)
-            locations = _location_names(tenant_id)
             for start, end in periods:
                 if dry_run:
-                    plan_ = invoice_plan(profile, start, end, plan, locations)
-                    summary["invoices"].append({"tenantId": tenant_id, "name": profile.get("name"), "invoiceId": None,
-                                                **{k: v for k, v in plan_.items() if k != "smsByType"}})
+                    plan_ = invoice_plan(profile, start, end, plan)
+                    target = summary["skipped"] if plan_["nothingToInvoice"] else summary["invoices"]
+                    target.append({"tenantId": tenant_id, "name": profile.get("name"), "invoiceId": None, **plan_})
                     continue
-                result = build_invoice(tenant_id, profile, start, end, plan, actor, locations)
+                result = build_invoice(tenant_id, profile, start, end, plan, actor)
                 (summary["skipped"] if result.get("invoiceId") in (None, "exists") else summary["invoices"]).append(result)
                 profile = get_profile(tenant_id)
         except (ApiError, ClientError, BotoCoreError) as e:
@@ -975,8 +934,7 @@ def run_invoicing(actor: str, *, dry_run: bool = False, only: str | None = None,
     if not dry_run and (summary["invoices"] or summary["errors"] or summary["migrated"] or summary["unfinished"]):
         lines = [f"Invoicing ({env('ENVIRONMENT', 'dev')}) on {today.isoformat()}: {len(summary['invoices'])} invoice(s), "
                  f"{summary['totalSek']} kr ex VAT.", ""]
-        lines += [f"{i['name']}: {i['period']}, {i['feeSek']} kr + SMS {i['smsParts']} x {i['smsPriceSek']} = {i['smsSek']} kr, "
-                  f"{i.get('delivery')}" for i in summary["invoices"]]
+        lines += [f"{i['name']}: {i['period']}, {i['feeSek']} kr, {i.get('delivery')}" for i in summary["invoices"]]
         lines += [f"FAILED {e['name']}: {e['error']}" for e in summary["errors"]]
         lines += [f"Moved to arrears: {m['name']}" for m in summary["migrated"]]
         lines += [f"NOT REACHED (out of time, the next daily run continues): {u['name']}" for u in summary["unfinished"]]
@@ -1007,6 +965,126 @@ def invoice_now(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     get_profile(tenant_id)
     return 200, run_invoicing(req.actor, dry_run=False, only=tenant_id)
+
+
+# ------------------------------------------------------------- the Free plan
+FREE_NOTICE_DAYS = 14
+SV_MONTHS_LONG = ("januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober",
+                  "november", "december")
+
+
+def sv_day(day: date) -> str:
+    return f"{day.day} {SV_MONTHS_LONG[day.month - 1]} {day.year}"
+
+
+def free_view(profile: dict) -> dict | None:
+    """The free period of a customer on Free: until = the last free day
+    (None = no end date), then the plan it moves to the day after."""
+    if profile.get("planId") != FREE_PLAN_ID:
+        return None
+    billing = _billing(profile)
+    until = _date(billing.get("freeUntil"))
+    then = get_plan(billing.get("freeThenPlanId") or "starter") or {}
+    return {"until": until.isoformat() if until else None, "since": billing.get("freeSince"),
+            "switchOn": (until + timedelta(days=1)).isoformat() if until else None,
+            "thenPlanId": billing.get("freeThenPlanId") or "starter", "thenPlanName": then.get("name"),
+            "thenPriceSek": then.get("priceSek"), "noticeSentFor": billing.get("freeNoticeFor")}
+
+
+def _claim_notice(tenant_id: str, until: str) -> bool:
+    """Marks the notice for this end date as sent, once (a re-run, or two
+    runs at the same time, never send it twice)."""
+    try:
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key=tkey(tenant_id),
+            UpdateExpression="SET billing.freeNoticeFor = :u, billing.freeNoticeAt = :n",
+            ConditionExpression="planId = :free AND billing.freeUntil = :u AND "
+                                "(attribute_not_exists(billing.freeNoticeFor) OR billing.freeNoticeFor <> :u)",
+            ExpressionAttributeValues={":u": {"S": until}, ":free": {"S": FREE_PLAN_ID}, ":n": {"S": now_iso()}})
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
+def _free_notice_mail(profile: dict, until: date, then: dict) -> tuple[str, str]:
+    first = ((profile.get("ownerName") or "").split() or [""])[0]
+    price = f"{int(then.get('priceSek') or 0):,}".replace(",", " ")
+    subject = f"Er gratisperiod hos Booqy slutar {sv_day(until)}"
+    body = (f"Hej{' ' + first if first else ''}!\n\n"
+            f"Gratisperioden för {profile.get('name')} gäller till och med {sv_day(until)}. "
+            f"Från {sv_day(until + timedelta(days=1))} har ni Booqy {then.get('name') or ''}, {price} kr per månad "
+            f"exklusive moms. SMS ingår.\n\n"
+            f"Fakturan kommer i efterhand, den 25:e varje månad. Vill ni ändra något, svara på det här mejlet.")
+    return subject, body
+
+
+def free_step(profile: dict, today: date, actor: str) -> dict:
+    """The daily look at one customer on Free with an end date: 14 days
+    before the first paid day the owner gets an email and the operators a
+    line in the summary (once per end date); from the day after the last
+    free day the customer is on the plan chosen for afterwards, and an
+    agreement runs so the 25th invoices it. Idempotent."""
+    out = {"notice": None, "switched": None, "failed": None}
+    billing = _billing(profile)
+    until = _date(billing.get("freeUntil"))
+    if profile.get("planId") != FREE_PLAN_ID or until is None:
+        return out
+    if profile.get("status") not in ("provisioning", "active", "suspended"):
+        return out
+    tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
+    switch_on = until + timedelta(days=1)
+    then_id = billing.get("freeThenPlanId") or "starter"
+    then = get_plan(then_id)
+    if then is None or then.get("free"):
+        out["failed"] = f"{name}: the plan after Free ({then_id}) does not exist"
+        return out
+    price = int(then.get("priceSek") or 0)
+    if today >= switch_on:
+        try:
+            apply_plan(tenant_id, profile, then, actor, force=True, expect_free_until=until.isoformat(), price_from=switch_on)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return out                          # someone else switched it, or changed the period
+            raise
+        write_audit(tenant_id, "free_period_ended", actor, {"freeUntil": until.isoformat(), "planId": then_id})
+        line = f"{name}: Free ended {until.isoformat()}, now {then.get('name')} ({price} kr per month)"
+        fresh = get_profile(tenant_id)
+        if not agreement_running(_billing(fresh), today):
+            try:
+                start_for(tenant_id, fresh, actor=actor, start_day=switch_on.isoformat(),
+                          terms=_billing(fresh).get("terms") or "subscription")
+                line += f", agreement started from {switch_on.isoformat()}"
+            except ApiError as e:
+                line += f", NO AGREEMENT: {e.message} (start it on the Billing tab)"
+        count = int(fresh.get("locationCount") or 0)
+        limit = int(((fresh.get("entitlements") or {}).get("maxLocations")) or 0)
+        if count > limit:
+            line += f"; {count} locations, the plan allows {limit}"
+        out["switched"] = line
+        return out
+    if today >= switch_on - timedelta(days=FREE_NOTICE_DAYS) and billing.get("freeNoticeFor") != until.isoformat():
+        if not _claim_notice(tenant_id, until.isoformat()):
+            return out
+        to = profile.get("billingEmail") or profile.get("ownerEmail")
+        try:
+            if not to:
+                raise ApiError(409, "no_email", "no owner or billing email")
+            from . import mail                       # mail imports nothing from billing
+            subject, body = _free_notice_mail(profile, until, then)
+            mail._send_one(to, subject, body, mail._load_template())
+        except (ApiError, ClientError, BotoCoreError) as e:
+            # Not sent: the claim goes, so tomorrow's run tries again.
+            client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
+                                           UpdateExpression="REMOVE billing.freeNoticeFor, billing.freeNoticeAt")
+            out["failed"] = f"{name}: Free ending notice not sent: {getattr(e, 'message', None) or e}"[:300]
+            return out
+        write_audit(tenant_id, "free_period_notice_sent", actor, {"freeUntil": until.isoformat(), "to": to,
+                                                                   "thenPlanId": then_id})
+        out["notice"] = (f"{name}: Free ends {until.isoformat()}, {then.get('name')} ({price} kr per month) from "
+                         f"{switch_on.isoformat()}; owner told ({to})")
+    return out
 
 
 # ------------------------------------------------------------- reminders, fees, interest
@@ -1204,6 +1282,9 @@ def dunning_task(event: dict, context) -> dict:
     now = datetime.now(timezone.utc)
     trial_months = int(_env_num("BILLING_TRIAL_MONTHS", "6"))
     suspended, resumed, failed, reminded, fees, interest, converted, offboarded = [], [], [], [], [], [], [], []
+    free_notices, free_switched = [], []
+    from .website import stockholm_today           # website imports nothing from here
+    today = stockholm_today(now)
     for profile in _all_profiles():
         billing = _billing(profile)
         tenant_id, name = profile["tenantId"], profile.get("name") or profile["tenantId"]
@@ -1220,10 +1301,23 @@ def dunning_task(event: dict, context) -> dict:
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name} invoices: {getattr(e, 'message', None) or e}"[:300])
         try:
-            # Prices changed outside the console (the plan catalog or the
-            # default SMS price in tfvars) are recorded too, so they also
-            # apply from the next period; agreements from before price
-            # history get theirs from their start.
+            # Free: the notice 14 days before the first paid day, then the switch.
+            stepped = free_step(profile, today, actor)
+            if stepped["notice"]:
+                free_notices.append(stepped["notice"])
+            if stepped["switched"]:
+                free_switched.append(stepped["switched"])
+                profile = get_profile(tenant_id)
+                billing = _billing(profile)
+            if stepped["failed"]:
+                failed.append(stepped["failed"])
+        except (ApiError, ClientError, BotoCoreError) as e:
+            failed.append(f"{name} free plan: {getattr(e, 'message', None) or e}"[:300])
+        try:
+            # Prices changed outside the console (the plan catalog in
+            # tfvars) are recorded too, so they also apply from the next
+            # period; agreements from before price history get theirs from
+            # their start.
             if agreement_running(billing) and price_drift(profile):
                 history = billing.get("priceHistory")
                 record_price(tenant_id, profile, on=None if history else
@@ -1266,19 +1360,24 @@ def dunning_task(event: dict, context) -> dict:
         except (ApiError, ClientError, BotoCoreError) as e:
             failed.append(f"{name}: {getattr(e, 'message', None) or e}"[:300])
     summary = {"status": "done", "limitDays": limit, "suspended": suspended, "resumed": resumed, "failed": failed,
-               "reminded": reminded, "fees": fees, "interest": interest, "converted": converted, "offboarded": offboarded}
-    if suspended or resumed or failed or reminded or fees or interest or converted or offboarded:
+               "reminded": reminded, "fees": fees, "interest": interest, "converted": converted, "offboarded": offboarded,
+               "freeNotices": free_notices, "freeSwitched": free_switched}
+    if suspended or resumed or failed or reminded or fees or interest or converted or offboarded or free_notices or free_switched:
         lines = [f"Dunning ({env('ENVIRONMENT', 'dev')}): past due limit {limit} days.", ""]
         lines += [f"Reminder sent: {r}" for r in reminded] + [f"Late fee added: {f}" for f in fees]
         lines += [f"Interest added: {i}" for i in interest]
         lines += [f"Try-out became a subscription: {c}" for c in converted] + [f"Offboarded (subscription ended): {o}" for o in offboarded]
+        lines += [f"Free ends in {FREE_NOTICE_DAYS} days: {n}" for n in free_notices]
+        lines += [f"Free ended, switched: {w}" for w in free_switched]
         lines += [f"Suspended: {s}" for s in suspended] + [f"Resumed: {r}" for r in resumed] + [f"FAILED: {x}" for x in failed]
         topic = env("ALERT_TOPIC_ARN", "")
         if topic:
             try:
                 client("sns").publish(TopicArn=topic, Subject=f"[{env('ENVIRONMENT', 'dev')}] Booqy dunning: "
                                       f"{len(reminded)} reminded, {len(fees)} fees, {len(suspended)} suspended, "
-                                      f"{len(resumed)} resumed", Message="\n".join(lines))
+                                      f"{len(resumed)} resumed"
+                                      + (f", {len(free_notices) + len(free_switched)} free plan" if free_notices or free_switched else ""),
+                                      Message="\n".join(lines))
             except (ClientError, BotoCoreError):
                 log.warning("dunning summary not published", exc_info=True)
     log.info(json.dumps(summary, default=str))

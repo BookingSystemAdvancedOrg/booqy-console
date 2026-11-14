@@ -8,6 +8,8 @@ import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import { CtaAddLink } from "../components/ds";
 import { useRowOpen } from "../components/rowLink";
+import { FreeBadge } from "../components/FreeFields";
+import { FREE_PLAN_ID } from "../free";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
@@ -86,7 +88,7 @@ export default function TenantsPage() {
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
                   <td><Status value={t.status} /></td>
-                  <td>{t.planId}</td>
+                  <td>{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : t.planId}</td>
                   <td><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
                   <td>{t.locationCount} / {t.maxLocations ?? "-"}</td>
                   <td>{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>

@@ -24,7 +24,7 @@ def test_unknown_route(aws):
 def test_plans(aws):
     status, body = call("GET /platform/plans")
     assert status == 200
-    assert {p["planId"]: p["maxLocations"] for p in body["plans"]} == {"starter": 1, "growth": 3}
+    assert {p["planId"]: p["maxLocations"] for p in body["plans"]} == {"starter": 1, "growth": 3, "free": 3}
 
 
 def test_create_tenant_writes_everything_and_starts_onboarding(aws, tenant):

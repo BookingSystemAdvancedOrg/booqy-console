@@ -3,7 +3,7 @@ import { withBusy } from "./busy";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
+  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -100,7 +100,7 @@ export const api = {
     request<{ tenantId: string; status: string }>("POST", "/platform/tenants", input),
   updateTenant: (id: string, patch: Record<string, unknown>) =>
     request<{ tenant: Tenant }>("PATCH", t(id), patch),
-  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number }) =>
+  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number; free?: FreeInput }) =>
     request<{ tenant: Tenant }>("PUT", `${t(id)}/plan`, body),
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
@@ -161,8 +161,8 @@ export const api = {
   startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
                                           terms?: "trial" | "subscription"; priceSek?: number }) =>
     request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
-  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "set_sms_price",
-                       options: { offboardAtEnd?: boolean; smsPriceSek?: number | null } = {}) =>
+  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card",
+                       options: { offboardAtEnd?: boolean } = {}) =>
     request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
   invoiceNow: (id: string) => request<InvoicingRun>("POST", `${t(id)}/billing/invoice`, {}),
   financeInvoicing: (dryRun: boolean) => request<InvoicingRun>("POST", "/platform/finance/invoicing", { dryRun }),

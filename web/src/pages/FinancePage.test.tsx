@@ -29,7 +29,7 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
       mrrSek: 2980, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costSek: 100, marginSek: 2780, marginPct: 96.5,
       customers: 2, activeCustomers: 2, payingCustomers: 2, newCustomers: 0, churnedCustomers: 0, churnPct: 0, arpuSek: 1490,
       bookings: 23, orders: 11, costPerBookingSek: 4.35, costPerOrderSek: 9.09, requests: 650, emails: 5, sms: 0,
-      smsParts: 412, smsRevenueSek: 288.4, smsCostSek: 61.5, smsMarginSek: 226.9,
+      smsParts: 412, smsCostSek: 61.5, freeCustomers: 1,
     },
     series: [
       { day: "2026-10-01", invoicedSek: 2980, paidSek: 0, costSek: 60, mrrSek: 2980, bookings: 14, orders: 7, requests: 400, activeTenants: 2 },
@@ -40,12 +40,12 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
         mrrSek: 1990, revenueSek: 1890, collectedSek: 0, creditedSek: 100, outstandingSek: 1990, costSek: 70,
         costSplitSek: { baseline: 10, requests: 60, email: 0, sms: 0 }, marginSek: 1820, marginPct: 96.3, bookings: 18, orders: 9,
         requests: 500, emails: 0, sms: 0, marketingEmails: 0, costPerBookingSek: 3.89, costPerOrderSek: 7.78, activeDays: 2, invoiceCount: 1,
-        smsParts: 300, smsRevenueSek: 210, smsCostSek: 45, smsMarginSek: 165 },
+        smsParts: 300, smsCostSek: 45 },
       { tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", status: "active", planId: "starter", billingStatus: "past_due",
         pastDueSince: "2026-10-10T00:00:00Z", mrrSek: 990, revenueSek: 990, collectedSek: 990, creditedSek: 0, outstandingSek: 0, costSek: 30,
         costSplitSek: { baseline: 10, requests: 15, email: 5, sms: 0 }, marginSek: 960, marginPct: 97, bookings: 5, orders: 2,
         requests: 150, emails: 5, sms: 0, marketingEmails: 0, costPerBookingSek: 6, costPerOrderSek: 15, activeDays: 2, invoiceCount: 1,
-        smsParts: 112, smsRevenueSek: 78.4, smsCostSek: 16.5, smsMarginSek: 61.9 },
+        smsParts: 112, smsCostSek: 16.5, free: true, freeUntil: "2027-02-14" },
     ],
     attention: { pastDue: [{ tenantId: "t1", name: "Pizzeria Roma", since: "2026-10-10T00:00:00Z", status: "active" }], noSubscription: [] },
     job: { finishedAt: "2026-10-21T04:35:00Z", warnings: [] },
@@ -96,7 +96,10 @@ describe("FinancePage", () => {
     expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
     expect(screen.getAllByText(/vs previous period/).length).toBeGreaterThan(0);
-    expect(screen.getByText("412 parts charged, 61,50 kr AWS cost")).toBeInTheDocument();   // the SMS tile
+    expect(screen.getByText("AWS cost of 412 parts sent, included in the price")).toBeInTheDocument();   // the SMS tile: cost, no revenue
+    expect(screen.queryByText(/SMS revenue|parts charged/)).not.toBeInTheDocument();
+    expect(screen.getByText(/, 1 on Free/)).toBeInTheDocument();
+    expect(screen.getByText("Free until 14 Feb 2027")).toBeInTheDocument();
     expect(mocks.financeOverview).toHaveBeenCalledTimes(2);                        // this period and the one before
     expect(screen.getByRole("img", { name: /Revenue and AWS cost per day/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Monthly recurring revenue/ })).toBeInTheDocument();
@@ -237,10 +240,10 @@ describe("FinancePage", () => {
       invoices: [] });
     const line = { tenantId: "t1", name: "Pizzeria Roma", periodStart: "2026-08-25", periodEnd: "2026-09-24", period: "25 aug till 24 sep 2026",
                    days: 31, activeDays: 15, monthlySek: 990, feeSek: 479.03, feeText: "Booqy Starter, 25 aug till 24 sep 2026 (15 av 31 dagar)",
-                   smsParts: 412, smsPriceSek: 0.7, smsSek: 288.4, smsText: "SMS ...", totalSek: 767.43, final: false };
+                   totalSek: 479.03, final: false };
     mocks.financeInvoicing.mockImplementation(async (dryRun: boolean) => ({
       dryRun, today: "2026-09-25", invoices: [dryRun ? line : { ...line, invoiceId: "in_1", number: "F-0001", delivery: "sent" }],
-      skipped: [], errors: [], migrated: [], totalSek: 767.43 }));
+      skipped: [], errors: [], migrated: [], totalSek: 479.03 }));
     renderPage();
     await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: "Payments" }));

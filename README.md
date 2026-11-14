@@ -53,11 +53,11 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 
 | Route | What |
 |---|---|
-| `GET /platform/plans` | plan catalog |
+| `GET /platform/plans` | plan catalog, Free last (Growth's features, price 0) and `freeDefaultUntil` |
 | `GET /platform/tenants` | all customers |
-| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`) |
+| `POST /platform/tenants` | create (the form); `billing: {terms, priceSek?, startInvoicing, startDate?}` starts the agreement right away (invoiced in arrears from `startDate`); `planId: "free"` with `free: {until, thenPlanId}` |
 | `GET/PATCH /platform/tenants/{id}` | detail (profile, domains, locations, user count, setup run, last 25 audit entries) / edit profile |
-| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice |
+| `PUT /platform/tenants/{id}/plan` | plan + overrides (max locations, features) + the customer's own `priceSek`; `force` to go below the current location count; a running agreement uses the new price from the next invoice. `planId: "free"` takes `free: {until: yyyy-mm-dd \| null, thenPlanId}` (default three months, then Starter): no charge, Growth's features, and onto or off Free applies from the day itself |
 | `POST .../suspend`, `.../resume` | block / unblock all of the customer's users |
 | `POST .../offboard` | `{confirmSlug}`; users disabled, domains detached, website repo archived, data kept until `purgeAt` |
 | `POST .../restore` | an offboarded customer before `purgeAt`: active again, users enabled, setup re-run (slug address, website repo) |
@@ -86,18 +86,21 @@ customers past due longer than `BILLING_SUSPEND_AFTER_DAYS` are suspended
 (as with Suspend) and resumed when they pay. On the 25th it runs with
 `{"financeTask": "invoice"}`: one Stripe invoice per customer for the
 period from the 25th to the 24th that just ended, the monthly price (pro
-rata by days) plus one line for the SMS parts sent at
-`BILLING_SMS_PRICE_SEK` or the customer's own price - `api/src/app/billing.py`.
+rata by days); SMS are included, never invoiced. The daily run also
+handles the Free plan: 14 days before a free period ends the owner gets
+an email and the operators a line in the summary, and the day after its
+last free day the customer moves to the plan chosen for afterwards -
+`api/src/app/billing.py`.
 | `POST .../stripe/account-link`, `POST .../stripe/sync` | Stripe onboarding link / pull the account status now |
-| `GET .../billing` | the customer's agreement (status and phase, terms, start and end, monthly and SMS price, collection, last invoiced period, past due), a preview of the next invoice (fee and SMS so far) and the invoices with their period, fee and SMS split |
+| `GET .../billing` | the customer's agreement (status and phase, terms, start and end, monthly price, the free period, collection, last invoiced period, past due), a preview of the next invoice and the invoices with their period and fee |
 | `POST .../billing/subscription` | start the agreement: `{collectionMethod: send_invoice \| charge_automatically, startDate?, terms: trial \| subscription, priceSek?}` (the days from `startDate` are invoiced on the next 25th; priceSek = the customer's own monthly price ex VAT) |
-| `PATCH .../billing/subscription` | `{action: cancel \| cancel_now \| keep \| convert \| use_card \| set_sms_price, offboardAtEnd?, smsPriceSek?}`: cancel ends a try-out with the current period and a subscription after the notice period (offboarded automatically once the final invoice exists unless `offboardAtEnd: false`); cancel_now ends it today; keep undoes it; convert makes a try-out a subscription; use_card charges the card on file from the next invoice; set_sms_price sets the customer's own price per SMS part (null = the default) |
+| `PATCH .../billing/subscription` | `{action: cancel \| cancel_now \| keep \| convert \| use_card, offboardAtEnd?}`: cancel ends a try-out with the current period and a subscription after the notice period (offboarded automatically once the final invoice exists unless `offboardAtEnd: false`); cancel_now ends it today; keep undoes it; convert makes a try-out a subscription; use_card charges the card on file from the next invoice |
 | `POST .../billing/invoice` | invoice this customer's complete, not yet invoiced periods now |
 | `POST .../billing/card-link` | Stripe Checkout (setup mode) link where the restaurant adds a card |
 | `POST .../billing/invoices/{invoiceId}/remind` | Stripe re-sends the invoice email now (open invoices) |
 | `GET /platform/finance/invoices?from&to&status` | the Payments view: every invoice of the period with days late, reminders, fees; status all, paid, open, overdue |
-| `POST /platform/finance/invoicing` | `{dryRun}`: the monthly run by hand; dryRun = the preview (customer, period, fee, SMS parts and amount) without creating anything |
-| `GET /platform/finance/overview?from&to&includeInactive&tenantId&locationId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order, SMS parts, SMS revenue and cost), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
+| `POST /platform/finance/invoicing` | `{dryRun}`: the monthly run by hand; dryRun = the preview (customer, period, fee and amount) without creating anything |
+| `GET /platform/finance/overview?from&to&includeInactive&tenantId&locationId` | the Finance page: KPIs (MRR, revenue, collected, outstanding, AWS cost, margin, customers, churn, ARPU, cost per booking/order, free customers, SMS parts sent and their cost), per-day series, per-customer rows, what needs attention, when the figures were computed. Active customers only unless `includeInactive=1` |
 | `GET /platform/finance/tenants/{id}?from&to` | one customer's figures, day rows and invoices |
 | `POST /platform/finance/rebuild` | `{from, to}`: recompute a range (invokes finance-rollup, max 92 days) |
 | `POST /platform/finance/stripe-sync` | re-read every customer's invoices from Stripe into the ledger |
@@ -109,8 +112,8 @@ Errors: `{"error": "<code>", "message": "...", "fields": {"field": "message"}}`.
 
 **Finance** in the top bar: MRR, revenue (invoiced ex VAT), collected and
 outstanding, AWS cost, gross margin, customers (new, churned), ARPU, cost
-per booking and per order, SMS (parts charged, what they bring in and
-the SNS cost behind them), charts (revenue vs cost, MRR trend, best and
+per booking and per order, SMS (included in the price: the parts sent
+and the SNS cost behind them), free customers (0 kr MRR), charts (revenue vs cost, MRR trend, best and
 weakest margin) and a sortable table per customer. Presets week, month,
 quarter, year, last 30 days or a custom range; a customer filter (name,
 org. number or slug); "Include inactive customers" adds suspended,
@@ -123,12 +126,12 @@ Stripe webhook; see the infrastructure repo's `docs/FINANCE.md`.
 **Payments** (a tab on the Finance page) shows who has paid for a month:
 one row per invoice with days late, reminders sent, fees and a Send
 reminder button, and **Run invoicing**: a preview of every invoice the
-monthly run would create now (period, fee, SMS parts, amount), then the
-run. The customer page's **Billing** tab starts, cancels and converts
-the agreement, sets the customer's SMS price, shows the next invoice as it
-builds up (monthly price and SMS parts per location so far), invoices
-pending periods, creates card links and lists the invoices with their
-fee and SMS split.
+monthly run would create now (period, fee, amount), then the run. The
+customer page's **Plan** tab sets Starter, Growth or Free (an end date,
+three months by default, or no end date, and the plan after it). The
+**Billing** tab starts, cancels and converts the agreement, shows the free
+period and the next invoice as it builds up, invoices pending periods,
+creates card links and lists the invoices.
 
 ## Local development
 

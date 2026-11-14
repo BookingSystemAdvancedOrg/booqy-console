@@ -62,7 +62,7 @@ export function stepOfField(key: string): number {
   if (["name", "slug", "legalName", "orgNumber", "vatNumber", "address"].includes(k)) return 0;
   if (k.startsWith("owner")) return 1;
   if (["contactEmail", "contactPhone", "billingEmail", "senderName", "replyToEmail"].includes(k)) return 2;
-  if (k === "planId" || k === "overrides" || k === "billing") return 3;
+  if (k === "planId" || k === "overrides" || k === "billing" || k === "free") return 3;
   if (k === "locations") return 4;
   if (k === "notes") return 5;
   return -1;

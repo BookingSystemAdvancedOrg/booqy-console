@@ -13,6 +13,8 @@ import { CountUp, prefersReducedMotion } from "../components/motion";
 import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, revealStep } from "../components/StepFlow";
 import { playChime } from "../press";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
+import { FreeFields } from "../components/FreeFields";
+import { FREE_PLAN_ID, freeForm, freeInput, freeLabel } from "../free";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -130,6 +132,8 @@ export default function NewTenantPage() {
   const [terms, setTerms] = useState<"trial" | "subscription">("trial");
   const [startInvoicing, setStartInvoicing] = useState(true);
   const [startDate, setStartDate] = useState("");
+  // The Free plan's period: three months from today (Stockholm), then Starter.
+  const [free, setFree] = useState(() => freeForm());
   // Features ticked differently from the plan; cleared when another plan is picked.
   const [featureEdits, setFeatureEdits] = useState<Record<string, boolean>>({});
   useEffect(() => setFeatureEdits({}), [f.planId]);
@@ -155,7 +159,8 @@ export default function NewTenantPage() {
   const features = { ...(plan?.features ?? {}), ...featureEdits };
   const featureOverrides = plan ? Object.fromEntries(Object.entries(featureEdits).filter(([k, on]) => !!plan.features[k] !== on)) : {};
   const limitOverrides: Limits = Object.fromEntries(LIMIT_KEYS.filter((k) => limitEdits[k]).map((k) => [k, Number(limitEdits[k])]));
-  const shownPrice = priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
+  const isFree = f.planId === FREE_PLAN_ID;
+  const shownPrice = isFree ? "" : priceTouched ? price : plan?.priceSek != null ? String(plan.priceSek) : "";
   const addressGiven = f.street || f.postalCode || f.city;
   // Billing counts from the start date; the first invoice is the 25th after that period (in arrears).
   const firstPeriod = periodOf(startDate || isoDay(new Date()));
@@ -288,6 +293,7 @@ export default function NewTenantPage() {
         terms, startInvoicing, priceSek: shownPrice !== "" ? Number(shownPrice) : undefined,
         startDate: startInvoicing && startDate ? startDate : undefined,
       }),
+      ...(isFree ? { free: freeInput(free) } : {}),
     };
     if (saved && tenantId) {
       // Fix and run setup again: the profile and owner fields, then a new onboarding run.
@@ -370,13 +376,14 @@ export default function NewTenantPage() {
     company: [["Name", f.name], ["Site", PLATFORM_DOMAIN ? `${f.slug}.${PLATFORM_DOMAIN}` : f.slug], ["Org. no.", f.orgNumber], ["City", f.city]],
     owner: [["Owner", f.ownerName], ["Email", f.ownerEmail], ["Phone", f.ownerPhone]],
     contact: [["Contact", f.contactEmail || f.contactPhone], ["Billing", f.billingEmail], ["Sender", f.senderName], ["Reply-to", f.replyToEmail]],
-    plan: [["Plan", plan?.name], ["Price", shownPrice !== "" ? <CountUp value={Number(shownPrice)} format={(n) => `${Math.round(n)} kr/mo`} /> : ""],
+    plan: [["Plan", plan?.name], ["Price", isFree ? freeLabel(free.noEnd ? null : free.until)
+                                    : shownPrice !== "" ? <CountUp value={Number(shownPrice)} format={(n) => `${Math.round(n)} kr/mo`} /> : ""],
            ["Terms", terms === "trial" ? "Try-out" : "Subscription"], ["Starts", startInvoicing ? (startDate ? fmtDay(startDate) : "Today") : "Later"]],
     locations: [["Locations", <CountUp value={filledLocations.length} format={(n) => `${Math.round(n)} of ${maxLocations}`} />],
                 ["Names", filledLocations.map((l) => l.name || l.address).join(", ")]],
     notes: [["Notes", f.notes.length > 60 ? `${f.notes.slice(0, 60)}…` : f.notes]],
   };
-  const submitText = `On submit: tenant + locations are saved, owner invited by email, Stripe connected account created${PLATFORM_DOMAIN ? `, ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""}, status becomes Active (about a minute).${startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT (${terms === "trial" ? "try-out" : "subscription"}). ${firstInvoiceText}` : ""}`;
+  const submitText = `On submit: tenant + locations are saved, owner invited by email, Stripe connected account created${PLATFORM_DOMAIN ? `, ${f.slug || "slug"}.${PLATFORM_DOMAIN} goes live` : ""}, status becomes Active (about a minute).${startInvoicing ? ` The agreement starts${startDate ? ` on ${fmtDay(startDate)}` : " today"} ${isFree ? `with no charge (${freeLabel(free.noEnd ? null : free.until)})` : `at ${shownPrice || "the plan's price"}${shownPrice ? " kr" : ""} a month ex VAT`} (${terms === "trial" ? "try-out" : "subscription"}). ${isFree ? "" : firstInvoiceText}` : ""}`;
 
   return (
     <form onSubmit={submit} className={`form-page${saved ? " form-page--back" : ""}`} noValidate>
@@ -470,12 +477,16 @@ export default function NewTenantPage() {
                 <label key={p.planId} className={`plan${f.planId === p.planId ? " plan--on" : ""}`}>
                   <input id={i === 0 ? "f-planId" : undefined} type="radio" name="plan" value={p.planId} checked={f.planId === p.planId} onChange={set("planId")} />
                   <strong>{p.name}</strong>
-                  <span>{p.maxLocations} location{p.maxLocations > 1 ? "s" : ""}</span>
+                  <span>{p.free ? `No charge, ${p.maxLocations} locations` : `${p.maxLocations} location${p.maxLocations > 1 ? "s" : ""}`}</span>
                   <span className="small muted">{Object.entries(contractFeatures(p.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(" · ")}</span>
                 </label>
               ))}
             </div>
             {errs.planId && <p className="field__msg">{errs.planId}</p>}
+            {isFree && (
+              <FreeFields value={free} onChange={setFree} plans={plans.data ?? []}
+                          errors={{ until: errs["free.until"], thenPlanId: errs["free.thenPlanId"] }} />
+            )}
             <div className="grid">
               <Field label="Locations allowed (override)" error={errs["overrides.maxLocations"]}
                      hint={plan ? `Leave empty for the plan's ${plan.maxLocations}` : "Pick a plan first"}>
@@ -488,11 +499,13 @@ export default function NewTenantPage() {
                          value={limitEdits[k] ?? ""} onChange={(e) => setLimitEdits({ ...limitEdits, [k]: e.target.value })} />
                 </Field>
               ))}
-              <Field label="Monthly price, SEK ex VAT" error={errs["billing.priceSek"]}
-                     hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
-                <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
-                       onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
-              </Field>
+              {!isFree && (
+                <Field label="Monthly price, SEK ex VAT" error={errs["billing.priceSek"]}
+                       hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; type over it for a customer's own price` : "Pick a plan to see its price"}>
+                  <input id="f-billing.priceSek" className="input mono" type="number" min={0} step={1} value={shownPrice}
+                         onChange={(e) => { setPriceTouched(true); setPrice(e.target.value); }} />
+                </Field>
+              )}
               <div className="field">
                 <span className="field__label">Features</span>
                 {plan ? (
@@ -511,8 +524,8 @@ export default function NewTenantPage() {
               <h3>Invoicing</h3>
               <InfoTip label="How invoicing works">
                 Invoiced in arrears through Stripe: on the 25th, one invoice for the period from the 25th to the 24th that has just
-                ended, with the monthly price (pro rata by days for a part period) and the SMS parts sent, plus 25 % VAT, emailed
-                with 30 days to pay. A try-out customer can leave with any period and becomes a subscription by itself after
+                ended, with the monthly price (pro rata by days for a part period) plus 25 % VAT, emailed with 30 days to pay.
+                SMS are included in the price; Free has no charge. A try-out customer can leave with any period and becomes a subscription by itself after
                 6 months, or when you convert them; a subscription customer has 3 months' notice.
               </InfoTip>
             </div>
@@ -536,7 +549,7 @@ export default function NewTenantPage() {
             {startInvoicing && (
               <div className="grid">
                 <Field label="Agreement starts (optional)" error={errs["billing.startDate"]}
-                       hint={`Empty = today. Nothing is charged now. ${firstInvoiceText}`}>
+                       hint={`Empty = today. Nothing is charged now. ${isFree ? "No invoice while on Free." : firstInvoiceText}`}>
                   <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </Field>
               </div>

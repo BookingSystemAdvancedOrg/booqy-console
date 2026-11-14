@@ -1,6 +1,6 @@
 """Agreements invoiced in arrears (periods from the 25th to the 24th):
 customer creation, the agreement, cancellation terms, the monthly invoicing
-run with the SMS line, reminders, late fees, interest and the dunning task.
+run (the monthly price only: SMS are included), the Free plan, reminders, late fees, interest and the dunning task.
 Stripe is a fake; DynamoDB and Cognito are moto."""
 import json
 import time
@@ -23,7 +23,6 @@ def finance(aws, monkeypatch):
     monkeypatch.setenv("BILLING_SUSPEND_AFTER_DAYS", "14")
     monkeypatch.setenv("FINANCE_ROLLUP_FUNCTION_ARN", "arn:aws:lambda:eu-north-1:123456789012:function:dev-finance-rollup:live")
     monkeypatch.setenv("ALERT_TOPIC_ARN", "")
-    monkeypatch.setenv("BILLING_SMS_PRICE_SEK", "0.70")
     monkeypatch.setenv("BILLING_NOTICE_MONTHS", "3")
     monkeypatch.setenv("BILLING_TRIAL_MONTHS", "6")
     aws["ddb"].create_table(TableName=FINANCE_TABLE, BillingMode="PAY_PER_REQUEST",
@@ -391,7 +390,8 @@ def test_billing_tab_before_any_agreement(finance, stripe, tenant):
     assert status == 200
     b = body["billing"]
     assert b["status"] == "none" and b["subscribed"] is False and b["plan"]["priceSek"] == 990 and b["monthlySek"] == 990
-    assert b["smsPrice"] == 0.7 and b["nextInvoice"] is None and body["invoices"] == []
+    assert "smsPrice" not in b and "smsPriceSek" not in b and b["free"] is None
+    assert b["nextInvoice"] is None and body["invoices"] == []
 
 
 def test_start_creates_the_customer_and_the_agreement_without_a_stripe_subscription(finance, stripe, aws, tenant):
@@ -405,7 +405,7 @@ def test_start_creates_the_customer_and_the_agreement_without_a_stripe_subscript
     assert b["startsAt"] == datetime.now(timezone.utc).date().isoformat() and b["endsAt"] is None
     assert b["startedBy"] == "ops@booqy.se" and b["pendingPeriods"] == 0
     nxt = b["nextInvoice"]
-    assert nxt["monthlySek"] == 790 and nxt["smsParts"] == 0 and nxt["date"] == nxt["periodEnd"][:8] + "25" or nxt["date"]
+    assert nxt["monthlySek"] == 790 and "smsSek" not in nxt and nxt["date"] == nxt["periodEnd"][:8] + "25" or nxt["date"]
     assert not any(c[1] == "/subscriptions" for c in stripe["calls"])
     customer_call = next(c for c in stripe["calls"] if c[1] == "/customers")
     assert customer_call[2]["name"] == "Roma Restaurang AB"
@@ -461,17 +461,15 @@ def test_plan_or_price_change_applies_from_the_next_period(finance, stripe, aws,
     assert not any(c[1].startswith("/subscriptions") for c in stripe["calls"])
     status, body = call("PUT /platform/tenants/{tenantId}/plan", {"tenantId": tenant}, body={"planId": "growth"})
     assert status == 200 and body["subscription"] == {"monthlySek": 1990, "priceSek": None, "from": nxt}
-    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
-         body={"action": "set_sms_price", "smsPriceSek": 0.9})
     # the running period keeps the prices it began with; the next one has the new ones
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
     b = body["billing"]
-    assert b["monthlySek"] == 1990 and b["nextInvoice"]["monthlySek"] == 990 and b["nextInvoice"]["smsPriceSek"] == 0.7
+    assert b["monthlySek"] == 1990 and b["nextInvoice"]["monthlySek"] == 990
     assert b["nextInvoice"]["feeText"].startswith("Booqy Starter,")
     from app.billing import _billing, invoice_plan
     profile = _profile(aws, tenant)
-    after = invoice_plan(profile, *next_period(end), locations={})
-    assert after["monthlySek"] == 1990 and after["smsPriceSek"] == Decimal("0.90") and after["feeText"].startswith("Booqy Growth,")
+    after = invoice_plan(profile, *next_period(end))
+    assert after["monthlySek"] == 1990 and after["feeText"].startswith("Booqy Growth,")
     # the start's prices, then today's (two changes on one day: the last one)
     assert [h["monthlySek"] for h in _billing(profile)["priceHistory"]] == [990, 1990]
 
@@ -506,10 +504,9 @@ def test_cancel_terms_in_arrears(finance, stripe, aws, tenant):
     # cancel today: the days used are invoiced on the next 25th
     status, body = call(patch, {"tenantId": tenant}, body={"action": "cancel_now"})
     assert status == 200 and body["billing"]["endsAt"] == today.isoformat() and body["billing"]["status"] == "ending"
+    # the per-customer SMS price is gone: SMS are included in the monthly price
     status, body = call(patch, {"tenantId": tenant}, body={"action": "set_sms_price", "smsPriceSek": 0.55})
-    assert status == 200 and body["billing"]["smsPriceSek"] == 0.55 and body["billing"]["smsPrice"] == 0.55
-    status, body = call(patch, {"tenantId": tenant}, body={"action": "set_sms_price", "smsPriceSek": None})
-    assert status == 200 and body["billing"]["smsPriceSek"] is None and body["billing"]["smsPrice"] == 0.7
+    assert status == 400 and body["error"] == "validation_failed"
     assert isinstance(date.today(), date)
 
 
@@ -542,7 +539,7 @@ def _loc_row(finance, tenant_id, loc, day, **fields):
     finance.put_item(Item={"PK": f"TENANT#{tenant_id}", "SK": f"LOC#{loc}#DAY#{day}", **fields})
 
 
-def test_invoicing_run_builds_one_arrears_invoice_per_period_with_the_sms_line(finance, stripe, aws, tenant):
+def test_invoicing_run_builds_one_arrears_invoice_per_period_without_an_sms_line(finance, stripe, aws, tenant):
     from datetime import date
     from app.billing import run_invoicing
     _activate(aws, tenant)
@@ -560,21 +557,19 @@ def test_invoicing_run_builds_one_arrears_invoice_per_period_with_the_sms_line(f
     assert len(preview["invoices"]) == 1 and preview["errors"] == []
     plan = preview["invoices"][0]
     assert plan["period"] == "25 aug till 24 sep 2026" and plan["activeDays"] == 15 and plan["days"] == 31
-    assert plan["feeSek"] == Decimal("479.03") and plan["smsParts"] == 412 and plan["smsSek"] == Decimal("288.40")
+    assert plan["feeSek"] == Decimal("479.03") and not any(k.startswith("sms") for k in plan)
     assert plan["feeText"] == "Booqy Starter, 25 aug till 24 sep 2026 (15 av 31 dagar)"
-    assert plan["smsText"] == "SMS 25 aug till 24 sep 2026: 412 delar x 0,70 kr (Roma Södermalm 300)"
-    assert plan["totalSek"] == Decimal("767.43") and plan["invoiceId"] is None
+    assert plan["totalSek"] == Decimal("479.03") and plan["invoiceId"] is None
     assert stripe["items"] == [] and stripe["oneoff"] == []
     # the run
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
-    assert len(out["invoices"]) == 1 and out["errors"] == [] and out["totalSek"] == Decimal("767.43")
+    assert len(out["invoices"]) == 1 and out["errors"] == [] and out["totalSek"] == Decimal("479.03")
     made = out["invoices"][0]
     assert made["invoiceId"] == "in_made_1" and made["delivery"] == "sent" and made["number"] == "F-0001"
-    fee_item, sms_item = stripe["items"]
+    (fee_item,) = stripe["items"]                                         # the SMS are included: no SMS line
     assert fee_item["amount"] == 47903 and fee_item["description"] == plan["feeText"] and fee_item["tax_rates[0]"] == "txr_vat25"
     assert fee_item["idempotency_key"] == f"fee-{tenant}-2026-09-24" and fee_item["metadata[kind]"] == "fee"
-    assert sms_item["quantity"] == 412 and sms_item["unit_amount_decimal"] == "70" and sms_item["tax_rates[0]"] == "txr_vat25"
-    assert sms_item["description"] == plan["smsText"]
+    assert not any(i.get("metadata[kind]") == "sms" or "quantity" in i for i in stripe["items"])
     invoice_params = stripe["oneoff"][0]
     assert invoice_params["collection_method"] == "send_invoice" and invoice_params["days_until_due"] == 30
     assert invoice_params["pending_invoice_items_behavior"] == "include" and invoice_params["metadata[periodEnd]"] == "2026-09-24"
@@ -582,19 +577,21 @@ def test_invoicing_run_builds_one_arrears_invoice_per_period_with_the_sms_line(f
     # ledger, profile and audit
     status, body = call("GET /platform/tenants/{tenantId}/billing", {"tenantId": tenant})
     inv = body["invoices"][0]
-    assert inv["number"] == "F-0001" and inv["subtotalSek"] == 767.43 and inv["totalSek"] == 959.29
+    assert inv["number"] == "F-0001" and inv["subtotalSek"] == 479.03 and inv["totalSek"] == 598.79
     assert inv["periodStart"] == "2026-08-25" and inv["periodEnd"] == "2026-09-24"
     assert body["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24"
     # revenue is booked on the day Stripe finalized the invoice (the fake uses the real clock)
     booked_day = datetime.now(timezone.utc).date().isoformat()
     row = finance.get_item(Key={"PK": f"TENANT#{tenant}", "SK": f"DAY#{booked_day}"}).get("Item")
-    assert row and row["invoicedSek"] == Decimal("767.43")
-    # the same day again: nothing new; a month later: the next period, SMS free this time
+    assert row and row["invoicedSek"] == Decimal("479.03")
+    # the SMS stay counted on the day rows (our cost, the Finance page reads them)
+    assert finance.get_item(Key={"PK": f"TENANT#{tenant}", "SK": "DAY#2026-09-12"})["Item"]["smsParts"] == 300
+    # the same day again: nothing new; a month later: the next period
     again = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
     assert again["invoices"] == [] and len(stripe["oneoff"]) == 1
     later = run_invoicing("invoicing", dry_run=False, today=date(2026, 10, 25))
-    assert len(later["invoices"]) == 1 and later["invoices"][0]["feeSek"] == Decimal("990.00") and later["invoices"][0]["smsParts"] == 0
-    assert len(stripe["items"]) == 3                                      # no SMS item for a period without SMS
+    assert len(later["invoices"]) == 1 and later["invoices"][0]["feeSek"] == Decimal("990.00")
+    assert len(stripe["items"]) == 2                                      # one fee item per period, nothing else
 
 
 def test_invoicing_charges_a_card_and_ends_an_agreement_on_its_final_period(finance, stripe, aws, tenant):
@@ -629,9 +626,10 @@ def test_invoicing_catches_up_missed_periods_and_skips_empty_ones(finance, strip
     call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-06-01", "priceSek": 0})
     _day_row(finance, tenant, "2026-07-10", smsParts=10)
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
-    # periods: 25 May-24 Jun, 25 Jun-24 Jul, 25 Jul-24 Aug, 25 Aug-24 Sep; price 0, so only the one with SMS is invoiced
-    assert [i["period"] for i in out["invoices"]] == ["25 juni till 24 juli 2026"]
-    assert [s["period"] for s in out["skipped"]] == ["25 maj till 24 juni 2026", "25 juli till 24 aug 2026", "25 aug till 24 sep 2026"]
+    # periods: 25 May-24 Jun, 25 Jun-24 Jul, 25 Jul-24 Aug, 25 Aug-24 Sep; price 0 and SMS included: nothing is invoiced
+    assert out["invoices"] == [] and stripe["items"] == [] and stripe["oneoff"] == []
+    assert [s["period"] for s in out["skipped"]] == ["25 maj till 24 juni 2026", "25 juni till 24 juli 2026",
+                                                    "25 juli till 24 aug 2026", "25 aug till 24 sep 2026"]
     assert _profile(aws, tenant)["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24"
 
 
@@ -682,8 +680,8 @@ def test_restart_in_the_same_period_bills_both_stretches_on_one_invoice(finance,
     assert b["previous"] == [{"startsAt": "2026-09-01", "endsAt": "2026-09-10"}]
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
     made = out["invoices"][0]
-    # 1-10 Sep and 15-24 Sep: 20 of 31 days, SMS from both stretches only
-    assert made["activeDays"] == 20 and made["feeSek"] == Decimal("638.71") and made["smsParts"] == 30
+    # 1-10 Sep and 15-24 Sep: 20 of 31 days
+    assert made["activeDays"] == 20 and made["feeSek"] == Decimal("638.71")
     assert made["final"] is False and len(out["invoices"]) == 1
     b = _profile(aws, tenant)["billing"]
     assert b["status"] == "active" and "previous" not in b and b["lastInvoicedPeriodEnd"] == "2026-09-24"
@@ -731,7 +729,7 @@ def test_a_rerun_after_a_stopped_run_never_bills_twice(finance, stripe, aws, ten
     call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01"})
     _day_row(finance, tenant, "2026-09-12", smsParts=40)
     first = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
-    assert len(first["invoices"]) == 1 and len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 2
+    assert len(first["invoices"]) == 1 and len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 1
     _set_billing(aws, tenant, lastInvoicedPeriodEnd=None)
     for row in finance.scan()["Items"]:
         if row["SK"].startswith("INVOICE#"):
@@ -739,7 +737,7 @@ def test_a_rerun_after_a_stopped_run_never_bills_twice(finance, stripe, aws, ten
     stripe["sent"].clear()
     again = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 26))
     assert len(again["invoices"]) == 1 and again["invoices"][0]["invoiceId"] == "in_made_1"
-    assert len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 2           # nothing new in Stripe
+    assert len(stripe["oneoff"]) == 1 and len(stripe["items"]) == 1           # nothing new in Stripe
     assert stripe["sent"] == ["in_made_1"]                                     # an open invoice is sent again, not remade
     assert _profile(aws, tenant)["billing"]["lastInvoicedPeriodEnd"] == "2026-09-24"
 
@@ -761,9 +759,7 @@ def test_a_month_with_nothing_to_pay_makes_no_invoice(finance, stripe, aws, tena
     from app.billing import run_invoicing
     _activate(aws, tenant)
     call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant}, body={"startDate": "2026-09-01", "priceSek": 0})
-    call("PATCH /platform/tenants/{tenantId}/billing/subscription", {"tenantId": tenant},
-         body={"action": "set_sms_price", "smsPriceSek": 0})
-    _set_billing(aws, tenant, priceHistory=[{"from": "2026-09-01", "monthlySek": 0, "planName": "Starter", "smsPriceSek": Decimal("0")}])
+    _set_billing(aws, tenant, priceHistory=[{"from": "2026-09-01", "monthlySek": 0, "planName": "Starter"}])
     _day_row(finance, tenant, "2026-09-12", smsParts=40)
     out = run_invoicing("invoicing", dry_run=False, today=date(2026, 9, 25))
     assert out["invoices"] == [] and len(out["skipped"]) == 1 and stripe["oneoff"] == [] and stripe["items"] == []
@@ -849,5 +845,5 @@ def test_a_catalog_price_change_also_applies_from_the_next_period(finance, strip
     handler({"financeTask": "dunning"}, None)
     profile = _profile(aws, tenant)
     assert [h["monthlySek"] for h in _billing(profile)["priceHistory"]] == [990, 1290]
-    assert invoice_plan(profile, start, end, locations={})["monthlySek"] == 990
-    assert invoice_plan(profile, *next_period(end), locations={})["monthlySek"] == 1290
+    assert invoice_plan(profile, start, end)["monthlySek"] == 990
+    assert invoice_plan(profile, *next_period(end))["monthlySek"] == 1290

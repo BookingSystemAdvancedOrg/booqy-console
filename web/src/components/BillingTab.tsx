@@ -5,13 +5,14 @@ import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from "./ui";
 import { SaveButton, useFlash } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
+import { fmtFreeDay } from "../free";
 
 const STATUS_TEXT: Record<string, string> = {
   none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
 };
 
 /** The customer's agreement, invoiced in arrears on the 25th for the period
- * from the 25th to the 24th: the monthly price plus the SMS parts sent. */
+ * from the 25th to the 24th: the monthly price (SMS included; nothing on Free). */
 export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: Tenant; cardParam: string | null; onChanged: () => void }) {
   const { data, error, loading, reload } = useLoad(() => api.billing(tenant.tenantId), [tenant.tenantId]);
   const act = useAction();
@@ -21,7 +22,6 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [offboardAtEnd, setOffboardAtEnd] = useState(true);
   const [url, setUrl] = useState<string | null>(null);
-  const [smsPrice, setSmsPrice] = useState<string | null>(null);
   const [run, setRun] = useState<InvoicingRun | null>(null);
   const [started, flashStarted] = useFlash();
 
@@ -39,11 +39,10 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const isTrial = b.terms === "trial";
   const stamp = b.pastDueSince && running ? "past_due" : ended ? "ended" : b.status;
 
-  async function doAction(action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "set_sms_price",
-                          options: { offboardAtEnd?: boolean; smsPriceSek?: number | null } = {}) {
+  async function doAction(action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card",
+                          options: { offboardAtEnd?: boolean } = {}) {
     if (await act.run(() => api.updateSubscription(tenant.tenantId, action, options))) {
       setConfirmCancel(false);
-      setSmsPrice(null);
       void reload();
       onChanged();
     }
@@ -56,7 +55,8 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
       <Card title="Agreement" saved={act.done || started} savedLabel={started ? "Started" : "Saved"} actions={<span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span>}>
         <p className="muted small">
           Invoiced in arrears: on the 25th, Stripe sends one invoice for the period from the 25th to the 24th that has just
-          ended, with the monthly price (pro rata by days for a part period) and one line for the SMS parts sent, plus 25 % VAT.
+          ended, with the monthly price (pro rata by days for a part period) plus 25 % VAT. SMS are included in the price.
+          The Free plan has no charge: no invoice while it lasts.
           Emailed invoices are due {b.daysUntilDue} days later; a card on file is charged on the 25th. Unpaid invoices get
           weekly reminders, the statutory late fee after the grace period and interest when paid; past due for{" "}
           {b.suspendAfterDays} days means suspension until paid.
@@ -93,25 +93,13 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
 
         <dl className="dl">
           <Row label="Plan" value={b.plan.name ? `${b.plan.name}, ${fmtSek(b.plan.priceSek)} per period ex VAT` : tenant.planId} />
-          <Row label="This customer pays" value={`${fmtSek(b.monthlySek)} per period ex VAT${b.priceSek != null ? " (own price)" : ""}`} />
-          <dt>SMS price</dt>
-          <dd>
-            {smsPrice === null ? (
-              <>
-                {fmtSek(b.smsPrice, { decimals: true })} per part ex VAT{b.smsPriceSek != null ? " (own price)" : " (default)"}
-                <button className="link" onClick={() => setSmsPrice(String(b.smsPrice))}>Change</button>
-              </>
-            ) : (
-              <span className="inline-edit">
-                <input className="input mono" type="number" min={0} max={100} step={0.01} value={smsPrice} aria-label="Price per SMS part"
-                       onChange={(e) => setSmsPrice(e.target.value)} />
-                <SaveButton kind="plain" small type="button" label="Save" busy={act.busy} hint={false} dirty={smsPrice !== String(b.smsPrice)}
-                            onClick={() => void doAction("set_sms_price", { smsPriceSek: smsPrice === "" ? null : Number(smsPrice) })} />
-                <button className="btn btn--small btn--ghost" onClick={() => doAction("set_sms_price", { smsPriceSek: null })}>Use default ({fmtSek(b.smsPriceDefaultSek, { decimals: true })})</button>
-                <button className="link" onClick={() => setSmsPrice(null)}>Cancel</button>
-              </span>
-            )}
-          </dd>
+          <Row label="This customer pays" value={b.free ? "Nothing (Free)" : `${fmtSek(b.monthlySek)} per period ex VAT${b.priceSek != null ? " (own price)" : ""}`} />
+          {b.free && (
+            <Row label="Free" value={b.free.until
+              ? `Until ${fmtFreeDay(b.free.until)}, then ${b.free.thenPlanName ?? b.free.thenPlanId}${b.free.thenPriceSek != null ? ` (${fmtSek(b.free.thenPriceSek)} per period)` : ""} from ${fmtFreeDay(b.free.switchOn ?? b.free.until)}${b.free.noticeSentFor === b.free.until ? "; the owner has been told" : ""}`
+              : "No end date: free until the plan is changed"} />
+          )}
+          <Row label="SMS" value="Included in the price" />
           <Row label="Terms" value={!running && b.status !== "ended" ? undefined : isTrial
             ? `Try-out period${b.termsSince ? ` since ${fmtDay(b.termsSince)}` : ""}: can leave with any period${b.trialEndsAt ? `; becomes a subscription on ${fmtDay(b.trialEndsAt)}` : ""}`
             : `Subscription, ${b.noticeMonths} months' notice${b.termsSince ? ` (since ${fmtDay(b.termsSince)})` : ""}`} />
@@ -136,13 +124,9 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
             <table className="next-invoice__lines">
               <tbody>
                 <tr><td>{nxt.feeText}</td><td className="num">{fmtSek(nxt.feeSek, { decimals: true })}</td></tr>
-                <tr><td>{nxt.smsText} so far</td><td className="num">{fmtSek(nxt.smsSek, { decimals: true })}</td></tr>
                 <tr className="next-invoice__total"><td>Total ex VAT so far</td><td className="num">{fmtSek(nxt.totalSek, { decimals: true })}</td></tr>
               </tbody>
             </table>
-            {nxt.smsByLocation && Object.keys(nxt.smsByLocation).length > 0 && (
-              <p className="muted small">SMS per location: {Object.entries(nxt.smsByLocation).map(([n, c]) => `${n} ${fmtInt(c)}`).join(", ")}.</p>
-            )}
           </div>
         )}
 
@@ -222,24 +206,26 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
     e.preventDefault();
     const body: { collectionMethod: typeof method; startDate?: string; terms: typeof terms; priceSek?: number } = { collectionMethod: method, terms };
     if (startDate) body.startDate = startDate;
-    if (price !== "") body.priceSek = Number(price);
+    if (price !== "" && !billing.plan.free) body.priceSek = Number(price);
     if (await a.run(() => api.startSubscription(tenant.tenantId, body))) onDone();
   }
   return (
     <Modal title="Start the agreement" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="small">
-          <strong>{billing.plan.name ?? tenant.planId}</strong>: {fmtSek(billing.plan.priceSek)} per period excluding VAT, SMS at{" "}
-          {fmtSek(billing.smsPrice, { decimals: true })} per part, 25 % VAT on the invoice. Billed to {tenant.legalName ?? tenant.name}{" "}
+          <strong>{billing.plan.name ?? tenant.planId}</strong>: {billing.plan.free ? "no charge while on Free" : `${fmtSek(billing.plan.priceSek)} per period excluding VAT`}, SMS
+          included, 25 % VAT on the invoice. Billed to {tenant.legalName ?? tenant.name}{" "}
           ({tenant.billingEmail ?? tenant.ownerEmail ?? "owner email"}). Nothing is charged now: the first invoice comes on the 25th after the
           first period, for the days used.
         </p>
         <div className="grid">
-          <label className="field">
-            <span className="field__label">Monthly price, SEK ex VAT</span>
-            <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
-            <span className="field__hint">The plan's price is {fmtSek(billing.plan.priceSek)}; a different amount is this customer's own price.</span>
-          </label>
+          {!billing.plan.free && (
+            <label className="field">
+              <span className="field__label">Monthly price, SEK ex VAT</span>
+              <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+              <span className="field__hint">The plan's price is {fmtSek(billing.plan.priceSek)}; a different amount is this customer's own price.</span>
+            </label>
+          )}
           <label className="field">
             <span className="field__label">Runs from</span>
             <input className="input" type="date" value={startDate} min={earliest} onChange={(e) => setStartDate(e.target.value)} />
@@ -285,6 +271,8 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
 
 function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tenantId: string; onChanged: () => void }) {
   const remind = useAction();
+  // Invoices from before SMS were included in the price carry an SMS line: shown only then.
+  const smsColumn = invoices.some((i) => Number(i.smsSek) > 0);
   return (
     <Card title="Invoices" saved={remind.done} savedLabel="Reminder sent">
       {invoices.length === 0 ? (
@@ -293,7 +281,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
         <div className="table-wrap table-wrap--inner">
           <ErrorNotice error={remind.error} />
           <table className="table">
-            <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Fee</th><th>SMS</th><th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
+            <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Fee</th>{smsColumn && <th>SMS</th>}<th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
             <tbody>
               {invoices.map((i) => {
                 const overdue = i.status === "open" && i.daysLate > 0;
@@ -304,7 +292,7 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
                     <td><span className={`status status--invoice-${invoiceStatus(i)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(i)] ?? i.status}</span></td>
                     <td className="small">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
                     <td className="num">{i.feeSek != null ? fmtSek(i.feeSek, { decimals: true }) : "-"}</td>
-                    <td className="num">{i.smsParts != null ? `${fmtInt(i.smsParts)} parts${i.smsSek != null ? `, ${fmtSek(i.smsSek, { decimals: true })}` : ""}` : "-"}</td>
+                    {smsColumn && <td className="num">{Number(i.smsSek) > 0 ? `${fmtInt(i.smsParts ?? 0)} parts, ${fmtSek(i.smsSek, { decimals: true })}` : "-"}</td>}
                     <td className="num">{fmtSek(i.subtotalSek)}</td>
                     <td className="num">{fmtSek(i.totalSek)}</td>
                     <td className="small">{fmtDay(i.dueDate)}</td>

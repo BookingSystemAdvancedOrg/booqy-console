@@ -5,6 +5,7 @@ offboarding) is done by the Step Functions workflows in the infrastructure
 repo - this module only writes the rows and starts them."""
 
 import json
+from datetime import date, timedelta
 
 from botocore.exceptions import ClientError
 
@@ -58,9 +59,83 @@ def owner_email_problem(email: str | None, tenant_id: str | None = None) -> str 
     return f"Already signs in to {other} - use another address, e.g. {local}+{domain.split('.')[0]}2@{domain}"
 
 
-def get_plan(plan_id: str) -> dict | None:
+# Free: no monthly charge, Growth's features and limits. Not a row in the
+# catalog (no Stripe product, nothing to keep in step): derived from
+# PLAN#growth on every read, so it always follows Growth. A limited free
+# period ends on billing.freeUntil (the last free day) and the daily task
+# (billing.free_step) moves the customer to billing.freeThenPlanId.
+FREE_PLAN_ID = "free"
+FREE_BASE_PLAN_ID = "growth"
+FREE_MONTHS = 3
+
+
+def _plan_row(plan_id: str) -> dict | None:
     return from_ddb(client("dynamodb").get_item(
         TableName=tenant_table(), Key={"PK": {"S": f"PLAN#{plan_id}"}, "SK": {"S": "PLAN"}}).get("Item"))
+
+
+def free_plan(base: dict | None) -> dict | None:
+    if not base:
+        return None
+    return {**base, "planId": FREE_PLAN_ID, "name": "Free", "priceSek": 0, "free": True,
+            "stripePriceId": None, "stripeProductId": None, "GSI1SK": FREE_PLAN_ID}
+
+
+def get_plan(plan_id: str) -> dict | None:
+    if plan_id == FREE_PLAN_ID:
+        return free_plan(_plan_row(FREE_BASE_PLAN_ID))
+    return _plan_row(plan_id)
+
+
+def add_months(day: date, months: int) -> date:
+    month = day.month - 1 + months
+    year = day.year + month // 12
+    month = month % 12 + 1
+    last = (date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)).day
+    return day.replace(year=year, month=month, day=min(day.day, last))
+
+
+def default_free_until(today: date | None = None) -> date:
+    """The default last free day: three months from today (Stockholm)."""
+    from .website import stockholm_today          # website imports nothing from here
+    return add_months(today or stockholm_today(), FREE_MONTHS)
+
+
+def free_input(f: v.Fields, plan_id: str | None, field: str = "free") -> dict | None:
+    """The `free` object next to planId "free": {until: yyyy-mm-dd | null
+    (no end date), thenPlanId (the plan after it, default starter)}. Left
+    out: three months, then Starter."""
+    if plan_id != FREE_PLAN_ID:
+        return None
+    from .website import stockholm_today
+    today = stockholm_today()
+    raw = f.data.get(field)
+    if raw is None:
+        return {"until": default_free_until(today).isoformat(), "thenPlanId": "starter"}
+    if not isinstance(raw, dict):
+        f.fail(field, "Must be an object")
+        return None
+    out = {"until": None, "thenPlanId": "starter"}
+    until = raw.get("until")
+    if until is not None:
+        try:
+            day = date.fromisoformat(str(until)[:10]) if isinstance(until, str) else None
+        except ValueError:
+            day = None
+        if day is None:
+            f.fail(f"{field}.until", "Use yyyy-mm-dd, or null for no end date")
+        elif day < today:
+            f.fail(f"{field}.until", "Today or later")
+        elif day > today + timedelta(days=3 * 366):
+            f.fail(f"{field}.until", "At most three years ahead")
+        else:
+            out["until"] = day.isoformat()
+    then = raw.get("thenPlanId") or "starter"
+    if not isinstance(then, str) or then == FREE_PLAN_ID or _plan_row(then) is None:
+        f.fail(f"{field}.thenPlanId", "Pick Starter or Growth")
+    else:
+        out["thenPlanId"] = then
+    return out
 
 
 def _profile_fields(f: v.Fields) -> dict:
@@ -88,13 +163,17 @@ def _profile_fields(f: v.Fields) -> dict:
 
 # ---------------------------------------------------------------------- plans
 def list_plans(req) -> tuple[int, dict]:
-    plans = query_all(TableName=tenant_table(), IndexName="GSI1",
-                      KeyConditionExpression="GSI1PK = :p", ExpressionAttributeValues={":p": {"S": "PLAN"}})
+    plans = [p for p in query_all(TableName=tenant_table(), IndexName="GSI1",
+                                  KeyConditionExpression="GSI1PK = :p", ExpressionAttributeValues={":p": {"S": "PLAN"}})
+             if p.get("planId") != FREE_PLAN_ID]
+    plans.sort(key=lambda p: (p.get("priceSek") is None, p.get("priceSek") or 0, p["planId"]))
+    free = free_plan(next((p for p in plans if p["planId"] == FREE_BASE_PLAN_ID), None))
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
          "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
-         "limits": p.get("limits", {}), "priceSek": p.get("priceSek")}
-        for p in plans]}
+         "limits": p.get("limits", {}), "priceSek": p.get("priceSek"), "free": bool(p.get("free"))}
+        for p in plans + ([free] if free else [])],
+        "freeDefaultUntil": default_free_until().isoformat()}
 
 
 def _entitlements(plan: dict, overrides: dict | None) -> dict:
@@ -198,6 +277,8 @@ def list_tenants(req) -> tuple[int, dict]:
             "chargesEnabled": bool(stripe.get("chargesEnabled")),
             "primaryDomain": t.get("primaryDomain"), "ownerEmail": t.get("ownerEmail"),
             "createdAt": t.get("createdAt"),
+            "freeUntil": (t.get("billing") or {}).get("freeUntil") if t.get("planId") == FREE_PLAN_ID
+            and isinstance(t.get("billing"), dict) else None,
         })
     rows.sort(key=lambda r: (r["name"] or "").lower())
     return 200, {"tenants": rows}
@@ -214,6 +295,7 @@ def create_tenant(req) -> tuple[int, dict]:
     fields = _profile_fields(f)
     overrides = _overrides(f)
     billing_input = _billing_input(f)
+    free = free_input(f, plan_id)
     raw_locations = req.body.get("locations") or []
     if not isinstance(raw_locations, list):
         f.fail("locations", "Must be a list")
@@ -252,7 +334,10 @@ def create_tenant(req) -> tuple[int, dict]:
     slug_claim = {"ConditionExpression": "tenantId = :old", "ExpressionAttributeValues": {":old": {"S": previous}}} \
         if previous else {"ConditionExpression": "attribute_not_exists(PK)"}
     billing = {"terms": billing_input["terms"]}
-    if billing_input.get("priceSek") is not None and plan and billing_input["priceSek"] != plan.get("priceSek"):
+    if free is not None:
+        billing.update({k: val for k, val in free_fields(free, now[:10]).items() if val is not None})
+        billing_input["priceSek"] = None
+    elif billing_input.get("priceSek") is not None and plan and billing_input["priceSek"] != plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
     profile = {
         "PK": f"TENANT#{tenant_id}", "SK": "PROFILE", "GSI1PK": "TENANT", "GSI1SK": slug,
@@ -281,6 +366,7 @@ def create_tenant(req) -> tuple[int, dict]:
                                               **v.app_location_fields(loc), **loc})}})
     items.append(audit_put(tenant_id, "tenant_created", req.actor,
                            {"planId": plan_id, "ownerEmail": owner_email, "locations": len(locations),
+                            **({"free": free} if free else {}),
                             **({"slugFromPurgedTenant": previous} if previous else {})}))
     try:
         client("dynamodb").transact_write_items(TransactItems=items)
@@ -432,6 +518,13 @@ def update_tenant(req) -> tuple[int, dict]:
     return 200, {"tenant": public(from_ddb(out["Attributes"]))}
 
 
+def free_fields(free: dict | None, since: str | None = None) -> dict:
+    """PROFILE.billing fields of a free period (None values = REMOVE)."""
+    if free is None:
+        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None}
+    return {"freeUntil": free.get("until"), "freeThenPlanId": free.get("thenPlanId") or "starter", "freeSince": since}
+
+
 def set_plan(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
@@ -439,13 +532,28 @@ def set_plan(req) -> tuple[int, dict]:
     overrides = _overrides(f)
     force = f.boolean("force") or False
     price_sek = price_field(f)
+    free = free_input(f, plan_id)
     f.done()
     profile = get_profile(tenant_id)
     plan = get_plan(plan_id)
     if plan is None:
         raise ApiError(400, "validation_failed", "Unknown plan", fields={"planId": "Unknown plan"})
+    tenant, subscription = apply_plan(tenant_id, profile, plan, req.actor, overrides=overrides, force=force,
+                                      price_sek=price_sek, free=free)
+    return 200, {"tenant": tenant, "subscription": subscription}
+
+
+def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrides: dict | None = None,
+               force: bool = False, price_sek: int | None = None, free: dict | None = None,
+               expect_free_until: str | None = None, price_from: date | None = None) -> tuple[dict, dict | None]:
+    """Sets the plan, its entitlements (plus overrides) and the customer's
+    own price; Free also sets its period (`free`), any other plan ends one.
+    `expect_free_until`: only while the customer is still on that free
+    period (the daily switch, so a re-run never switches twice)."""
+    plan_id = plan["planId"]
+    is_free = plan_id == FREE_PLAN_ID
     ent = _entitlements(plan, overrides)
-    custom_price = price_sek if price_sek is not None and price_sek != plan.get("priceSek") else None
+    custom_price = price_sek if not is_free and price_sek is not None and price_sek != plan.get("priceSek") else None
     count = int(profile.get("locationCount", 0))
     if ent["maxLocations"] < count and not force:
         raise ApiError(409, "below_location_count",
@@ -453,7 +561,8 @@ def set_plan(req) -> tuple[int, dict]:
                        "Send force=true to apply anyway (existing locations keep working, no new ones).",
                        locationCount=count)
     ensure_billing_map(tenant_id)
-    values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": req.actor}}
+    values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": actor}}
+    names: dict = {}
     ever = _turned_on(ent)
     if isinstance(profile.get("entitlements"), dict):
         # Field by field, so featuresEver is only ever added to (ADD is a set union, safe against concurrent writes).
@@ -469,23 +578,46 @@ def set_plan(req) -> tuple[int, dict]:
     else:
         values[":e"] = to_ddb_value({**ent, **({"featuresEver": ever} if ever else {})})
         expression, expression_add = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b", ""
+    removes = []
     if custom_price is not None:
         values[":price"] = {"N": str(custom_price)}
         expression += ", billing.priceSek = :price"
     else:
-        expression += " REMOVE billing.priceSek"
+        removes.append("billing.priceSek")
+    old_billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
+    was_free = profile.get("planId") == FREE_PLAN_ID
+    since = old_billing.get("freeSince") if was_free and old_billing.get("freeSince") else now_iso()[:10]
+    fields = free_fields(free if is_free else None, since)
+    if is_free and old_billing.get("freeNoticeFor") and old_billing.get("freeNoticeFor") != free.get("until"):
+        fields["freeNoticeFor"] = None          # a new end date gets its own notice
+    for i, (key, val) in enumerate(fields.items()):
+        names[f"#fr{i}"] = key
+        if val is None:
+            removes.append(f"billing.#fr{i}")
+        else:
+            values[f":fr{i}"] = to_ddb_value(val)
+            expression += f", billing.#fr{i} = :fr{i}"
+    if removes:
+        expression += " REMOVE " + ", ".join(removes)
     expression += expression_add
+    condition = "attribute_exists(PK)"
+    if expect_free_until:
+        condition += " AND planId = :free AND billing.freeUntil = :until"
+        values.update({":free": {"S": FREE_PLAN_ID}, ":until": {"S": expect_free_until}})
     out = client("dynamodb").update_item(
-        TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
-        ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues=values, ReturnValues="ALL_NEW")
-    write_audit(tenant_id, "plan_changed", req.actor, {
+        TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression, ConditionExpression=condition,
+        ExpressionAttributeValues=values, ReturnValues="ALL_NEW", **({"ExpressionAttributeNames": names} if names else {}))
+    write_audit(tenant_id, "plan_changed", actor, {
         "from": {"planId": profile.get("planId"), "entitlements": profile.get("entitlements"),
-                 "priceSek": (profile.get("billing") or {}).get("priceSek") if isinstance(profile.get("billing"), dict) else None},
-        "to": {"planId": plan_id, "entitlements": ent, "priceSek": custom_price}})
+                 "priceSek": old_billing.get("priceSek"),
+                 **({"freeUntil": old_billing.get("freeUntil")} if was_free else {})},
+        "to": {"planId": plan_id, "entitlements": ent, "priceSek": custom_price, **({"free": free} if is_free else {})}})
     from .billing import after_plan_change          # billing imports this module
-    subscription = after_plan_change(tenant_id, from_ddb(out["Attributes"]), plan, req.actor)
+    from .website import stockholm_today
+    subscription = after_plan_change(tenant_id, from_ddb(out["Attributes"]), plan, actor,
+                                     exact=is_free or was_free, on=price_from or stockholm_today())
     tenant = public(from_ddb(out["Attributes"])) if subscription is None else public(get_profile(tenant_id))
-    return 200, {"tenant": tenant, "subscription": subscription}
+    return tenant, subscription
 
 
 def ensure_billing_map(tenant_id: str) -> None:
