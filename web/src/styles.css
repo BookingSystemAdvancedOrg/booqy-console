@@ -546,7 +546,7 @@ textarea.input { resize: vertical; }
 /* --- add-domain wizard ------------------------------------------------------------------- */
 .choices { display: grid; gap: 10px; }
 .choice { display: grid; gap: 4px; text-align: left; border: 1.5px solid var(--paper-line); background: var(--glass-surface); border-radius: var(--r-md); padding: 12px 14px; cursor: default; font: inherit; color: inherit; transition: border-color 160ms var(--ease), transform 160ms var(--ease); }
-.choice:hover { border-color: var(--print); transform: translateY(-1px); }
+.choice:hover { border-color: var(--print); }
 .back { margin: 0 0 10px; padding: 0; }
 .inline-form { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 12px; }
 .inline-form > .btn { margin-top: 22px; }
@@ -577,8 +577,16 @@ textarea.input { resize: vertical; }
 .zone__hosts { margin: 8px 0; }
 .zone__actions { flex-wrap: wrap; justify-content: flex-start; margin-top: 10px; }
 .sim-bar { gap: 8px; margin-top: 10px; align-items: center; }
-.sim-bar .input.select, .sim-bar .select { min-width: 200px; }
+.sim-bar .input.select, .sim-bar .select { min-width: 200px; width: auto; flex: 0 1 260px; }
+/* Long DNS values, name servers and commands wrap inside their card; Copy copies the exact text. */
+.code { white-space: pre-wrap; overflow-wrap: anywhere; }
+p .mono, .notice .mono, dd.mono, .zone .mono { overflow-wrap: anywhere; }
+.required-records td { word-break: normal; overflow-wrap: anywhere; }
+input[type="file"].input::file-selector-button { font: inherit; font-weight: 600; color: var(--ink); background: var(--glass-surface);
+  border: 1.5px solid var(--paper-line); border-radius: 999px; padding: 6px 14px; margin-right: 10px; cursor: default; }
 @media (max-width: 560px) {
+  .records .records__pick { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
+  .records .records__remove { min-width: 44px; }
   .zone__status { text-align: left; }
   .zone__actions .btn { flex: 1 1 auto; }
 }

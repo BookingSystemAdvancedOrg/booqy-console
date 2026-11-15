@@ -227,8 +227,7 @@ export function SupportCaseBox({ domain, tenantId, supportCase }: { domain: stri
   const dl = useAction();
   return (
     <Notice kind="warn">
-      <strong>One manual step:</strong> open an AWS Support case so the .se registry can verify the owner. The domain stays
-      “Waiting for .se verification” until it's approved; then everything continues by itself.
+      <strong>Booqy acts:</strong> AWS Support case for the .se owner check <InfoTip label="Support case">The .se registry verifies the owner through an AWS Support case. The domain stays “Waiting for .se verification” until it's approved; then everything continues by itself.</InfoTip>
       <ol className="small steps">
         <li>AWS console of this environment's account → Support Center → Create case → <em>Account and billing</em> →
           service <strong>{supportCase.service}</strong>, category <strong>{supportCase.category}</strong>.</li>
@@ -299,8 +298,7 @@ export function RegistreringsbevisUpload({ tenantId, error, onKey, onBusy }: {
   }
   return (
     <>
-      <h5>Registreringsbevis (required for .se)</h5>
-      <p className="small muted">The company's registration certificate from Bolagsverket, as a PDF (max 10 MB). The .se registry verifies the owner before it takes effect. Stored encrypted and deleted once verified (after 30 days at the latest).</p>
+      <h5>Registreringsbevis (required for .se) <InfoTip label="Registreringsbevis">The company's registration certificate from Bolagsverket, as a PDF (max 10 MB). The .se registry verifies the owner before it takes effect. Stored encrypted and deleted once verified (after 30 days at the latest).</InfoTip></h5>
       <Field label="PDF" error={error}>
         <input className="input" type="file" accept="application/pdf" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} />
       </Field>
@@ -416,8 +414,8 @@ function RecordsReview({ scan, rows, setRows }: { scan: DnsScan; rows: Row[]; se
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.skip ? "muted" : undefined}>
-                <td data-label="Copy"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
-                           onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></td>
+                <td data-label="Copy"><label className="records__pick"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
+                           onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></label></td>
                 <td className="cell-title"><input className="input mono" aria-label="Name" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
                 <td data-label="Type"><Select aria-label="Type" value={r.type} disabled={!!r.skip} onChange={(v) => update(r.id, { type: v })}
                   options={(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => ({ value: t, label: t }))} /></td>
@@ -425,7 +423,7 @@ function RecordsReview({ scan, rows, setRows }: { scan: DnsScan; rows: Row[]; se
                 <td data-label="Value(s)">{r.skip ? <span className="small">{r.skip}</span>
                   : <textarea className="input mono" rows={Math.min(4, Math.max(1, r.valuesText.split("\n").length))}
                               value={r.valuesText} onChange={(e) => update(r.id, { valuesText: e.target.value })} />}</td>
-                <td>{!r.skip && <button type="button" className="btn btn--ghost btn--small" aria-label={`Remove ${r.name} ${r.type}`} onClick={() => setRows(rows.filter((x) => x.id !== r.id))}>✕</button>}</td>
+                <td>{!r.skip && <button type="button" className="btn btn--ghost btn--small records__remove" aria-label={`Remove ${r.name} ${r.type}`} onClick={() => setRows(rows.filter((x) => x.id !== r.id))}>✕</button>}</td>
               </tr>
             ))}
           </tbody>
@@ -622,7 +620,7 @@ function MoveToBooqy({ tenant, initialDomain, onBack, onKeep, onDone }: {
       )}
       {check?.supported && !check.transferable && (
         <>
-          <Notice kind="warn">{check.lastError ?? check.reason ?? "It can't be moved right now."}</Notice>
+          <Notice kind={check.who === "booqy" ? "error" : "warn"}>{check.who && <><strong>{whoActs(check.who)}:</strong> </>}{withoutWho(check.lastError ?? check.reason ?? "It can't be moved right now.")}</Notice>
           {check.lastErrorSv && <RestaurantText text={check.lastErrorSv} title="Restaurant (Swedish)" />}
           <button type="button" className="link" onClick={() => onKeep(check.domain)}>Keep current registrar instead</button>
         </>
@@ -656,15 +654,25 @@ function MoveToBooqy({ tenant, initialDomain, onBack, onKeep, onDone }: {
   );
 }
 
+/** Who acts on an own-domain error (errors say who acts). */
+export function whoActs(who: "restaurant" | "booqy"): string {
+  return who === "restaurant" ? "The restaurant acts" : "Booqy's fault";
+}
+
+/** The API's English error may already start with "Booqy's fault:": shown once, after the label. */
+export function withoutWho(message: string): string {
+  return message.replace(/^Booqy's fault:\s*/i, "");
+}
+
 export function NameServerBox({ domain, nameServers }: { domain: string; nameServers: string[] }) {
   const text = nameServers.join("\n");
   return (
     <Notice kind="info">
-      Send the restaurant this: at their registrar (one.com: <em>Domain → DNS settings → Name servers → use custom</em>),
-      replace the name servers of <strong>{domain}</strong> with these four:
+      <span className="row restaurant-text__head">
+        <span>Name servers for <strong>{domain}</strong> <InfoTip label="Name servers">At their registrar (one.com: Domain, DNS settings, Name servers, use custom) the restaurant replaces the name servers with these four. We check every 10 minutes (it can take a few hours to be seen); then the certificates are issued and the site goes live on {domain} and www.{domain} by itself.</InfoTip></span>
+        <button type="button" className="btn btn--small" onClick={() => navigator.clipboard.writeText(text)}>Copy</button>
+      </span>
       <pre className="code">{text}</pre>
-      <button type="button" className="btn btn--small" onClick={() => navigator.clipboard.writeText(text)}>Copy</button>
-      <p className="small">We check every 10 minutes (it can take a few hours to be seen). Then the certificates are issued and the site goes live on {domain} and www.{domain} by itself.</p>
     </Notice>
   );
 }

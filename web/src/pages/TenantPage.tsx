@@ -7,7 +7,7 @@ import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
-import DomainWizard, { NameServerBox, RecordsTable, RestaurantText, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+import DomainWizard, { NameServerBox, RecordsTable, RestaurantText, SupportCaseBox, TransferModal, money, whoActs, withoutWho } from "../components/DomainWizard";
 import { Select } from "../components/Select";
 import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
@@ -797,7 +797,7 @@ function ZoneCard({ tenant, zone: z, onChanged, onTransfer, onMoveAgain }: {
       )}
       {z.lastError && (
         <Notice kind={z.who === "restaurant" ? "warn" : "error"}>
-          <strong>{z.who === "restaurant" ? "The restaurant acts" : "Booqy's fault"}:</strong> {z.lastError}
+          <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> {withoutWho(z.lastError)}
         </Notice>
       )}
       {z.devError && <p className="small error-text">dev: {z.devError}</p>}

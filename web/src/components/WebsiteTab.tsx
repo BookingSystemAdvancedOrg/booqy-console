@@ -339,11 +339,8 @@ function Access({ site, tenant }: { site: SiteStatus; tenant: Tenant }) {
     if (r) { setResult(r); setUsername(""); }
   }
   return (
-    <Card title="Give access">
-      <p className="small muted">
-        A developer gets write access to <span className="mono">{site.repo}</span> only, through the Booqy Customer Sites app. They accept the invitation on
-        GitHub. Nothing to copy: no tokens are created or shown.
-      </p>
+    <Card title="Give access" info={<>A developer gets write access to <span className="mono">{site.repo}</span> only, through the Booqy Customer Sites app. They accept the invitation on
+        GitHub. Nothing to copy: no tokens are created or shown.</>}>
       <form className="row" onSubmit={invite}>
         <Field label="GitHub username" error={a.fields.username}>
           <input className="input mono" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="anna-dev" autoComplete="off" />
@@ -364,11 +361,8 @@ function Archive({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
   const a = useAction();
   const [confirm, setConfirm] = useState("");
   return (
-    <Card title="Archive website repo" tone="danger">
-      <p>
-        Removes this environment's deploy role and repo variables, so nothing deploys here any more. The repo is archived
-        (read-only) once no environment uses it; Delete customer deletes it. <strong>Set up</strong> brings it back. Offboarding does this by itself.
-      </p>
+    <Card title="Archive website repo" tone="danger" info={<>Removes this environment's deploy role and repo variables, so nothing deploys here any more. The repo is archived
+        (read-only) once no environment uses it; Delete customer deletes it. <strong>Set up</strong> brings it back. Offboarding does this by itself.</>}>
       <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
         <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
       </Field>
