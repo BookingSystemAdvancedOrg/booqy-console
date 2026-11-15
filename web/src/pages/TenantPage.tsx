@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
@@ -508,7 +508,9 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       ...(isFree ? { freePreset: savedFree?.preset ?? "", freeThen: savedFree?.thenPlanId ?? "" } : {}) },
   );
 
-  useEffect(() => {
+  // Layout effect: when the plans arrive the price must be in place before the
+  // screen (and Save plan) shows, or the form looks changed for one frame.
+  useLayoutEffect(() => {
     // Back on the current plan: show the tenant's real limits (incl. overrides)
     // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {
