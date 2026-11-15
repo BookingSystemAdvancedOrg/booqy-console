@@ -235,7 +235,7 @@ export function Select(props: SelectProps) {
               onClick={() => (open ? close() : show())} onKeyDown={onKeyDown}>
         {/* keyed by the value: a new choice enters with the swap animation (select.css) */}
         <span key={value} className={`select__value${selected < 0 ? " select__value--empty" : ""}`}>
-          {shown}{shownMeta && <span className="select__meta">{shownMeta}</span>}
+          {shownMeta ? <><span className="select__label">{shown}</span><span className="select__meta">{shownMeta}</span></> : shown}
         </span>
         <Icon name="chevron-down" size={16} className="select__chevron" />
       </button>

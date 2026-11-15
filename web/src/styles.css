@@ -1722,13 +1722,15 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .tenants-toolbar { container: tenants-toolbar / inline-size; }
 .tenants-filter { display: none; }
 @container tenants-toolbar (max-width: 800px) {
-  .toolbar.tenants-toolbar > .input.search { flex: 1 1 0; width: auto; min-width: 0; max-width: none; min-height: 44px; border-radius: var(--r-pill); padding: 0 14px 0 40px;
+  .toolbar.tenants-toolbar > .input.search { flex: 1 1 0; width: auto; min-width: 120px; max-width: none; min-height: 44px; border-radius: var(--r-pill); padding: 0 14px 0 40px;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
   .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
   :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
   :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
   .tenants-toolbar > .chips { display: none !important; }
-  .tenants-filter { display: block; flex: none; }
+  /* the pill never takes the search's room: a long status ends in "...", the count and chevron stay */
+  .tenants-filter { display: block; flex: 0 1 auto; min-width: 0; max-width: min(55%, calc(100% - 132px)); }  /* 132 = the search minimum + the gap: never wraps */
+  .tenants-filter .input.select.status-filter { max-width: 100%; }
 }
 .input.select.status-filter {
   width: auto; min-height: 44px; height: 44px; padding: 0 12px 0 16px; gap: 6px;
@@ -1738,7 +1740,9 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .input.select.status-filter:hover { background: var(--pearl); }
 .input.select.status-filter:focus-visible,
 .input.select.status-filter[aria-expanded="true"] { background: var(--pearl); box-shadow: var(--pearl-rim), 0 0 0 2px #a88462; }
-.status-filter .select__value { display: inline-flex; align-items: center; gap: 0; overflow: visible; animation: filter-swap 320ms var(--ease) both; }
+.status-filter .select__value { display: inline-flex; align-items: center; gap: 0; min-width: 0; flex: 0 1 auto; overflow: visible; animation: filter-swap 320ms var(--ease) both; }
+.status-filter .select__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-filter .select__meta, .status-filter .select__chevron { flex: none; }
 .select__meta, .select-option__meta {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
   background: rgb(26 18 14 / 0.1); font: 650 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
@@ -1750,4 +1754,21 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 @keyframes filter-swap { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) {
   .status-filter .select__value { animation: none; }
+}
+
+/* Customers header on phones: Refresh is a 44 px round icon button on the
+   same row as New customer (its text stays as the accessible name). */
+@media (max-width: 640px) {
+  .page-head__actions { flex-wrap: nowrap; }
+  .refresh-compact .save-btn { width: 44px; height: 44px; min-height: 44px; min-width: 44px; padding: 0; border-radius: 50%; font-size: 0; gap: 0; justify-content: center; }
+  .refresh-compact .save-btn::before { content: ""; width: 18px; height: 18px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.6h-4.6'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.6h-4.6'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .refresh-compact .save-btn--busy::before { animation: refresh-turn 900ms linear infinite; }
+  .refresh-compact .save-btn--done::before { display: none; }
+  .refresh-compact .save-hint { display: none; }
+}
+@keyframes refresh-turn { to { transform: rotate(360deg); } }
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .refresh-compact .save-btn--busy::before { animation: none; opacity: 0.5; }
 }

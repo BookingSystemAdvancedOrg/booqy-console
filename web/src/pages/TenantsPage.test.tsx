@@ -96,7 +96,7 @@ describe("Status filter (one pill beside the search where the chips do not fit)"
     expect(pill).toHaveTextContent("Active1");
     await userEvent.click(pill);
     const options = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["All", "Active1", "Setting up", "Setup failed1", "Suspended", "Offboarded", "Data deleted"]);
+    expect(options).toEqual(["All2", "Active1", "Setting up", "Setup failed1", "Suspended", "Offboarded", "Data deleted"]);
   });
 
   it("filters the list by the chosen status", async () => {
@@ -116,7 +116,10 @@ describe("Status filter (one pill beside the search where the chips do not fit)"
     const q = css.slice(css.indexOf("@container tenants-toolbar"));
     expect(css).toContain(".tenants-toolbar { container: tenants-toolbar / inline-size; }");
     expect(q).toContain(".tenants-toolbar > .chips { display: none !important; }");
-    expect(q).toContain(".tenants-filter { display: block; flex: none; }");
+    expect(q).toContain(".tenants-filter { display: block; flex: 0 1 auto; min-width: 0; max-width: min(55%, calc(100% - 132px)); }");
+    // the search keeps its room next to a long status (320 px, "Data deleted")
+    expect(q).toMatch(/\.input\.search \{[^}]*min-width: 120px/);
+    expect(css).toMatch(/\.status-filter \.select__label \{[^}]*text-overflow: ellipsis/);
     expect(css).toMatch(/\.input\.select\.status-filter \{[^}]*min-height: 44px/);
   });
 });

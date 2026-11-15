@@ -157,3 +157,25 @@ for (const vp of VIEWPORTS.filter((v) => ['390', '820p', '1440'].includes(v.name
     })
   }
 }
+
+/** Customers at 320: a long status in the pill never crushes the search, and
+ *  Refresh (a round icon) sits on the same row as New customer. */
+for (const theme of ['light', 'dark'] as const) {
+  test(`customers toolbar 320 ${theme}`, async ({ page }, info) => {
+    await open(page, '/', VIEWPORTS.find((v) => v.name === '320')!, theme)
+    const refresh = page.getByRole('button', { name: 'Refresh' })
+    const add = page.getByRole('link', { name: /New customer/ })
+    const [r, a] = [await refresh.boundingBox(), await add.boundingBox()]
+    expect(r!.width).toBeGreaterThanOrEqual(44)
+    expect(r!.height).toBeGreaterThanOrEqual(44)
+    expect(Math.abs(r!.y + r!.height / 2 - (a!.y + a!.height / 2))).toBeLessThan(2)
+    await page.getByRole('combobox', { name: 'Status filter' }).click()
+    await page.getByRole('option', { name: /^Data deleted/ }).click()
+    const search = await page.getByLabel('Search customers').boundingBox()
+    const pill = await page.getByRole('combobox', { name: 'Status filter' }).boundingBox()
+    expect(search!.width).toBeGreaterThanOrEqual(120)
+    expect(Math.abs(search!.y - pill!.y)).toBeLessThan(2)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
+    await page.screenshot({ path: info.outputPath('toolbar-320.png') })
+  })
+}

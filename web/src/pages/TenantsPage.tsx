@@ -55,7 +55,7 @@ export default function TenantsPage() {
     return c;
   }, [data]);
   const label = (f: Filter) => (f === "all" ? "All" : STATUS_TEXT[f] ?? f);
-  const options = FILTERS.map((f) => ({ value: f, label: label(f), meta: f !== "all" && counts[f] ? String(counts[f]) : undefined }));
+  const options = FILTERS.map((f) => ({ value: f, label: label(f), meta: f === "all" ? (data?.length ? String(data.length) : undefined) : counts[f] ? String(counts[f]) : undefined }));
 
   return (
     <>
@@ -64,8 +64,9 @@ export default function TenantsPage() {
           <h1>Customers</h1>
           <p className="muted" data-help="customers:count">{data ? `${data.length} restaurants` : " "}</p>
         </div>
-        <div className="row">
-          <RefreshButton reload={reload} />
+        <div className="row page-head__actions">
+          {/* phones: Refresh is a round icon button beside New customer (styles.css) */}
+          <span className="refresh-compact"><RefreshButton reload={reload} /></span>
           <CtaAddLink to="/tenants/new" label="New customer" win="Welcome aboard" />
         </div>
       </div>
