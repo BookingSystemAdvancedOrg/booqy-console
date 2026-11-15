@@ -516,6 +516,12 @@ def _ensure_zone(tenant_id: str, apex: str, previous: dict, records: list[dict],
         ns = [f"ns-{i}.awsdns-sim.{t}" for i, t in ((1, "org"), (2, "co.uk"), (3, "com"), (4, "net"))]
         zones._update_zone(tenant_id, apex, hostedZoneId="sim", nameServers=ns)
         return "sim", ns
+    if caa:
+        # The site's current apex and www records too: the registry switches
+        # the name servers the moment the owner approves, and until PrepareDns
+        # points both at Booqy the old site keeps answering (no downtime).
+        have = {(r["name"], r["type"]) for r in records}
+        records = [*records, *(r for r in interim_site_records(apex) if (r["name"], r["type"]) not in have)]
     if caa and not any(r["type"] == "CAA" and r["name"] == apex for r in records):
         records = [*records, {"name": apex, "type": "CAA", "ttl": 3600,
                               "values": ['0 issue "amazon.com"', '0 issue "amazontrust.com"']}]
@@ -540,6 +546,22 @@ def _ensure_zone(tenant_id: str, apex: str, previous: dict, records: list[dict],
         _fail(tenant_id, apex, "booqy", lastError=f"Couldn't set up DNS: {message}"[:1000])
         raise ApiError(502, "dns_setup_failed", f"Couldn't set up DNS: {message}") from e
     return zone_id, name_servers
+
+
+def interim_site_records(apex: str) -> list[dict]:
+    """The apex A/AAAA and the www record (CNAME, else A/AAAA) as public DNS
+    has them now, with a short TTL. Only for a move to Booqy: PrepareDns
+    replaces them with the site's records."""
+    out = []
+    for name, types in ((apex, ("A", "AAAA")), (f"www.{apex}", ("CNAME", "A", "AAAA"))):
+        for rtype in types:
+            vals, _, _ = zones._lookup(name, rtype)
+            vals = sorted({x.strip() for x in vals if x and x.strip()})
+            if vals:
+                out.append({"name": name, "type": rtype, "ttl": 300, "values": vals})
+                if rtype == "CNAME":
+                    break
+    return out
 
 
 def records(req) -> tuple[int, dict]:

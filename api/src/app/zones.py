@@ -992,6 +992,21 @@ def _task_nameserver_status(tenant_id: str, domain: str) -> dict:
     return {"status": "done" if done else "pending"}
 
 
+def _site_conflicts(zone_id: str, domain: str) -> list[dict]:
+    """Records in our zone that stand in the way of the site's: a plain
+    (non-alias) A/AAAA at the apex, anything but a CNAME on www."""
+    www = f"www.{domain}"
+    out = []
+    pages = _route53().get_paginator("list_resource_record_sets").paginate(HostedZoneId=zone_id)
+    for page in pages:
+        for s in page.get("ResourceRecordSets", []):
+            name = s["Name"].rstrip(".").lower()
+            if (name == domain and s["Type"] in ("A", "AAAA") and not s.get("AliasTarget")) or \
+                    (name == www and s["Type"] != "CNAME"):
+                out.append(s)
+    return out
+
+
 def _task_prepare_dns(tenant_id: str, domain: str, actor: str) -> dict:
     """Point <domain> and www.<domain> at the restaurant-site distribution and
     reserve both hosts for this tenant; the workflow then runs domain-attach
@@ -1007,7 +1022,13 @@ def _task_prepare_dns(tenant_id: str, domain: str, actor: str) -> dict:
     if not zone_id or not target:
         raise RuntimeError("hosted zone or CNAME target missing")
     www = f"www.{domain}"
-    changes = [{"Action": "UPSERT", "ResourceRecordSet": {
+    # A move to Booqy copied the old site's apex A/AAAA and www records (the
+    # old site answers until now): they go in the same change batch.
+    changes, replaced = [], set()
+    for s in _site_conflicts(zone_id, domain):
+        changes.append({"Action": "DELETE", "ResourceRecordSet": s})
+        replaced.add((s["Name"].rstrip(".").lower(), s["Type"]))
+    changes += [{"Action": "CREATE" if (domain, t) in replaced else "UPSERT", "ResourceRecordSet": {
         "Name": domain, "Type": t, "AliasTarget": {
             "HostedZoneId": CLOUDFRONT_ZONE_ID, "DNSName": target, "EvaluateTargetHealth": False}}}
         for t in ("A", "AAAA")]

@@ -188,7 +188,7 @@ def test_transfer_in_copies_dns_first_then_waits_for_the_owner(od, aws, tenant):
     # the zone with the copied records (and CAA for Amazon) exists before the transfer
     r53 = boto3.client("route53", region_name=REGION)
     sets = {(r["Name"], r["Type"]): r for r in r53.list_resource_record_sets(HostedZoneId=z["hostedZoneId"])["ResourceRecordSets"]}
-    assert ("roma.com.", "MX") in sets and ("roma.com.", "A") not in sets
+    assert ("roma.com.", "MX") in sets and ("roma.com.", "A") not in sets      # no site in public DNS
     assert '0 issue "amazon.com"' in [r["Value"] for r in sets[("roma.com.", "CAA")]["ResourceRecords"]]
     tr = od.domains.transfers[0]
     assert tr["AuthCode"] == "Ab12-xy" and tr["Nameservers"] == [{"Name": n} for n in z["nameServers"]]
@@ -345,6 +345,36 @@ def test_records_reminders_and_timeout(od, aws, tenant):
     from app import own_domains
     own_domains.start(tenant, "roma.se", "records", "op-1", 2)              # ExecutionAlreadyExists is fine
     assert call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", p)[1]["error"] == "not_retryable"
+
+
+def test_transfer_in_keeps_the_old_site_answering_until_prepare_dns(od, aws, tenant):
+    # public DNS today: apex A + AAAA at one.com, www an A record
+    od.dns.update({("roma.com", "A"): ["46.30.215.1"], ("roma.com", "AAAA"): ["2a02:2350::1"],
+                   ("www.roma.com", "A"): ["46.30.215.1"]})
+    assert call("POST /platform/tenants/{tenantId}/domains/transfers", {"tenantId": tenant}, TRANSFER)[0] == 202
+    z = _zone(aws, tenant, "roma.com")
+    r53 = boto3.client("route53", region_name=REGION)
+
+    def sets():
+        return {(r["Name"], r["Type"]): r for r in
+                r53.list_resource_record_sets(HostedZoneId=z["hostedZoneId"])["ResourceRecordSets"]}
+    before = sets()
+    assert before[("roma.com.", "A")]["ResourceRecords"] == [{"Value": "46.30.215.1"}]
+    assert before[("roma.com.", "A")]["TTL"] == 300
+    assert before[("roma.com.", "AAAA")]["ResourceRecords"] == [{"Value": "2a02:2350::1"}]
+    assert before[("www.roma.com.", "A")]["ResourceRecords"] == [{"Value": "46.30.215.1"}]
+    assert ("roma.com.", "MX") in before
+    # approved and the name servers answer: the site's records replace them in one batch
+    _task("prepare_dns", tenant, "roma.com", requestedBy="op-1")
+    after = sets()
+    assert after[("roma.com.", "A")]["AliasTarget"]["DNSName"].rstrip(".") == "d111.cloudfront.net"
+    assert after[("roma.com.", "AAAA")]["AliasTarget"]["DNSName"].rstrip(".") == "d111.cloudfront.net"
+    assert ("www.roma.com.", "A") not in after
+    assert after[("www.roma.com.", "CNAME")]["ResourceRecords"] == [{"Value": "d111.cloudfront.net"}]
+    assert ("roma.com.", "MX") in after
+    # a second run (Retry) finds nothing in the way
+    _task("prepare_dns", tenant, "roma.com", requestedBy="op-1")
+    assert sets()[("roma.com.", "A")]["AliasTarget"]
 
 
 def test_steps_can_be_sent_again(od, aws, tenant):

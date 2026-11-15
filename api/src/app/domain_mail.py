@@ -30,7 +30,7 @@ ERRORS = {
     "too_recent": ("restaurant",
                    "{domain} was registered or moved less than 60 days ago and can't move again yet. Try again {date}.",
                    "{domain} köptes eller flyttades för mindre än 60 dagar sedan. Då får den inte flyttas igen än. "
-                   "Vi försöker igen {date}."),
+                   "Vi kan flytta den {date}. Svara på det här mejlet då, så startar vi flytten igen."),
     "transfer_expired": ("restaurant",
                          "Nobody approved the move of {domain} within 14 days, so it stopped. Nothing changed for the "
                          "domain. Ask the owner to look for the approval e-mail, then start the move again.",
