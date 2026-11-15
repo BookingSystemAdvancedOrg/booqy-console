@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { coverCrop, initials } from "./avatar";
+import { coverCrop, firstName, initials } from "./avatar";
 
 describe("profile pictures", () => {
+  it("shows the first name in the menu, else the e-mail before the @, never the whole e-mail", () => {
+    expect(firstName("Lamo Koura", "lamo@booqy.se")).toBe("Lamo");
+    expect(firstName("  Anna  ", "a@x.se")).toBe("Anna");
+    expect(firstName("", "lamo@ithjalparna.se")).toBe("lamo");
+    expect(firstName(undefined, undefined)).toBe("");
+  });
+
   it("makes initials from the name, else the e-mail", () => {
     expect(initials("Lamo Kouravand", "x@y.se")).toBe("LK");
     expect(initials("Zach", null)).toBe("Z");

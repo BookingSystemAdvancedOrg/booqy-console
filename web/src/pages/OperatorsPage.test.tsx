@@ -16,7 +16,7 @@ import OperatorsPage from "./OperatorsPage";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.operators.mockResolvedValue(ops);
+  mocks.operators.mockResolvedValue({ operators: ops, canChangeEmail: false });
   mocks.myAvatar.mockResolvedValue({ url: null });
 });
 
@@ -69,5 +69,37 @@ describe("Operators rows", () => {
     await userEvent.click(within(row).getAllByRole("button", { name: "Disable" })[0]);
     expect(mocks.updateOperator).toHaveBeenCalledWith("u2", { enabled: false });
     expect(screen.queryByRole("dialog", { name: "Edit operator" })).toBeNull();
+  });
+
+  it("keeps the email read only, with a tip, for an operator", async () => {
+    render(<OperatorsPage me="me" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Zach" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit operator" });
+    expect(within(dialog).getByDisplayValue("zach@booqy.se")).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "About the email" })).toBeInTheDocument();
+  });
+
+  it("lets an owner change any operator's email", async () => {
+    mocks.operators.mockResolvedValue({ operators: ops, canChangeEmail: true });
+    mocks.updateOperator.mockResolvedValue({});
+    render(<OperatorsPage me="me" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Zach" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit operator" });
+    const email = within(dialog).getByDisplayValue("zach@booqy.se");
+    expect(email).toBeEnabled();
+    expect(within(dialog).queryByRole("button", { name: "About the email" })).toBeNull();
+    await userEvent.clear(email);
+    await userEvent.type(email, "zach.new@booqy.se");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(mocks.updateOperator).toHaveBeenCalledWith("u2", { name: "Zach", email: "zach.new@booqy.se" });
+  });
+
+  it("tags owners and only lets an owner disable or delete one", async () => {
+    mocks.operators.mockResolvedValue({ operators: [ops[0], { ...ops[1], role: "owner" }], canChangeEmail: false });
+    render(<OperatorsPage me="me" />);
+    const row = await rowOf("Zach");
+    expect(within(row).getByText("owner")).toBeInTheDocument();
+    for (const b of within(row).getAllByRole("button", { name: "Disable" })) expect(b).toBeDisabled();
+    for (const b of within(row).getAllByRole("button", { name: "Delete" })) expect(b).toBeDisabled();
   });
 });

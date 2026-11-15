@@ -1,7 +1,8 @@
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { currentOperator, onAuthChange, retryUntilReachable, signOut, type Operator } from "./auth";
+import { currentOperator, onAuthChange, refreshOperator, retryUntilReachable, signOut, type Operator } from "./auth";
+import { firstName } from "./avatar";
 import "./connectionNotice.css";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import { Logo } from "./components/Logo";
@@ -43,6 +44,7 @@ const pages = {
   website: () => import("./pages/WebsitePage"),
   reports: () => import("./pages/ReportsPage"),
   settings: () => import("./pages/SettingsPage"),
+  profile: () => import("./pages/ProfilePage"),
 };
 const TenantsPage = lazy(pages.tenants);
 const NewTenantPage = lazy(pages.newTenant);
@@ -53,6 +55,7 @@ const FinancePage = lazy(pages.finance);
 const WebsitePage = lazy(pages.website);
 const ReportsPage = lazy(pages.reports);
 const SettingsPage = lazy(pages.settings);
+const ProfilePage = lazy(pages.profile);
 
 let preloaded = false;
 function preloadPages() {
@@ -113,6 +116,7 @@ const SHOW_DOWNLOAD = showDownloadNav();
 const SHOW_INSTALL = showPhoneInstallNav();
 const ALL_NAV: NavItem[] = [
   ...NAV.flatMap((g) => g.items),
+  { to: "/profile", label: "My profile", icon: "badge" },
   { to: "/settings", label: "Settings", icon: "gear" },
   ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
   ...(SHOW_INSTALL ? [{ to: "/settings#desktop-app", label: "Install app", icon: "download" as const }] : []),
@@ -171,6 +175,13 @@ function Shell() {
     return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
   }, [refresh]);
   useEffect(() => (offline ? retryUntilReachable(refresh) : undefined), [offline, refresh]);
+  // My profile saved: fresh tokens so the menu shows the new name or email at once.
+  const saveProfile = useCallback(async () => {
+    try {
+      const u = await refreshOperator();
+      if (u) setUser(u);
+    } catch { /* the next refresh picks it up */ }
+  }, []);
   const notice = offline ? <div className="connection-notice" role="status" aria-live="polite">Can't reach the server, retrying...</div> : null;
 
   useEffect(() => {
@@ -213,10 +224,12 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           {appHint && <DesktopHint where="side" onClose={closeAppHint} />}
-          <div className="topbar__me">
-            <MyAvatar email={user.email} />
-            <span className="topbar__me-name">{user.email ?? user.username}</span>
-          </div>
+          {/* You: picture and first name, opens My profile. */}
+          <NavLink to="/profile" className="topbar__me" data-help="nav:/profile" aria-label={`My profile, ${user.name || user.email}`}
+                   title={user.name ? `${user.name}, ${user.email}` : user.email}>
+            <MyAvatar name={user.name} email={user.email} />
+            <span className="topbar__me-name">{firstName(user.name, user.email)}</span>
+          </NavLink>
           <NavLink to="/settings" className="btn btn--ghost topbar__settings" data-help="nav:/settings"><Icon name="gear" />Settings</NavLink>
           {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
           {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Download app</Link>}
@@ -258,7 +271,8 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage email={user.email} />} />
+          <Route path="/settings" element={<SettingsPage name={user.name} email={user.email} />} />
+          <Route path="/profile" element={<ProfilePage me={user} onSaved={saveProfile} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           {/* Unknown address (old bookmark, /index.html from the home-screen app, a link from admin): straight to Customers instead of a dead end. */}

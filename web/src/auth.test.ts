@@ -73,7 +73,16 @@ describe("console auth: only real auth failures sign out", () => {
   it("returns the operator from the tokens", async () => {
     const auth = await load();
     amp.fetchAuthSession.mockResolvedValue(tokens());
-    await expect(auth.currentOperator()).resolves.toEqual({ username: "op", email: "op@booqy.se" });
+    await expect(auth.currentOperator()).resolves.toEqual({ username: "op", email: "op@booqy.se", name: "" });
+  });
+
+  it("reads the name from the ID token, and refreshOperator forces new tokens", async () => {
+    const auth = await load();
+    const t = tokens();
+    t.tokens.idToken.payload = { email: "op@booqy.se", name: "Lamo Koura" } as typeof t.tokens.idToken.payload;
+    amp.fetchAuthSession.mockResolvedValue(t);
+    await expect(auth.refreshOperator()).resolves.toEqual({ username: "op", email: "op@booqy.se", name: "Lamo Koura" });
+    expect(amp.fetchAuthSession).toHaveBeenLastCalledWith({ forceRefresh: true });
   });
 
   it("refreshedAccessToken forces a refresh", async () => {

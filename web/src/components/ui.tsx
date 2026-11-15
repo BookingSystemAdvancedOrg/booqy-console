@@ -9,7 +9,7 @@ import { helpSlug } from "../features/help/helpId";
 import { quietly, sameData, useLiveRefresh } from "../live";
 
 export function Field(props: {
-  label: string;
+  label: ReactNode;
   error?: string;
   hint?: string;
   required?: boolean;

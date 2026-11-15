@@ -23,6 +23,8 @@ cognitoUserPoolsTokenProvider.setKeyValueStorage(defaultStorage);
 export interface Operator {
   username: string;
   email: string;
+  /** The Cognito name attribute (ID token); empty until someone sets it. */
+  name: string;
 }
 
 /**
@@ -68,13 +70,19 @@ async function session(forceRefresh = false) {
  * on the way. Throws AuthUnavailableError when Cognito can't be reached: the
  * operator is still signed in and the shell tries again.
  */
-export async function currentOperator(): Promise<Operator | null> {
-  const tokens = await session();
+export async function currentOperator(forceRefresh = false): Promise<Operator | null> {
+  const tokens = await session(forceRefresh);
   if (!tokens?.accessToken || !tokens.idToken) return null;
   return {
     username: String(tokens.accessToken.payload.username ?? ""),
     email: String(tokens.idToken.payload.email ?? ""),
+    name: String(tokens.idToken.payload.name ?? ""),
   };
+}
+
+/** After saving your own name or e-mail: new tokens, so the menu shows it at once. */
+export function refreshOperator(): Promise<Operator | null> {
+  return currentOperator(true);
 }
 
 export async function accessToken(): Promise<string> {

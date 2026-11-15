@@ -108,6 +108,14 @@ class ApiError(Exception):
         self.status, self.code, self.message, self.extra = status, code, message, extra
 
 
+def groups(claims: dict) -> set[str]:
+    """The caller's Cognito groups. HTTP API JWT authorizers pass list claims as a string like "[a b]"."""
+    raw = claims.get("cognito:groups") or ""
+    if isinstance(raw, list):
+        return set(raw)
+    return {g.strip(" ,\"'") for g in raw.strip("[]").replace(",", " ").split() if g.strip(" ,\"'")}
+
+
 def not_found(what: str = "Not found") -> ApiError:
     return ApiError(404, "not_found", what)
 

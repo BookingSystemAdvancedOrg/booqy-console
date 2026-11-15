@@ -82,6 +82,7 @@ export const ROUTE_PATTERNS = [
   "/website",
   "/reports",
   "/settings",
+  "/profile",
   "/download",
   "/outbox",
 ] as const;

@@ -44,6 +44,12 @@ export function emailName(email?: string | null): string {
   return (email ?? "").trim().split("@")[0] ?? "";
 }
 
+/** What the menu shows: the first name, else the e-mail before the @. Never the whole e-mail. */
+export function firstName(name?: string | null, email?: string | null): string {
+  const first = (name ?? "").trim().split(/\s+/)[0];
+  return first || emailName(email) || "";
+}
+
 export type Crop = { x: number; y: number; scale: number };
 
 /**

@@ -1248,8 +1248,42 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
 .avatar--lg { inline-size: var(--avatar-lg); block-size: var(--avatar-lg); font-size: 1.125rem; }
 .avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
 .operator-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.topbar__me { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-3); color: var(--print-2); font-size: 0.8125rem; }
-.topbar__me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* You, in the menu: picture and first name, a link to My profile (44 px to tap on every width). */
+.topbar__me {
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto; min-width: 0; min-height: 44px;
+  padding: 0 14px 0 6px; border-radius: var(--r-pill);
+  color: var(--on-ox); font: 500 14.5px/1.2 var(--sans); text-decoration: none;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+.topbar__me:not(.active):hover { background: rgb(58 36 24 / 0.08); color: var(--on-ox); }
+:root[data-theme="dark"] .topbar__me:not(.active):hover { background: rgb(213 196 174 / 0.12); }
+.topbar__me.active, .topbar__me.active:hover { background: var(--lacquer); color: var(--bq-snow); box-shadow: var(--lacquer-rim); }
+:root[data-theme="dark"] .topbar__me.active, :root[data-theme="dark"] .topbar__me.active:hover { color: #1a120e; }
+.topbar__me:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+.topbar__me .avatar { flex: 0 0 auto; }
+/* a first name fits; only an unusually long one is cut */
+.topbar__me-name { min-width: 0; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* tablet: the top bar is one row, so a compact chip */
+@media (min-width: 761px) and (max-width: 1023px) {
+  .topbar__me { padding-right: 12px; font-size: 14px; }
+  .topbar__me-name { max-width: 12ch; }
+}
+/* phone, menu open: its own full-width row above Settings and Sign out */
+@media (max-width: 760px) {
+  .topbar.is-open .topbar__user { flex-wrap: wrap; }
+  .topbar.is-open .topbar__me { flex: 1 0 100%; min-height: 52px; padding: 0 14px 0 8px; font-size: 16px; border-radius: var(--radius-inner, 14px); }
+  .topbar.is-open .topbar__me-name { max-width: none; }
+}
+/* side menu: a row like the links */
+@media (min-width: 1024px) {
+  .topbar__me { min-height: 48px; padding: 0 14px 0 8px; font-size: 15px; border-radius: var(--radius-inner); margin-bottom: 4px; }
+  .topbar__me-name { max-width: none; }
+}
+.profile-form { max-width: 520px; }
+.profile-role { display: flex; align-items: center; gap: 14px; min-height: 44px; }
+.profile-role .field__label { margin: 0; }
+.profile-role .tag { margin-left: 0; }
+.tag--owner { color: var(--accent-ink); }
 .avatar-setting__who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .avatar-setting__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .avatar-setting__choose { position: relative; align-items: center; }
