@@ -916,6 +916,7 @@ def _task_registration_status(tenant_id: str, domain: str) -> dict:
         if op.get("Status") == "SUCCESSFUL":
             _update_zone(tenant_id, domain, operationStatus="SUCCESSFUL", statusDetail=None, status="registered",
                          registeredAt=now_iso())
+            _delete_document(tenant_id, domain, row)      # as a real registration does
             return {"status": "done"}
     else:
         op = _domains().get_operation_detail(OperationId=row["operationId"])

@@ -688,6 +688,25 @@ def test_simulated_buy_records_and_connect(sim, aws):
     assert body["result"] == "done"
 
 
+def test_a_simulated_se_registration_deletes_the_registreringsbevis_once_registered(sim, aws, monkeypatch):
+    from app import zones
+    t = sim["tenant"]
+    s3 = boto3.client("s3", region_name=REGION)
+    s3.create_bucket(Bucket="dev-domain-documents", CreateBucketConfiguration={"LocationConstraint": REGION})
+    monkeypatch.setattr(zones, "_s3", lambda: s3)
+    monkeypatch.setenv("DOMAIN_DOCUMENTS_BUCKET", "dev-domain-documents")
+    key = f"tenants/{t}/registreringsbevis/doc1.pdf"
+    s3.put_object(Bucket="dev-domain-documents", Key=key, Body=b"%PDF-1.4", ContentType="application/pdf")
+    status, body = call("POST /platform/tenants/{tenantId}/domains/registrations", {"tenantId": t},
+                        {"domain": "roma.se", "contact": CONTACT, "documentKey": key,
+                         "acceptedPrice": {"amount": 32, "currency": "USD"}})
+    assert status == 202 and body["zone"]["status"] == "awaiting_verification", body
+    body = call("POST /platform/tenants/{tenantId}/zones/{domain}/simulate", {"tenantId": t, "domain": "roma.se"},
+                {"event": "approve"})[1]
+    assert body["zone"]["status"] == "registered" and not body["zone"]["hasDocument"]
+    assert s3.list_objects_v2(Bucket="dev-domain-documents").get("KeyCount") == 0
+
+
 def test_simulation_is_never_in_prod_nor_for_real_customers(sim, aws, monkeypatch, tenant):
     # a dev customer that isn't a test customer (prod-linked): managed from prod
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
