@@ -44,6 +44,7 @@ type Item = { slot: TabSlot; to: string; label: string; icon: IconName; end?: bo
  * screens keep the side menu and never show it (tabbar.css).
  */
 export function TabBar(props: {
+  name?: string;
   email?: string;
   username: string;
   profilePath: string;
@@ -110,11 +111,12 @@ export function TabBar(props: {
           aria-current={youOn ? "page" : undefined}
           onClick={() => setSheet((s) => !s)}
         >
-          <span className="tabbar__icon"><MyAvatar email={props.email} size="md" /></span>
+          <span className="tabbar__icon"><MyAvatar name={props.name} email={props.email} size="md" /></span>
         </button>
       </nav>
       {sheet && (
         <WorkspaceSheet
+          name={props.name}
           email={props.email}
           username={props.username}
           profilePath={props.profilePath}

@@ -26,13 +26,13 @@ function phone(on: boolean) {
 let go: (to: string) => void = () => {};
 function Nav() { go = useNavigate(); return null; }
 
-function setup(path: string, hidden?: TabSlot[]) {
+function setup(path: string, hidden?: TabSlot[], name?: string) {
   const onSignOut = vi.fn();
   render(
     <MemoryRouter initialEntries={[path]}>
       <Nav />
       <Routes>
-        <Route path="*" element={<TabBar email="anna@booqy.se" username="anna" profilePath="/settings" showInstall showDownload={false} onSignOut={onSignOut} hidden={hidden} />} />
+        <Route path="*" element={<TabBar name={name} email="anna@booqy.se" username="anna" profilePath="/profile" showInstall showDownload={false} onSignOut={onSignOut} hidden={hidden} />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -65,6 +65,7 @@ describe("TabBar (phones)", () => {
     expect(at("/operators")).toEqual(["Workspace"]);
     expect(at("/website")).toEqual(["Workspace"]);
     expect(at("/settings")).toEqual(["Workspace"]);
+    expect(at("/profile")).toEqual(["Workspace"]);
     expect(at("/tenants/t1")).toEqual([]);                     // a customer page: Customers is the home, not this
   });
 
@@ -85,6 +86,14 @@ describe("TabBar (phones)", () => {
     fireEvent.click(within(sheet).getByRole("button", { name: "Sign out" }));
     expect(onSignOut).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("My profile shows the first name and opens /profile", () => {
+    setup("/", undefined, "Anna Berg");
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    const me = within(screen.getByRole("dialog", { name: "Workspace" })).getByRole("link", { name: /My profile/ });
+    expect(me.textContent?.trim()).toBe("AnnaMy profile");
+    expect(me).toHaveAttribute("href", "/profile");
   });
 
   it("closes on Escape and on the scrim, and focus goes back to the avatar", () => {

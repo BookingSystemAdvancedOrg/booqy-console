@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { emailName } from "../avatar";
+import { firstName } from "../avatar";
 import { Icon, openPalette, type IconName } from "./ds";
 import { MyAvatar } from "./MyAvatar";
 import { confirmLeave } from "./save";
@@ -20,6 +20,7 @@ const guard = (e: MouseEvent) => { if (!confirmLeave()) e.preventDefault(); };
  * inside while it is open and goes back to the avatar.
  */
 export function WorkspaceSheet(props: {
+  name?: string;
   email?: string;
   username: string;
   profilePath: string;
@@ -98,7 +99,8 @@ export function WorkspaceSheet(props: {
       <span className="ws-row__label">{label}</span>
     </NavLink>
   );
-  const name = emailName(props.email) || props.username;
+  // The first name, else the e-mail before the @ (never the whole e-mail), else the username.
+  const name = firstName(props.name, props.email) || props.username;
 
   return createPortal(
     <div className="ws-layer">
@@ -119,8 +121,8 @@ export function WorkspaceSheet(props: {
           <span className="ws-sheet__grip" aria-hidden="true" />
           <h2 id={titleId} className="ws-sheet__title">Workspace</h2>
         </div>
-        <Link to={props.profilePath} className="ws-row ws-row--me" onClick={guard}>
-          <MyAvatar email={props.email} size="md" />
+        <Link to={props.profilePath} className="ws-row ws-row--me" data-help="nav:/profile" onClick={guard}>
+          <MyAvatar name={props.name} email={props.email} size="md" />
           <span className="ws-row__label">
             <span className="ws-row__name">{name}</span>
             <span className="ws-row__sub">My profile</span>

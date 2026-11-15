@@ -121,8 +121,8 @@ const ALL_NAV: NavItem[] = [
   ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
   ...(SHOW_INSTALL ? [{ to: "/settings#desktop-app", label: "Install app", icon: "download" as const }] : []),
 ];
-// "My profile" in the phones' Workspace sheet: the profile card at the top of Settings.
-const PROFILE_PATH = "/settings";
+// "My profile" in the phones' Workspace sheet (the side menu links it too).
+const PROFILE_PATH = "/profile";
 const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
 
 // Pages visited in this tab (memory only): the palette's "Recent".
@@ -238,6 +238,7 @@ function Shell() {
         </div>
       </header>
       <TabBar
+        name={user.name}
         email={user.email}
         username={user.username}
         profilePath={PROFILE_PATH}
