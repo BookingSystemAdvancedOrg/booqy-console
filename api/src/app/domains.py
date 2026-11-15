@@ -1,5 +1,14 @@
 """Custom domains (www.restaurang.se). Attaching/detaching is done by the
-domain workflows; this checks the request and starts them."""
+domain workflows; this checks the request and starts them.
+
+Dev (owner 2026-11-15): no domain is ever attached for real outside prod. A
+test customer's "own domain" example.se (or www.example.se) is mapped onto
+the test sites zones, example-se.test.booqy.se (main, primary) and
+example-se.test-dev.booqy.se (dev): both hosts are claimed and live at once
+(the sandbox distribution's wildcard certificate covers them), and the
+label example-se goes into the sandbox's host map through site-repo
+(testHost). No workflow, no distribution tenant, no certificate. Real
+customers' domains are managed from prod."""
 
 import hashlib
 import json
@@ -61,6 +70,10 @@ def claim_host(tenant_id: str, host: str, actor: str) -> str:
     return "created"
 
 
+def _test_zones() -> tuple[str, str]:
+    return env("TEST_MAIN_DOMAIN", ""), env("TEST_DEV_DOMAIN", "")
+
+
 def check_custom_host(host: str) -> None:
     platform_domain = env("PLATFORM_DOMAIN", "")
     if not platform_domain:
@@ -69,6 +82,10 @@ def check_custom_host(host: str) -> None:
     if host == platform_domain or host.endswith("." + platform_domain):
         raise ApiError(400, "validation_failed", "Platform subdomains are created automatically",
                        fields={"domain": f"Use the customer's own domain, not *.{platform_domain}"})
+    for zone in (z for z in _test_zones() if z):
+        if host == zone or host.endswith("." + zone):
+            raise ApiError(400, "validation_failed", "Test site hosts are made by the test mapping",
+                           fields={"domain": f"Enter the domain itself (example.se), not *.{zone}"})
 
 
 def start_attach(tenant_id: str, host: str, actor: str, make_primary: bool = False) -> bool:
@@ -84,6 +101,93 @@ def start_attach(tenant_id: str, host: str, actor: str, make_primary: bool = Fal
     return True
 
 
+def test_hosts(domain: str) -> dict:
+    """example.se or www.example.se -> {main: example-se.<test main zone>,
+    dev: example-se.<test dev zone>}."""
+    main_zone, dev_zone = _test_zones()
+    label = domain.removeprefix("www.").replace(".", "-")
+    if len(label) > 63:
+        raise ApiError(400, "validation_failed", "Too long for a test host", fields={"domain": "Use a shorter domain"})
+    return {"main": f"{label}.{main_zone}", "dev": f"{label}.{dev_zone}"}
+
+
+def _site_repo(payload: dict) -> dict:
+    from . import site                                  # site imports this module
+    return site.invoke(payload)
+
+
+def _test_items(tenant_id: str, hosts: dict, mapped_from: str, actor: str) -> list[dict]:
+    items = []
+    for stage, host in hosts.items():
+        items.append({"PK": f"DOMAIN#{host}", "SK": "TENANT", "tenantId": tenant_id})
+        items.append({"PK": f"TENANT#{tenant_id}", "SK": f"DOMAIN#{host}", "tenantId": tenant_id, "domain": host,
+                      "kind": "custom", "status": "active", "stage": stage, "mappedFrom": mapped_from,
+                      "sandbox": True, "requestedBy": actor, "requestedAt": now_iso()})
+    return items
+
+
+def _add_test_domain(req, tenant_id: str, host: str, profile: dict) -> tuple[int, dict]:
+    if profile.get("siteKind") != "test":
+        raise ApiError(409, "managed_from_prod", "This customer's domains are managed from the production console")
+    mapped_from = host.removeprefix("www.")
+    hosts = test_hosts(host)
+    label = hosts["main"].split(".")[0]
+    items = _test_items(tenant_id, hosts, mapped_from, req.actor)
+    try:
+        client("dynamodb").transact_write_items(TransactItems=[
+            {"Put": {"TableName": tenant_table(), "Item": to_ddb(item),
+                     "ConditionExpression": "attribute_not_exists(PK)"}} for item in items])
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "TransactionCanceledException":
+            raise
+        mine = (_domain_row(tenant_id, hosts["main"]) or {}).get("mappedFrom") == mapped_from
+        if mine:
+            raise ApiError(409, "domain_exists", f"{mapped_from} is already mapped", fields={"domain": "Already added"}) from e
+        raise ApiError(409, "domain_in_use", f"{label} is used by another customer",
+                       fields={"domain": "Used by another customer"}) from e
+    try:
+        _site_repo({"action": "testHost", "op": "put", "tenantId": tenant_id, "label": label})
+    except ApiError:
+        _delete_test_items(tenant_id, hosts)
+        raise
+    _set_primary(tenant_id, hosts["main"])            # the site's own domain section (site-repo booqy.json "test")
+    write_audit(tenant_id, "domain_test_mapped", req.actor, {"domain": mapped_from, **hosts})
+    return 202, {"domain": mapped_from, "status": "active", "test": True,
+                 "hosts": [{"stage": stage, "host": hosts[stage]} for stage in ("main", "dev")]}
+
+
+def _set_primary(tenant_id: str, host: str) -> None:
+    client("dynamodb").update_item(
+        TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
+        UpdateExpression="SET primaryDomain = :d, updatedAt = :n",
+        ExpressionAttributeValues={":d": {"S": host}, ":n": {"S": now_iso()}})
+
+
+def _delete_test_items(tenant_id: str, hosts: dict) -> None:
+    """The pair's claims (only while still this tenant's) and rows."""
+    deletes = []
+    for host in hosts.values():
+        deletes.append({"Delete": {"TableName": tenant_table(), "Key": to_ddb({"PK": f"DOMAIN#{host}", "SK": "TENANT"}),
+                                   "ConditionExpression": "attribute_not_exists(PK) OR tenantId = :t",
+                                   "ExpressionAttributeValues": {":t": {"S": tenant_id}}}})
+        deletes.append({"Delete": {"TableName": tenant_table(),
+                                   "Key": to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"DOMAIN#{host}"})}})
+    client("dynamodb").transact_write_items(TransactItems=deletes)
+
+
+def _remove_test_domain(req, tenant_id: str, row: dict) -> tuple[int, dict]:
+    """Host map first (the claim is still ours), then the pair's rows; a
+    primary mapped host falls back to the slug's main host."""
+    hosts = test_hosts(row["mappedFrom"])
+    _site_repo({"action": "testHost", "op": "delete", "tenantId": tenant_id, "label": hosts["main"].split(".")[0]})
+    _delete_test_items(tenant_id, hosts)
+    profile = get_profile(tenant_id)
+    if profile.get("primaryDomain") in hosts.values() and profile.get("slug"):
+        _set_primary(tenant_id, f"{profile['slug']}.{_test_zones()[0]}")
+    write_audit(tenant_id, "domain_test_unmapped", req.actor, {"domain": row["mappedFrom"], **hosts})
+    return 202, {"domain": row["mappedFrom"], "status": "removed", "hosts": list(hosts.values())}
+
+
 def add_domain(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     host = v.hostname(req.body.get("domain"))
@@ -92,6 +196,8 @@ def add_domain(req) -> tuple[int, dict]:
     profile = get_profile(tenant_id)
     if profile.get("status") not in ("active", "provisioning", "suspended"):
         raise ApiError(409, "invalid_status", f"The tenant is {profile.get('status')}", currentStatus=profile.get("status"))
+    if env("ENVIRONMENT") != "prod" and env("TEST_SITES_ENABLED", "false") == "true":
+        return _add_test_domain(req, tenant_id, host, profile)
 
     if not start_attach(tenant_id, host, req.actor, make_primary):
         row = _domain_row(tenant_id, host) or {}
@@ -109,6 +215,8 @@ def remove_domain(req) -> tuple[int, dict]:
         raise not_found("No such domain for this tenant")
     if row.get("kind") == "platform":
         raise ApiError(409, "platform_domain", "The platform subdomain is removed only by offboarding")
+    if row.get("sandbox") and row.get("mappedFrom"):
+        return _remove_test_domain(req, tenant_id, row)        # a test mapping goes as a pair
     client("stepfunctions").start_execution(
         stateMachineArn=env("DOMAIN_DETACH_STATE_MACHINE_ARN"), name=_execution_name("detach", host),
         input=json.dumps({"tenantId": tenant_id, "domain": host}))

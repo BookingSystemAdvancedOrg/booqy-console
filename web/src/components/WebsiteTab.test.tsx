@@ -103,17 +103,45 @@ describe("WebsiteTab", () => {
     expect(screen.getByText(/VITE_DEV_TENANT_SLUG=roma/)).toBeInTheDocument();
   });
 
-  it("shows the dev dry run, and full controls for site-test-* repos", async () => {
-    mocks.site.mockResolvedValueOnce({ ...ready, environment: "dev", status: "simulated", repoExists: undefined, deploys: undefined,
-                                       plan: ["Repo BooqyCustomers/site-roma from site-template"] });
-    const { unmount } = render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByText("Dry run.")).toBeInTheDocument();
-    expect(screen.getByText("Repo BooqyCustomers/site-roma from site-template")).toBeInTheDocument();
-    unmount();
-    mocks.site.mockResolvedValue({ ...ready, environment: "dev", repo: "site-test-roma" });
+  it("says a dev customer from before test sites is legacy", async () => {
+    mocks.site.mockResolvedValue({ ...ready, environment: "dev", status: "legacy", kind: "legacy", repoExists: undefined,
+                                   deploys: undefined, lastError: "Re-create it as a test customer." });
     render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByRole("button", { name: "Invite" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Redeploy dev" })).toBeInTheDocument();
+    expect(await screen.findByText("Legacy dev customer.")).toBeInTheDocument();
+    expect(screen.getByText("Re-create it as a test customer.")).toBeInTheDocument();
+    expect(screen.queryByText(/Managed from the production console/)).toBeNull();
+    expect(screen.queryByText("Where the site answers")).toBeNull();
+  });
+
+  it("gives a test customer full controls, both branches and both hosts", async () => {
+    const run = { status: "completed", conclusion: "success", sha: "def5678", at: "2026-11-15T10:00:00Z", by: "anna-dev",
+                  event: "push", url: "https://github.com/x/runs/2" };
+    mocks.site.mockResolvedValue({
+      ...ready, environment: "dev", kind: "test", org: "BooqyCustomersDev",
+      repoUrl: "https://github.com/BooqyCustomersDev/site-roma",
+      urls: { main: "https://roma.test.booqy.se", dev: "https://roma.test-dev.booqy.se" },
+      deploys: { main: run, dev: null },
+      hosting: {
+        main: { slugUrl: "https://roma.test.booqy.se", host: "example-se.test.booqy.se", mappedFrom: "example.se", state: "live", status: "active" },
+        dev: { slugUrl: "https://roma.test-dev.booqy.se", host: null, state: "slug_only" },
+      },
+    });
+    mocks.redeploySite.mockResolvedValue({ repo: "site-roma", branch: "main" });
+    render(<WebsiteTab tenant={tenant} />);
+    expect(await screen.findByRole("link", { name: "BooqyCustomersDev/site-roma" })).toBeInTheDocument();
+    expect(screen.getByText("Test customer")).toBeInTheDocument();
+    expect(screen.queryByText(/Managed from the production console/)).toBeNull();
+    expect(screen.getAllByText("roma.test.booqy.se").length).toBeGreaterThan(0);        // deploy row target
+    expect(screen.getByRole("link", { name: "roma.test-dev.booqy.se" })).toHaveAttribute("href", "https://roma.test-dev.booqy.se");
+    expect(screen.getByRole("link", { name: "example-se.test.booqy.se" })).toBeInTheDocument();
+    expect(screen.getByText("for example.se")).toBeInTheDocument();
+    expect(screen.getByText("def5678")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Redeploy main" }));
+    expect(mocks.redeploySite).toHaveBeenCalledWith("t1", "main");
+    await userEvent.click(screen.getByRole("button", { name: "Redeploy dev" }));
+    expect(mocks.redeploySite).toHaveBeenLastCalledWith("t1", "dev");
+    expect(screen.queryByRole("button", { name: /Mount/ })).toBeNull();
   });
 
   it("mounts the own domain per environment and says which CNAME dev needs", async () => {

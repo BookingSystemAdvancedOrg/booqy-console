@@ -5,6 +5,7 @@ import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
 import { Select } from "./Select";
+import { isProd, testMapping } from "../testSites";
 
 type Path = "choose" | "buy" | "connect" | "cname";
 
@@ -13,11 +14,19 @@ export function money(m?: Money | null) {
   return new Intl.NumberFormat("sv-SE", { style: "currency", currency: m.currency }).format(Number(m.amount));
 }
 
-/** Add domain: buy a new one, connect one they have (we take over DNS), or a bare CNAME. */
+/** Add domain: buy a new one, connect one they have (we take over DNS), or a bare CNAME. Outside
+ * prod only the test mapping: no domain is bought, connected or transferred there. */
 export default function DomainWizard({ tenant, onClose, onChanged }: {
   tenant: Tenant; onClose: () => void; onChanged: () => void;
 }) {
   const [path, setPath] = useState<Path>("choose");
+  if (!isProd()) {
+    return (
+      <Modal title="Add domain" onClose={onClose}>
+        <TestMapping tenant={tenant} onDone={onChanged} />
+      </Modal>
+    );
+  }
   return (
     <Modal title="Add domain" onClose={onClose}>
       {path === "choose" && (
@@ -451,6 +460,39 @@ export function NameServerBox({ domain, nameServers }: { domain: string; nameSer
 }
 
 // ----------------------------------------------------------------- cname
+// ------------------------------------------------------------ test mapping
+/** Dev console: example.se is mapped onto the test sites, main and dev. */
+function TestMapping({ tenant, onDone }: { tenant: Tenant; onDone: () => void }) {
+  const [domain, setDomain] = useState("");
+  const [added, setAdded] = useState<{ stage: string; host: string }[] | null>(null);
+  const add = useAction();
+  const preview = testMapping(domain);
+  return (
+    <form noValidate onSubmit={async (e) => {
+      e.preventDefault();
+      const r = await add.run(() => api.addDomain(tenant.tenantId, domain, true));
+      if (r) { setAdded(r.hosts ?? []); setDomain(""); onDone(); }
+    }}>
+      <ErrorNotice error={add.fields.domain ? null : add.error} />
+      <Field label="Domain" error={add.fields.domain}>
+        <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="example.se" autoFocus />
+      </Field>
+      {preview && (
+        <dl className="dl">
+          <dt>main</dt><dd className="mono">{preview.main}</dd>
+          <dt>dev</dt><dd className="mono">{preview.dev}</dd>
+        </dl>
+      )}
+      <button className="btn btn--primary" disabled={!preview || add.busy}>{add.busy ? "Adding…" : "Add test mapping"}</button>
+      {added && (
+        <Notice kind="ok">
+          Mapped: {added.map((h) => <span key={h.host} className="mono"> {h.host}</span>)}
+        </Notice>
+      )}
+    </form>
+  );
+}
+
 function Cname({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; onDone: () => void }) {
   const [domain, setDomain] = useState("");
   const [makePrimary, setPrimary] = useState(true);
@@ -462,7 +504,7 @@ function Cname({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void;
       <form noValidate onSubmit={async (e) => {
         e.preventDefault();
         const r = await add.run(() => api.addDomain(tenant.tenantId, domain, makePrimary));
-        if (r) { setDns(r.dns[0]); setDomain(""); onDone(); }
+        if (r) { setDns(r.dns?.[0] ?? null); setDomain(""); onDone(); }
       }}>
         <ErrorNotice error={add.error} />
         <Field label="Hostname" error={add.fields.domain} hint="e.g. www.restaurang.se - the bare domain can't be a CNAME">

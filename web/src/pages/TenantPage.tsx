@@ -8,6 +8,7 @@ import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
 import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
@@ -690,7 +691,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                   )}</td>
                 <td className="cell-badge"><Status value={z.status} /></td>
                 <td className="right small muted" data-label="Updated">{fmtDate(z.updatedAt ?? z.requestedAt)}
-                  {z.transferable && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
+                  {z.transferable && isProd() && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
             {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet - <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}

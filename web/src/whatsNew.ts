@@ -26,6 +26,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 14, text: "Profile button" },
   { n: 15, text: "Mouse pointer" },
   { n: 16, text: "Customer repos org" },
+  { n: 17, text: "Test sites" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

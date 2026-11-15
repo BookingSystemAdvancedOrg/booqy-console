@@ -59,6 +59,8 @@ class FakeDomains:
 @pytest.fixture
 def domains(aws, monkeypatch):
     from app import zones
+    # Buying, connecting and transferring are prod only (owner 2026-11-15).
+    monkeypatch.setenv("ENVIRONMENT", "prod")
     zones._PRICES.clear()
     fake = FakeDomains()
     monkeypatch.setattr(zones, "_domains", lambda: fake)
@@ -413,3 +415,17 @@ def test_transfer_needs_live_connected_zone(domains, aws, tenant):
     p = {"tenantId": tenant, "domain": "roma.se"}
     call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant}, {"domain": "roma.se", "records": []})
     assert call("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", p)[1]["error"] == "not_live"
+
+
+@pytest.mark.parametrize("route, kwargs", [
+    ("GET /platform/domains/search", {"query": {"q": "roma"}}),
+    ("GET /platform/domains/dns-scan", {"query": {"domain": "roma.se"}}),
+    ("POST /platform/tenants/{tenantId}/domains/registrations", {"path": {"tenantId": "t-1"}, "body": {"domain": "roma.se"}}),
+    ("POST /platform/tenants/{tenantId}/domains/connections", {"path": {"tenantId": "t-1"}, "body": {"domain": "roma.se"}}),
+    ("GET /platform/tenants/{tenantId}/zones/{domain}/transfer", {"path": {"tenantId": "t-1", "domain": "roma.se"}}),
+    ("POST /platform/tenants/{tenantId}/zones/{domain}/transfer", {"path": {"tenantId": "t-1", "domain": "roma.se"}, "body": {}}),
+])
+def test_buying_connecting_and_transferring_are_prod_only(domains, monkeypatch, route, kwargs):
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+    status, body = call(route, **kwargs)
+    assert status == 409 and body["error"] == "prod_only"

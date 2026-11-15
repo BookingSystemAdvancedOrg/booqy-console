@@ -374,7 +374,7 @@ textarea.input { resize: vertical; }
 .status--ready { color: var(--ok); }
 .status--creating, .status--deploying { color: var(--warn); }
 .status--slug_only, .status--not_mounted, .status--unknown,
-.status--archived, .status--none, .status--simulated, .status--cancelled, .status--skipped { color: var(--print-2); }
+.status--archived, .status--none, .status--legacy, .status--cancelled, .status--skipped { color: var(--print-2); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
 .page-head .status { animation: thunk 420ms var(--ease) both; }
 /* a stamp on the wall needs the lifted inks, not the paper ones */

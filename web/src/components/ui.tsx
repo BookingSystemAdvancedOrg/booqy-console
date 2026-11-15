@@ -88,7 +88,7 @@ export const STATUS_TEXT: Record<string, string> = {
   sent: "Sent",
   partly_sent: "Partly sent",
   creating: "Setting up",
-  simulated: "Dry run",
+  legacy: "Legacy",
   ready: "Ready",
   archived: "Archived",
   deploying: "Deploying",

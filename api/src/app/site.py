@@ -7,7 +7,8 @@ runs that step again.
     GET  /platform/tenants/{tenantId}/site            repo, status, last dev/prod deploy, booqy.json values
     POST /platform/tenants/{tenantId}/site/retry      set the site up again (async; poll GET)
     POST /platform/tenants/{tenantId}/site/invite     {username}: write access to this repo only
-    POST /platform/tenants/{tenantId}/site/redeploy   deploy this environment's branch again
+    POST /platform/tenants/{tenantId}/site/redeploy   deploy this environment's branch again ({branch}: a
+                                                      test customer's dev or main)
     POST /platform/tenants/{tenantId}/site/archive    {confirmSlug}: this environment's role and
                                                       variables go; the repo is archived (deleted only by Delete customer or the purge)
     POST /platform/tenants/{tenantId}/site/mount      {environment: prod | dev}: put the restaurant's
@@ -28,10 +29,19 @@ serves the shared customer-front-end build instead of the repo's site.
 A repo is born in the PROD console. Prod's site-repo reaches dev only
 through the dev account's booqy-sites-prod-link role, which may invoke this
 function with {"siteTask": {...}} and nothing else (site_task below, dev
-only): create or adopt the restaurant's empty dev tenant by slug (its own
-onboarding then sets up the dev side of the repo), or archive that side.
+only): create or adopt the restaurant's empty dev tenant by slug and write
+its dev deploy role for the repo prod names (site-repo linkProvision; dev
+answers with the role and booqy.json values, prod writes them on GitHub:
+dev holds no key for BooqyCustomers), or archive that side.
 A prod customer restored after offboarding restores its offboarded dev
 customer the same way; a purged dev customer's slug goes to a new one.
+
+Test customers (dev only, owner 2026-11-15): a customer created in the dev
+console has PROFILE siteKind "test": its repo is in BooqyCustomersDev and
+both branches deploy here, main to <slug>.test.booqy.se and dev to
+<slug>.test-dev.booqy.se (hosting has the rows "main" and "dev"). A prod
+customer can't link to a dev test customer with the same slug (delete the
+test customer first); a dev tenant prod links gets siteKind "prod-link".
 """
 
 import json
@@ -110,8 +120,12 @@ def invite(req) -> tuple[int, dict]:
 
 def redeploy(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
-    _require(tenant_id)
-    result = invoke({"action": "redeploy", "tenantId": tenant_id})
+    profile = _require(tenant_id)
+    branch = (req.body or {}).get("branch")
+    if branch is not None and (profile.get("siteKind") != "test" or branch not in ("dev", "main")):
+        raise ApiError(400, "validation_failed", "branch is only for a test customer: dev or main",
+                       fields={"branch": "dev or main"})
+    result = invoke({"action": "redeploy", "tenantId": tenant_id, **({"branch": branch} if branch else {})})
     write_audit(tenant_id, "site_redeployed", req.actor, {"branch": result.get("branch")})
     return 202, result
 
@@ -166,10 +180,29 @@ def _entry(tenant_id: str, host: str | None) -> dict:
             "cnameTarget": env("TENANT_DOMAIN_CNAME_TARGET", "")}
 
 
+def _test_hosting(tenant_id: str) -> dict:
+    """A test customer: its main and dev hosts (stage on the DOMAIN# rows),
+    each with the mapped own domain of that stage."""
+    rows = [r for r in _rows(tenant_id, "DOMAIN#") if r.get("status") != "removing"]
+    out = {}
+    for stage in ("main", "dev"):
+        slug_row = next((r for r in rows if r.get("kind") == "platform" and r.get("stage") == stage), None)
+        own = next((r for r in rows if r.get("kind") == "custom" and r.get("stage") == stage), None)
+        status = (own or {}).get("status")
+        state = ("slug_only" if not own else "live" if status == _LIVE
+                 else "failed" if status in _RETRYABLE else "attaching")
+        out[stage] = {"slugUrl": f"https://{slug_row['domain']}" if slug_row else None,
+                      "host": own["domain"] if own else None, "mappedFrom": (own or {}).get("mappedFrom"),
+                      "state": state, "status": status, "lastError": (own or {}).get("lastError")}
+    return out
+
+
 def hosting(tenant_id: str, profile: dict) -> dict:
     """Both environments in prod (dev's row through site-repo and the dev
-    link), this one only in dev."""
+    link), this one only in dev; a dev test customer's main and dev."""
     here = env("ENVIRONMENT")
+    if here != "prod" and profile.get("siteKind") == "test":
+        return _test_hosting(tenant_id)
     host, dev_host, zone = _own_domain(tenant_id, profile)
     if here != "prod":
         return {here: _entry(tenant_id, host)}
@@ -268,26 +301,48 @@ def site_task(event: dict) -> dict:
             return _domain_task(tenant_id, task)
         if task.get("action") != "mirror":
             return {"error": "validation_failed", "message": "unknown site task"}
-        status = get_profile(tenant_id).get("status") if tenant_id else None
+        existing = get_profile(tenant_id) if tenant_id else {}
+        status = existing.get("status") if tenant_id else None
+        if tenant_id and status != "purged" and existing.get("siteKind") == "test":
+            return {"error": "slug_used_by_test_customer",
+                    "message": f"{slug} is a test customer in the dev console: delete it there first, then Run setup again"}
         if status == "offboarded":
-            restore_tenant(tenant_id, LINK_ACTOR)        # its re-run onboarding sets up the dev side
-            return {"tenantId": tenant_id, "status": "restored"}
+            restore_tenant(tenant_id, LINK_ACTOR)
+            _mark_linked(tenant_id, existing)
+            return _with_dev_side({"tenantId": tenant_id, "status": "restored"}, task)
         if tenant_id and status != "purged":
             # The same restaurant already has a dev tenant: keep its test data,
-            # set up the dev side of the repo now (provision is idempotent).
+            # set up the dev side of the repo now (idempotent).
             if status == "offboarding":
                 return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
-            if status in ("active", "suspended"):
-                invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
+            _mark_linked(tenant_id, existing)
             write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
-            return {"tenantId": tenant_id, "status": "adopted"}
+            return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
         body["planId"] = _dev_plan(task.get("planId"))
-        return _create_mirror(body, slug)
+        return _with_dev_side(_create_mirror(body, slug), task)
     except ApiError as e:
         fields = e.extra.get("fields") or {}
         detail = "; ".join(f"{k}: {msg}" for k, msg in fields.items())
         return {"error": e.code, "message": f"{e} ({detail})" if detail else str(e)}
+
+
+def _mark_linked(tenant_id: str, existing: dict) -> None:
+    if existing.get("siteKind") != "prod-link":
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
+            UpdateExpression="SET siteKind = :k", ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":k": {"S": "prod-link"}})
+
+
+def _with_dev_side(out: dict, task: dict) -> dict:
+    """The dev deploy role for the repo prod names (owner login and id, repo
+    id): site-repo checks the owner is BooqyCustomers by login and id.
+    Answer "site": the role ARN, DEV_* values and booqy.json's dev section,
+    which prod writes on GitHub."""
+    if "repo" not in task:
+        return out
+    return {**out, "site": invoke({"action": "linkProvision", "tenantId": out["tenantId"], "repo": task["repo"]})}
 
 
 def _create_mirror(body: dict, slug: str) -> dict:

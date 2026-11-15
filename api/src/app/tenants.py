@@ -340,6 +340,18 @@ def list_tenants(req) -> tuple[int, dict]:
     return 200, {"tenants": rows}
 
 
+def _site_kind(actor: str) -> dict:
+    """Dev with test sites on (owner 2026-11-15): a customer created in this
+    console is a test customer (repo in BooqyCustomersDev, hosts on
+    test.booqy.se / test-dev.booqy.se); one prod creates through the link is
+    the dev side of a real customer. Prod never sets it."""
+    if env("ENVIRONMENT") == "prod":
+        return {}
+    if actor == "prod-site-repo":
+        return {"siteKind": "prod-link"}
+    return {"siteKind": "test"} if env("TEST_SITES_ENABLED", "false") == "true" else {}
+
+
 def create_tenant(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     name = f.text("name", required=True, max_len=100)
@@ -407,6 +419,7 @@ def create_tenant(req) -> tuple[int, dict]:
         "planId": plan_id, "entitlements": entitlements, "locationCount": len(locations),
         "ownerEmail": owner_email, "ownerName": owner_name, "ownerPhone": owner_phone,
         "onboardingRuns": 1, "billing": billing,
+        **_site_kind(req.actor),
         # New restaurants go live only after the owner accepts the DPA in
         # admin (application shared/dpa.py); older tenants never get this.
         "dpaRequired": True,

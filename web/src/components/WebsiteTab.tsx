@@ -5,15 +5,17 @@ import { Card, ErrorNotice, Field, Notice, Status, fmtDate, useAction, useLoad }
 import { CheckMark, SaveButton, useDirty } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { Slot } from "../slots";
+import { InfoTip } from "./InfoTip";
 
-const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production" };
+const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production", main: "Main" };
 
-/** The restaurant's own site repo site-<slug>: born in the PROD console's
- * onboarding (Retry here), deployed from dev (dev account) and main (prod).
- * Each environment's site is live on its slug address; the restaurant's own
- * domain is mounted per environment once it is verified (Hosting). The dev console only shows it (read-only) or, for
- * a customer prod hasn't created, a dry run; test-* slugs are the exception
- * for testing the automation. Everything goes through the site-repo function;
+/** The restaurant's own site repo site-<slug>. A real customer's repo is born
+ * in the PROD console's onboarding (Retry here), deployed from dev (dev
+ * account) and main (prod); the dev console shows its dev side read-only. A
+ * customer created in the DEV console is a test customer (owner 2026-11-15):
+ * its repo is in BooqyCustomersDev and both branches deploy to the dev
+ * account's test sites, main to <slug>.test.booqy.se and dev to
+ * <slug>.test-dev.booqy.se. Everything goes through the site-repo function;
  * no token is ever shown or stored here. */
 export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
   const { data, error, loading, reload } = useLoad(() => api.site(tenant.tenantId), [tenant.tenantId]);
@@ -36,19 +38,20 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     return (
       <>
       <Notice kind="info">
-        Site repos aren't switched on in this environment yet: the "Booqy Customer Sites" GitHub App key has to be stored first
+        Site repos aren't switched on in this environment yet: this environment's GitHub App key has to be stored first
         (CUSTOMER-SITE-RUNBOOK.md). Until then the restaurant uses the shared site.
       </Notice>
       {builder}
       </>
     );
   }
-  const readOnly = data.environment === "dev" && !data.repo.startsWith("site-test-");
+  const test = data.kind === "test";
+  const readOnly = data.environment === "dev" && !test;
   return (
     <div className="stack">
       <ErrorNotice error={error} />
       <Repo site={data} tenant={tenant} readOnly={readOnly} onChanged={reload} />
-      {data.hosting && data.status !== "simulated" && <Hosting site={data} tenant={tenant} onChanged={reload} />}
+      {data.hosting && data.status !== "legacy" && (test ? <TestHosting site={data} /> : <Hosting site={data} tenant={tenant} onChanged={reload} />)}
       {data.repoExists && !data.archived && (
         <>
           <Local site={data} />
@@ -63,33 +66,34 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
 
 function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant: Tenant; readOnly: boolean; onChanged: () => void }) {
   const retry = useAction();
-  const redeploy = useAction();
+  // One action per branch: a test customer has a button for each.
+  const redeploy = { main: useAction(), dev: useAction() };
   const [started, setStarted] = useState(false);
+  const test = site.kind === "test";
   const canRetry = !readOnly && ["active", "suspended"].includes(tenant.status) && site.status !== "creating";
-  const branch = site.environment === "prod" ? "main" : "dev";
+  // A test customer deploys both branches here; a real site this environment's.
+  const branches: ("dev" | "main")[] = test ? ["main", "dev"] : [site.environment === "prod" ? "main" : "dev"];
+  const deployRows: ("dev" | "prod" | "main")[] = test ? ["main", "dev"] : ["dev", "prod"];
   return (
     <Card title="Website repo" actions={
       <div className="row-actions">
         {site.repoUrl && <a className="btn btn--small" href={site.repoUrl} target="_blank" rel="noreferrer">Open repo</a>}
       </div>}>
-      {site.status === "simulated" && (
-        <Notice kind="info">
-          <strong>Dry run.</strong> Site repos are born in the production console, so nothing was created here. Creating
-          this customer in production (same slug) creates the repo and sets up this dev side:
-          <ul className="plain-list">{(site.plan ?? []).map((line) => <li key={line}>{line}</li>)}</ul>
-        </Notice>
+      {site.status === "legacy" && (
+        <Notice kind="info"><strong>Legacy dev customer.</strong> {site.lastError}</Notice>
       )}
-      {readOnly && site.status !== "simulated" && (
-        <Notice kind="info">Managed from the production console. This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
+      {readOnly && site.status !== "legacy" && (
+        <Notice kind="info">Managed from the production console (setup, deploys, access). This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
       )}
       {site.status === "failed" && <Notice kind="error"><strong>Setup failed.</strong> {site.lastError}</Notice>}
       {site.status === "creating" && <Notice kind="info">Setting up the repo and the first deploy…</Notice>}
-      {site.status === "none" && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
+      {site.status === "none" && !readOnly && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
       {site.archived && <Notice kind="warn">The repo is archived (read-only). <strong>Set up</strong> brings it back for this environment.</Notice>}
       <dl className="dl">
         <dt>Repo</dt>
         <dd className="mono">{site.repoUrl ? <a href={site.repoUrl} target="_blank" rel="noreferrer">{site.org}/{site.repo}</a> : `${site.org}/${site.repo}`}</dd>
         <dt>Status</dt><dd><Status value={site.archived ? "archived" : site.status} /></dd>
+        {test && <><dt>Kind</dt><dd>Test customer <InfoTip label="Test customer">Created in the dev console. Both branches deploy to the dev account's test sites (never indexed); domains are mapped onto them, never bought.</InfoTip></dd></>}
         <dt>Created</dt><dd>{site.createdAt ? fmtDate(site.createdAt) : <span className="muted">-</span>}</dd>
       </dl>
       {site.deploys && (
@@ -97,7 +101,8 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
           <table className="table">
             <thead><tr><th>Environment</th><th>Last deploy</th><th>Version</th><th>By</th></tr></thead>
             <tbody>
-              {(["dev", "prod"] as const).map((env) => <DeployRow key={env} env={env} run={site.deploys![env]} />)}
+              {deployRows.map((env) => <DeployRow key={env} env={env} run={site.deploys![env] ?? null}
+                                                    target={test ? site.urls?.[env as "main" | "dev"] : undefined} />)}
             </tbody>
           </table>
         </div>
@@ -108,15 +113,26 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
                       label={site.status === "ready" ? "Run setup again" : site.status === "failed" ? "Retry" : "Set up"}
                       onClick={async () => { if (await retry.run(() => api.retrySite(tenant.tenantId))) onChanged(); }} />
         )}
-        {!readOnly && site.repoExists && !site.archived && (
-          <SaveButton kind="plain" small type="button" busy={redeploy.busy} busyLabel="Starting…" done={redeploy.done} doneLabel="Deploy started"
-                      label={`Redeploy ${branch}`}
-                      onClick={async () => { if (await redeploy.run(() => api.redeploySite(tenant.tenantId))) setStarted(true); }} />
-        )}
+        {!readOnly && site.repoExists && !site.archived && branches.map((branch) => (
+          <RedeployButton key={branch} branch={branch} redeploy={redeploy[branch]}
+                          onClick={async () => {
+                            const call = () => test ? api.redeploySite(tenant.tenantId, branch) : api.redeploySite(tenant.tenantId);
+                            if (await redeploy[branch].run(call)) setStarted(true);
+                          }} />
+        ))}
         {started && <span className="small muted">Deploy started - it shows above within a minute (Refresh).</span>}
       </div>
-      <ErrorNotice error={retry.error ?? redeploy.error} />
+      <ErrorNotice error={retry.error ?? redeploy.main.error ?? redeploy.dev.error} />
     </Card>
+  );
+}
+
+function RedeployButton({ branch, redeploy, onClick }: {
+  branch: string; redeploy: { busy: boolean; done: boolean }; onClick: () => void;
+}) {
+  return (
+    <SaveButton kind="plain" small type="button" busy={redeploy.busy} busyLabel="Starting…" done={redeploy.done} doneLabel="Deploy started"
+                label={`Redeploy ${branch}`} onClick={onClick} />
   );
 }
 
@@ -168,6 +184,44 @@ function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
   );
 }
 
+/** A test customer: its main and dev hosts on the test sites, and the own
+ * domain mapped onto them (Domains tab, Add domain). */
+function TestHosting({ site }: { site: SiteStatus }) {
+  const rows = (["main", "dev"] as const).filter((stage) => site.hosting?.[stage]);
+  return (
+    <Card title="Where the site answers">
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Branch</th><th>Slug address</th><th>Own domain (test)</th></tr></thead>
+          <tbody>
+            {rows.map((stage) => {
+              const h = site.hosting![stage]!;
+              const status = h.state === "attaching" && h.status ? h.status : h.state;
+              return (
+                <tr key={stage}>
+                  <td className="strong mono">{stage}</td>
+                  <td data-label="Slug address">{h.slugUrl
+                    ? <a href={h.slugUrl} target="_blank" rel="noreferrer">{h.slugUrl.replace(/^https:\/\//, "")}</a>
+                    : <span className="muted">-</span>}</td>
+                  <td data-label="Own domain (test)">
+                    {h.host
+                      ? <><Status value={status} /> {h.state === "live"
+                          ? <a href={`https://${h.host}`} target="_blank" rel="noreferrer">{h.host}</a>
+                          : <span className="mono small">{h.host}</span>}
+                          {h.mappedFrom && <div className="small muted">for {h.mappedFrom}</div>}</>
+                      : <span className="muted">-</span>}
+                    {h.lastError && <div className="small hosting-error">{h.lastError}</div>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function HostingRow({ env, h, manage, busy, done, onMount }: { env: "dev" | "prod"; h: SiteHosting; manage: boolean; busy: boolean; done: boolean; onMount: () => void }) {
   const status = h.state === "attaching" && h.status ? h.status : h.state;
   return (
@@ -195,14 +249,15 @@ function HostingRow({ env, h, manage, busy, done, onMount }: { env: "dev" | "pro
   );
 }
 
-function DeployRow({ env, run }: { env: "dev" | "prod"; run: SiteDeploy | null }) {
+function DeployRow({ env, run, target }: { env: "dev" | "prod" | "main"; run: SiteDeploy | null; target?: string }) {
+  const label = target ? <><span className="mono">{env}</span> → {target.replace(/^https:\/\//, "")}</> : ENV_LABEL[env];
   if (!run) {
-    return <tr><td className="strong">{ENV_LABEL[env]}</td><td className="muted" colSpan={3} data-label="Last deploy">Not deployed yet</td></tr>;
+    return <tr><td className="strong">{label}</td><td className="muted" colSpan={3} data-label="Last deploy">Not deployed yet</td></tr>;
   }
   const state = run.status === "completed" ? (run.conclusion === "success" ? "live" : run.conclusion === "cancelled" || run.conclusion === "skipped" ? run.conclusion : "failed") : "deploying";
   return (
     <tr>
-      <td className="strong">{ENV_LABEL[env]}</td>
+      <td className="strong">{label}</td>
       <td data-label="Last deploy"><a href={run.url} target="_blank" rel="noreferrer"><Status value={state} /></a> <span className="small muted">{fmtDate(run.at)}</span></td>
       <td className="mono" data-label="Version">{run.sha}</td>
       <td data-label="By">{run.by ?? <span className="muted">-</span>}</td>

@@ -142,7 +142,8 @@ export const api = {
   retrySite: (id: string) => request<{ status: string }>("POST", `${t(id)}/site/retry`, {}),
   inviteToSite: (id: string, username: string) =>
     request<{ repo: string; username: string; result: string }>("POST", `${t(id)}/site/invite`, { username }),
-  redeploySite: (id: string) => request<{ repo: string; branch: string }>("POST", `${t(id)}/site/redeploy`, {}),
+  redeploySite: (id: string, branch?: "dev" | "main") =>
+    request<{ repo: string; branch: string }>("POST", `${t(id)}/site/redeploy`, branch ? { branch } : {}),
   mountSiteDomain: (id: string, environment: "dev" | "prod") =>
     request<{ hosting: SiteStatus["hosting"] }>("POST", `${t(id)}/site/mount`, { environment }),
   archiveSite: (id: string, confirmSlug: string) =>
@@ -156,7 +157,8 @@ export const api = {
   deleteLocation: (id: string, locationId: string) =>
     request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}`),
   addDomain: (id: string, domain: string, makePrimary: boolean) =>
-    request<{ domain: string; dns: { type: string; name: string; value: string }[] }>(
+    request<{ domain: string; dns?: { type: string; name: string; value: string }[];
+              test?: boolean; hosts?: { stage: "main" | "dev"; host: string }[] }>(
       "POST", `${t(id)}/domains`, { domain, makePrimary }),
   removeDomain: (id: string, domain: string) =>
     request("DELETE", `${t(id)}/domains/${encodeURIComponent(domain)}`),
