@@ -70,7 +70,7 @@ box-shadow:inset 0 0 0 1px rgba(28,25,24,.14);overflow-wrap:anywhere}
 .booqy-update.has-news:not([data-phase]) .booqy-update__text{flex-basis:100%}
 .booqy-update.has-news:not([data-phase]) .booqy-update__reload{flex:1 1 0}}
 .booqy-update__note{display:block;font-weight:500;font-size:.82rem;opacity:.75}
-.booqy-update__btn{appearance:none;border:0;border-radius:999px;padding:9px 16px;cursor:pointer;
+.booqy-update__btn{appearance:none;border:0;border-radius:999px;padding:9px 16px;cursor: default;
 background:#1c1918;color:#fbfaf6;font:inherit;font-weight:700;white-space:nowrap;position:relative}
 .booqy-update__btn:hover{background:#350001}
 .booqy-update__btn--ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px currentColor}
@@ -79,7 +79,7 @@ background:#1c1918;color:#fbfaf6;font:inherit;font-weight:700;white-space:nowrap
 .booqy-update[data-phase=confirm] .booqy-update__text{flex-basis:100%}
 .booqy-update[data-phase=confirm] .booqy-update__btn{flex:1 1 0}}
 .booqy-update__btn:focus-visible,.booqy-update__close:focus-visible{outline:2px solid #9e1d26;outline-offset:2px}
-.booqy-update__close{appearance:none;border:0;background:transparent;color:inherit;opacity:.7;cursor:pointer;
+.booqy-update__close{appearance:none;border:0;background:transparent;color:inherit;opacity:.7;cursor: default;
 width:32px;height:32px;border-radius:999px;font:inherit;font-size:1.15rem;line-height:1;position:relative}
 .booqy-update__close:hover{opacity:1}
 .booqy-update__fill{position:absolute;inset:0;z-index:-1;transform-origin:0 50%;transform:scaleX(0);

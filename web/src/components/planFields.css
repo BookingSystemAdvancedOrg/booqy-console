@@ -1,6 +1,6 @@
 /* Plan step and Plan tab: the locations stepper, the Free options, Select all. */
 .stepper { display: inline-flex; align-items: stretch; width: max-content; max-width: 100%; border: 1.5px solid var(--paper-line); border-radius: var(--r-md); background: var(--glass-surface); overflow: hidden; }
-.stepper__btn { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; font: 500 20px/1 var(--mono); cursor: pointer; transition: background 160ms var(--ease); }
+.stepper__btn { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; font: 500 20px/1 var(--mono); cursor: default; transition: background 160ms var(--ease); }
 .stepper__btn:hover:not(:disabled) { background: var(--glass-fill); }
 .stepper__btn:disabled { opacity: 0.35; cursor: default; }
 .stepper__btn:focus-visible { outline: 2px solid var(--print); outline-offset: -2px; }
