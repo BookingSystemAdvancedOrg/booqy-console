@@ -32,7 +32,7 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
               <MyAvatar name={name} email={email} />
               <p className="strong">{firstName(name, email)}</p>
             </div>
-            <Link to="/profile" className="setting-toggle">Open my profile</Link>
+            <Link to="/profile" className="btn btn--ghost">Open my profile</Link>
           </div>
         </div>
       </section>

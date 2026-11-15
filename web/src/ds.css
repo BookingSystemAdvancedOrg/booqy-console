@@ -862,7 +862,7 @@ input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], 
   appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--r-pill);
   background: transparent; color: var(--print); font: 600 13.5px/1.2 var(--sans); white-space: nowrap;
-  cursor: pointer; text-decoration: none; transition: background-color 160ms var(--ease), color 160ms var(--ease);
+  cursor: default; text-decoration: none; transition: background-color 160ms var(--ease), color 160ms var(--ease);
 }
 .row-action:hover:not(:disabled), .row-action:focus-visible, .row-action[aria-expanded="true"] { background: var(--glass-fill); }
 .row-action:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
@@ -908,17 +908,17 @@ html.is-desktop-glass[data-glass-backdrop="colour"][data-theme="dark"] body::bef
 /* Background setting (components/BackdropSetting.tsx): a segment and swatches. */
 .backdrop-setting { display: grid; gap: 10px; justify-items: end; }
 .backdrop-segment { display: inline-flex; padding: 3px; border-radius: var(--r-pill); background: var(--glass-fill); box-shadow: inset 0 0 0 1px var(--glass-border); }
-.backdrop-segment button { appearance: none; min-height: 38px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--print); font: 600 14px/1 var(--sans); cursor: pointer; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+.backdrop-segment button { appearance: none; min-height: 38px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--print); font: 600 14px/1 var(--sans); cursor: default; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
 .backdrop-segment button[aria-pressed="true"] { background: #1a120e; color: var(--bq-snow); }
 :root[data-theme="dark"] .backdrop-segment button[aria-pressed="true"] { background: #f6f1ea; color: #1a120e; }
 .backdrop-segment button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
 .backdrop-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.backdrop-swatch { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px; box-shadow: inset 0 0 0 1px rgb(26 18 14 / 0.18), inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.45); color: var(--print); cursor: pointer; }
+.backdrop-swatch { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px; box-shadow: inset 0 0 0 1px rgb(26 18 14 / 0.18), inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.45); color: var(--print); cursor: default; }
 .backdrop-swatch[aria-pressed="true"], .backdrop-swatch[data-selected="true"] { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--print); }
 .backdrop-swatch:focus-visible, .backdrop-swatch--custom:has(input:focus-visible) { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
 .backdrop-swatch--brand { background: radial-gradient(60% 60% at 25% 25%, #a88462, transparent 70%), radial-gradient(60% 60% at 80% 80%, #350001, transparent 70%), #e8dccb; }
 .backdrop-swatch--custom { background: var(--glass-fill); font: 600 18px/1 var(--sans); }
-.backdrop-swatch--custom input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
+.backdrop-swatch--custom input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; cursor: default; }
 @container (max-width: 520px) { .backdrop-setting, .backdrop-swatches { justify-items: start; justify-content: flex-start; } }
 
 /* Background: Your image. Until the picture is decoded Booqy's backdrop shows,
@@ -1287,7 +1287,7 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
 .avatar-setting__who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .avatar-setting__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .avatar-setting__choose { position: relative; align-items: center; }
-.avatar-setting__input { position: absolute; inset: 0; inline-size: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
+.avatar-setting__input { position: absolute; inset: 0; inline-size: 100%; min-height: 0; padding: 0; opacity: 0; cursor: default; }
 .avatar-setting__choose:has(.avatar-setting__input:focus-visible) { box-shadow: 0 0 0 3px var(--field-ring); }
 .avatar-crop { display: grid; justify-items: center; gap: var(--space-3); }
 .avatar-crop__view {
@@ -1333,7 +1333,7 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
   position: absolute; inset-block-start: 10px; inset-inline-end: 10px; display: grid; place-items: center;
   inline-size: 36px; block-size: 36px; padding: 0; border: 0; border-radius: var(--r-pill);
   background: var(--glass-pop); color: var(--ink); box-shadow: var(--liquid-edge);
-  cursor: pointer; transition: scale 160ms var(--ease);
+  cursor: default; transition: scale 160ms var(--ease);
 }
 .lightbox__close:hover { scale: 1.06; }
 .lightbox__close:focus-visible { outline: none; box-shadow: var(--liquid-edge), 0 0 0 3px var(--field-ring); }
