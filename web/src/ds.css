@@ -823,6 +823,26 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-v
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* Date and time fields: WebKit (iPhone, iPad, Mac Safari) gives them an
+   intrinsic min-width and its own centred pill, so width: 100% was ignored
+   and the field stuck out of its card. Drop the native look, let them shrink
+   and start the value at the left like every other text field. Chrome and
+   Edge keep their calendar icon (the picker indicator is not affected). */
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-date-and-time-value {
+  text-align: left;
+  min-width: 0;
+  margin: 0;
+}
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit { padding: 0; }
+
 /* --- Row actions (components/RowActions.tsx): quiet, the same in every table --- */
 .table-wrap { container-type: inline-size; }
 .table th.right, .table td.right { text-align: right; }
