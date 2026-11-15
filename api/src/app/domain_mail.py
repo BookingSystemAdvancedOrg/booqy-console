@@ -78,16 +78,16 @@ def records_steps(domain: str, target: str, dev_target: str | None) -> str:
     lines = [
         f"Er hemsida ska snart synas på {www}. Gör så här, det tar fem minuter:",
         "",
-        f"- 1. Logga in där ni köpte {domain} (till exempel one.com).",
-        f"- 2. Öppna DNS-inställningarna för {domain}.",
-        "- 3. Finns det redan en rad som heter www? Ta bort den.",
-        f"- 4. Lägg till en ny rad: Typ CNAME, Namn www, Värde {target}",
+        f"1. Logga in där ni köpte {domain} (till exempel one.com).",
+        f"2. Öppna DNS-inställningarna för {domain}.",
+        "3. Finns det redan en rad som heter www? Ta bort den.",
+        f"4. Lägg till en ny rad: Typ CNAME, Namn www, Värde {target}",
     ]
     n = 5
     if dev_target:
-        lines.append(f"- {n}. Lägg till en rad till: Typ CNAME, Namn dev, Värde {dev_target}")
+        lines.append(f"{n}. Lägg till en rad till: Typ CNAME, Namn dev, Värde {dev_target}")
         n += 1
-    lines.append(f"- {n}. Leta upp \"Vidarebefordran\" (eller \"Webbomdirigering\") och skicka {domain} vidare till "
+    lines.append(f"{n}. Leta upp \"Vidarebefordran\" (eller \"Webbomdirigering\") och skicka {domain} vidare till "
                  f"https://{www}. Välj \"permanent\" eller \"301\" om ni får välja.")
     lines += ["", "Klart! Ni behöver inte göra något mer. Vi kollar själva och mejlar er när hemsidan är live."]
     return "\n".join(lines)
@@ -99,12 +99,12 @@ def nameserver_steps(domain: str, name_servers: list[str], dnssec: bool = False)
         lines += [f"Viktigt först: stäng av DNSSEC för {domain} hos er leverantör och vänta en timme. "
                   "Annars slutar domänen att fungera när ni byter namnservrar.", ""]
     lines += [
-        f"- 1. Logga in där ni köpte {domain} (till exempel one.com).",
-        f"- 2. Öppna inställningen för namnservrar (\"Name servers\") för {domain}.",
-        "- 3. Välj att använda egna namnservrar.",
-        "- 4. Ta bort de gamla och skriv in de här fyra, en på varje rad:",
+        f"1. Logga in där ni köpte {domain} (till exempel one.com).",
+        f"2. Öppna inställningen för namnservrar (\"Name servers\") för {domain}.",
+        "3. Välj att använda egna namnservrar.",
+        "4. Ta bort de gamla och skriv in de här fyra, en på varje rad:",
         *[f"- {ns}" for ns in name_servers],
-        "- 5. Spara.",
+        "5. Spara.",
         "",
         "Klart! Det kan ta några timmar innan bytet syns. Vi kollar själva och mejlar er när hemsidan är live. "
         "Er e-post fortsätter att fungera, vi har kopierat inställningarna.",
@@ -117,9 +117,9 @@ def transfer_steps(domain: str) -> str:
         f"Nu flyttar vi {domain} till Booqy. Hemsidan och e-posten fungerar som vanligt hela tiden.",
         "",
         "Det enda ni behöver göra:",
-        f"- 1. Öppna mejlet om flytten av {domain}. Det kommer till den e-postadress som står som ägare till "
+        f"1. Öppna mejlet om flytten av {domain}. Det kommer till den e-postadress som står som ägare till "
         "domänen hos er nuvarande leverantör (till exempel one.com).",
-        "- 2. Klicka på länken i mejlet och godkänn flytten.",
+        "2. Klicka på länken i mejlet och godkänn flytten.",
         "",
         "Hittar ni inte mejlet? Titta i skräpposten. Det kan ta upp till en timme innan det kommer.",
         "",

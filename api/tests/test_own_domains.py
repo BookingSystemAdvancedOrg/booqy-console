@@ -606,6 +606,8 @@ def test_simulated_transfer_end_to_end(sim, aws):
     assert out == {"status": "done", "attach": False}
     assert {"action": "testHost", "op": "put", "tenantId": t, "label": "roma-com"} in sim["site"].calls
     assert _task("set_canonical", t, "roma.com") == {"status": "done"}
+    assert {"action": "testHost", "op": "redirect", "tenantId": t, "label": "roma-com"} in sim["site"].calls
+    assert _zone(aws, t, "roma.com")["redirects"] == ["test-roma.test.booqy.se", "test-roma.test-dev.booqy.se"]
     assert _task("mark", t, "roma.com", status="live") == {"status": "live"}
     assert _task("dev_step", t, "roma.com") == {"status": "done"}
     assert _task("update_site", t, "roma.com") == {"status": "skipped"}
@@ -617,6 +619,9 @@ def test_simulated_transfer_end_to_end(sim, aws):
     # removal unmaps the test hosts
     status, _ = call("DELETE /platform/tenants/{tenantId}/zones/{domain}", p)
     assert status == 202 and {"action": "testHost", "op": "delete", "tenantId": t, "label": "roma-com"} in sim["site"].calls
+    calls = sim["site"].calls
+    assert calls.index({"action": "testHost", "op": "redirect", "tenantId": t, "label": ""}) < \
+        calls.index({"action": "testHost", "op": "delete", "tenantId": t, "label": "roma-com"})
     assert _profile(aws, t)["primaryDomain"] == "test-roma.test.booqy.se"
 
 
@@ -645,6 +650,10 @@ def test_simulated_buy_records_and_connect(sim, aws):
 
     status, body = call("POST /platform/tenants/{tenantId}/domains/records", {"tenantId": t}, {"domain": "roma.nu"})
     assert status == 202 and body["zone"]["simulated"]
+    # every record shows in the dev console too, dev's on the sandbox's dev host
+    assert [(r["name"], r["value"]) for r in body["zone"]["records"]][1] == ("dev", "roma-nu.test-dev.booqy.se")
+    assert "Namn dev, Värde roma-nu.test-dev.booqy.se" in body["zone"]["restaurantSteps"]
+    assert "\n1. Logga in" in body["zone"]["restaurantSteps"] and "- 1." not in body["zone"]["restaurantSteps"]
     body = call("POST /platform/tenants/{tenantId}/zones/{domain}/simulate", {"tenantId": t, "domain": "roma.nu"},
                 {"event": "records_added"})[1]
     assert body["result"] == "done"

@@ -342,6 +342,9 @@ def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aw
     # No workflow and no distribution tenant: the label goes into the sandbox's host map.
     assert aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"] == []
     assert site_repo.calls == [("RequestResponse", {"action": "testHost", "op": "put", "tenantId": tenant,
+                                                    "label": "example-se"}),
+                               # guests only see it: the slug's test hosts answer with a 301 to it
+                               ("RequestResponse", {"action": "testHost", "op": "redirect", "tenantId": tenant,
                                                     "label": "example-se"})]
     from app.domains import _domain_row
     for stage, host in (("main", "example-se.test.booqy.se"), ("dev", "example-se.test-dev.booqy.se")):
@@ -357,8 +360,10 @@ def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aw
     site_repo.answer = {"label": "example-se", "op": "delete", "result": "done"}
     status, body = call("DELETE /platform/tenants/{tenantId}/domains/{domain}", {**p, "domain": "example-se.test-dev.booqy.se"})
     assert status == 202 and body["hosts"] == ["example-se.test.booqy.se", "example-se.test-dev.booqy.se"]
-    assert site_repo.calls[-1] == ("RequestResponse", {"action": "testHost", "op": "delete", "tenantId": tenant,
-                                                       "label": "example-se"})
+    assert site_repo.calls[-2:] == [("RequestResponse", {"action": "testHost", "op": "redirect", "tenantId": tenant,
+                                                         "label": ""}),
+                                    ("RequestResponse", {"action": "testHost", "op": "delete", "tenantId": tenant,
+                                                         "label": "example-se"})]
     assert _domain_row(tenant, "example-se.test.booqy.se") is None and _domain_row(tenant, "example-se.test-dev.booqy.se") is None
     assert "Item" not in aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": "DOMAIN#example-se.test.booqy.se"},
                                                                           "SK": {"S": "TENANT"}})

@@ -8,7 +8,9 @@ example-se.test-dev.booqy.se (dev): both hosts are claimed and live at once
 (the sandbox distribution's wildcard certificate covers them), and the
 label example-se goes into the sandbox's host map through site-repo
 (testHost). No workflow, no distribution tenant, no certificate. Real
-customers' domains are managed from prod."""
+customers' domains are managed from prod. Once mapped (the site's primary),
+the slug's own test hosts answer with a 301 to it, as <slug>.booqy.se does
+in prod (testHost redirect); unmapping the primary sets them back."""
 
 import hashlib
 import json
@@ -116,6 +118,12 @@ def _site_repo(payload: dict) -> dict:
     return site.invoke(payload)
 
 
+def slug_redirect(tenant_id: str, label: str) -> None:
+    """<slug>.test(-dev).booqy.se -> 301 to <label>.test(-dev).booqy.se;
+    an empty label sets the slug's hosts back to serving the site."""
+    _site_repo({"action": "testHost", "op": "redirect", "tenantId": tenant_id, "label": label})
+
+
 def _test_items(tenant_id: str, hosts: dict, mapped_from: str, actor: str) -> list[dict]:
     items = []
     for stage, host in hosts.items():
@@ -160,6 +168,7 @@ def _add_test_domain(req, tenant_id: str, host: str, profile: dict) -> tuple[int
     if profile.get("siteKind") != "test":
         raise ApiError(409, "managed_from_prod", "This customer's domains are managed from the production console")
     hosts = map_test_domain(tenant_id, host, req.actor)
+    slug_redirect(tenant_id, hosts["main"].split(".")[0])
     return 202, {"domain": host.removeprefix("www."), "status": "active", "test": True,
                  "hosts": [{"stage": stage, "host": hosts[stage]} for stage in ("main", "dev")]}
 
@@ -187,10 +196,13 @@ def unmap_test_domain(tenant_id: str, mapped_from: str, actor: str) -> dict:
     """Host map first (the claim is still ours), then the pair's rows; a
     primary mapped host falls back to the slug's main host."""
     hosts = test_hosts(mapped_from)
+    profile = get_profile(tenant_id)
+    primary = profile.get("primaryDomain") in hosts.values()
+    if primary and profile.get("status") in ("active", "provisioning", "suspended", "offboarding"):
+        slug_redirect(tenant_id, "")                 # the slug address serves again before the label goes
     _site_repo({"action": "testHost", "op": "delete", "tenantId": tenant_id, "label": hosts["main"].split(".")[0]})
     _delete_test_items(tenant_id, hosts)
-    profile = get_profile(tenant_id)
-    if profile.get("primaryDomain") in hosts.values() and profile.get("slug"):
+    if primary and profile.get("slug"):
         _set_primary(tenant_id, f"{profile['slug']}.{_test_zones()[0]}")
     write_audit(tenant_id, "domain_test_unmapped", actor, {"domain": mapped_from, **hosts})
     return hosts

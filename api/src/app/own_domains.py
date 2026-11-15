@@ -578,7 +578,11 @@ def records(req) -> tuple[int, dict]:
     apex = zones._apex(req.body.get("domain"))
     previous = zones._zone_row(tenant_id, apex) or {}
     attempt = int(previous.get("attempt") or 0) + 1
-    dev_target = None if sim else _dev_target(tenant_id)
+    if sim:                                    # the dev record shows too: the sandbox's dev host
+        from . import domains
+        dev_target = domains.test_hosts(apex)["dev"]
+    else:
+        dev_target = _dev_target(tenant_id)
     zones._claim_zone(tenant_id, apex, {
         "mode": "records", "status": "awaiting_records", "makePrimary": True, "simulated": sim or None,
         "simState": None, "attempt": attempt, "requestedBy": req.actor, "requestedAt": now_iso(),
@@ -993,8 +997,10 @@ def task_set_canonical(tenant_id: str, apex: str) -> dict:
         from . import domains
         hosts = domains.test_hosts(apex)
         _set_primary(tenant_id, hosts["main"])
+        domains.slug_redirect(tenant_id, hosts["main"].split(".")[0])
+        slug = (get_profile(tenant_id, required=False) or {}).get("slug")
         zones._update_zone(tenant_id, apex, canonicalHost=hosts["main"], aliasHosts=[], devHost=hosts["dev"],
-                           redirects=[])
+                           redirects=[f"{slug}.{zone}" for zone in domains._test_zones() if slug and zone])
         return {"status": "done"}
     canonical, aliases, dev_host = hosts_for(mode, apex)
     problems = []
