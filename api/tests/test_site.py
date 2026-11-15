@@ -245,3 +245,125 @@ def test_prod_link_replaces_a_purged_dev_tenant(site_repo, aws, tenant):
                            ExpressionAttributeValues={":p": {"S": "purged"}})
     out = _task({"action": "mirror", **PROD_PROFILE, "ownerEmail": "new@roma.se"})
     assert out["status"] == "created" and out["tenantId"] != tenant
+
+
+# ------------------------------------------------- test sites (dev, 2026-11-15)
+@pytest.fixture
+def test_sites(monkeypatch):
+    monkeypatch.setenv("TEST_SITES_ENABLED", "true")
+    monkeypatch.setenv("TEST_MAIN_DOMAIN", "test.booqy.se")
+    monkeypatch.setenv("TEST_DEV_DOMAIN", "test-dev.booqy.se")
+    monkeypatch.setenv("PLATFORM_DOMAIN", "dev.booqy.se")
+    monkeypatch.setenv("TENANT_DOMAIN_CNAME_TARGET", "ddev.cloudfront.net")
+
+
+def _profile(aws, tenant_id):
+    from app.core import from_ddb
+    return from_ddb(aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant_id}"},
+                                                                       "SK": {"S": "PROFILE"}})["Item"])
+
+
+def test_a_customer_created_in_the_dev_console_is_a_test_customer(site_repo, aws, test_sites):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body=NEW_TENANT)
+    assert status == 202 and _profile(aws, body["tenantId"])["siteKind"] == "test"
+    # One prod creates through the link is the dev side of a real customer.
+    out = _task({"action": "mirror", **PROD_PROFILE, "slug": "roma-real", "ownerEmail": "real@roma.se"})
+    assert _profile(aws, out["tenantId"])["siteKind"] == "prod-link"
+
+
+def test_no_site_kind_before_test_sites_are_on_or_in_prod(site_repo, aws, monkeypatch):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body=NEW_TENANT)
+    assert "siteKind" not in _profile(aws, body["tenantId"])
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("TEST_SITES_ENABLED", "true")
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-prod", "ownerEmail": "p@roma.se"})
+    assert status == 202 and "siteKind" not in _profile(aws, body["tenantId"])
+
+
+def test_prod_cannot_link_to_a_dev_test_customer_with_the_same_slug(site_repo, aws, test_sites):
+    from conftest import NEW_TENANT
+    tenant_id = call("POST /platform/tenants", body=NEW_TENANT)[1]["tenantId"]
+    _activate(aws, tenant_id)
+    out = _task({"action": "mirror", **PROD_PROFILE, "slug": NEW_TENANT["slug"]})
+    assert out["error"] == "slug_used_by_test_customer" and "delete it there first" in out["message"]
+    assert site_repo.calls == []
+
+
+def test_an_adopted_dev_tenant_becomes_a_prod_link(site_repo, aws, tenant):
+    _activate(aws, tenant)
+    assert _task({"action": "mirror", **PROD_PROFILE})["status"] == "adopted"
+    assert _profile(aws, tenant)["siteKind"] == "prod-link"
+
+
+def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aws, tenant, test_sites):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET siteKind = :k", ExpressionAttributeValues={":k": {"S": "test"}})
+    p = {"tenantId": tenant}
+    status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "www.example.se"})
+    assert status == 202 and body["domain"] == "example.se" and body["test"] is True
+    assert body["hosts"] == [{"stage": "main", "host": "example-se.test.booqy.se"},
+                             {"stage": "dev", "host": "example-se.test-dev.booqy.se"}]
+    executions = aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"]
+    inputs = sorted((json.loads(aws["sfn"].describe_execution(executionArn=e["executionArn"])["input"]) for e in executions),
+                    key=lambda i: i["domain"])
+    assert inputs == [
+        {"tenantId": tenant, "domain": "example-se.test-dev.booqy.se", "makePrimary": False, "requestedBy": "op-1",
+         "sandbox": True, "stage": "dev", "mappedFrom": "example.se"},
+        {"tenantId": tenant, "domain": "example-se.test.booqy.se", "makePrimary": True, "requestedBy": "op-1",
+         "sandbox": True, "stage": "main", "mappedFrom": "example.se"}]
+    from app.domains import _domain_row
+    row = _domain_row(tenant, "example-se.test.booqy.se")
+    assert row["kind"] == "custom" and row["stage"] == "main" and row["mappedFrom"] == "example.se"
+    # Again: already mapped.
+    assert call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "example.se"})[1]["error"] == "domain_exists"
+    # Removing one removes the pair.
+    status, body = call("DELETE /platform/tenants/{tenantId}/domains/{domain}", {**p, "domain": "example-se.test.booqy.se"})
+    assert status == 202 and body["hosts"] == ["example-se.test.booqy.se", "example-se.test-dev.booqy.se"]
+    detaches = aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_DETACH_STATE_MACHINE_ARN"])["executions"]
+    assert len(detaches) == 2
+
+
+def test_test_hosts_are_never_added_directly_and_real_customers_are_managed_from_prod(site_repo, aws, tenant, test_sites):
+    p = {"tenantId": tenant}
+    status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "x.test.booqy.se"})
+    assert status == 400 and "test mapping" in body["message"]
+    assert call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "x.test-dev.booqy.se"})[0] == 400
+    # tenant has no siteKind: the dev side of a real customer.
+    status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "roma.se"})
+    assert status == 409 and body["error"] == "managed_from_prod"
+
+
+def test_a_test_customers_hosting_has_main_and_dev(site_repo, aws, tenant, test_sites):
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET siteKind = :k", ExpressionAttributeValues={":k": {"S": "test"}})
+    _put(aws, tenant, "DOMAIN#pizzeria-roma.test.booqy.se", domain="pizzeria-roma.test.booqy.se", kind="platform",
+         stage="main", status="active")
+    _put(aws, tenant, "DOMAIN#pizzeria-roma.test-dev.booqy.se", domain="pizzeria-roma.test-dev.booqy.se", kind="platform",
+         stage="dev", status="active")
+    _put(aws, tenant, "DOMAIN#example-se.test.booqy.se", domain="example-se.test.booqy.se", kind="custom",
+         stage="main", status="active", mappedFrom="example.se")
+    site_repo.answer = {"repo": "site-pizzeria-roma", "status": "ready", "kind": "test"}
+    hosting = call("GET /platform/tenants/{tenantId}/site", {"tenantId": tenant})[1]["hosting"]
+    assert hosting["main"] == {"slugUrl": "https://pizzeria-roma.test.booqy.se", "host": "example-se.test.booqy.se",
+                               "mappedFrom": "example.se", "state": "live", "status": "active", "lastError": None}
+    assert hosting["dev"]["slugUrl"] == "https://pizzeria-roma.test-dev.booqy.se" and hosting["dev"]["state"] == "slug_only"
+
+
+def test_a_test_customer_redeploys_either_branch(site_repo, aws, tenant):
+    p = {"tenantId": tenant}
+    assert call("POST /platform/tenants/{tenantId}/site/redeploy", p, {"branch": "main"})[0] == 400   # not a test customer
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET siteKind = :k", ExpressionAttributeValues={":k": {"S": "test"}})
+    site_repo.answer = {"repo": "site-pizzeria-roma", "branch": "main", "result": "started"}
+    assert call("POST /platform/tenants/{tenantId}/site/redeploy", p, {"branch": "main"})[0] == 202
+    assert site_repo.calls[-1] == ("RequestResponse", {"action": "redeploy", "tenantId": tenant, "branch": "main"})
+    assert call("POST /platform/tenants/{tenantId}/site/redeploy", p, {"branch": "prod"})[0] == 400
+
+
+@pytest.mark.parametrize("slug", ["test", "test-dev"])
+def test_the_test_zones_are_never_a_customer_slug(aws, slug):
+    from conftest import NEW_TENANT
+    status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": slug})
+    assert status == 400 and body["fields"]["slug"].startswith("Reserved")

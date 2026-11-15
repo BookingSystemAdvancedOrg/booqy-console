@@ -124,6 +124,16 @@ def _apex(value, field="domain") -> str:
     return host
 
 
+def prod_only() -> None:
+    """Buying, connecting and transferring a domain happen only in prod
+    (owner 2026-11-15). The dev console maps a test customer's domain onto
+    the test zones instead (domains.add_domain), and dev IAM can't register
+    or transfer anyway."""
+    if env("ENVIRONMENT") != "prod":
+        raise ApiError(409, "prod_only", "Domains are bought, connected and transferred only in the production "
+                                         "console. Here, Add domain maps it onto the test sites")
+
+
 def _require_sites() -> None:
     if not env("PLATFORM_DOMAIN", "") or not env("TENANT_DOMAIN_CNAME_TARGET", ""):
         raise ApiError(409, "platform_domain_not_configured",
@@ -296,6 +306,7 @@ def _offer(domain: str, availability: str) -> dict:
 # ------------------------------------------------------------------ search
 def search(req) -> tuple[int, dict]:
     """GET /platform/domains/search?q=arya  (or q=arya.se)"""
+    prod_only()
     raw = ((req.query or {}).get("q") or "").strip().lower()
     raw = raw.replace("å", "a").replace("ä", "a").replace("ö", "o")
     if raw.startswith("www."):
@@ -442,6 +453,7 @@ def _check_price(accepted: dict, current: dict, renewal: dict | None) -> None:
 def register(req) -> tuple[int, dict]:
     """POST /platform/tenants/{tenantId}/domains/registrations
     {domain, makePrimary, documentKey (.se), contact{...}, acceptedPrice{amount, currency}}"""
+    prod_only()
     tenant_id = req.path["tenantId"]
     _require_sites()
     profile = _active_tenant(tenant_id)
@@ -557,6 +569,7 @@ def transfer_check(req) -> tuple[int, dict]:
     """GET /platform/tenants/{tenantId}/zones/{domain}/transfer - can the
     registration of a connected domain move to Route 53, and what it costs
     (the transfer includes one more year)."""
+    prod_only()
     tenant_id = req.path["tenantId"]
     domain = _apex(req.path.get("domain"))
     _connected_zone(tenant_id, domain)
@@ -577,6 +590,7 @@ def transfer(req) -> tuple[int, dict]:
 
     Moves the registration from the current registrar (one.com, ...) into
     Route 53, keeping our name servers - the site and email never notice."""
+    prod_only()
     tenant_id = req.path["tenantId"]
     domain = _apex(req.path.get("domain"))
     profile = _active_tenant(tenant_id)
@@ -785,6 +799,7 @@ def dns_scan(req) -> tuple[int, dict]:
     """GET /platform/domains/dns-scan?domain=restaurang.se - the records the
     domain uses today (looked up in public DNS), for the operator to review
     before connecting. Nothing is changed."""
+    prod_only()
     domain = _apex((req.query or {}).get("domain"))
     jobs = [(rel, t) for rel, types in SCAN_NAMES.items() for t in types]
     with ThreadPoolExecutor(max_workers=16) as pool:
@@ -813,6 +828,7 @@ def connect(req) -> tuple[int, dict]:
 
     Creates the hosted zone with the reviewed records; the restaurant then
     switches the name servers at its registrar (the workflow waits for that)."""
+    prod_only()
     tenant_id = req.path["tenantId"]
     _require_sites()
     _active_tenant(tenant_id)

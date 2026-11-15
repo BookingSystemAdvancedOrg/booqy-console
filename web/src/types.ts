@@ -699,6 +699,8 @@ export interface SiteHosting {
   dnsByBooqy?: boolean;
   /** Dev: the own domain that has to be live in production first. */
   waitsFor?: string | null;
+  /** A test customer's mapped own domain (example.se for example-se.test.booqy.se). */
+  mappedFrom?: string | null;
 }
 
 /** Website tab: the restaurant's own site repo site-<slug>. */
@@ -707,18 +709,22 @@ export interface SiteStatus {
   repo: string;
   org: string;
   environment: "dev" | "prod";
-  status: "none" | "simulated" | "creating" | "ready" | "failed" | "archived";
-  /** Dev dry run: what the production console would create. */
-  plan?: string[];
+  status: "none" | "creating" | "ready" | "failed" | "archived" | "legacy";
+  /** site: a real customer's repo (BooqyCustomers); test: a dev console test customer (BooqyCustomersDev,
+   * main and dev both in the dev account sandbox); legacy: a dev customer from before test sites. */
+  kind?: "site" | "test" | "legacy";
+  /** Test customers: where each branch answers. */
+  urls?: { main: string; dev: string };
   lastError?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   repoExists?: boolean;
   repoUrl?: string;
   archived?: boolean;
-  deploys?: { dev: SiteDeploy | null; prod: SiteDeploy | null };
-  /** Prod console: both environments; dev console: dev only. */
-  hosting?: Partial<Record<"dev" | "prod", SiteHosting>>;
+  /** Real sites: dev and prod; test customers: dev and main. */
+  deploys?: Partial<Record<"dev" | "prod" | "main", SiteDeploy | null>>;
+  /** Prod console: both environments; dev console: dev only; a test customer: main and dev. */
+  hosting?: Partial<Record<"dev" | "prod" | "main", SiteHosting>>;
   /** This environment's booqy.json section: public values only. */
   config: {
     tenantId: string;
