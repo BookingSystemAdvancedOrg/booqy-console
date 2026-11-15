@@ -1714,3 +1714,40 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .reports-id { overflow-wrap: anywhere; }
 .reports-row--handled td { color: var(--muted, inherit); }
 .reports-table .btn { white-space: nowrap; }
+
+/* Customers toolbar: the chip bar while it fits; narrower (phones, tablets,
+   a narrow window) one Status filter pill beside the search, which takes
+   the rest of the row. A container query, so it follows the room the page
+   has, not the window. The pill opens the Booqy Select (a sheet on phones). */
+.tenants-toolbar { container: tenants-toolbar / inline-size; }
+.tenants-filter { display: none; }
+@container tenants-toolbar (max-width: 800px) {
+  .toolbar.tenants-toolbar > .input.search { flex: 1 1 0; width: auto; min-width: 0; max-width: none; min-height: 44px; border-radius: var(--r-pill); padding: 0 14px 0 40px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
+  .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
+  :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
+  :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
+  .tenants-toolbar > .chips { display: none !important; }
+  .tenants-filter { display: block; flex: none; }
+}
+.input.select.status-filter {
+  width: auto; min-height: 44px; height: 44px; padding: 0 12px 0 16px; gap: 6px;
+  border: 0; border-radius: var(--r-pill); background: var(--pearl); box-shadow: var(--pearl-rim);
+  font: 600 14px/1 var(--sans); color: var(--print);
+}
+.input.select.status-filter:hover { background: var(--pearl); }
+.input.select.status-filter:focus-visible,
+.input.select.status-filter[aria-expanded="true"] { background: var(--pearl); box-shadow: var(--pearl-rim), 0 0 0 2px #a88462; }
+.status-filter .select__value { display: inline-flex; align-items: center; gap: 0; overflow: visible; animation: filter-swap 320ms var(--ease) both; }
+.select__meta, .select-option__meta {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
+  background: rgb(26 18 14 / 0.1); font: 650 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
+}
+.select-option__meta { flex: none; margin-left: 0; }
+:root[data-theme="dark"] .select__meta, :root[data-theme="dark"] .select-option__meta { background: rgb(213 196 174 / 0.16); }
+.select-option.is-active .select-option__meta { background: color-mix(in srgb, currentColor 12%, transparent); }
+/* a new choice slides into the pill: the same ease as the chip glide */
+@keyframes filter-swap { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .status-filter .select__value { animation: none; }
+}

@@ -8,7 +8,7 @@ test.describe('Console: customers', () => {
     const w = watch(page)
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Customers', level: 1 })).toBeVisible()
-    const search = page.getByPlaceholder(/Search name, slug/)
+    const search = page.getByLabel('Search customers')
     for (const q of ['E2E Testkrogen', 'e2e-testkrogen', 'e2e-owner', 'åäö']) {
       await search.fill(q)
       await expect(page.getByRole('link', { name: TENANT_NAME }), `search "${q}"`).toBeVisible()
@@ -21,8 +21,15 @@ test.describe('Console: customers', () => {
 
   test('status filters', async ({ page }) => {
     await page.goto('/')
+    // the chip bar where it fits, else one Status filter beside the search
+    const combo = page.getByRole('combobox', { name: 'Status filter' })
     for (const f of ['Active', 'Suspended', 'Data deleted', 'All']) {
-      await page.getByRole('button', { name: new RegExp(`^${f}`) }).click()
+      if (await combo.isVisible()) {
+        await combo.click()
+        await page.getByRole('option', { name: new RegExp(`^${f}`) }).click()
+      } else {
+        await page.getByRole('button', { name: new RegExp(`^${f}`) }).click()
+      }
       await expect(page.locator('main')).toBeVisible()
     }
   })
@@ -53,7 +60,7 @@ test.describe('Console: customers', () => {
   test('invite an extra E2E owner on the Stripe-ready "Test Pizza" (for order tests)', async ({ page }, info) => {
     test.skip(Boolean(optEnv('E2E_PIZZA_OWNER_EMAIL')), 'already invited')
     await page.goto('/')
-    await page.getByPlaceholder(/Search name, slug/).fill('test-pizza')
+    await page.getByLabel('Search customers').fill('test-pizza')
     await page.getByRole('link', { name: 'Test Pizza' }).click()
     await page.locator('main nav').getByRole('button', { name: /^Users/ }).click()
     await page.getByLabel('Name').fill('E2E Pizza Ägare')

@@ -18,6 +18,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 6, text: "Tooltips" },
   { n: 7, text: "Ask Booqy button" },
   { n: 8, text: "New dropdowns" },
+  { n: 9, text: "Customers list" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

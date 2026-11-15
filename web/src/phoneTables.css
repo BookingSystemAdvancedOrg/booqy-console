@@ -140,3 +140,33 @@
 @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
   .table.table > tbody > tr.row-link.is-pressed-text { scale: none; opacity: 0.75; }
 }
+
+/* .table--slim (the Customers list): on phones one glass list with a line
+   between the rows; each row is the name and a small status on one line,
+   nothing more. The customer page has the rest. */
+@media (max-width: 640px) {
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table.table--slim > tbody {
+    gap: 0; border-radius: var(--r-lg); overflow: hidden;
+    background: var(--glass-text-bg) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--card-shadow);
+  }
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table.table--slim > tbody > tr,
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table.table--slim > tbody > tr:has(> td.empty) {
+    display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 40px 8px 16px;
+    border: 0; border-radius: 0; background: none; box-shadow: none;
+  }
+  .table.table--slim > tbody > tr + tr { border-top: 1px solid var(--paper-line) !important; }
+  .table.table--slim > tbody > tr > td:not(.cell-title):not(.cell-badge):not(.empty) { display: none; }
+  .table.table.table--slim > tbody > tr.row-link > td.cell-title {
+    flex: 1 1 auto; order: 0; min-width: 0; padding: 0 !important; font: 650 15.5px/1.3 var(--sans);
+  }
+  /* a long name keeps two lines, then ends in an ellipsis */
+  .table.table--slim > tbody > tr > td.cell-title > .row-link__name {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+  }
+  .table.table--slim > tbody > tr > td.cell-title > :not(.row-link__name) { display: none; }
+  .table.table.table--slim > tbody > tr.row-link > td.cell-badge { display: flex; flex: none; order: 0; padding: 0 !important; }
+  .table.table--slim > tbody > tr > td.cell-badge .status { font-size: 9.5px; padding: 2px 6px 1px; border-width: 1.5px; }
+  .table.table--slim > tbody > tr.row-link::after { right: 18px; width: 8px; height: 8px; margin-top: -4px; border-width: 1.75px 1.75px 0 0; }
+  .table.table--slim > tbody > tr.row-link.is-pressed-text { scale: none; background-color: rgb(168 132 98 / 0.12); }
+  .table.table--slim > tbody > tr > td.empty { flex: 1 1 auto; }
+}

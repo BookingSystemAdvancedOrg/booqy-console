@@ -58,7 +58,7 @@ export function ChangedNote({ value, onUse }: { value: string; onUse?: () => voi
   );
 }
 
-const STATUS_TEXT: Record<string, string> = {
+export const STATUS_TEXT: Record<string, string> = {
   provisioning: "Setting up",
   provisioning_failed: "Setup failed",
   active: "Active",

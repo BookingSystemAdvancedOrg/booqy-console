@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ErrorNotice, Status, fmtDate, useLoad } from "../components/ui";
+import { ErrorNotice, STATUS_TEXT, Status, fmtDate, useLoad } from "../components/ui";
+import { Select } from "../components/Select";
 import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } from "../finance";
-import type { PaymentRow } from "../types";
+import type { PaymentRow, TenantSummary } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import { CtaAddLink } from "../components/ds";
@@ -12,13 +13,27 @@ import { FreeBadge } from "../components/FreeFields";
 import { FREE_PLAN_ID } from "../free";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
+type Filter = (typeof FILTERS)[number];
+
+const digits = (s: string) => s.replace(/\D/g, "");
+
+/** Does a customer match the search? Name, slug, owner email, domain, and the
+ * org. number with or without its dash (559123-4567 or 5591234567). */
+export function matchesSearch(t: TenantSummary, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  if ([t.name, t.slug, t.ownerEmail, t.primaryDomain, t.orgNumber].some((s) => s?.toLowerCase().includes(needle))) return true;
+  // only digits, spaces and dashes typed: compare the digits alone
+  const d = digits(needle);
+  return /^[\d\s-]+$/.test(needle) && d.length >= 3 && !!t.orgNumber && digits(t.orgNumber).includes(d);
+}
 
 export default function TenantsPage() {
   const { data, error, loading, reload } = useLoad(() => api.tenants());
   const openRow = useRowOpen();
   const [q, setQ] = useState("");
   // Active first: offboarded and other inactive customers are one click away.
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("active");
+  const [filter, setFilter] = useState<Filter>("active");
   // The last year's invoices, per customer: is the latest paid, open or overdue?
   const invoices = useLoad(() => {
     const to = isoDay(new Date());
@@ -31,12 +46,7 @@ export default function TenantsPage() {
   }, [invoices.data]);
 
   const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return (data ?? []).filter(
-      (t) =>
-        (filter === "all" || t.status === filter) &&
-        (!needle || [t.name, t.slug, t.ownerEmail, t.primaryDomain].some((s) => s?.toLowerCase().includes(needle))),
-    );
+    return (data ?? []).filter((t) => (filter === "all" || t.status === filter) && matchesSearch(t, q));
   }, [data, q, filter]);
 
   const counts = useMemo(() => {
@@ -44,6 +54,8 @@ export default function TenantsPage() {
     (data ?? []).forEach((t) => (c[t.status] = (c[t.status] ?? 0) + 1));
     return c;
   }, [data]);
+  const label = (f: Filter) => (f === "all" ? "All" : STATUS_TEXT[f] ?? f);
+  const options = FILTERS.map((f) => ({ value: f, label: label(f), meta: f !== "all" && counts[f] ? String(counts[f]) : undefined }));
 
   return (
     <>
@@ -58,9 +70,15 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <div className="toolbar">
-        <input className="input search" placeholder="Search name, slug, owner email, domain…" value={q}
+      {/* Wide enough: the chip bar. Narrower (phones, tablets): one Status filter
+          beside the search, the container query in styles.css picks. */}
+      <div className="toolbar tenants-toolbar">
+        <input className="input search" aria-label="Search customers" placeholder="Search" value={q}
                onChange={(e) => setQ(e.target.value)} />
+        <div className="tenants-filter">
+          <Select aria-label="Status filter" className="status-filter" value={filter} options={options}
+                  onChange={(v) => setFilter(v as Filter)} />
+        </div>
         <div className="chips">
           {FILTERS.map((f) => (
             <button key={f} className={`chip${filter === f ? " chip--on" : ""}`} data-help={`customers:filter:${f}`} onClick={() => setFilter(f)}>
@@ -74,7 +92,7 @@ export default function TenantsPage() {
       <ErrorNotice error={error} />
       {loading && !data ? <SkelPage label="Loading customers"><SkelTable rows={6} cols={5} /></SkelPage> : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table--slim">
             <thead>
               <tr>
                 <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
