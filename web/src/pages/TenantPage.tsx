@@ -3,11 +3,12 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
   Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
-import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
+import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone } from "../types";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
-import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+import DomainWizard, { NameServerBox, RecordsTable, RestaurantText, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
+import { Select } from "../components/Select";
 import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
@@ -37,18 +38,20 @@ export default function TenantPage() {
   // "Fix it" on the failed-setup banner: open Overview's edit form on that field.
   const [fixField, setFixField] = useState<string | null>(null);
 
-  // Poll while something is in progress (onboarding, domain workflows, offboarding).
+  // Poll while something is in progress (onboarding, domain workflows, offboarding): every 5 s while it
+  // moves by itself, every 15 s while an own domain waits on the restaurant, the owner or the registry.
   const busy =
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
       data.onboarding?.status === "RUNNING" ||
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
+  const waiting = data && data.zones.some(zoneWaiting);
   useEffect(() => {
-    if (!busy) return;
-    const id = window.setInterval(() => void reload(), 5000);
+    if (!busy && !waiting) return;
+    const id = window.setInterval(() => void reload(), busy ? 5000 : 15000);
     return () => window.clearInterval(id);
-  }, [busy, reload]);
+  }, [busy, waiting, reload]);
 
   if (loading && !data) return (
     <SkelPage label="Loading the customer">
@@ -663,48 +666,54 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
 }
 
 // ------------------------------------------------------------------- domains
-const ZONE_BUSY = ["creating_zone", "registered", "attaching"];
+const ZONE_BUSY = ["creating_zone", "registered", "transferred_in", "attaching", "removing"];
+const ZONE_WAITING = ["registering", "awaiting_verification", "awaiting_owner_approval", "transferring",
+  "awaiting_nameservers", "blocked_dnssec", "awaiting_records"];
+const DEV_WAITING = ["waiting_for_prod", "mounting", "awaiting_dev_record"];
 
-function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () => void }) {
+function zoneWaiting(z: Zone) {
+  return ZONE_WAITING.includes(z.status) || (z.status === "live" && DEV_WAITING.includes(z.devStatus ?? ""));
+}
+
+const MODE_LABEL: Record<Zone["mode"], string> = {
+  register: "Bought", transfer_in: "Moved to Booqy", connect: "Name servers", records: "DNS records", transfer: "Connected",
+};
+
+/** The Simulate buttons a simulated order (dev console) offers in its current state. */
+function simEvents(z: Zone): SimulateEvent[] {
+  if (z.status === "live" || z.status === "removed") return [];
+  if (z.mode === "register" && ["registering", "awaiting_verification"].includes(z.status)) return ["approve"];
+  if (z.mode === "transfer_in" && ["awaiting_owner_approval", "awaiting_verification", "transferring"].includes(z.status)) return ["approve", "reject", "expire"];
+  if (z.mode === "records" && z.status === "awaiting_records") return ["records_added", "expire"];
+  if (z.mode === "connect" && ["awaiting_nameservers", "blocked_dnssec"].includes(z.status)) return ["ns_switched"];
+  return [];
+}
+
+const SIM_LABEL: Record<SimulateEvent, string> = {
+  approve: "Approve", reject: "Reject", expire: "Expire", records_added: "Records added", ns_switched: "Name servers switched",
+};
+
+export function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () => void }) {
   const t = detail.tenant;
-  const [wizard, setWizard] = useState(false);
+  const [wizard, setWizard] = useState<null | { path?: "move"; domain?: string }>(null);
   const [transfer, setTransfer] = useState<string | null>(null);
   const remove = useAction();
+  const zones = detail.zones.filter((z) => z.status !== "removed");
+  const removed = detail.zones.filter((z) => z.status === "removed");
   return (
     <div className="stack">
-      <Card title="Domains we run DNS for" actions={<button className="btn btn--primary" onClick={() => setWizard(true)}>Add domain</button>}>
-        <table className="table">
-          <thead><tr><th>Domain</th><th>How</th><th>Status</th><th /></tr></thead>
-          <tbody>
-            {detail.zones.map((z) => (
-              <tr key={z.domain}>
-                <td className="strong mono cell-title">{z.domain}
-                  {z.statusDetail && <div className="small muted">{z.statusDetail}</div>}
-                  {z.lastError && <div className="small error-text">{z.lastError}</div>}</td>
-                <td className="small" data-label="How">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
-                  : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}
-                  <div className="muted">Registrar: {z.registrar === "route53" ? "Route 53 (ours)" : "their own"}</div>
-                  {z.transfer && z.transfer.status !== "transferred" && (
-                    <div>Transfer: <Status value={z.transfer.status} />
-                      {z.transfer.statusDetail && <div className="muted">{z.transfer.statusDetail}</div>}
-                      {z.transfer.error && <div className="error-text">{z.transfer.error}</div>}</div>
-                  )}</td>
-                <td className="cell-badge"><Status value={z.status} /></td>
-                <td className="right small muted" data-label="Updated">{fmtDate(z.updatedAt ?? z.requestedAt)}
-                  {z.transferable && isProd() && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
-              </tr>
-            ))}
-            {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet - <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
-          </tbody>
-        </table>
-        {detail.zones.filter((z) => z.supportCase ?? z.transfer?.supportCase).map((z) => (
-          <SupportCaseBox key={z.domain} domain={z.domain} tenantId={t.tenantId} supportCase={(z.supportCase ?? z.transfer?.supportCase)!} />
-        ))}
-        {detail.zones.filter((z) => z.status === "awaiting_nameservers" && z.nameServers).map((z) => (
-          <NameServerBox key={z.domain} domain={z.domain} nameServers={z.nameServers!} />
-        ))}
-        {detail.zones.some((z) => z.status === "live") && (
-          <p className="small muted">Add live domains (and www.) to Turnstile in Cloudflare.</p>
+      <Card title="Own domains" info="Bought, moved to Booqy, or kept at their registrar. Live: the site answers on the domain; www and the slug address 301 to it; dev.<domain> is the dev site."
+            actions={<button className="btn btn--primary" onClick={() => setWizard({})}>Add domain</button>}>
+        {zones.length === 0 && <p className="empty">None yet. <button className="link" onClick={() => setWizard({})}>Add a domain</button></p>}
+        <div className="zones">
+          {zones.map((z) => (
+            <ZoneCard key={z.domain} tenant={t} zone={z} onChanged={onChanged}
+                      onTransfer={() => setTransfer(z.domain)} onMoveAgain={() => setWizard({ path: "move", domain: z.domain })} />
+          ))}
+        </div>
+        {removed.length > 0 && <p className="small muted">Removed: {removed.map((z) => z.domain).join(", ")}</p>}
+        {zones.some((z) => z.status === "live") && (
+          <p className="small muted">Live domains (and www.) go in Turnstile's hostname list in Cloudflare.</p>
         )}
       </Card>
       <Card title="Website hostnames" saved={remove.done} savedLabel="Removing" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
@@ -717,29 +726,127 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
         <table className="table">
           <thead><tr><th>Hostname</th><th>Type</th><th>Status</th><th /></tr></thead>
           <tbody>
-            {detail.domains.map((d) => (
-              <tr key={d.domain}>
-                <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
-                  {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
-                <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
-                <td className="cell-badge"><Status value={d.status} /></td>
-                <td className="right">{d.kind === "custom" && d.status !== "removing" && (
-                  <button className="btn btn--ghost btn--small danger" disabled={remove.busy}
-                          onClick={async () => {
-                            if (window.confirm(`Remove ${d.domain}? The site stops answering on it.`) &&
-                                await remove.run(() => api.removeDomain(t.tenantId, d.domain))) onChanged();
-                          }}>Remove</button>
-                )}</td>
-              </tr>
-            ))}
+            {detail.domains.map((d) => {
+              const ofOrder = zones.some((z) => z.status !== "removed" && (d.domain === z.domain || d.domain === `www.${z.domain}`));
+              return (
+                <tr key={d.domain}>
+                  <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
+                    {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
+                  <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
+                  <td className="cell-badge"><Status value={d.status} /></td>
+                  <td className="right">{d.kind === "custom" && d.status !== "removing" && !ofOrder && (
+                    <button className="btn btn--ghost btn--small danger" disabled={remove.busy}
+                            onClick={async () => {
+                              if (window.confirm(`Remove ${d.domain}? The site stops answering on it.`) &&
+                                  await remove.run(() => api.removeDomain(t.tenantId, d.domain))) onChanged();
+                            }}>Remove</button>
+                  )}</td>
+                </tr>
+              );
+            })}
             {detail.domains.length === 0 && <tr><td colSpan={4} className="empty">No hostnames yet - they appear here once a domain is attached.</td></tr>}
           </tbody>
         </table>
         <ErrorNotice error={remove.error} />
       </Card>
-      {wizard && <DomainWizard tenant={t} onClose={() => setWizard(false)} onChanged={onChanged} />}
+      {wizard && <DomainWizard tenant={t} onClose={() => setWizard(null)} onChanged={onChanged}
+                               initial={wizard.path ? { path: wizard.path, domain: wizard.domain } : undefined} />}
       {transfer && <TransferModal tenant={t} domain={transfer} onClose={() => setTransfer(null)} onDone={onChanged} />}
     </div>
+  );
+}
+
+/** One own domain: how it came in, where it stands, who acts, and its actions. */
+function ZoneCard({ tenant, zone: z, onChanged, onTransfer, onMoveAgain }: {
+  tenant: Tenant; zone: Zone; onChanged: () => void; onTransfer: () => void; onMoveAgain: () => void;
+}) {
+  const act = useAction();
+  const notify = useAction();
+  const [code, setCode] = useState<string | null>(null);
+  const [sim, setSim] = useState<SimulateEvent | "">("");
+  const id = tenant.tenantId;
+  const run = async (fn: () => Promise<unknown>) => { if (await act.run(fn)) onChanged(); };
+  const events = z.simulated && !isProd() ? simEvents(z) : [];
+  const checkable = zoneWaiting(z);
+  return (
+    <section className="zone" aria-label={z.domain}>
+      <div className="zone__head">
+        <div className="zone__name">
+          <strong className="mono">{z.canonicalHost ?? z.domain}</strong>
+          {z.simulated && <span className="tag">simulated</span>}
+          <div className="small muted">{MODE_LABEL[z.mode] ?? z.mode}
+            {z.mode === "register" && z.price && <> · {money(z.price)}, then {money(z.renewalPrice)}/yr</>}
+            {z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}
+            {" · "}Registrar: {z.registrar === "route53" ? "Booqy" : "theirs"}
+            {z.expiresAt && <> · renews {fmtDate(z.expiresAt)}{z.autoRenew === false && " (auto-renew off)"}</>}</div>
+        </div>
+        <div className="zone__status">
+          <Status value={z.status} />
+          {z.status === "live" && z.devStatus && z.devStatus !== "live" && (
+            <div className="small">dev: <Status value={z.devStatus} /></div>
+          )}
+        </div>
+      </div>
+      {z.statusDetail && <p className="small muted">{z.statusDetail}</p>}
+      {z.status === "live" && (
+        <dl className="dl zone__hosts">
+          <dt>Site</dt><dd className="mono">{z.canonicalHost}</dd>
+          {(z.aliasHosts ?? []).length > 0 && <><dt>301 to it</dt><dd className="mono">{z.aliasHosts!.join(", ")} + slug address</dd></>}
+          {z.devHost && <><dt>Dev</dt><dd className="mono">{z.devHost}</dd></>}
+        </dl>
+      )}
+      {z.lastError && (
+        <Notice kind={z.who === "restaurant" ? "warn" : "error"}>
+          <strong>{z.who === "restaurant" ? "The restaurant acts" : "Booqy's fault"}:</strong> {z.lastError}
+        </Notice>
+      )}
+      {z.devError && <p className="small error-text">dev: {z.devError}</p>}
+      {z.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.supportCase} />}
+      {z.transfer?.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.transfer.supportCase} />}
+      {z.transfer && z.transfer.status !== "transferred" && (
+        <p className="small">Transfer: <Status value={z.transfer.status} /> {z.transfer.statusDetail}
+          {z.transfer.error && <span className="error-text"> {z.transfer.error}</span>}</p>
+      )}
+      {z.records && ["awaiting_records", "records_timeout"].includes(z.status) && <RecordsTable records={z.records} />}
+      {z.status === "awaiting_nameservers" && z.nameServers && <NameServerBox domain={z.domain} nameServers={z.nameServers} />}
+      {z.restaurantSteps && <RestaurantText text={z.restaurantSteps} />}
+      {code && <Notice kind="info">Transfer code (shown once): <span className="mono strong">{code}</span></Notice>}
+      <ErrorNotice error={act.error ?? notify.error} />
+      <div className="row-actions zone__actions">
+        {checkable && <SaveButton kind="ghost" small type="button" busy={act.busy} busyLabel="Checking…" label="Check now"
+                                  onClick={() => void run(() => api.checkZone(id, z.domain))} />}
+        {z.canRetry && <SaveButton kind="ghost" small type="button" busy={act.busy} busyLabel="Retrying…"
+                                   label={z.status === "live" ? "Retry dev" : "Retry"} onClick={() => void run(() => api.retryZone(id, z.domain))} />}
+        {z.canResubmit && <button type="button" className="btn btn--ghost btn--small" onClick={onMoveAgain}>Move again</button>}
+        {z.restaurantSteps && <SaveButton kind="ghost" small type="button" busy={notify.busy} busyLabel="Sending…" done={notify.done} doneLabel="Sent"
+                                          label="E-mail steps" onClick={() => void notify.run(() => api.notifyZone(id, z.domain))} />}
+        {z.transferable && isProd() && <button type="button" className="btn btn--ghost btn--small" onClick={onTransfer}>Transfer to Booqy</button>}
+        {z.registered && (
+          <>
+            <button type="button" className="btn btn--ghost btn--small" disabled={act.busy}
+                    onClick={async () => { const r = await act.run(() => api.zoneAuthCode(id, z.domain, false)); if (r?.authCode) setCode(r.authCode); }}>Show transfer code</button>
+            <button type="button" className="btn btn--ghost btn--small" disabled={act.busy}
+                    onClick={() => void run(() => api.zoneAuthCode(id, z.domain, true))}>E-mail transfer code</button>
+          </>
+        )}
+        {z.canRemove && (
+          <button type="button" className="btn btn--ghost btn--small danger" disabled={act.busy}
+                  onClick={() => {
+                    if (window.confirm(`Remove ${z.domain}? Guests go back to the slug address; dev.${z.domain} leaves the dev site.`)) {
+                      void run(() => api.removeZone(id, z.domain));
+                    }
+                  }}>Remove</button>
+        )}
+      </div>
+      {events.length > 0 && (
+        <div className="row sim-bar">
+          <Select aria-label="Simulate" value={sim} onChange={(v) => setSim(v as SimulateEvent)} placeholder="Simulate…"
+                  options={events.map((e) => ({ value: e, label: SIM_LABEL[e] }))} />
+          <button type="button" className="btn btn--small" disabled={!sim || act.busy}
+                  onClick={() => { if (sim) void run(() => api.simulateZone(id, z.domain, sim)); setSim(""); }}>Simulate</button>
+        </div>
+      )}
+    </section>
   );
 }
 

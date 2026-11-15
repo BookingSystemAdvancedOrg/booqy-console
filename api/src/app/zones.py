@@ -1,4 +1,7 @@
 """Domains the platform runs DNS for (a Route 53 hosted zone per domain).
+The other ways in (moving a domain to Booqy, DNS records at the restaurant's
+registrar), the common pipeline and the dev console's simulation are in
+own_domains.py.
 
 Two ways in, both ending with the restaurant's site on <domain> and
 www.<domain> (the domain-attach workflow does the CloudFront part):
@@ -44,7 +47,9 @@ VERIFY_TLDS = {"se"}
 PRIVACY_TLDS = {"com", "net"}                     # .se / .eu: WHOIS privacy not supported
 SEARCH_TLDS = ("se", "com", "eu")
 
-RETRYABLE = ("failed", "timed_out")
+# An order in one of these can be placed again (it resumes, or starts over).
+RETRYABLE = ("failed", "timed_out", "transfer_rejected", "transfer_expired", "records_timeout", "nameservers_timeout",
+             "removed")
 CLOUDFRONT_ZONE_ID = "Z2FDTNDATAQYW2"            # fixed hosted zone id of every CloudFront alias target
 DOC_MAX_BYTES = 10 * 1024 * 1024
 DOC_PREFIX = "tenants/{tenant}/registreringsbevis/"
@@ -53,7 +58,7 @@ APEX_RE = re.compile(r"^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z]
 LABEL_RE = re.compile(r"[^a-z0-9-]+")
 RECORD_TYPES = ("A", "AAAA", "CNAME", "MX", "TXT", "CAA", "SRV")
 DOH_URL = "https://dns.google/resolve"
-DNS_TYPE_CODES = {1: "A", 2: "NS", 5: "CNAME", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 257: "CAA"}
+DNS_TYPE_CODES = {1: "A", 2: "NS", 5: "CNAME", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 43: "DS", 257: "CAA"}
 
 # Names the scan looks up before a connect (relative to the domain). One.com
 # and the usual mail providers (Microsoft 365, Google Workspace) live here.
@@ -79,6 +84,9 @@ SCAN_NAMES = {
 
 # ---------------------------------------------------------------- clients
 def _domains():
+    from . import own_domains
+    if own_domains.simulated():
+        return own_domains.SimDomains()       # the dev console never calls Route 53 Domains
     return regional_client("route53domains", "us-east-1")
 
 
@@ -185,9 +193,10 @@ def _claim_zone(tenant_id: str, domain: str, row: dict) -> None:
             {"Put": {"TableName": tenant_table(),
                      "Item": to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"ZONE#{domain}", "tenantId": tenant_id,
                                      "domain": domain, **row}),
-                     "ConditionExpression": "attribute_not_exists(PK) OR #s IN (:r1, :r2)",
+                     "ConditionExpression": "attribute_not_exists(PK) OR #s IN (" + ", ".join(
+                         f":r{i}" for i in range(len(RETRYABLE))) + ")",
                      "ExpressionAttributeNames": {"#s": "status"},
-                     "ExpressionAttributeValues": {":r1": {"S": RETRYABLE[0]}, ":r2": {"S": RETRYABLE[1]}}}},
+                     "ExpressionAttributeValues": {f":r{i}": {"S": r} for i, r in enumerate(RETRYABLE)}}},
         ])
     except ClientError as e:
         if e.response["Error"]["Code"] != "TransactionCanceledException":
@@ -213,6 +222,11 @@ def _release_claim(tenant_id: str, domain: str) -> None:
 
 
 def _start_provision(tenant_id: str, domain: str, mode: str, make_primary: bool, actor: str) -> None:
+    if mode != "transfer":
+        from . import own_domains
+        attempt = int((_zone_row(tenant_id, domain) or {}).get("attempt") or 1)
+        own_domains.start(tenant_id, domain, mode, actor, attempt)
+        return
     name = f"provision-{hashlib.sha256(domain.encode()).hexdigest()[:16]}-{new_id()[:10]}"
     client("stepfunctions").start_execution(
         stateMachineArn=env("DOMAIN_PROVISION_STATE_MACHINE_ARN"), name=name,
@@ -236,8 +250,10 @@ def public_zone(row: dict) -> dict:
             transfer["supportCase"] = support_case_text(row["domain"], row.get("registrant", ""),
                                                         row.get("orgNumber", ""), "transfer")
         out["transfer"] = transfer
-    out["registrar"] = "route53" if row.get("mode") == "register" or row.get("transferStatus") == "transferred" else "external"
-    out["transferable"] = (row.get("mode") == "connect" and row.get("status") == "live"
+    from . import own_domains
+    out.update(own_domains.public_extra(row))
+    out["registrar"] = "route53" if out["registered"] or row.get("mode") in ("register", "transfer_in") else "external"
+    out["transferable"] = (row.get("mode") == "connect" and row.get("status") == "live" and not row.get("simulated")
                            and _tld(row["domain"]) in TLDS
                            and row.get("transferStatus") not in ("transferring", "awaiting_verification", "transferred"))
     return out
@@ -306,7 +322,8 @@ def _offer(domain: str, availability: str) -> dict:
 # ------------------------------------------------------------------ search
 def search(req) -> tuple[int, dict]:
     """GET /platform/domains/search?q=arya  (or q=arya.se)"""
-    prod_only()
+    from . import own_domains
+    own_domains.sim_guard()
     raw = ((req.query or {}).get("q") or "").strip().lower()
     raw = raw.replace("å", "a").replace("ä", "a").replace("ö", "o")
     if raw.startswith("www."):
@@ -452,18 +469,23 @@ def _check_price(accepted: dict, current: dict, renewal: dict | None) -> None:
 
 def register(req) -> tuple[int, dict]:
     """POST /platform/tenants/{tenantId}/domains/registrations
-    {domain, makePrimary, documentKey (.se), contact{...}, acceptedPrice{amount, currency}}"""
-    prod_only()
+    {domain, makePrimary, documentKey (.se), contact{...}, acceptedPrice{amount, currency}}
+
+    The dev console (a test customer): a simulated order (own_domains)."""
+    from . import own_domains
+    own_domains.sim_guard()
     tenant_id = req.path["tenantId"]
-    _require_sites()
     profile = _active_tenant(tenant_id)
+    sim = own_domains.order_guard(profile)
+    if not sim:
+        _require_sites()
     domain = _apex(req.body.get("domain"))
     tld = _tld(domain)
     if tld not in TLDS:
         raise ApiError(400, "validation_failed", f".{tld} can't be bought here",
                        fields={"domain": f"We register {', '.join('.' + t for t in TLDS)} - connect other domains instead"})
     f = v.Fields(req.body)
-    make_primary = f.boolean("makePrimary")
+    f.boolean("makePrimary")                     # always primary now; still accepted
     contact = _contact(f, profile)
     document_key = _document_key(f, tenant_id, tld)
     accepted = _accepted_price(f)
@@ -481,12 +503,15 @@ def register(req) -> tuple[int, dict]:
     _check_price(accepted, current, price.get("renewal"))
 
     org_number = contact.pop("_orgNumber")
+    previous = _zone_row(tenant_id, domain) or {}
     _claim_zone(tenant_id, domain, {
-        "mode": "register", "status": "registering", "makePrimary": bool(make_primary),
+        "mode": "register", "status": "registering", "makePrimary": True,
         "price": current, "renewalPrice": price.get("renewal"), "documentKey": document_key,
         "verificationRequired": tld in VERIFY_TLDS, "registrant": contact["OrganizationName"],
-        "orgNumber": org_number, "requestedBy": req.actor, "requestedAt": now_iso(),
-        "lastError": None,
+        "registrantEmail": contact["Email"], "orgNumber": org_number, "requestedBy": req.actor,
+        "requestedAt": now_iso(), "lastError": None, "simulated": sim or None,
+        "attempt": int(previous.get("attempt") or 0) + 1,
+        **dict(zip(("canonicalHost", "aliasHosts", "devHost"), own_domains.hosts_for("register", domain))),
     })
     privacy = tld in PRIVACY_TLDS
     try:
@@ -504,7 +529,7 @@ def register(req) -> tuple[int, dict]:
 
     status = "awaiting_verification" if tld in VERIFY_TLDS else "registering"
     _update_zone(tenant_id, domain, operationId=op["OperationId"], status=status)
-    _start_provision(tenant_id, domain, "register", bool(make_primary), req.actor)
+    _start_provision(tenant_id, domain, "register", True, req.actor)
     write_audit(tenant_id, "domain_registration_started", req.actor,
                 {"domain": domain, "price": f"{current['amount']} {current['currency']}",
                  "verificationRequired": tld in VERIFY_TLDS})
@@ -799,8 +824,11 @@ def dns_scan(req) -> tuple[int, dict]:
     """GET /platform/domains/dns-scan?domain=restaurang.se - the records the
     domain uses today (looked up in public DNS), for the operator to review
     before connecting. Nothing is changed."""
-    prod_only()
+    from . import own_domains
+    sim = own_domains.sim_guard()
     domain = _apex((req.query or {}).get("domain"))
+    if sim:
+        return 200, own_domains.sim_scan(domain)
     jobs = [(rel, t) for rel, types in SCAN_NAMES.items() for t in types]
     with ThreadPoolExecutor(max_workers=16) as pool:
         answers = dict(zip(jobs, pool.map(lambda j: _lookup(_fqdn(j[0], domain), j[1]), jobs)))
@@ -817,6 +845,7 @@ def dns_scan(req) -> tuple[int, dict]:
                    "values": sorted(set(vals))}
             rec["skip"] = _skip_reason(rel, t)
             records.append(rec)
+    dnssec = dnssec or own_domains.ds_present(domain)
     return 200, {"domain": domain, "nameServers": sorted(n.rstrip(".").lower() for n in ns),
                  "dnssec": dnssec, "registered": bool(ns), "records": records}
 
@@ -827,47 +856,36 @@ def connect(req) -> tuple[int, dict]:
     {domain, makePrimary, records[{name, type, ttl, values[]}]}
 
     Creates the hosted zone with the reviewed records; the restaurant then
-    switches the name servers at its registrar (the workflow waits for that)."""
-    prod_only()
+    switches the name servers at its registrar (the workflow waits for that).
+    The restaurant gets the steps by e-mail (Swedish)."""
+    from . import domain_mail, own_domains
+    own_domains.sim_guard()
     tenant_id = req.path["tenantId"]
-    _require_sites()
-    _active_tenant(tenant_id)
+    profile = _active_tenant(tenant_id)
+    sim = own_domains.order_guard(profile)
+    if not sim:
+        _require_sites()
     domain = _apex(req.body.get("domain"))
     f = v.Fields(req.body)
-    make_primary = f.boolean("makePrimary")
+    f.boolean("makePrimary")                     # always primary now; still accepted
     records, skipped = _records(req.body.get("records", []), domain, f)
     f.done()
 
     previous = _zone_row(tenant_id, domain) or {}
     _claim_zone(tenant_id, domain, {
-        "mode": "connect", "status": "creating_zone", "makePrimary": bool(make_primary),
+        "mode": "connect", "status": "creating_zone", "makePrimary": True,
         "hostedZoneId": previous.get("hostedZoneId"), "nameServers": previous.get("nameServers"),
-        "requestedBy": req.actor, "requestedAt": now_iso(), "lastError": None,
+        "requestedBy": req.actor, "requestedAt": now_iso(), "lastError": None, "simulated": sim or None,
+        "attempt": int(previous.get("attempt") or 0) + 1,
+        **dict(zip(("canonicalHost", "aliasHosts", "devHost"), own_domains.hosts_for("connect", domain))),
     })
-    r53 = _route53()
-    zone_id, name_servers = previous.get("hostedZoneId"), previous.get("nameServers")
-    try:
-        if not zone_id:
-            out = r53.create_hosted_zone(
-                Name=domain, CallerReference=f"{tenant_id}:{domain}:{new_id()}",
-                HostedZoneConfig={"Comment": f"Booqy restaurant site - tenant {tenant_id}", "PrivateZone": False})
-            zone_id = out["HostedZone"]["Id"].split("/")[-1]
-            name_servers = out["DelegationSet"]["NameServers"]
-            # Recorded before anything else can fail, so a retry reuses this zone.
-            _update_zone(tenant_id, domain, hostedZoneId=zone_id, nameServers=name_servers)
-            r53.change_tags_for_resource(ResourceType="hostedzone", ResourceId=zone_id, AddTags=[
-                {"Key": "TenantId", "Value": tenant_id}, {"Key": "ManagedBy", "Value": "booqy-console"},
-                {"Key": "Environment", "Value": env("ENVIRONMENT", "dev")}])
-        if records:
-            r53.change_resource_record_sets(HostedZoneId=zone_id, ChangeBatch={
-                "Comment": "Records copied from the previous DNS host", "Changes": [_change(r) for r in records]})
-    except ClientError as e:
-        message = e.response["Error"].get("Message") or str(e)
-        _update_zone(tenant_id, domain, status="failed", lastError=f"Couldn't set up DNS: {message}"[:1000])
-        raise ApiError(502, "dns_setup_failed", f"Couldn't set up DNS: {message}") from e
+    # Recorded before anything else can fail, so a retry reuses the zone.
+    zone_id, name_servers = own_domains._ensure_zone(tenant_id, domain, previous, records, sim)
+    dnssec = domain.startswith("dnssec") if sim else own_domains.ds_present(domain)
 
-    _update_zone(tenant_id, domain, status="awaiting_nameservers", importedRecords=len(records))
-    _start_provision(tenant_id, domain, "connect", bool(make_primary), req.actor)
+    _update_zone(tenant_id, domain, status="awaiting_nameservers", importedRecords=len(records), dnssec=dnssec)
+    _start_provision(tenant_id, domain, "connect", True, req.actor)
+    domain_mail.send(profile, "nameserver_steps", domain=domain, name_servers=name_servers, dnssec=dnssec)
     write_audit(tenant_id, "domain_connect_started", req.actor,
                 {"domain": domain, "importedRecords": len(records), "hostedZoneId": zone_id})
     return 202, {"zone": public_zone(_zone_row(tenant_id, domain) or {}), "nameServers": name_servers,
@@ -886,11 +904,21 @@ def _find_zone(domain: str) -> tuple[str, list[str]] | None:
 
 
 def _task_registration_status(tenant_id: str, domain: str) -> dict:
+    from . import own_domains
     row = _zone_row(tenant_id, domain) or {}
+    if row.get("status") in ("removing", "removed"):
+        return {"status": "cancelled"}
     if not row.get("operationId"):
         _update_zone(tenant_id, domain, status="failed", lastError="No registration operation recorded")
         return {"status": "failed"}
-    op = _domains().get_operation_detail(OperationId=row["operationId"])
+    if row.get("simulated"):
+        op = own_domains.sim_operation(row)
+        if op.get("Status") == "SUCCESSFUL":
+            _update_zone(tenant_id, domain, operationStatus="SUCCESSFUL", statusDetail=None, status="registered",
+                         registeredAt=now_iso())
+            return {"status": "done"}
+    else:
+        op = _domains().get_operation_detail(OperationId=row["operationId"])
     status, flag, message = op.get("Status"), op.get("StatusFlag"), op.get("Message")
     if status == "SUCCESSFUL":
         found = _find_zone(domain)
@@ -903,7 +931,7 @@ def _task_registration_status(tenant_id: str, domain: str) -> dict:
         except ClientError as e:
             log.warning("tagging %s failed: %s", zone_id, e)
         _update_zone(tenant_id, domain, hostedZoneId=zone_id, nameServers=ns, operationStatus=status,
-                     statusDetail=None, status="registered")
+                     statusDetail=None, status="registered", registeredAt=row.get("registeredAt") or now_iso())
         _delete_document(tenant_id, domain, row)
         return {"status": "done"}
     if status in ("ERROR", "FAILED"):
@@ -934,14 +962,33 @@ def _delete_document(tenant_id: str, domain: str, row: dict) -> None:
 
 
 def _task_nameserver_status(tenant_id: str, domain: str) -> dict:
+    """Done when only our name servers answer. A DS record still published
+    (DNSSEC on at the registrar) blocks: switching the name servers would
+    take the domain offline, so the restaurant turns DNSSEC off first."""
+    from . import own_domains
     row = _zone_row(tenant_id, domain) or {}
+    if row.get("status") in ("removing", "removed"):
+        return {"status": "cancelled"}
     ours = {n.rstrip(".").lower() for n in row.get("nameServers") or []}
+    if row.get("simulated"):
+        done = row.get("simState") == "ns_switched" or row.get("mode") == "transfer_in"
+        _update_zone(tenant_id, domain, lastCheckedAt=now_iso(),
+                     statusDetail=None if done else "Still answered by ns01.one.com, ns02.one.com (simulated)")
+        return {"status": "done" if done else "pending"}
     seen, _, _ = _lookup(domain, "NS")
     seen = {n.rstrip(".").lower() for n in seen}
     done = bool(seen) and seen <= ours
-    _update_zone(tenant_id, domain, lastCheckedAt=now_iso(), observedNameServers=sorted(seen) or None,
-                 statusDetail=None if done else ("Still answered by " + ", ".join(sorted(seen)) if seen
-                                                 else "No name servers found yet"))
+    dnssec = not done and row.get("mode") == "connect" and own_domains.ds_present(domain)
+    fields = {"lastCheckedAt": now_iso(), "observedNameServers": sorted(seen) or None,
+              "statusDetail": None if done else ("DNSSEC is on: it must be switched off at the registrar first"
+                                                 if dnssec else "Still answered by " + ", ".join(sorted(seen)) if seen
+                                                 else "No name servers found yet")}
+    if row.get("mode") == "connect" and row.get("status") in ("awaiting_nameservers", "blocked_dnssec"):
+        fields["status"] = "blocked_dnssec" if dnssec else "awaiting_nameservers"
+        fields["dnssec"] = dnssec
+    _update_zone(tenant_id, domain, **fields)
+    if dnssec and row.get("status") != "blocked_dnssec":
+        own_domains._notify_action_needed(tenant_id, domain, "dnssec")
     return {"status": "done" if done else "pending"}
 
 
@@ -951,6 +998,11 @@ def _task_prepare_dns(tenant_id: str, domain: str, actor: str) -> dict:
     for each. _cf-challenge TXT records prove ownership to CloudFront (an
     alias at the apex can't be checked the way a CNAME is)."""
     row = _zone_row(tenant_id, domain) or {}
+    if row.get("simulated"):
+        from . import own_domains
+        own_domains.sim_map(tenant_id, domain, actor)
+        _update_zone(tenant_id, domain, status="attaching", statusDetail="Mapping onto the test sites")
+        return {"status": "done", "attach": False}
     zone_id, target = row.get("hostedZoneId"), env("TENANT_DOMAIN_CNAME_TARGET", "")
     if not zone_id or not target:
         raise RuntimeError("hosted zone or CNAME target missing")
@@ -968,33 +1020,58 @@ def _task_prepare_dns(tenant_id: str, domain: str, actor: str) -> dict:
     for host in (domain, www):
         claim_host(tenant_id, host, actor)       # "exists" (already attached) is fine
     _update_zone(tenant_id, domain, status="attaching", statusDetail="Issuing certificates")
-    return {"status": "done", "hosts": [domain, www]}
+    return {"status": "done", "hosts": [domain, www], "attach": True}
+
+
+# A failure that has its own status (who acts is on the row) keeps it.
+CLASSIFIED = ("transfer_rejected", "transfer_expired", "records_timeout", "nameservers_timeout")
+TIMED_OUT_AS = {"transfer_in": ("transfer_expired", "transfer_expired"), "records": ("records_timeout", "records_timeout"),
+                "connect": ("nameservers_timeout", "nameservers_timeout")}
 
 
 def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> dict:
+    from . import domain_mail, own_domains
     if status not in ("live", "failed", "timed_out"):
         raise ValueError(f"bad status {status}")
+    row = _zone_row(tenant_id, domain) or {}
+    if row.get("status") in ("removing", "removed"):
+        return {"status": row["status"]}
+    mode = row.get("mode") or "connect"
     if status == "live":
         # domain-attach also ends successfully when the certificate never got
-        # issued (validation_timeout) - only call it live when both are active.
+        # issued (validation_timeout) - only call it live when every host is active.
         problems = []
-        for host in (domain, f"www.{domain}"):
-            row = from_ddb(client("dynamodb").get_item(
-                TableName=tenant_table(), ConsistentRead=True,
-                Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": f"DOMAIN#{host}"}}).get("Item")) or {}
-            if row.get("status") != "active":
-                problems.append(f"{host}: {row.get('status', 'missing')}"
-                                + (f" ({row['lastError']})" if row.get("lastError") else ""))
+        canonical, aliases, _ = own_domains.hosts_for(mode, domain)
+        for host in ([] if row.get("simulated") else [canonical, *aliases]):
+            host_row = own_domains._domain_row(tenant_id, host)
+            if host_row.get("status") != "active":
+                problems.append(f"{host}: {host_row.get('status', 'missing')}"
+                                + (f" ({host_row['lastError']})" if host_row.get("lastError") else ""))
         if problems:
             status, error = "failed", "Certificates not issued - " + "; ".join(problems)
     fields = {"status": status, "statusDetail": None}
     if status == "live":
-        fields["lastError"] = None
-        fields["liveAt"] = now_iso()
-    elif error:
-        fields["lastError"] = error[:1000]
+        fields.update(lastError=None, lastErrorSv=None, who=None, errorCode=None, liveAt=now_iso(),
+                      devStatus=row.get("devStatus") if row.get("devStatus") == "live" else "waiting_for_prod")
+    elif status == "timed_out" and mode in TIMED_OUT_AS:
+        code, new_status = TIMED_OUT_AS[mode]
+        fields.update(domain_mail.error(code, domain), status=new_status)
+        if error:
+            fields["lastError"] = error[:1000]
+        status = new_status
+    elif row.get("status") in CLASSIFIED and status == "failed":
+        fields = {"statusDetail": None}                    # the classified error stays as it is
+        status = row["status"]
+    else:
+        fields.update(domain_mail.error("booqy", domain))
+        if error:
+            fields["lastError"] = error[:1000]
     _update_zone(tenant_id, domain, **fields)
-    if status != "live":
+    if status == "live":
+        own_domains.notify_live(tenant_id, domain, {**row, **fields})
+    elif status in TIMED_OUT_AS.get(mode, ()):
+        own_domains._notify_action_needed(tenant_id, domain, TIMED_OUT_AS[mode][0])
+    if status not in ("live",):
         _release_claim_if_unused(tenant_id, domain)
     return {"status": status}
 

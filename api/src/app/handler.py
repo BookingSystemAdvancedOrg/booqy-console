@@ -9,8 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
-               users, website, zones)
+from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, own_domains, site,
+               stripe_connect, tenants, users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, groups, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
 
@@ -50,6 +50,18 @@ ROUTES = {
     "GET /platform/tenants/{tenantId}/zones/{domain}/document": zones.document_download,
     "GET /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer_check,
     "POST /platform/tenants/{tenantId}/zones/{domain}/transfer": zones.transfer,
+    # Own domains: move to Booqy, keep the registrar (DNS records), the
+    # order's actions; simulate is the dev console's only
+    "GET /platform/domains/tlds": own_domains.tlds,
+    "GET /platform/domains/transfer-check": own_domains.transfer_check,
+    "POST /platform/tenants/{tenantId}/domains/transfers": own_domains.transfer_in,
+    "POST /platform/tenants/{tenantId}/domains/records": own_domains.records,
+    "DELETE /platform/tenants/{tenantId}/zones/{domain}": own_domains.remove,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/check": own_domains.check_now,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/retry": own_domains.retry,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/notify": own_domains.notify,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/auth-code": own_domains.auth_code,
+    "POST /platform/tenants/{tenantId}/zones/{domain}/simulate": own_domains.simulate,
     "POST /platform/tenants/{tenantId}/stripe/account-link": stripe_connect.account_link,
     "POST /platform/tenants/{tenantId}/stripe/sync": stripe_connect.sync_account,
     "GET /platform/operators": operators.list_operators,
@@ -125,7 +137,7 @@ def handler(event, context):
     # routeKey, no JWT). API Gateway events always carry a routeKey, and only
     # API Gateway and that workflow's role may invoke this function.
     if "workflowTask" in event and "routeKey" not in event:
-        result = zones.workflow_task(event)
+        result = own_domains.workflow_task(event)
         log.info(json.dumps({"workflowTask": event.get("workflowTask"), "domain": event.get("domain"),
                              "tenantId": event.get("tenantId"), "result": result.get("status")}))
         return result
@@ -142,6 +154,12 @@ def handler(event, context):
     if "financeTask" in event and "routeKey" not in event:
         result = billing.finance_task(event, context)
         log.info(json.dumps({"financeTask": event.get("financeTask"), "result": result.get("status")}))
+        return result
+    # The daily own-domain health check ({"domainTask": "health"}, prod;
+    # EventBridge Scheduler, only the scheduler role may invoke it this way).
+    if "domainTask" in event and "routeKey" not in event:
+        result = own_domains.health_task(event) if event.get("domainTask") == "health" else {"status": "unknown_task"}
+        log.info(json.dumps({"domainTask": event.get("domainTask"), "result": result.get("status")}))
         return result
     # Prod's site-repo, through the dev account's booqy-sites-prod-link role
     # (dev only): create or adopt the restaurant's dev tenant, or archive its

@@ -94,6 +94,20 @@ export const STATUS_TEXT: Record<string, string> = {
   deploying: "Deploying",
   cancelled: "Cancelled",
   none: "None",
+  // own domains
+  awaiting_owner_approval: "Waiting for the owner's approval",
+  transferred_in: "Moved to Booqy",
+  transfer_rejected: "Move declined",
+  transfer_expired: "Move expired",
+  awaiting_records: "Waiting for DNS records",
+  records_timeout: "Records never added",
+  nameservers_timeout: "Name servers not switched",
+  blocked_dnssec: "DNSSEC must be off",
+  removed: "Removed",
+  waiting_for_prod: "Waits for production",
+  mounting: "Going on the dev site",
+  awaiting_dev_record: "Waiting for the dev record",
+  skipped: "Skipped",
 };
 
 export function Status({ value }: { value: string }) {

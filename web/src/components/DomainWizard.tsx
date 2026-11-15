@@ -1,59 +1,107 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError, uploadToS3 } from "../api";
-import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, SupportCase, Tenant, TransferCheck } from "../types";
+import type {
+  DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, RequiredRecord, SupportCase, Tenant, TransferCheck, TransferInCheck, Zone,
+} from "../types";
 import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
 import { Select } from "./Select";
 import { isProd, testMapping } from "../testSites";
+import { InfoTip } from "./StepFlow";
 
-type Path = "choose" | "buy" | "connect" | "cname";
+type Path = "choose" | "buy" | "move" | "keep" | "map";
 
 export function money(m?: Money | null) {
   if (!m) return "-";
   return new Intl.NumberFormat("sv-SE", { style: "currency", currency: m.currency }).format(Number(m.amount));
 }
 
-/** Add domain: buy a new one, connect one they have (we take over DNS), or a bare CNAME. Outside
- * prod only the test mapping: no domain is bought, connected or transferred there. */
-export default function DomainWizard({ tenant, onClose, onChanged }: {
-  tenant: Tenant; onClose: () => void; onChanged: () => void;
+/** Add domain (owner 2026-11-15): the three ways in, each ending in the same pipeline (site on the domain,
+ * www and the slug address 301 to it, dev.<domain> on the dev site). Buy new: Booqy registers it. Move to
+ * Booqy: the transfer code from their registrar, the owner approves by e-mail. Keep current registrar: DNS
+ * records at the registrar, or the name servers pointed at us. The dev console runs the same flows for a
+ * test customer, simulated (nothing is bought or moved; Simulate on the Domains tab moves them). */
+export default function DomainWizard({ tenant, onClose, onChanged, initial }: {
+  tenant: Tenant; onClose: () => void; onChanged: () => void; initial?: { path: Path; domain?: string };
 }) {
-  const [path, setPath] = useState<Path>("choose");
-  if (!isProd()) {
+  const [path, setPath] = useState<Path>(initial?.path ?? "choose");
+  const [domain, setDomain] = useState(initial?.domain ?? "");
+  const sim = !isProd();
+  if (sim && tenant.siteKind !== "test") {
     return (
       <Modal title="Add domain" onClose={onClose}>
+        <Notice kind="info">This customer's own domain is managed from the production console.</Notice>
         <TestMapping tenant={tenant} onDone={onChanged} />
       </Modal>
     );
   }
+  const keep = (d: string) => { setDomain(d); setPath("keep"); };
   return (
-    <Modal title="Add domain" onClose={onClose}>
+    <Modal title="Add domain" onClose={onClose} wide={path === "move" || path === "keep"}>
+      {sim && <p className="small muted sim-note">Simulated <InfoTip label="Simulated">Test customer: nothing is bought or moved and no DNS changes. The flow is the real one; Simulate on the Domains tab plays the registry, the owner and the restaurant. At the end the domain is mapped onto the test sites.</InfoTip></p>}
       {path === "choose" && (
-        <div className="choices">
+        <div className="choices" role="list">
           <button className="choice" onClick={() => setPath("buy")}>
-            <strong>Buy a new domain</strong>
-            <span className="small muted">Search .se / .com / .eu, see the price, register it in the restaurant's name. .se needs the registreringsbevis.</span>
+            <strong>Buy new</strong>
+            <span className="small muted">Booqy registers it</span>
           </button>
-          <button className="choice" onClick={() => setPath("connect")}>
-            <strong>Connect a domain they already have</strong>
-            <span className="small muted">It stays at one.com (or wherever). We copy its DNS records to Route 53, they switch the name servers. The bare domain works too.</span>
+          <button className="choice" onClick={() => setPath("move")}>
+            <strong>Move to Booqy</strong>
+            <span className="small muted">Transfer code from their registrar</span>
           </button>
-          <button className="choice" onClick={() => setPath("cname")}>
-            <strong>Just a CNAME</strong>
-            <span className="small muted">Advanced: they keep their DNS and add one record for www. The bare domain can't be used.</span>
+          <button className="choice" onClick={() => setPath("keep")}>
+            <strong>Keep current registrar</strong>
+            <span className="small muted">DNS records or name servers</span>
           </button>
+          {sim && <button type="button" className="link" onClick={() => setPath("map")}>Map directly onto the test sites</button>}
         </div>
       )}
       {path === "buy" && <Buy tenant={tenant} onBack={() => setPath("choose")} onDone={onChanged} />}
-      {path === "connect" && <Connect tenant={tenant} onBack={() => setPath("choose")} onDone={onChanged} />}
-      {path === "cname" && <Cname tenant={tenant} onBack={() => setPath("choose")} onDone={onChanged} />}
+      {path === "move" && <MoveToBooqy tenant={tenant} initialDomain={domain} onBack={() => setPath("choose")} onKeep={keep} onDone={onChanged} />}
+      {path === "keep" && <KeepRegistrar tenant={tenant} initialDomain={domain} onBack={() => setPath("choose")} onDone={onChanged} />}
+      {path === "map" && <><Back onClick={() => setPath("choose")} /><TestMapping tenant={tenant} onDone={onChanged} /></>}
     </Modal>
   );
 }
 
 function Back({ onClick }: { onClick: () => void }) {
   return <button type="button" className="link back" onClick={onClick}>← Other ways</button>;
+}
+
+/** What the restaurant reads, in Swedish (it also gets it by e-mail): shown for copying. */
+export function RestaurantText({ text, title = "Restaurant's steps (Swedish)" }: { text: string; title?: string }) {
+  return (
+    <div className="restaurant-text">
+      <div className="row restaurant-text__head">
+        <span className="small strong">{title}</span>
+        <button type="button" className="btn btn--small" onClick={() => void navigator.clipboard.writeText(text)}>Copy</button>
+      </div>
+      <pre className="restaurant-text__body" lang="sv">{text}</pre>
+    </div>
+  );
+}
+
+/** DNS records mode: what the restaurant adds at its registrar. */
+export function RecordsTable({ records }: { records: RequiredRecord[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="table required-records">
+        <thead><tr><th>Type</th><th>Name</th><th>Value</th><th /></tr></thead>
+        <tbody>
+          {records.map((r) => (
+            <tr key={r.host + r.type}>
+              <td data-label="Type" className="mono">{r.type}</td>
+              <td data-label="Name" className="mono cell-title">{r.name}</td>
+              <td data-label="Value" className="mono">{r.value}</td>
+              <td className="right"><button type="button" className="btn btn--small" aria-label={`Copy ${r.name} value`}
+                                            onClick={() => void navigator.clipboard.writeText(r.value)}>Copy</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------- buy
@@ -126,7 +174,6 @@ function Order({ tenant, offer, onBack, onDone }: {
   const [c, setC] = useState<RegistrantContact>(() => contactFrom(tenant));
   const [documentKey, setDocumentKey] = useState<string>("");
   const [uploading, setUploading] = useState(false);
-  const [primary, setPrimary] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<SupportCase | null | undefined>(undefined);
   const buy = useAction();
@@ -136,7 +183,7 @@ function Order({ tenant, offer, onBack, onDone }: {
     e.preventDefault();
     if (!offer.price) return;
     const r = await buy.run(() => api.registerDomain(tenant.tenantId, {
-      domain: offer.domain, makePrimary: primary, contact: contactForApi(c), acceptedPrice: offer.price!,
+      domain: offer.domain, makePrimary: true, contact: contactForApi(c), acceptedPrice: offer.price!,
       ...(se ? { documentKey } : {}),
     }));
     if (r) { setResult(r.supportCase); onDone(); }
@@ -147,7 +194,7 @@ function Order({ tenant, offer, onBack, onDone }: {
       <>
         <Notice kind="ok"><strong>{offer.domain}</strong> is ordered. Its status is on the Domains tab.</Notice>
         {result ? <SupportCaseBox domain={offer.domain} tenantId={tenant.tenantId} supportCase={result} />
-          : <p className="small muted">Route 53 registers it within minutes to an hour; the site goes live on {offer.domain} and www.{offer.domain} by itself.</p>}
+          : <p className="small muted">Live on {offer.domain} by itself <InfoTip label="What happens">Route 53 registers it (minutes to an hour), then the site goes live on {offer.domain}; www and the slug address 301 to it and dev.{offer.domain} goes on the dev site.</InfoTip></p>}
       </>
     );
   }
@@ -165,7 +212,6 @@ function Order({ tenant, offer, onBack, onDone }: {
       {se && <RegistreringsbevisUpload tenantId={tenant.tenantId} error={buy.fields.documentKey}
                                        onKey={setDocumentKey} onBusy={setUploading} />}
 
-      <label className="check"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>
       <label className="check confirm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
         I'm buying {offer.domain} for {money(offer.price)} (renews at {money(offer.renewalPrice)}/year). It can't be refunded.</label>
       <div className="row">
@@ -342,18 +388,65 @@ function useLoadCheck(tenantId: string, domain: string) {
   return { data, busy: a.busy, error: a.error };
 }
 
-// --------------------------------------------------------------- connect
+// --------------------------------------------------------------- records review
 type Row = DnsRecord & { include: boolean; id: number; valuesText: string };
 const TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "CAA", "SRV"];
 let nextId = 1;
 
-function Connect({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; onDone: () => void }) {
-  const [domain, setDomain] = useState("");
+function rowsFrom(scan: DnsScan): Row[] {
+  return scan.records.map((x) => ({ ...x, include: !x.skip, id: nextId++, valuesText: x.values.join("\n") }));
+}
+
+function recordsFor(rows: Row[]): DnsRecord[] {
+  return rows.filter((r) => r.include && !r.skip).map((r) => ({
+    name: r.name, type: r.type, ttl: Number(r.ttl) || 3600,
+    values: r.valuesText.split("\n").map((v) => v.trim()).filter(Boolean),
+  }));
+}
+
+/** The records a domain uses today (public DNS): ticked ones are copied into our zone before anything switches. */
+function RecordsReview({ scan, rows, setRows }: { scan: DnsScan; rows: Row[]; setRows: (rows: Row[]) => void }) {
+  const update = (id: number, patch: Partial<Row>) => setRows(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  return (
+    <>
+      <p className="small">Records to copy <InfoTip label="Records to copy">Everything ticked is copied to our DNS zone. A record left out stops working once our name servers answer (email is the usual casualty: MX, SPF, DKIM). Add what the scan couldn't find (other DKIM selectors, own subdomains).</InfoTip></p>
+      <div className="table-wrap">
+        <table className="table records">
+          <thead><tr><th /><th>Name</th><th>Type</th><th>TTL</th><th>Value(s), one per line</th><th /></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className={r.skip ? "muted" : undefined}>
+                <td data-label="Copy"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
+                           onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></td>
+                <td className="cell-title"><input className="input mono" aria-label="Name" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
+                <td data-label="Type"><Select aria-label="Type" value={r.type} disabled={!!r.skip} onChange={(v) => update(r.id, { type: v })}
+                  options={(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => ({ value: t, label: t }))} /></td>
+                <td data-label="TTL"><input className="input mono ttl" value={r.ttl} disabled={!!r.skip} onChange={(e) => update(r.id, { ttl: Number(e.target.value) || 0 })} /></td>
+                <td data-label="Value(s)">{r.skip ? <span className="small">{r.skip}</span>
+                  : <textarea className="input mono" rows={Math.min(4, Math.max(1, r.valuesText.split("\n").length))}
+                              value={r.valuesText} onChange={(e) => update(r.id, { valuesText: e.target.value })} />}</td>
+                <td>{!r.skip && <button type="button" className="btn btn--ghost btn--small" aria-label={`Remove ${r.name} ${r.type}`} onClick={() => setRows(rows.filter((x) => x.id !== r.id))}>✕</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="row">
+        <button type="button" className="btn btn--small" onClick={() => setRows([...rows, {
+          name: scan.domain, type: "TXT", ttl: 3600, values: [], valuesText: "", include: true, id: nextId++,
+        }])}>+ Add record</button>
+      </div>
+    </>
+  );
+}
+
+// --------------------------------------------------------------- connect (name servers)
+function Connect({ tenant, initialDomain, onDone }: { tenant: Tenant; initialDomain?: string; onDone: () => void }) {
+  const [domain, setDomain] = useState(initialDomain ?? "");
   const [scan, setScan] = useState<DnsScan | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
-  const [primary, setPrimary] = useState(true);
   const [checked, setChecked] = useState(false);
-  const [done, setDone] = useState<{ nameServers: string[]; domain: string } | null>(null);
+  const [done, setDone] = useState<Zone | null>(null);
   const scanA = useAction();
   const connect = useAction();
 
@@ -364,83 +457,200 @@ function Connect({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => voi
     setScan(r);
     setDomain(r.domain);
     setChecked(false);
-    setRows(r.records.map((x) => ({ ...x, include: !x.skip, id: nextId++, valuesText: x.values.join("\n") })));
+    setRows(rowsFrom(r));
   }
-  const update = (id: number, patch: Partial<Row>) => setRows(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   async function onConnect() {
     if (!scan) return;
-    const records = rows.filter((r) => r.include && !r.skip).map((r) => ({
-      name: r.name, type: r.type, ttl: Number(r.ttl) || 3600,
-      values: r.valuesText.split("\n").map((v) => v.trim()).filter(Boolean),
-    }));
-    const res = await connect.run(() => api.connectDomain(tenant.tenantId, { domain: scan.domain, makePrimary: primary, records }));
-    if (res) { setDone({ nameServers: res.nameServers, domain: scan.domain }); onDone(); }
+    const res = await connect.run(() => api.connectDomain(tenant.tenantId, { domain: scan.domain, makePrimary: true, records: recordsFor(rows) }));
+    if (res) { setDone(res.zone); onDone(); }
   }
 
   if (done) {
     return (
       <>
-        <Notice kind="ok">The DNS zone for <strong>{done.domain}</strong> is ready with the copied records.</Notice>
-        <NameServerBox domain={done.domain} nameServers={done.nameServers} />
+        <Notice kind="ok"><strong>{done.domain}</strong>: DNS zone ready. Steps e-mailed to the restaurant.</Notice>
+        {done.nameServers && <NameServerBox domain={done.domain} nameServers={done.nameServers} />}
+        {done.restaurantSteps && <RestaurantText text={done.restaurantSteps} />}
       </>
     );
   }
   return (
     <>
-      <Back onClick={onBack} />
       <form className="inline-form" onSubmit={onScan} noValidate>
-        <Field label="Their domain" error={scanA.fields.domain} hint="The domain itself, e.g. restaurang.se">
+        <Field label="Their domain" error={scanA.fields.domain} hint="e.g. restaurang.se">
           <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="restaurang.se" autoFocus />
         </Field>
         <button className="btn btn--primary" disabled={!domain.trim() || scanA.busy}>{scanA.busy ? "Scanning…" : "Scan DNS"}</button>
       </form>
+      {scanA.busy && <Printing inline label="Reading their DNS" />}
       <ErrorNotice error={scanA.error} />
       {scan && (
         <>
-          {!scan.registered && <Notice kind="warn">{scan.domain} has no name servers - is it registered? Check the spelling.</Notice>}
-          {scan.nameServers.length > 0 && <p className="small">DNS is at: <span className="mono">{scan.nameServers.join(", ")}</span></p>}
-          {scan.dnssec && <Notice kind="warn">DNSSEC is on. The restaurant must turn it off at their registrar <strong>before</strong> switching name servers, or the domain stops resolving.</Notice>}
-          <p className="small">These are the records we found. Everything ticked is copied to Route 53. Go through it with the restaurant -
-            a record left out stops working when the name servers change (email is the usual casualty: MX, SPF, DKIM).
-            Add anything we couldn't find (other DKIM selectors, own subdomains).</p>
-          <div className="table-wrap">
-            <table className="table records">
-              <thead><tr><th /><th>Name</th><th>Type</th><th>TTL</th><th>Value(s), one per line</th><th /></tr></thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className={r.skip ? "muted" : undefined}>
-                    <td data-label="Copy"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
-                               onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></td>
-                    <td className="cell-title"><input className="input mono" aria-label="Name" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
-                    <td data-label="Type"><Select aria-label="Type" value={r.type} disabled={!!r.skip} onChange={(v) => update(r.id, { type: v })}
-                      options={(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => ({ value: t, label: t }))} /></td>
-                    <td data-label="TTL"><input className="input mono ttl" value={r.ttl} disabled={!!r.skip} onChange={(e) => update(r.id, { ttl: Number(e.target.value) || 0 })} /></td>
-                    <td data-label="Value(s)">{r.skip ? <span className="small">{r.skip}</span>
-                      : <textarea className="input mono" rows={Math.min(4, Math.max(1, r.valuesText.split("\n").length))}
-                                  value={r.valuesText} onChange={(e) => update(r.id, { valuesText: e.target.value })} />}</td>
-                    <td>{!r.skip && <button type="button" className="btn btn--ghost btn--small" onClick={() => setRows(rows.filter((x) => x.id !== r.id))}>✕</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="row">
-            <button type="button" className="btn btn--small" onClick={() => setRows([...rows, {
-              name: scan.domain, type: "TXT", ttl: 3600, values: [], valuesText: "", include: true, id: nextId++,
-            }])}>+ Add record</button>
-          </div>
+          {!scan.registered && <Notice kind="warn">{scan.domain} has no name servers. Check the spelling.</Notice>}
+          {scan.nameServers.length > 0 && <p className="small">DNS today: <span className="mono">{scan.nameServers.join(", ")}</span></p>}
+          {scan.dnssec && <Notice kind="warn">DNSSEC is on: they turn it off before switching name servers.</Notice>}
+          <RecordsReview scan={scan} rows={rows} setRows={setRows} />
           <ErrorNotice error={connect.error} />
           {Object.entries(connect.fields).map(([k, msg]) => <p key={k} className="small error-text">{k}: {msg}</p>)}
-          <label className="check"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>
           <label className="check confirm"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
-            I've checked the records with the restaurant (especially email).</label>
+            Records checked with the restaurant (email too)</label>
           <div className="row">
             <button className="btn btn--primary" disabled={!checked || connect.busy || !scan.registered} onClick={() => void onConnect()}>
               {connect.busy ? "Connecting…" : `Connect ${scan.domain}`}
             </button>
           </div>
         </>
+      )}
+    </>
+  );
+}
+
+// ------------------------------------------------------ keep current registrar
+function KeepRegistrar({ tenant, initialDomain, onBack, onDone }: {
+  tenant: Tenant; initialDomain?: string; onBack: () => void; onDone: () => void;
+}) {
+  const [how, setHow] = useState<"records" | "nameservers">("records");
+  return (
+    <>
+      <Back onClick={onBack} />
+      <div className="seg" role="group" aria-label="How">
+        <button type="button" className={`chip${how === "records" ? " chip--on" : ""}`} aria-pressed={how === "records"} onClick={() => setHow("records")}>Add records</button>
+        <button type="button" className={`chip${how === "nameservers" ? " chip--on" : ""}`} aria-pressed={how === "nameservers"} onClick={() => setHow("nameservers")}>Change name servers</button>
+        <InfoTip label="Records or name servers">Add records: they add a www and a dev CNAME and forward the bare domain to www at their registrar; www is the address (a CNAME can't sit on the bare domain). Change name servers: they point the four name servers at our DNS zone (records copied first); the bare domain works and is the address.</InfoTip>
+      </div>
+      {how === "records" ? <RecordsMode tenant={tenant} initialDomain={initialDomain} onDone={onDone} />
+        : <Connect tenant={tenant} initialDomain={initialDomain} onDone={onDone} />}
+    </>
+  );
+}
+
+function RecordsMode({ tenant, initialDomain, onDone }: { tenant: Tenant; initialDomain?: string; onDone: () => void }) {
+  const [domain, setDomain] = useState(initialDomain ?? "");
+  const [zone, setZone] = useState<Zone | null>(null);
+  const add = useAction();
+  async function onAdd(e: FormEvent) {
+    e.preventDefault();
+    const r = await add.run(() => api.recordsDomain(tenant.tenantId, domain));
+    if (r) { setZone(r.zone); onDone(); }
+  }
+  if (zone) {
+    return (
+      <>
+        <Notice kind="ok"><strong>{zone.canonicalHost ?? zone.domain}</strong>: steps e-mailed to the restaurant. We check DNS ourselves.</Notice>
+        {zone.records && <RecordsTable records={zone.records} />}
+        {zone.restaurantSteps && <RestaurantText text={zone.restaurantSteps} />}
+      </>
+    );
+  }
+  return (
+    <form className="inline-form" onSubmit={onAdd} noValidate>
+      <Field label="Their domain" error={add.fields.domain} hint="e.g. restaurang.se">
+        <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="restaurang.se" autoFocus />
+      </Field>
+      <button className="btn btn--primary" disabled={!domain.trim() || add.busy}>{add.busy ? "Adding…" : "Add"}</button>
+      <ErrorNotice error={add.fields.domain ? null : add.error} />
+    </form>
+  );
+}
+
+// ------------------------------------------------------------ move to Booqy
+function MoveToBooqy({ tenant, initialDomain, onBack, onKeep, onDone }: {
+  tenant: Tenant; initialDomain?: string; onBack: () => void; onKeep: (domain: string) => void; onDone: () => void;
+}) {
+  const [domain, setDomain] = useState(initialDomain ?? "");
+  const [check, setCheck] = useState<TransferInCheck | null>(null);
+  const [scan, setScan] = useState<DnsScan | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [c, setC] = useState<RegistrantContact>(() => contactFrom(tenant));
+  const [authCode, setAuthCode] = useState("");
+  const [documentKey, setDocumentKey] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<{ zone: Zone; supportCase: SupportCase | null } | null>(null);
+  const look = useAction();
+  const go = useAction();
+
+  async function onCheck(e: FormEvent) {
+    e.preventDefault();
+    setCheck(null); setScan(null); setConfirmed(false);
+    const r = await look.run(async () => {
+      const k = await api.transferInCheck(domain);
+      const sc = k.supported ? await api.scanDns(k.domain) : null;
+      return { k, sc };
+    });
+    if (!r) return;
+    setCheck(r.k); setDomain(r.k.domain);
+    if (r.sc) { setScan(r.sc); setRows(rowsFrom(r.sc)); }
+  }
+
+  async function onMove(e: FormEvent) {
+    e.preventDefault();
+    if (!check?.price || !scan) return;
+    const r = await go.run(() => api.transferIn(tenant.tenantId, {
+      domain: check.domain, authCode, records: recordsFor(rows), contact: contactForApi(c), acceptedPrice: check.price!,
+      ...(check.verificationRequired ? { documentKey } : {}),
+    }));
+    if (r) { setResult(r); onDone(); }
+  }
+
+  if (result) {
+    return (
+      <>
+        <Notice kind="ok"><strong>{result.zone.domain}</strong>: move started. Waiting for the owner's approval.</Notice>
+        {result.supportCase && <SupportCaseBox domain={result.zone.domain} tenantId={tenant.tenantId} supportCase={result.supportCase} />}
+        {result.zone.restaurantSteps && <RestaurantText text={result.zone.restaurantSteps} />}
+      </>
+    );
+  }
+  const goError = go.error instanceof ApiError ? go.error : null;
+  return (
+    <>
+      <Back onClick={onBack} />
+      <form className="inline-form" onSubmit={onCheck} noValidate>
+        <Field label="Their domain" error={look.fields.domain} hint="e.g. restaurang.se">
+          <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="restaurang.se" autoFocus />
+        </Field>
+        <button className="btn btn--primary" disabled={!domain.trim() || look.busy}>{look.busy ? "Checking…" : "Check"}</button>
+      </form>
+      {look.busy && <Printing inline label="Asking the registry" />}
+      <ErrorNotice error={look.error} />
+      {check && !check.supported && (
+        <Notice kind="warn">
+          <strong>{check.domain}</strong> can't be moved to Booqy. <button type="button" className="link" onClick={() => onKeep(check.domain)}>Keep current registrar</button>
+        </Notice>
+      )}
+      {check?.supported && !check.transferable && (
+        <>
+          <Notice kind="warn">{check.lastError ?? check.reason ?? "It can't be moved right now."}</Notice>
+          {check.lastErrorSv && <RestaurantText text={check.lastErrorSv} title="Restaurant (Swedish)" />}
+          <button type="button" className="link" onClick={() => onKeep(check.domain)}>Keep current registrar instead</button>
+        </>
+      )}
+      {check?.transferable && scan && (
+        <form onSubmit={onMove} noValidate>
+          <p className="small"><strong>{money(check.price)}</strong> incl. one more year, then {money(check.renewalPrice)}/year
+            <InfoTip label="Price">Booqy pays; auto-renews. A failed move is not charged.</InfoTip></p>
+          <RecordsReview scan={scan} rows={rows} setRows={setRows} />
+          <ErrorNotice error={go.error} />
+          {typeof goError?.extra?.lastErrorSv === "string" && <RestaurantText text={goError.extra.lastErrorSv} title="Restaurant (Swedish)" />}
+          {goError?.code === "price_changed" && <Notice kind="warn">Check again to see the new price.</Notice>}
+          <Field label="Transfer code" required error={go.fields.authCode}
+                 hint="From their registrar (one.com: Domain, Transfer / EPP code)">
+            <input className="input mono" value={authCode} onChange={(e) => setAuthCode(e.target.value)} autoComplete="off" />
+          </Field>
+          <RegistrantFields value={c} onChange={setC} fields={go.fields} />
+          {check.verificationRequired && <RegistreringsbevisUpload tenantId={tenant.tenantId} error={go.fields.documentKey}
+                                                                  onKey={setDocumentKey} onBusy={setUploading} />}
+          <label className="check confirm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+            Move {check.domain} for {money(check.price)}</label>
+          <div className="row">
+            <button className="btn btn--primary"
+                    disabled={!confirmed || !authCode.trim() || go.busy || uploading || (!!check.verificationRequired && !documentKey)}>
+              {go.busy ? "Starting…" : `Move ${check.domain}`}
+            </button>
+          </div>
+        </form>
       )}
     </>
   );
@@ -459,7 +669,6 @@ export function NameServerBox({ domain, nameServers }: { domain: string; nameSer
   );
 }
 
-// ----------------------------------------------------------------- cname
 // ------------------------------------------------------------ test mapping
 /** Dev console: example.se is mapped onto the test sites, main and dev. */
 function TestMapping({ tenant, onDone }: { tenant: Tenant; onDone: () => void }) {
@@ -490,36 +699,5 @@ function TestMapping({ tenant, onDone }: { tenant: Tenant; onDone: () => void })
         </Notice>
       )}
     </form>
-  );
-}
-
-function Cname({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; onDone: () => void }) {
-  const [domain, setDomain] = useState("");
-  const [makePrimary, setPrimary] = useState(true);
-  const [dns, setDns] = useState<{ name: string; value: string } | null>(null);
-  const add = useAction();
-  return (
-    <>
-      <Back onClick={onBack} />
-      <form noValidate onSubmit={async (e) => {
-        e.preventDefault();
-        const r = await add.run(() => api.addDomain(tenant.tenantId, domain, makePrimary));
-        if (r) { setDns(r.dns?.[0] ?? null); setDomain(""); onDone(); }
-      }}>
-        <ErrorNotice error={add.error} />
-        <Field label="Hostname" error={add.fields.domain} hint="e.g. www.restaurang.se - the bare domain can't be a CNAME">
-          <input className="input mono" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="www.restaurang.se" />
-        </Field>
-        <label className="check"><input type="checkbox" checked={makePrimary} onChange={(e) => setPrimary(e.target.checked)} /> Use for links in emails (primary)</label>
-        <button className="btn btn--primary" disabled={!domain || add.busy}>Add</button>
-      </form>
-      {dns && (
-        <Notice kind="ok">
-          Send the restaurant this DNS record to add at their DNS host:
-          <pre className="code">{`${dns.name}  CNAME  ${dns.value}`}</pre>
-          The certificate is issued automatically once it's in place.
-        </Notice>
-      )}
-    </>
   );
 }

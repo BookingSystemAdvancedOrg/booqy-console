@@ -371,6 +371,10 @@ textarea.input { resize: vertical; }
 .status--active, .status--live, .status--registered, .status--transferred { color: var(--ok); }
 .status--provisioning, .status--pending_dns, .status--pending_validation, .status--offboarding, .status--removing,
 .status--registering, .status--awaiting_verification, .status--creating_zone, .status--awaiting_nameservers, .status--attaching, .status--transferring { color: var(--warn); }
+.status--awaiting_owner_approval, .status--transferred_in, .status--awaiting_records, .status--blocked_dnssec,
+.status--waiting_for_prod, .status--mounting, .status--awaiting_dev_record { color: var(--warn); }
+.status--transfer_rejected, .status--transfer_expired, .status--records_timeout, .status--nameservers_timeout { color: var(--ink-red); }
+.status--removed { color: var(--print-2); }
 .status--ready { color: var(--ok); }
 .status--creating, .status--deploying { color: var(--warn); }
 .status--slug_only, .status--not_mounted, .status--unknown,
@@ -557,6 +561,27 @@ textarea.input { resize: vertical; }
 .steps { padding-left: 18px; display: grid; gap: 8px; margin: 8px 0 0; }
 .steps textarea { margin: 6px 0; }
 .modal__panel:has(.records) { width: min(960px, 100%); }
+.seg { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
+.chip--on { border-color: var(--fg); background: var(--glass-surface); font-weight: 700; }
+.sim-note { margin: 0 0 10px; }
+.restaurant-text { border: 1.5px dashed var(--line-soft); border-radius: var(--r-md); padding: 10px 12px; margin: 10px 0; }
+.restaurant-text__head { justify-content: space-between; align-items: center; gap: 8px; }
+.restaurant-text__body { white-space: pre-wrap; word-break: break-word; font: 13.5px/1.55 var(--sans); margin: 8px 0 0; }
+.required-records td { vertical-align: middle; word-break: break-all; }
+.zones { display: grid; gap: 14px; }
+.zone { border: 1.5px solid var(--paper-line); border-radius: var(--r-md); padding: 12px 14px; background: var(--glass-surface); min-width: 0; }
+.zone__head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.zone__name { min-width: 0; word-break: break-word; }
+.zone__name .tag { margin-left: 8px; }
+.zone__status { text-align: right; }
+.zone__hosts { margin: 8px 0; }
+.zone__actions { flex-wrap: wrap; justify-content: flex-start; margin-top: 10px; }
+.sim-bar { gap: 8px; margin-top: 10px; align-items: center; }
+.sim-bar .input.select, .sim-bar .select { min-width: 200px; }
+@media (max-width: 560px) {
+  .zone__status { text-align: left; }
+  .zone__actions .btn { flex: 1 1 auto; }
+}
 .modal .table-wrap { box-shadow: none; margin-bottom: 12px; }
 .modal .table-wrap::before, .modal .table-wrap::after { display: none; }
 .modal .card { box-shadow: none; animation: none; }

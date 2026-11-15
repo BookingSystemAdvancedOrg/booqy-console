@@ -63,6 +63,8 @@ export interface Tenant {
   slug: string;
   status: TenantStatus;
   planId: string;
+  /** Dev console: "test" = a test customer (sandbox sites, simulated own domains); "prod-link" = a prod customer's dev side. */
+  siteKind?: "test" | "prod-link";
   /** featuresEver: every feature key ever turned on (read-only; only grows, CONTRACTS.md 9.2). */
   entitlements: { maxLocations: number; features: Features; limits?: Limits; featuresEver?: string[] };
   locationCount: number;
@@ -141,10 +143,22 @@ export interface Money {
   currency: string;
 }
 
-/** A domain we run DNS for (bought through Route 53, or connected). */
+/** Who has to act on an own-domain order: the restaurant (with Swedish steps) or Booqy. */
+export type DomainWho = "restaurant" | "booqy";
+
+/** A record the restaurant adds at its registrar (own domain, DNS records mode). */
+export interface RequiredRecord {
+  type: "CNAME" | "Forwarding";
+  name: string;
+  host: string;
+  value: string;
+  purpose: string;
+}
+
+/** An own-domain order: bought, moved to Booqy, name servers pointed at us, or DNS records at their registrar. */
 export interface Zone {
   domain: string;
-  mode: "register" | "connect";
+  mode: "register" | "transfer_in" | "connect" | "records" | "transfer";
   status: string;
   statusDetail?: string;
   nameServers?: string[];
@@ -170,7 +184,49 @@ export interface Zone {
     completedAt?: string;
     supportCase?: SupportCase;
   };
+  canonicalHost?: string;
+  aliasHosts?: string[];
+  devHost?: string;
+  devStatus?: string;
+  devError?: string;
+  who?: DomainWho;
+  errorCode?: string;
+  /** Swedish: what the restaurant reads (and gets by e-mail). */
+  lastErrorSv?: string;
+  restaurantSteps?: string;
+  records?: RequiredRecord[];
+  attempt?: number;
+  simulated?: boolean;
+  simState?: string;
+  remindersSent?: number;
+  expiresAt?: string;
+  autoRenew?: boolean;
+  liveAt?: string;
+  registered?: boolean;
+  canRetry?: boolean;
+  canResubmit?: boolean;
+  canRemove?: boolean;
 }
+
+/** Before moving a domain to Booqy. */
+export interface TransferInCheck {
+  domain: string;
+  supported: boolean;
+  transferable: boolean;
+  transferability?: string;
+  reason?: string | null;
+  price?: Money | null;
+  renewalPrice?: Money | null;
+  verificationRequired?: boolean;
+  dnssec?: boolean;
+  simulated?: boolean;
+  errorCode?: string;
+  who?: DomainWho;
+  lastError?: string;
+  lastErrorSv?: string;
+}
+
+export type SimulateEvent = "approve" | "reject" | "expire" | "records_added" | "ns_switched";
 
 export interface TransferCheck {
   domain: string;
