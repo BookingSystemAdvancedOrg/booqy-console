@@ -842,6 +842,16 @@ input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], 
   margin: 0;
 }
 input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit { padding: 0; }
+/* Same height as the text fields beside them: Chrome pads the fields wrapper
+   and Safari each part by 1 px top and bottom, which made date fields 2 px taller. */
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-fields-wrapper { padding-block: 0; }
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-day-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-month-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-year-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-hour-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-minute-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-week-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-text { padding-block: 0; }
 
 /* --- Row actions (components/RowActions.tsx): quiet, the same in every table --- */
 .table-wrap { container-type: inline-size; }
