@@ -634,6 +634,17 @@ def test_simulated_transfer_rejection_and_expiry(sim, aws, event, status, code):
     body = call("POST /platform/tenants/{tenantId}/zones/{domain}/simulate", {"tenantId": t, "domain": "roma.com"},
                 {"event": event})[1]
     assert body["result"] == "failed" and body["zone"]["status"] == status and body["zone"]["errorCode"] == code
+    # The move started again (new code): the first execution, still waiting, ends at its next check.
+    status_code, body = call("POST /platform/tenants/{tenantId}/domains/transfers", {"tenantId": t},
+                             {**TRANSFER, "authCode": "NEW-CODE", "acceptedPrice": {"amount": 16, "currency": "USD"}})
+    assert status_code == 202 and body["zone"]["attempt"] == 2
+    machine = os.environ["DOMAIN_PROVISION_STATE_MACHINE_ARN"]
+    inputs = [json.loads(aws["sfn"].describe_execution(executionArn=e["executionArn"])["input"])
+              for e in aws["sfn"].list_executions(stateMachineArn=machine)["executions"]]
+    assert sorted(i["attempt"] for i in inputs) == [1, 2]
+    assert _task("transfer_in_status", t, "roma.com", attempt=1) == {"status": "cancelled"}
+    assert _task("transfer_in_status", t, "roma.com", attempt=2) == {"status": "pending"}
+    assert _task("transfer_in_status", t, "roma.com") == {"status": "pending"}     # older executions: no attempt
 
 
 def test_simulated_buy_records_and_connect(sim, aws):

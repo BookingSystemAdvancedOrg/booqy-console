@@ -145,7 +145,7 @@ def test_register_se_requires_registreringsbevis_and_price(domains, aws, tenant)
     assert c["ExtraParams"] == [{"Name": "SE_ID_NUMBER", "Value": "556677-8899"}]
     assert reg["AutoRenew"] is True and reg["PrivacyProtectRegistrantContact"] is False
     assert _executions(aws) == [{"tenantId": tenant, "domain": "roma.se", "mode": "register",
-                                 "makePrimary": True, "requestedBy": "op-1"}]
+                                 "makePrimary": True, "requestedBy": "op-1", "attempt": 1}]
     # shown on the tenant page; the document key itself is never returned
     _, detail = call("GET /platform/tenants/{tenantId}", p)
     assert detail["zones"][0]["domain"] == "roma.se" and "documentKey" not in detail["zones"][0]

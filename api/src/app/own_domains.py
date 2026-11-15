@@ -140,7 +140,7 @@ def start(tenant_id: str, apex: str, mode: str, actor: str, attempt: int, **extr
         sfn.start_execution(stateMachineArn=env("DOMAIN_PROVISION_STATE_MACHINE_ARN"),
                             name=execution_name(mode, apex, attempt),
                             input=json.dumps({"tenantId": tenant_id, "domain": apex, "mode": mode, "makePrimary": True,
-                                              "requestedBy": actor, **extra}))
+                                              "requestedBy": actor, "attempt": attempt, **extra}))
     except ClientError as e:
         if e.response["Error"]["Code"] != "ExecutionAlreadyExists":
             raise
@@ -1100,10 +1100,30 @@ WORKFLOW_TASKS = {
 }
 
 
+WAITING_TASKS = ("registration_status", "transfer_in_status", "nameserver_status", "records_status")
+
+
+def superseded(event: dict) -> bool:
+    """An execution of an older attempt of this order (a Retry, or a move
+    started again with a new code, started a newer one): its waiting step
+    ends it (Cancelled) instead of carrying on beside the new one."""
+    try:
+        mine = int(event.get("attempt") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not mine:
+        return False
+    row = zones._zone_row(event["tenantId"], zones._apex(event["domain"])) or {}
+    return int(row.get("attempt") or 0) > mine
+
+
 def workflow_task(event: dict) -> dict:
     """Entry point for domain-provision (invoked directly, never through
     API Gateway): the own-domain tasks here, the older ones in zones."""
     task = event.get("workflowTask")
+    if task in WAITING_TASKS and superseded(event):
+        log.info(json.dumps({"workflowTask": task, "domain": event.get("domain"), "superseded": event.get("attempt")}))
+        return {"status": "cancelled"}
     if task in WORKFLOW_TASKS:
         return WORKFLOW_TASKS[task](event, event["tenantId"], zones._apex(event["domain"]))
     return zones.workflow_task(event)
