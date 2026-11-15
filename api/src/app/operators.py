@@ -10,7 +10,7 @@ Accounts listed in the infrastructure tfvars (platform_operator_emails) are
 created by Terraform; deleting one here works, but the next infrastructure
 apply creates it again (with a new invite)."""
 
-from . import validation as v
+from . import avatar, backdrop, validation as v
 from .core import ApiError, client, env, log, not_found
 
 FIELDS = ("username", "email", "name", "status", "enabled", "createdAt", "updatedAt")
@@ -43,14 +43,14 @@ def _view(user: dict) -> dict:
     }
 
 
-def _operators() -> list[dict]:
+def _operators(raw: bool = False) -> list[dict]:
     idp, users, token = client("cognito-idp"), [], None
     while True:
         kwargs = {"UserPoolId": _pool(), "GroupName": _group(), "Limit": 60}
         if token:
             kwargs["NextToken"] = token
         page = idp.list_users_in_group(**kwargs)
-        users.extend(_view(u) for u in page.get("Users", []))
+        users.extend(page.get("Users", []) if raw else (_view(u) for u in page.get("Users", [])))
         token = page.get("NextToken")
         if not token:
             return users
@@ -73,7 +73,9 @@ def _guard_lockout(req, username: str, action: str) -> None:
 
 
 def list_operators(req) -> tuple[int, dict]:
-    users = sorted(_operators(), key=lambda u: (u["email"] or ""))
+    # Each operator's profile picture: one HeadObject each (a handful of operators).
+    users = sorted(({**_view(u), "avatarUrl": avatar.url_for(_attrs(u).get("sub"))} for u in _operators(raw=True)),
+                   key=lambda u: (u["email"] or ""))
     return 200, {"operators": users, "me": req.actor}
 
 
@@ -123,6 +125,9 @@ def delete_operator(req) -> tuple[int, dict]:
     _get(username)
     _guard_lockout(req, username, "delete")
     idp, pool = client("cognito-idp"), _pool()
+    # Their background image library first: a failure leaves the account for a retry.
+    sub = _attrs(idp.admin_get_user(UserPoolId=pool, Username=username)).get("sub")
+    backdrop.delete_all(sub)
     idp.admin_user_global_sign_out(UserPoolId=pool, Username=username)
     idp.admin_delete_user(UserPoolId=pool, Username=username)
     log.info("operator %s deleted by %s", username, req.actor)

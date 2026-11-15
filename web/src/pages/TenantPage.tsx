@@ -2,20 +2,24 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
+  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, Tenant, TenantDetail } from "../types";
-import TerminalModal from "../components/TerminalModal";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, SupportCaseBox, TransferModal, money } from "../components/DomainWizard";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { LIMIT_LABELS, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
 import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
+import { helpSlug } from "../features/help/helpId";
+import { FreeBadge, FreeFields } from "../components/FreeFields";
+import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
+import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
+import { InfoTip } from "../components/StepFlow";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -64,7 +68,7 @@ export default function TenantPage() {
       <p className="crumbs"><Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</Link> / {t.name}</p>
       <div className="page-head">
         <div>
-          <h1>{t.name} <Status value={t.status} /></h1>
+          <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}</h1>
           <p className="muted mono small">{t.slug} · {t.tenantId}</p>
         </div>
         <RefreshButton reload={reload} />
@@ -90,7 +94,7 @@ export default function TenantPage() {
 
       <nav className="tabs">
         {TABS.filter((name) => name !== "Integrations" || hasIntegrations(t)).map((name) => (
-          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`}
+          <button key={name} className={`tab${tab === name ? " tab--on" : ""}${name === "Suspend or offboard" ? " tab--danger" : ""}`} data-help={`tenant-tab:${helpSlug(name)}`}
                   onClick={() => goTab(name)}>
             {name}
             {name === "Locations" && <span className="tab__n">{t.locationCount}/{t.entitlements.maxLocations}</span>}
@@ -122,7 +126,7 @@ function Integrations({ tenant }: { tenant: Tenant }) {
   const props = { tenantId: tenant.tenantId };
   return (
     <div className="stack">
-      <p className="muted small">Connections this customer has made to outside services.</p>
+      <h2 className="sr-only">Integrations</h2>
       {INTEGRATION_SLOTS.map((id) => <Slot key={id} id={id} features={tenant.entitlements.features} props={props} />)}
     </div>
   );
@@ -162,8 +166,25 @@ const OWNER_FIELDS: [keyof Tenant, string, string?][] = [
 function Overview({ detail, onSaved, fixField, onFixed }: {
   detail: TenantDetail; onSaved: () => void; fixField: string | null; onFixed: () => void;
 }) {
-  const t = detail.tenant;
+  const live = detail.tenant;
+  // While editing, changes are counted against the customer as it was when
+  // Edit was pressed: the page refetches live, and a field changed elsewhere
+  // in the meantime is not overwritten unless you changed it too.
+  const [base, setBase] = useState<Tenant | null>(null);
   const [editing, setEditing] = useState(false);
+  const t = editing && base ? base : live;
+  /** The value on the server now, when it changed since Edit and differs from yours. */
+  const there = (k: string, mine: string): string | null => {
+    if (!editing || !base) return null;
+    const read = (x: Tenant) => (k === "street" || k === "city" ? x.address?.[k] ?? "" : k === "postalCode" ? formatPostalCode(x.address?.postalCode ?? "")
+      : ((x as unknown as Record<string, string | null>)[k] ?? ""));
+    const now = read(live);
+    return now !== read(base) && now !== mine ? now : null;
+  };
+  const note = (k: string) => {
+    const v = there(k, f[k] ?? "");
+    return v === null ? undefined : <ChangedNote value={v} onUse={() => setF({ ...f, [k]: v })} />;
+  };
   const fields = t.status === "provisioning_failed" ? [...PROFILE_FIELDS, ...OWNER_FIELDS] : PROFILE_FIELDS;
   const failure = t.status === "provisioning_failed" ? setupFailure(t.lastError).fields : {};
   const initial = () => ({
@@ -178,6 +199,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
   useEffect(() => {
     if (!fixField) return;
     setF(initial());
+    setBase(live);
     setEditing(true);
     window.setTimeout(() => {
       const el = document.getElementById(`e-${fixField}`);
@@ -211,7 +233,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
 
   return (
     <div className="cols">
-      <Card title="Company" saved={saved} actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setEditing(true); }}>Edit</button>}>
+      <Card title="Company" saved={saved} actions={!editing && <button className="btn btn--ghost" onClick={() => { setF(initial()); setBase(live); setEditing(true); }}>Edit</button>}>
         {!editing ? (
           <dl className="dl">
             {fields.map(([k, label]) => <Row key={k} label={label} value={t[k] as string} />)}
@@ -224,6 +246,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
             <div className="grid">
               {fields.map(([k, label, hint]) => (
                 <Field key={k} label={label} required={k === "name" || k === "ownerName" || k === "ownerEmail"} changed={k !== "vatNumber" && dirty.changed(k)}
+                       note={k === "vatNumber" ? undefined : note(k)}
                        hint={k === "orgNumber" ? "10 digits, the dash is added for you" : k === "vatNumber" ? "SE + org. number + 01, filled in from the org. number" : hint}
                        error={a.fields[k] ?? (f[k] === ((t[k] as string) ?? "") ? failure[k] : undefined) ?? (k === "orgNumber" ? orgNumberProblem(f.orgNumber) : undefined)}>
                   {k === "contactPhone" || k === "ownerPhone" ? (
@@ -238,10 +261,10 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
                   )}
                 </Field>
               ))}
-              <Field label="Street" changed={dirty.changed("street")} error={a.fields["address.street"]}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
-              <Field label="Postal code" changed={dirty.changed("postalCode")} error={a.fields["address.postalCode"]}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
-              <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
-              <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+              <Field label="Street" changed={dirty.changed("street")} error={a.fields["address.street"]} note={note("street")}><input className="input" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></Field>
+              <Field label="Postal code" changed={dirty.changed("postalCode")} error={a.fields["address.postalCode"]} note={note("postalCode")}><input className="input mono" {...POSTAL_CODE_INPUT} value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: formatPostalCode(e.target.value) })} /></Field>
+              <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]} note={note("city")}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
+              <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes} note={note("notes")}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
             <div className="row">
               <SaveButton label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
@@ -256,7 +279,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
           <dl className="dl">
             <Row label="Owner" value={t.ownerName && `${t.ownerName} · ${t.ownerEmail}`} />
             <Row label="Plan" value={`${t.planId} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
-            <Row label="Features" value={Object.entries(t.entitlements.features).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
+            <Row label="Features" value={Object.entries(contractFeatures(t.entitlements.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
             <Row label="Payments" value={t.stripe?.chargesEnabled ? "Ready" : t.stripe?.accountId ? "Stripe setup not finished" : "No Stripe account yet"} />
             <Row label="Website" value={t.primaryDomain} />
             <Row label="Users" value={String(detail.userCount)} />
@@ -278,7 +301,6 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
   const t = detail.tenant;
   const [edit, setEdit] = useState<Location | "new" | null>(null);
   const [del, setDel] = useState<Location | null>(null);
-  const [term, setTerm] = useState<Location | null>(null);
   const [saved, flashSaved] = useFlash();
   const [savedLabel, setSavedLabel] = useState("Saved");
   const changed = (label: string) => { setSavedLabel(label); flashSaved(); onChanged(); };
@@ -292,30 +314,25 @@ function Locations({ detail, onChanged, goPlan }: { detail: TenantDetail; onChan
         </Notice>
       )}
       <table className="table">
-        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th>Card terminals</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Address</th><th>Contact</th><th>Stripe override</th><th /></tr></thead>
         <tbody>
           {detail.locations.map((l) => (
             <tr key={l.locationId}>
-              <td className="strong">{l.name}<div className="muted small mono">{l.locationId}</div></td>
-              <td>{l.address}</td>
-              <td className="small">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
-              <td className="small mono">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
-              <td className="small">
-                {l.terminal ? <span className="status status--active">Enabled</span> : <span className="muted">Off</span>}
-                <button className="btn btn--ghost btn--small" style={{ marginLeft: 6 }} onClick={() => setTerm(l)}>Manage</button>
-              </td>
+              <td className="strong cell-title">{l.name}<div className="muted small mono">{l.locationId}</div></td>
+              <td className="cell-stack" data-label="Address">{l.address}</td>
+              <td className="small cell-stack" data-label="Contact">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="muted">-</span>}</td>
+              <td className="small mono" data-label="Stripe override">{l.stripeAccountId ?? <span className="muted">tenant's</span>}</td>
               <td className="right">
                 <button className="btn btn--ghost btn--small" onClick={() => setEdit(l)}>Edit</button>
                 <button className="btn btn--ghost btn--small danger" onClick={() => setDel(l)}>Delete</button>
               </td>
             </tr>
           ))}
-          {detail.locations.length === 0 && <tr><td colSpan={6} className="empty">No locations yet.</td></tr>}
+          {detail.locations.length === 0 && <tr><td colSpan={5} className="empty">No locations yet.</td></tr>}
         </tbody>
       </table>
       {edit && <LocationModal tenant={t} location={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); changed(edit === "new" ? "Added" : "Saved"); }} />}
       {del && <DeleteLocationModal tenant={t} location={del} onClose={() => setDel(null)} onDone={() => { setDel(null); changed("Deleted"); }} />}
-      {term && <TerminalModal tenant={t} location={term} goPlan={goPlan} onClose={() => { setTerm(null); onChanged(); }} />}
     </Card>
   );
 }
@@ -350,7 +367,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
     const res = await a.run(async () => {
       await api.setPlan(tenant.tenantId, {
         planId: tenant.planId,
-        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: tenant.entitlements.features,
+        overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: contractFeatures(tenant.entitlements.features),
                      ...(tenant.entitlements.limits ? { limits: tenant.entitlements.limits } : {}) },
       });
       return api.createLocation(tenant.tenantId, compact(f) as LocationInput);
@@ -379,7 +396,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
           <Field label="Phone" changed={!!location && dirty.changed("phone")} error={a.fields.phone}><PhoneInput className="input" value={f.phone ?? ""} onChange={(v) => setF({ ...f, phone: v })} /></Field>
           <Field label="Email" changed={!!location && dirty.changed("email")} error={a.fields.email}><input className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           <Field label="Separate Stripe account" wide changed={!!location && dirty.changed("stripeAccountId")} error={a.fields.stripeAccountId}
-                 hint="Only if this location is a different company (own org. number). Empty = the customer's account.">
+                 hint="Only for a different company. Empty = the customer's account.">
             <input className="input mono" value={f.stripeAccountId} onChange={(e) => setF({ ...f, stripeAccountId: e.target.value })} placeholder="acct_…" />
           </Field>
         </div>
@@ -424,16 +441,16 @@ function Users({ tenant }: { tenant: Tenant }) {
           <tbody>
             {(users.data ?? []).map((u) => (
               <tr key={u.cognitoSub}>
-                <td>{u.name}<div className="muted small">{u.email}</div></td>
-                <td>{u.role === "owner_user" ? "Owner" : "Staff"}</td>
-                <td>{u.status ?? "active"}</td>
-                <td className="small">{fmtDate(u.createdAt)}</td>
+                <td className="cell-title">{u.name}<div className="muted small">{u.email}</div></td>
+                <td className="cell-fact" data-label="Role">{u.role === "owner_user" ? "Owner" : "Staff"}</td>
+                <td className="cell-fact" data-label="Status">{u.status ?? "active"}</td>
+                <td className="small cell-fact" data-label="Since">{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
-            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet - the owner invite is sent during setup.</td></tr>}
+            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
           </tbody>
         </table>
-        <p className="muted small">Owners invite their own staff from the restaurant admin app.</p>
+        <p className="muted small">Staff are invited from the admin app.</p>
       </Card>
       <Card title="Invite another owner">
         <form noValidate onSubmit={async (e) => {
@@ -457,7 +474,7 @@ function Users({ tenant }: { tenant: Tenant }) {
 export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const plans = useLoad(() => api.plans());
   const [planId, setPlanId] = useState(tenant.planId);
-  const [maxLocations, setMax] = useState(String(tenant.entitlements.maxLocations));
+  const [maxLocations, setMax] = useState(tenant.entitlements.maxLocations);
   const [features, setFeatures] = useState(tenant.entitlements.features);
   // Every contract limit as input text: the plan's, or the tenant's own (incl. overrides).
   const limitsOf = (p?: { limits?: Tenant["entitlements"]["limits"] }) =>
@@ -465,76 +482,111 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const [limits, setLimits] = useState(limitsOf(tenant.entitlements));
   const ownPrice = tenant.billing?.priceSek;
   const [price, setPrice] = useState(ownPrice != null ? String(ownPrice) : "");
+  // The Free plan's period: as saved, or 3 months for a new one (the plan after it to pick).
+  const onFree = tenant.planId === FREE_PLAN_ID;
+  const savedFree = onFree ? savedFreeForm(tenant.billing) : null;
+  const [free, setFree] = useState(() => savedFree ?? newFreeForm());
+  const isFree = planId === FREE_PLAN_ID;
+  // A preset counts from the day Free began (or today, onto Free); an unchanged one keeps its saved end.
+  const freeStart = onFree && tenant.billing?.freeSince ? tenant.billing.freeSince : stockholmToday();
+  const freeUntil = formUntil(free, freeStart, savedFree);
+  const [tried, setTried] = useState(false);
+  const freeErrs = isFree && tried ? freeProblems(free, price) : {};
   const a = useAction();
   const plan = plans.data?.find((p) => p.planId === planId);
   const current = plans.data?.find((p) => p.planId === tenant.planId);
+  // On Free the price field is the price after it: own, else the next plan's.
+  const thenPlan = plans.data?.find((p) => p.planId === free.thenPlanId);
+  const savedThen = plans.data?.find((p) => p.planId === savedFree?.thenPlanId);
+  const priceText = (p?: { priceSek?: number | null }) => (p?.priceSek != null ? String(p.priceSek) : "");
   // What is saved: the tenant's plan, limits (incl. overrides) and price (own, else the plan's).
-  const savedPrice = ownPrice != null ? String(ownPrice) : current?.priceSek != null ? String(current.priceSek) : "";
+  const savedPrice = ownPrice != null ? String(ownPrice) : priceText(onFree ? savedThen : current);
   const dirty = useDirty(
-    { planId, maxLocations, features, price, ...limits },
-    { planId: tenant.planId, maxLocations: String(tenant.entitlements.maxLocations), features: tenant.entitlements.features,
-      price: savedPrice, ...limitsOf(tenant.entitlements) },
+    { planId, maxLocations, features, price, ...limits, ...(isFree ? { freePreset: free.preset ?? "", freeThen: free.thenPlanId } : {}) },
+    { planId: tenant.planId, maxLocations: tenant.entitlements.maxLocations, features: contractFeatures(tenant.entitlements.features),
+      price: savedPrice, ...limitsOf(tenant.entitlements),
+      ...(isFree ? { freePreset: savedFree?.preset ?? "", freeThen: savedFree?.thenPlanId ?? "" } : {}) },
   );
 
   useEffect(() => {
     // Back on the current plan: show the tenant's real limits (incl. overrides)
     // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {
-      setMax(String(tenant.entitlements.maxLocations));
+      setMax(tenant.entitlements.maxLocations);
       setFeatures(tenant.entitlements.features);
       setLimits(limitsOf(tenant.entitlements));
-      setPrice(ownPrice != null ? String(ownPrice) : plan?.priceSek != null ? String(plan.priceSek) : "");
+      setPrice(ownPrice != null ? String(ownPrice) : priceText(plan?.free ? thenPlan : plan));
     } else if (plan) {
-      setMax(String(plan.maxLocations));
+      // Onto Free: never below the locations in use (Free has no fixed limit).
+      setMax(plan.free ? Math.max(defaultLocations(plan), tenant.locationCount) : defaultLocations(plan));
       setFeatures(plan.features);
       setLimits(limitsOf(plan));
-      setPrice(plan.priceSek != null ? String(plan.priceSek) : "");
+      // Onto Free: the own price stays as the price after it.
+      setPrice(plan.free ? (ownPrice != null ? String(ownPrice) : priceText(thenPlan)) : priceText(plan));
     }
   }, [planId, plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(force = false) {
+    setTried(true);
+    if (isFree && Object.keys(freeProblems(free, price)).length) return;
     const overrides: Record<string, unknown> = {};
-    if (plan && Number(maxLocations) !== plan.maxLocations) overrides.maxLocations = Number(maxLocations);
-    const changed = plan ? Object.fromEntries(Object.entries(features).filter(([k, v]) => plan.features[k] !== v)) : {};
+    // On Free the number is always sent, so the api records it as chosen (billing.freeLocationsChosen).
+    if (plan && (plan.free || maxLocations !== plan.maxLocations)) overrides.maxLocations = maxLocations;
+    const changed = plan ? Object.fromEntries(Object.entries(contractFeatures(features)).filter(([k, v]) => plan.features[k] !== v)) : {};
     if (Object.keys(changed).length) overrides.features = changed;
     const changedLimits = plan ? LIMIT_KEYS.filter((k) => limits[k] !== limitValue(k, plan.limits)) : [];
     if (changedLimits.length) overrides.limits = Object.fromEntries(changedLimits.map((k) => [k, Number(limits[k])]));
-    const body: { planId: string; overrides: Record<string, unknown>; force: boolean; priceSek?: number } = { planId, overrides, force };
+    const body: Parameters<typeof api.setPlan>[1] = { planId, overrides, force };
+    if (isFree) body.free = freeInput(free);
     if (price !== "") body.priceSek = Number(price);
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
 
   return (
-    <Card title="Plan & limits">
-      <p className="muted small">Limits take effect immediately - e.g. a customer opening a second restaurant: raise "Locations allowed", then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is.</p>
+    <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise Locations, then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
       <div className="plans">
         {(plans.data ?? []).map((p) => (
           <label key={p.planId} className={`plan${planId === p.planId ? " plan--on" : ""}${planId === p.planId && dirty.changed("planId") ? " plan--changed" : ""}`}>
             <input type="radio" checked={planId === p.planId} onChange={() => setPlanId(p.planId)} />
-            <strong>{p.name}</strong><span>{p.maxLocations} location(s)</span>
+            <strong>{p.name}</strong><span>{planLine(p)}</span>
           </label>
         ))}
       </div>
+      {isFree && (
+        <FreeFields value={free} plans={plans.data ?? []} until={freeUntil}
+                    onChange={(next) => {
+                      // A price that was the next plan's (or none) follows the next plan.
+                      const nextThen = plans.data?.find((p) => p.planId === next.thenPlanId);
+                      if (next.thenPlanId !== free.thenPlanId && (price === "" || price === priceText(thenPlan))) setPrice(priceText(nextThen));
+                      setFree(next);
+                    }}
+                    errors={{ preset: a.fields["free.preset"] ?? a.fields["free.until"],
+                              thenPlanId: freeErrs.thenPlanId ?? a.fields["free.thenPlanId"], price: freeErrs.price ?? a.fields.priceSek }}
+                    changed={{ thenPlanId: dirty.changed("freeThen"), price: dirty.changed("price") }}
+                    price={{ value: price, onChange: setPrice }} />
+      )}
       <div className="grid">
-        <Field label="Locations allowed" changed={dirty.changed("maxLocations")} error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`}>
-          <input className="input" type="number" min={1} max={100} value={maxLocations} onChange={(e) => setMax(e.target.value)} />
-        </Field>
-        <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}
-               hint={plan?.priceSek != null ? `The plan's price is ${plan.priceSek} kr; a different amount is this customer's own price` : "Pick a plan"}>
-          <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
+        <LocationStepper value={maxLocations} onChange={setMax} changed={dirty.changed("maxLocations")}
+                         error={a.fields["overrides.maxLocations"]} hint={`In use: ${tenant.locationCount}`} />
+        {!isFree && (
+          <Field label="Monthly price, SEK ex VAT" changed={dirty.changed("price")} error={a.fields.priceSek}>
+            <input className="input mono" type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+          </Field>
+        )}
         {LIMIT_KEYS.map((k) => (
-          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}
-                 hint={`Used with ${featureLabel(LIMITS[k].feature)}. The plan's is ${limitValue(k, plan?.limits)}`}>
+          <Field key={k} label={LIMIT_LABELS[k]} changed={dirty.changed(k)} error={a.fields[`overrides.limits.${k}`]}>
             <input className="input" type="number" min={LIMITS[k].min} max={LIMITS[k].max} step={1} value={limits[k]}
                    onChange={(e) => setLimits({ ...limits, [k]: e.target.value })} />
           </Field>
         ))}
-        <div className={`field${dirty.changed("features") ? " field--changed" : ""}`}>
-          <span className="field__label">Features</span>
+        <div className={`field field--wide${dirty.changed("features") ? " field--changed" : ""}`}>
+          <div className="features__head">
+            <span className="field__label">Features</span>
+            <SelectAllFeatures keys={featureKeys()} features={features} onChange={setFeatures} />
+          </div>
           <div className="checks">
-            {featureKeys(plan?.features ?? {}, features).map((k) => (
+            {featureKeys().map((k) => (
               <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
                 <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {featureLabel(k)}
               </label>
@@ -542,7 +594,6 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
           </div>
         </div>
       </div>
-      {features.kassa && <Notice kind="warn">Kassa: turn it on for a paying restaurant only once fiskaly LIVE is on and the SKV 1509 declaration was sent at least 2 weeks ago.</Notice>}
       {belowCount ? (
         <Notice kind="warn">
           {(a.error as ApiError).message}
@@ -566,12 +617,7 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
   }, [stripeParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Card title="Stripe (Connect)">
-      <p className="muted small">
-        The restaurant gets its own Stripe account connected to your platform account - they're the merchant, money goes to them, and
-        they see everything in their own Stripe dashboard. No keys are exchanged. What's left after setup is Stripe's identity
-        and bank details form, which the owner fills in from their admin app (Settings → Payments) or via a link from here.
-      </p>
+    <Card title="Stripe (Connect)" info="The restaurant gets its own Stripe account connected to your platform account: they're the merchant, money goes to them, and they see everything in their own Stripe dashboard. No keys are exchanged. What's left after setup is Stripe's identity and bank details form, which the owner fills in from their admin app (Settings → Payments) or via a link from here.">
       {stripeParam === "refresh" && <Notice kind="warn">That onboarding link expired - create a new one.</Notice>}
       <dl className="dl">
         <Row label="Connected account" value={s.accountId} />
@@ -618,10 +664,10 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <tbody>
             {detail.zones.map((z) => (
               <tr key={z.domain}>
-                <td className="strong mono">{z.domain}
+                <td className="strong mono cell-title">{z.domain}
                   {z.statusDetail && <div className="small muted">{z.statusDetail}</div>}
                   {z.lastError && <div className="small error-text">{z.lastError}</div>}</td>
-                <td className="small">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
+                <td className="small" data-label="How">{z.mode === "register" ? <>Bought{z.price && <> · {money(z.price)}, renews {money(z.renewalPrice)}/yr</>}</>
                   : <>Connected{z.importedRecords !== undefined && <> · {z.importedRecords} records copied</>}</>}
                   <div className="muted">Registrar: {z.registrar === "route53" ? "Route 53 (ours)" : "their own"}</div>
                   {z.transfer && z.transfer.status !== "transferred" && (
@@ -629,9 +675,9 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
                       {z.transfer.statusDetail && <div className="muted">{z.transfer.statusDetail}</div>}
                       {z.transfer.error && <div className="error-text">{z.transfer.error}</div>}</div>
                   )}</td>
-                <td><Status value={z.status} /></td>
-                <td className="right small muted">{fmtDate(z.updatedAt ?? z.requestedAt)}
-                  {z.transferable && <div><button className="btn btn--small" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
+                <td className="cell-badge"><Status value={z.status} /></td>
+                <td className="right small muted" data-label="Updated">{fmtDate(z.updatedAt ?? z.requestedAt)}
+                  {z.transferable && <div><button className="row-action" onClick={() => setTransfer(z.domain)}>Transfer to Route 53</button></div>}</td>
               </tr>
             ))}
             {detail.zones.length === 0 && <tr><td colSpan={4} className="empty">None yet - <button className="link" onClick={() => setWizard(true)}>add a domain</button>.</td></tr>}
@@ -644,7 +690,7 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <NameServerBox key={z.domain} domain={z.domain} nameServers={z.nameServers!} />
         ))}
         {detail.zones.some((z) => z.status === "live") && (
-          <p className="small muted">Live domains: add them (and www.) to the Turnstile widget's hostnames in Cloudflare, or online booking won't work there.</p>
+          <p className="small muted">Add live domains (and www.) to Turnstile in Cloudflare.</p>
         )}
       </Card>
       <Card title="Website hostnames" saved={remove.done} savedLabel="Removing" actions={t.status === "active" && <RerunSetup tenant={t} running={detail.onboarding?.status === "RUNNING"} onDone={onChanged} />}>
@@ -659,10 +705,10 @@ function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged: () =>
           <tbody>
             {detail.domains.map((d) => (
               <tr key={d.domain}>
-                <td className="strong">{d.domain} {d.primary && <span className="tag">primary</span>}
+                <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
                   {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
-                <td>{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
-                <td><Status value={d.status} /></td>
+                <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
+                <td className="cell-badge"><Status value={d.status} /></td>
                 <td className="right">{d.kind === "custom" && d.status !== "removing" && (
                   <button className="btn btn--ghost btn--small danger" disabled={remove.busy}
                           onClick={async () => {
@@ -788,10 +834,13 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
           The customer stops using Booqy: all users are signed out and blocked, the website and its domains go offline,
           the website repo is archived and the subscription ends.
         </p>
-        <p>
-          <strong>Restore</strong> brings everything back until the retention period is over (90 days in production).
-          After that, or at once with <strong>Delete customer</strong>, the data and the website repo are deleted for good.
-          Catering documents are kept 7 years for bookkeeping, and their Stripe account stays theirs.
+        <p className="muted small">
+          Restorable for 90 days.{" "}
+          <InfoTip label="About offboarding">
+            <strong>Restore</strong> brings everything back until the retention period is over (90 days in production).
+            After that, or at once with <strong>Delete customer</strong>, the data and the website repo are deleted for good.
+            Catering documents are kept 7 years for bookkeeping, and their Stripe account stays theirs.
+          </InfoTip>
         </p>
         <Field label={`Type the slug "${tenant.slug}" to confirm`} error={a.fields.confirmSlug}>
           <input className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} />

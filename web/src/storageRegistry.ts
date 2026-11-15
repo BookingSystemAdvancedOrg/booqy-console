@@ -6,7 +6,7 @@
 // Swedish Electronic Communications Act, LEK 9 kap. 28 §). Add anything
 // for analytics or marketing and that has to be revisited first.
 //
-// Tokens live in sessionStorage (Amplify, auth.ts): readable by script on
+// Tokens live in localStorage (Amplify, auth.ts): readable by script on
 // this page, which is why the Console's CloudFront sends a strict CSP
 // (infrastructure network/cloudfront/platform-admin). A cookie-based
 // session would need a backend in front of the operator pool's SRP + MFA
@@ -22,13 +22,16 @@ export interface StorageEntry {
 export const THEME_KEY = "booqy-theme";
 export const SOUND_KEY = "booqy-sound";
 export const SOUND_VOLUME_KEY = "booqy-sound-volume";
+export const APP_HINT_KEY = "booqy-app-hint";
+export const GLASS_BACKDROP_KEY = "booqy-glass-backdrop";
+export const UPDATED_FLAG_KEY = "booqy-updated";
 
 export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: "CognitoIdentityServiceProvider.<client>.*",
-    kind: "sessionStorage",
+    kind: "localStorage",
     purpose: "Your sign-in (access, ID and refresh token, last user, clock drift), set by AWS Amplify.",
-    lifetime: "Until the tab closes; the refresh token expires after 8 hours",
+    lifetime: "30 days, removed when you sign out",
   },
   {
     name: THEME_KEY,
@@ -47,5 +50,23 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
     kind: "localStorage",
     purpose: "How loud the click sound is, 0-100 (Settings). Set only when you change it.",
     lifetime: "Until you clear the browser",
+  },
+  {
+    name: GLASS_BACKDROP_KEY,
+    kind: "localStorage",
+    purpose: "Which background you chose behind the glass on this device: a colour or \"your image\" (Settings, Appearance and sound). The picture itself is stored on the server under your operator account and is deleted when you remove it or your account. Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
+    lifetime: "Until you switch back or clear the browser",
+  },
+  {
+    name: APP_HINT_KEY,
+    kind: "localStorage",
+    purpose: "That the tip about the desktop app was already shown in this browser, so it appears only once.",
+    lifetime: "Until you clear the browser",
+  },
+  {
+    name: UPDATED_FLAG_KEY,
+    kind: "sessionStorage",
+    purpose: "Set for a moment when you reload for a new version, so the new page can say \"Updated\" once. Removed straight after.",
+    lifetime: "Until the page has reloaded",
   },
 ];

@@ -4,6 +4,7 @@ import type { DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, Support
 import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
+import { Select } from "./Select";
 
 type Path = "choose" | "buy" | "connect" | "cname";
 
@@ -94,11 +95,11 @@ function Buy({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => void; o
               <tr key={o.domain}>
                 <td className="strong mono">{o.domain}
                   {o.verificationRequired && o.available && <div className="small muted">Needs registreringsbevis</div>}</td>
-                <td>{o.available ? money(o.price) : "-"}</td>
-                <td>{o.available ? money(o.renewalPrice) : "-"}</td>
+                <td className="cell-fact" data-label="First year">{o.available ? money(o.price) : "-"}</td>
+                <td className="cell-fact" data-label="Then / year">{o.available ? money(o.renewalPrice) : "-"}</td>
                 <td className="right">
                   {o.available && o.sellable
-                    ? <button className="btn btn--small" onClick={() => setPick(o)} disabled={!o.price}>Choose</button>
+                    ? <button className="row-action" onClick={() => setPick(o)} disabled={!o.price}>Choose</button>
                     : <span className="small muted">{o.sellable ? "Taken" : "Not sold here"}</span>}
                 </td>
               </tr>
@@ -400,13 +401,13 @@ function Connect({ tenant, onBack, onDone }: { tenant: Tenant; onBack: () => voi
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className={r.skip ? "muted" : undefined}>
-                    <td><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
+                    <td data-label="Copy"><input type="checkbox" checked={r.include && !r.skip} disabled={!!r.skip}
                                onChange={(e) => update(r.id, { include: e.target.checked })} aria-label={`Copy ${r.name} ${r.type}`} /></td>
-                    <td><input className="input mono" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
-                    <td><select className="input" value={r.type} disabled={!!r.skip} onChange={(e) => update(r.id, { type: e.target.value })}>
-                      {(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => <option key={t}>{t}</option>)}</select></td>
-                    <td><input className="input mono ttl" value={r.ttl} disabled={!!r.skip} onChange={(e) => update(r.id, { ttl: Number(e.target.value) || 0 })} /></td>
-                    <td>{r.skip ? <span className="small">{r.skip}</span>
+                    <td className="cell-title"><input className="input mono" aria-label="Name" value={r.name} disabled={!!r.skip} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
+                    <td data-label="Type"><Select aria-label="Type" value={r.type} disabled={!!r.skip} onChange={(v) => update(r.id, { type: v })}
+                      options={(TYPES.includes(r.type) ? TYPES : [r.type, ...TYPES]).map((t) => ({ value: t, label: t }))} /></td>
+                    <td data-label="TTL"><input className="input mono ttl" value={r.ttl} disabled={!!r.skip} onChange={(e) => update(r.id, { ttl: Number(e.target.value) || 0 })} /></td>
+                    <td data-label="Value(s)">{r.skip ? <span className="small">{r.skip}</span>
                       : <textarea className="input mono" rows={Math.min(4, Math.max(1, r.valuesText.split("\n").length))}
                                   value={r.valuesText} onChange={(e) => update(r.id, { valuesText: e.target.value })} />}</td>
                     <td>{!r.skip && <button type="button" className="btn btn--ghost btn--small" onClick={() => setRows(rows.filter((x) => x.id !== r.id))}>✕</button>}</td>

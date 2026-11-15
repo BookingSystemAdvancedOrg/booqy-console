@@ -5,6 +5,9 @@ import type { OutboxMessage, OutboxSummary } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
+import { RowButton } from "../components/RowButton";
+import { InfoTip } from "../components/StepFlow";
+import { usePagedList } from "../paging";
 
 /** Every http(s) link in the message - the magic links are what you test. */
 function linksOf(m: OutboxMessage): string[] {
@@ -68,6 +71,10 @@ function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+const outboxKey = (m: OutboxSummary) => m.id;
+/** Outbox ids start with the inverted time, so a smaller one is newer (listed first). */
+const newerMessage = (a: OutboxSummary, b: OutboxSummary) => a.id < b.id;
+
 /**
  * Dev mail outbox: what the platform would have emailed (and a copy of each
  * SMS) while the sending domain isn't verified in SES. Saved by the
@@ -75,25 +82,15 @@ function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
  */
 export default function OutboxPage({ embedded = false }: { embedded?: boolean }) {
   const { data, error, loading, reload } = useLoad(() => api.outbox());
-  const [more, setMore] = useState<OutboxSummary[]>([]);
-  const [next, setNext] = useState<string | null>(null);
+  // Live: a quiet refetch of the first page keeps the older pages already loaded (and the scroll).
+  const { rows, cursor: next, append } = usePagedList(data?.messages, data?.next ?? null, outboxKey, newerMessage);
   const [selected, setSelected] = useState<string | null>(null);
   const paging = useAction();
-
-  useEffect(() => {
-    setMore([]);
-    setNext(data?.next ?? null);
-  }, [data]);
-
-  const rows = [...(data?.messages ?? []), ...more];
 
   const loadMore = async () => {
     if (!next) return;
     const page = await paging.run(() => api.outbox(next));
-    if (page) {
-      setMore((m) => [...m, ...page.messages]);
-      setNext(page.next ?? null);
-    }
+    if (page) append(page.messages, page.next ?? null);
   };
 
   return (
@@ -102,8 +99,11 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
         <div>
           {embedded ? <h2>Mail outbox</h2> : <h1>Mail outbox</h1>}
           <p className="muted">
-            Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS -
-            saved instead of sent until the sending domain is verified. Kept 30 days.
+            Kept 30 days{" "}
+            <InfoTip label="About the outbox">
+              Emails the platform would have sent (news from the Mail page included), plus a copy of every SMS,
+              saved instead of sent until the sending domain is verified.
+            </InfoTip>
           </p>
         </div>
         <div className="row">
@@ -119,19 +119,19 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
 
       {loading && !data ? <SkelPage label="Loading the outbox"><SkelTable rows={6} cols={4} /></SkelPage> : data?.enabled && (
         <div className={`outbox${selected ? " outbox--reading" : ""}`}>
-          <div className="table-wrap">
+          <div className="table-wrap" data-help="outbox:list">
             <table className="table">
               <thead>
                 <tr><th>Saved</th><th>Type</th><th>To</th><th>Subject / text</th></tr>
               </thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet. Make a booking or an order in dev.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={4} className="empty">Nothing yet.</td></tr>}
                 {rows.map((r) => (
                   <tr key={r.id} className={`row-link${selected === r.id ? " selected" : ""}`} {...rowAction(() => setSelected(r.id))}>
-                    <td className="nowrap">{fmtDate(r.at)}</td>
-                    <td>{r.channel === "sms" ? "SMS" : "Email"}</td>
-                    <td>{r.to}</td>
-                    <td>{r.subject}</td>
+                    <td className="nowrap" data-label="Saved">{fmtDate(r.at)}</td>
+                    <td data-label="Type">{r.channel === "sms" ? "SMS" : "Email"}</td>
+                    <td className="cell-stack" data-label="To">{r.to}</td>
+                    <td className="cell-title"><RowButton onClick={() => setSelected(r.id)} current={selected === r.id}>{r.subject || "(no subject)"}</RowButton></td>
                   </tr>
                 ))}
               </tbody>

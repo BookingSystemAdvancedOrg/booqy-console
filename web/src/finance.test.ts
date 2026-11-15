@@ -1,39 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
-  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtPct, fmtSek, grainFor, invoiceStatus, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
+  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtPct, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "./finance";
 import type { FinancePoint, FinanceTenantRow } from "./types";
 
 const wed = new Date(2026, 9, 21); // Wednesday 21 October 2026
 
-describe("billing periods (25th to 24th)", () => {
-  it("lists the current period first, then the ones before it", () => {
+describe("billing periods (calendar months)", () => {
+  it("lists the current month first, then the ones before it", () => {
     const choices = periodChoices(3, wed);
     expect(choices).toEqual([
-      { from: "2026-09-25", to: "2026-10-24", current: true },
-      { from: "2026-08-25", to: "2026-09-24", current: false },
-      { from: "2026-07-25", to: "2026-08-24", current: false },
+      { from: "2026-10-01", to: "2026-10-31", current: true },
+      { from: "2026-09-01", to: "2026-09-30", current: false },
+      { from: "2026-08-01", to: "2026-08-31", current: false },
     ]);
   });
-  it("the period in progress runs from the 25th to today", () => {
-    expect(spanRange("2026-09-25", 1, wed)).toEqual({ from: "2026-09-25", to: "2026-10-21" });
-    // 25 June to 7 July, the owner's example
-    expect(spanRange("2026-06-25", 1, new Date(2026, 6, 7))).toEqual({ from: "2026-06-25", to: "2026-07-07" });
+  it("the month in progress runs from the 1st to today", () => {
+    expect(spanRange("2026-10-01", 1, wed)).toEqual({ from: "2026-10-01", to: "2026-10-21" });
+    expect(spanRange("2026-07-01", 1, new Date(2026, 6, 7))).toEqual({ from: "2026-07-01", to: "2026-07-07" });
   });
-  it("a past period is shown whole, and spans go back from the picked period", () => {
-    expect(spanRange("2026-07-25", 1, wed)).toEqual({ from: "2026-07-25", to: "2026-08-24" });
-    expect(spanRange("2026-09-25", 3, wed)).toEqual({ from: "2026-07-25", to: "2026-10-21" });
-    expect(spanRange("2026-09-25", 12, wed).from).toBe("2025-10-25");
+  it("a past month is shown whole, and spans go back from the picked month", () => {
+    expect(spanRange("2026-08-01", 1, wed)).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+    expect(spanRange("2026-10-01", 3, wed)).toEqual({ from: "2026-08-01", to: "2026-10-21" });
+    expect(spanRange("2026-10-01", 12, wed).from).toBe("2025-11-01");
   });
   it("crosses the year and February", () => {
-    expect(periodBefore("2026-01-25")).toEqual({ from: "2025-12-25", to: "2026-01-24" });
-    expect(periodBefore("2026-03-25")).toEqual({ from: "2026-02-25", to: "2026-03-24" });
+    expect(periodBefore("2026-01-01")).toEqual({ from: "2025-12-01", to: "2025-12-31" });
+    expect(periodBefore("2026-03-01")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(periodBefore("2028-03-01")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
   });
-  it("compares a period in progress with the same days of the period before", () => {
-    const now = spanRange("2026-09-25", 1, wed);
-    expect(previousSpanRange(now, 1)).toEqual({ from: "2026-08-25", to: "2026-09-20" });   // 27 days each
-    expect(daysBetween("2026-08-25", "2026-09-20")).toBe(daysBetween(now.from, now.to));
-    expect(previousSpanRange({ from: "2026-07-25", to: "2026-10-21" }, 3).from).toBe("2026-04-25");
+  it("compares a month in progress with the same days of the month before", () => {
+    const now = spanRange("2026-10-01", 1, wed);
+    expect(previousSpanRange(now, 1)).toEqual({ from: "2026-09-01", to: "2026-09-21" });   // 21 days each
+    expect(daysBetween("2026-09-01", "2026-09-21")).toBe(daysBetween(now.from, now.to));
+    expect(previousSpanRange({ from: "2026-08-01", to: "2026-10-21" }, 3).from).toBe("2026-05-01");
   });
 });
 
@@ -76,7 +76,7 @@ function row(name: string, marginSek: number, extra: Partial<FinanceTenantRow> =
     tenantId: name, name, slug: name.toLowerCase(), status: "active", billingStatus: "active", mrrSek: 0, revenueSek: 0,
     collectedSek: 0, creditedSek: 0, outstandingSek: 0, costSek: 0, costSplitSek: { baseline: 0, requests: 0, email: 0, sms: 0 },
     marginSek, marginPct: null, bookings: 0, orders: 0, requests: 0, emails: 0, sms: 0, marketingEmails: 0,
-    smsParts: 0, smsRevenueSek: 0, smsCostSek: 0, smsMarginSek: 0,
+    smsParts: 0, smsCostSek: 0,
     costPerBookingSek: null, costPerOrderSek: null, activeDays: 0, invoiceCount: 0, ...extra,
   };
 }
@@ -118,16 +118,20 @@ describe("rows", () => {
   });
 });
 
-describe("billing periods from the 25th to the 24th", () => {
+describe("billing periods are calendar months", () => {
   it("finds the period of a day and the next one", async () => {
     const { periodOf, nextPeriod, periodText, endDateFor } = await import("./finance");
-    expect(periodOf("2026-09-10")).toEqual({ start: "2026-08-25", end: "2026-09-24" });
-    expect(periodOf("2026-09-25")).toEqual({ start: "2026-09-25", end: "2026-10-24" });
-    expect(periodOf("2026-01-03")).toEqual({ start: "2025-12-25", end: "2026-01-24" });
-    expect(nextPeriod("2026-09-24")).toEqual({ start: "2026-09-25", end: "2026-10-24" });
+    expect(periodOf("2026-09-10")).toEqual({ start: "2026-09-01", end: "2026-09-30" });
+    expect(periodOf("2026-09-25")).toEqual({ start: "2026-09-01", end: "2026-09-30" });
+    expect(periodOf("2026-01-03")).toEqual({ start: "2026-01-01", end: "2026-01-31" });
+    expect(nextPeriod("2026-09-30")).toEqual({ start: "2026-10-01", end: "2026-10-31" });
     expect(periodText("2026-08-25", "2026-09-24")).toBe("25 aug till 24 sep 2026");
-    expect(endDateFor("trial", 3, "2026-10-21")).toBe("2026-10-24");
-    expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-24");
+    expect(endDateFor("trial", 3, "2026-10-21")).toBe("2026-10-31");
+    expect(endDateFor("subscription", 3, "2026-10-21")).toBe("2027-01-31");
+    const { monthOf, firstInvoiceText } = await import("./finance");
+    expect(monthOf("2026-02-10")).toEqual({ start: "2026-02-01", end: "2026-02-28" });
+    expect(firstInvoiceText("2026-11-25", "25 Nov 2026")).toBe(
+      "First invoice on 25 Nov 2026, for 25 nov till 30 nov 2026 (pro rata); then on the 1st of every month, in advance.");
   });
 });
 
@@ -138,7 +142,7 @@ describe("CSV export", () => {
       tenantId: "t1", name: "Roma; Södermalm", slug: "roma", legalName: 'Roma "AB"', orgNumber: "556000-0001", status: "active",
       billingStatus: "active", mrrSek: 990, revenueSek: 1234.5, collectedSek: 1000, creditedSek: 0, outstandingSek: 234.5, costSek: 80.25,
       costSplitSek: { baseline: 50, requests: 10.25, email: 0, sms: 20 }, marginSek: 1154.25, marginPct: 93.51, bookings: 12, orders: 3,
-      requests: 900, emails: 15, sms: 10, marketingEmails: 0, smsParts: 12, smsRevenueSek: 8.4, smsCostSek: 5, smsMarginSek: 3.4,
+      requests: 900, emails: 15, sms: 10, marketingEmails: 0, smsParts: 12, smsCostSek: 5,
       costPerBookingSek: 6.69, costPerOrderSek: null, activeDays: 30, invoiceCount: 1,
     } as unknown as FinanceTenantRow;
     const csv = customersCsv([row]);
@@ -149,7 +153,7 @@ describe("CSV export", () => {
     expect(csv.endsWith("\r\n")).toBe(true);
     const day = { day: "2026-10-01", invoicedSek: 0, paidSek: 0, costSek: 3.456, mrrSek: 990, bookings: 1, orders: 0, requests: 5,
                   activeTenants: 1 } as FinancePoint;
-    expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,46;990;1;0;5;1;;");
+    expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,46;990;1;0;5;1;");
     expect(csvName("daily", { from: "2026-09-25", to: "2026-10-24" })).toBe("booqy-finance-daily-2026-09-25-2026-10-24.csv");
   });
 });
@@ -158,6 +162,10 @@ describe("invoice status for the operator", () => {
   it("calls an open invoice past its due date overdue", () => {
     expect(invoiceStatus({ status: "open", daysLate: 0 })).toBe("open");
     expect(invoiceStatus({ status: "open", daysLate: 3 })).toBe("overdue");
+    // uncollectible after the last card retry is still owed, so overdue too
+    expect(isOverdue({ status: "uncollectible", daysLate: 20 })).toBe(true);
+    expect(isOverdue({ status: "open", daysLate: 0 })).toBe(false);
+    expect(isOverdue({ status: "paid", daysLate: 5 })).toBe(false);
     expect(invoiceStatus({ status: "paid", daysLate: 3 })).toBe("paid");
   });
 

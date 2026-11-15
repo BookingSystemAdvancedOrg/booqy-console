@@ -15,7 +15,28 @@ export interface Plan {
   limits?: Limits;
   /** Monthly price excluding VAT (the plan's default; a customer can have their own). */
   priceSek?: number | null;
+  /** The Free plan: no monthly charge, Growth's features. */
+  free?: boolean;
 }
+
+/** The Free plan's period: until = the last free day (null = no end date), then the plan after it. */
+export interface FreePeriod {
+  until: string | null;
+  since?: string | null;
+  switchOn?: string | null;
+  thenPlanId: string;
+  thenPlanName?: string | null;
+  thenPriceSek?: number | null;
+  /** thenPriceSek is the customer's own price (kept while on Free). */
+  thenOwnPrice?: boolean;
+  noticeSentFor?: string | null;
+}
+
+/** What PUT .../plan and the New customer form send with planId "free":
+ * a preset (the end date computed by the API) or, for an older customer, the date as saved. */
+export type FreeInput =
+  | { preset: "until_changed" | "3m" | "6m"; thenPlanId?: string }
+  | { until: string | null; thenPlanId: string };
 
 export type BillingTerms = "trial" | "subscription";
 
@@ -71,7 +92,8 @@ export interface Tenant {
   purgeAt?: string;
   purgeStartedAt?: string;
   purgedAt?: string;
-  billing?: Partial<Billing> & { customerId?: string };
+  billing?: Omit<Partial<Billing>, "free"> & { customerId?: string; freeUntil?: string; freeThenPlanId?: string;
+                                                         freeSince?: string; freePreset?: string };
 }
 
 export interface TenantSummary {
@@ -88,6 +110,8 @@ export interface TenantSummary {
   primaryDomain?: string;
   ownerEmail?: string;
   createdAt?: string;
+  /** On the Free plan: the last free day, null = no end date. */
+  freeUntil?: string | null;
 }
 
 export interface Location {
@@ -98,67 +122,7 @@ export interface Location {
   phone?: string;
   email?: string;
   stripeAccountId?: string;
-  terminal?: TerminalSetup;
   createdAt?: string;
-}
-
-export interface TerminalAddress {
-  line1: string;
-  postalCode: string;
-  city: string;
-  country?: string;
-}
-
-/** Stripe Terminal location of a restaurant location (on the restaurant's Stripe account). */
-export interface TerminalSetup {
-  locationId: string;
-  accountId: string;
-  displayName: string;
-  address: TerminalAddress;
-  enabledAt?: string;
-}
-
-export interface TerminalReader {
-  id: string;
-  label: string;
-  device_type: string;
-  status: "online" | "offline" | null;
-  serial_number?: string;
-  last_seen_at?: number;
-}
-
-/** A reader with the customer and location it belongs to (GET /platform/terminal/readers). */
-export interface FleetReader extends TerminalReader {
-  accountId: string;
-  tenantId: string;
-  tenantName?: string | null;
-  /** null: on the restaurant's account, but at a Terminal Location no Booqy location has. */
-  locationId: string | null;
-  locationName?: string | null;
-}
-
-export interface FleetLocation {
-  tenantId: string;
-  tenantName?: string | null;
-  tenantStatus?: string;
-  locationId: string;
-  locationName?: string | null;
-  terminalLocationId: string;
-  accountId: string;
-  readerCount: number;
-}
-
-export interface ReaderFleet {
-  readers: FleetReader[];
-  locations: FleetLocation[];
-  errors: { accountId: string; tenantId: string; tenantName?: string | null; message: string }[];
-}
-
-export interface TerminalState {
-  enabled: boolean;
-  inPlan: boolean;
-  terminal: TerminalSetup | null;
-  readers: TerminalReader[];
 }
 
 export type LocationInput = { name: string; address: string; phone?: string; email?: string; stripeAccountId?: string };
@@ -304,10 +268,12 @@ export interface NewTenantInput {
   senderName?: string;
   replyToEmail?: string;
   billing?: { terms: BillingTerms; priceSek?: number; startInvoicing?: boolean; startDate?: string;
-              collectionMethod?: "send_invoice" | "charge_automatically" };
+              collectionMethod?: "send_invoice" | "charge_automatically"; collectionPreference?: "card" | "invoice" };
   address?: Address;
   notes?: string;
   overrides?: { maxLocations?: number; features?: Features; limits?: Limits };
+  /** With planId "free": its end date (null = none) and the plan after it. */
+  free?: FreeInput;
   locations: LocationInput[];
 }
 
@@ -320,6 +286,8 @@ export interface OperatorAccount {
   enabled: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Presigned link to the operator's profile picture (1 h), or null. */
+  avatarUrl?: string | null;
 }
 
 /** Dev mail outbox (GET /platform/outbox) - dev only. */
@@ -416,24 +384,21 @@ export interface BillingPlan {
   planId?: string;
   name?: string;
   priceSek?: number | null;
+  free?: boolean;
 }
 
-/** What the next invoice (on the 25th, for the period 25th to 24th) would carry. */
+/** What the next invoice (on the 1st, for that calendar month in advance) would carry. */
 export interface InvoicePlan {
   periodStart: string;
   periodEnd: string;
   period: string;
   days: number;
   activeDays: number;
+  /** Days charged (the rest of the active days were free). */
+  billedDays?: number;
   monthlySek: number;
   feeSek: number;
   feeText: string;
-  smsParts: number;
-  smsMessages?: number;
-  smsByLocation?: Record<string, number>;
-  smsPriceSek: number;
-  smsSek: number;
-  smsText: string;
   totalSek: number;
   final: boolean;
   nothingToInvoice?: boolean;
@@ -453,13 +418,26 @@ export interface Billing {
   priceSek?: number | null;
   /** What they pay per period ex VAT (own price or the plan's). */
   monthlySek?: number | null;
-  /** The customer's own price per SMS part, or null for the default. */
-  smsPriceSek?: number | null;
-  /** The price per SMS part in force. */
-  smsPrice: number;
-  smsPriceDefaultSek: number;
+  /** On the Free plan: its period; null on any other plan. */
+  free?: FreePeriod | null;
+  /** How the next invoice is collected: the card (preference card and a card on file), else emailed. */
   collectionMethod: "send_invoice" | "charge_automatically";
+  /** card = charged automatically (default, emailed with 10 days until a card exists); invoice = emailed, 30 days. */
+  collectionPreference: "card" | "invoice";
   hasCard: boolean;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+  cardAddedAt?: string | null;
+  /** advance = calendar months on the 1st; arrears = the old 25th cycle until its closing invoice. */
+  cycle?: "advance" | "arrears";
+  /** The last day invoiced. */
+  paidThrough?: string | null;
+  /** Where invoices go (the billing email, else the owner's). */
+  billingEmail?: string | null;
+  reminderSteps?: number[];
+  finalNoticeDays?: number;
+  /** Booqy's own invoice details missing from the configuration. */
+  sellerMissing?: string[];
   pastDueSince?: string;
   autoSuspended: boolean;
   lastPaidAt?: string;
@@ -475,8 +453,8 @@ export interface Billing {
   plan: BillingPlan;
   legacySubscriptionId?: string | null;
   pendingSubscriptionId?: string | null;
-  /** The current period so far (SMS counted to date); null when nothing runs. */
-  nextInvoice: (InvoicePlan & { date: string; dueDate: string; smsSoFar: boolean }) | null;
+  /** The current period so far; null when nothing runs. */
+  nextInvoice: (InvoicePlan & { date: string; dueDate: string; kind?: "advance" | "closing" }) | null;
   /** Complete periods not invoiced yet (a missed run). */
   pendingPeriods: number;
   /** Earlier agreements that ended but are still on the next invoice (left and came back). */
@@ -509,7 +487,10 @@ export interface Invoice {
   lateFeeSek?: number | null;
   interestSek?: number | null;
   collectionMethod?: "send_invoice" | "charge_automatically" | null;
-  /** The period's lines, when the console built the invoice. */
+  /** advance (a month), closing (the switch from arrears), fees (reminder fee, förseningsersättning, interest), period (old). */
+  kind?: string | null;
+  reminderStep?: number | null;
+  /** The period's lines, when the console built the invoice; SMS only on invoices from before SMS were included. */
   feeSek?: number | null;
   smsParts?: number | null;
   smsSek?: number | null;
@@ -589,11 +570,11 @@ export interface FinanceKpis {
   requests: number;
   emails: number;
   sms: number;
-  /** SMS parts the restaurants are charged for, what that earns and the SMS share of the AWS bill. */
+  /** Customers on the Free plan (0 kr MRR). */
+  freeCustomers?: number;
+  /** SMS are included in the price: the parts sent and their share of the AWS bill (our cost). */
   smsParts: number;
-  smsRevenueSek: number;
   smsCostSek: number;
-  smsMarginSek: number;
 }
 
 export interface FinancePoint {
@@ -607,7 +588,6 @@ export interface FinancePoint {
   requests: number;
   activeTenants: number;
   smsParts?: number;
-  smsRevenueSek?: number;
 }
 
 export interface FinanceTenantRow {
@@ -636,9 +616,10 @@ export interface FinanceTenantRow {
   sms: number;
   marketingEmails: number;
   smsParts: number;
-  smsRevenueSek: number;
   smsCostSek: number;
-  smsMarginSek: number;
+  /** On the Free plan (MRR 0), with its last free day. */
+  free?: boolean;
+  freeUntil?: string | null;
   smsByType?: { booking: number; reminder: number; order: number; catering: number };
   costPerBookingSek: number | null;
   costPerOrderSek: number | null;
@@ -740,3 +721,22 @@ export interface SiteStatus {
     domain?: string;
   };
 }
+
+/** An error report from Booqy Admin (support-reports Lambda). Never holds tokens or form contents. */
+export type SupportReport = {
+  reportId: string;
+  tenantId: string;
+  tenantName: string | null;
+  userSub: string;
+  role: string | null;
+  code: string;
+  status: number;
+  path: string;
+  requestId: string | null;
+  appVersion: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  handled: boolean;
+  handledAt: string | null;
+  handledBy: string | null;
+};

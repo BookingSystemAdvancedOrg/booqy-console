@@ -1,0 +1,103 @@
+# Desktop installers (desktop/ in this repo).
+# Builds the installers on each OS's own runner and publishes
+# them to https://<domain>/downloads/ (dev: dev.booqy.se, prod: booqy.se)
+# through desktop-release-role (s3:PutObject only). Runs when desktop/
+# changes: the window shows the deployed web app, so web deploys need no new
+# installer, and macOS runner minutes are not spent on every push.
+name: Desktop installers
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-installers.yml'
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Which environment to build and publish
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-installers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BOOQY_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.env || (github.ref_name == 'main' && 'prod' || 'dev') }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    # ---- Signing: off until the owner buys certificates (desktop/README.md).
+    # env:
+    #   BOOQY_MAC_IDENTITY: ${{ secrets.BOOQY_MAC_IDENTITY }}
+    #   CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERT_P12_BASE64 || secrets.WIN_CERT_PFX_BASE64 }}
+    #   CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERT_PASSWORD || secrets.WIN_CERT_PASSWORD }}
+    #   APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+    #   APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      # The updater's version check, checksum and swap script (needs /bin/sh).
+      - if: runner.os != 'Windows'
+        run: npm test
+      - run: node build.mjs --env ${{ env.BOOQY_ENV }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            desktop/release/${{ env.BOOQY_ENV }}/*.dmg
+            desktop/release/${{ env.BOOQY_ENV }}/*.exe
+            desktop/release/${{ env.BOOQY_ENV }}/*.AppImage
+            desktop/release/${{ env.BOOQY_ENV }}/*.deb
+            desktop/release/${{ env.BOOQY_ENV }}/*.zip
+            desktop/release/${{ env.BOOQY_ENV }}/*.blockmap
+            desktop/release/${{ env.BOOQY_ENV }}/latest*.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Prod's role only trusts the "prod" environment (its protection rules apply).
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.env || (github.ref_name == 'main' && 'prod' || 'dev') }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Role and bucket for this environment
+        run: |
+          if [ "$BOOQY_ENV" = prod ]; then
+            echo "ROLE_ARN=arn:aws:iam::343695380960:role/desktop-release-role" >> "$GITHUB_ENV"
+            echo "BUCKET=desktop-downloads-343695380960" >> "$GITHUB_ENV"
+          else
+            echo "ROLE_ARN=arn:aws:iam::877653167825:role/dev-desktop-release-role" >> "$GITHUB_ENV"
+            echo "BUCKET=dev-desktop-downloads-877653167825" >> "$GITHUB_ENV"
+          fi
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: eu-north-1
+      - run: node desktop/publish.mjs --env "$BOOQY_ENV" --dir installers --bucket "$BUCKET"

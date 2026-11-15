@@ -1,9 +1,16 @@
-import { FormEvent, useState } from "react";
+import { Avatar } from "../components/Avatar";
+import { emailName, getMyAvatar, subscribeMyAvatar } from "../avatar";
+import { AvatarLightbox } from "../components/AvatarLightbox";
+import { rowAction } from "../components/rowLink";
+import { RowButton } from "../components/RowButton";
+import { RowActions } from "../components/RowActions";
+import { FormEvent, useState, useSyncExternalStore } from "react";
 import { api } from "../api";
 import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
 import type { OperatorAccount } from "../types";
 import { RefreshButton, SaveButton, useDirty } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
+import { InfoTip } from "../components/StepFlow";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
   if (!o.enabled) return { label: "Disabled", cls: "suspended" };
@@ -12,15 +19,18 @@ function state(o: OperatorAccount): { label: string; cls: string } {
 }
 
 export default function OperatorsPage({ me }: { me: string }) {
+  const myAvatar = useSyncExternalStore(subscribeMyAvatar, getMyAvatar, getMyAvatar);
   const { data, error, loading, reload } = useLoad(() => api.operators());
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<OperatorAccount | null>(null);
   const [deleting, setDeleting] = useState<OperatorAccount | null>(null);
+  const [viewing, setViewing] = useState<OperatorAccount | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const row = useAction();
 
   const rows = [...(data ?? [])].sort((a, b) => (a.username === me ? -1 : b.username === me ? 1 : a.email.localeCompare(b.email)));
   const activeCount = (data ?? []).filter((o) => o.enabled).length;
+  const avatarFor = (o: OperatorAccount) => (o.username === me ? (myAvatar.url ?? o.avatarUrl) : o.avatarUrl);
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     setDone(null);
@@ -36,7 +46,7 @@ export default function OperatorsPage({ me }: { me: string }) {
       <div className="page-head">
         <div>
           <h1>Operators</h1>
-          <p className="muted">People who can sign in to Booqy Console. Everyone here has the same rights.</p>
+          <p className="muted">Same rights for everyone</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
@@ -61,40 +71,53 @@ export default function OperatorsPage({ me }: { me: string }) {
                 const self = o.username === me;
                 const lastActive = o.enabled && activeCount <= 1;
                 return (
-                  <tr key={o.username}>
-                    <td className="strong">{o.name || "-"}{self && <span className="tag">you</span>}</td>
-                    <td>{o.email}</td>
-                    <td><span className={`status status--${s.cls}`}>{s.label}</span></td>
-                    <td className="muted small">{fmtDate(o.createdAt)}</td>
+                  // Every operator may edit every operator: the whole row opens Edit
+                  // (click, Enter or Space). The picture opens the lightbox and the
+                  // action buttons do their own thing (rowLink.ts skips buttons).
+                  <tr key={o.username} className="row-link operator-row" {...rowAction(() => setEditing(o))}>
+                    <td className="strong cell-title">
+                      <span className="operator-name">
+                        <button type="button" className="avatar-btn" aria-label={`Show the profile picture of ${o.name || o.email}`} onClick={() => setViewing(o)}>
+                          <Avatar url={avatarFor(o)} name={o.name} email={o.email} size="sm" />
+                        </button>
+                        <RowButton onClick={() => setEditing(o)} label={`Edit ${o.name || o.email}${self ? " (you)" : ""}`}>
+                          {o.name || <span className="operator-name__fallback" title="No name yet">{emailName(o.email)}</span>}
+                        </RowButton>
+                        {self && <span className="tag" aria-hidden="true">you</span>}
+                      </span>
+                    </td>
+                    <td className="cell-stack" data-label="Email">{o.email}</td>
+                    <td className="cell-badge"><span className={`status status--${s.cls}`}>{s.label}</span></td>
+                    <td className="muted small" data-label="Added">{fmtDate(o.createdAt)}</td>
                     <td className="right">
-                      <div className="row-actions">
-                        <button className="btn btn--small" onClick={() => setEditing(o)}>Edit</button>
+                      <RowActions label={`Actions for ${o.email}`}>
+                        <button className="row-action" onClick={() => setEditing(o)}>Edit</button>
                         {o.status === "FORCE_CHANGE_PASSWORD" && o.enabled && (
-                          <button className="btn btn--small" disabled={row.busy}
+                          <button className="row-action" disabled={row.busy}
                                   onClick={() => act(() => api.resendInvite(o.username), `Invite sent again to ${o.email}.`)}>
                             Resend invite
                           </button>
                         )}
                         {o.enabled ? (
-                          <button className="btn btn--small" disabled={row.busy || self || lastActive}
+                          <button className="row-action" disabled={row.busy || self || lastActive}
                                   title={self ? "You can't disable yourself" : lastActive ? "The last active operator" : undefined}
                                   onClick={() => act(() => api.updateOperator(o.username, { enabled: false }),
                                                      `${o.email} is disabled and signed out.`)}>
                             Disable
                           </button>
                         ) : (
-                          <button className="btn btn--small" disabled={row.busy}
+                          <button className="row-action" disabled={row.busy}
                                   onClick={() => act(() => api.updateOperator(o.username, { enabled: true }),
                                                      `${o.email} can sign in again.`)}>
                             Enable
                           </button>
                         )}
-                        <button className="btn btn--small danger" disabled={row.busy || self || lastActive}
+                        <button className="row-action row-action--danger" disabled={row.busy || self || lastActive}
                                 title={self ? "You can't delete yourself" : lastActive ? "The last active operator" : undefined}
                                 onClick={() => setDeleting(o)}>
                           Delete
                         </button>
-                      </div>
+                      </RowActions>
                     </td>
                   </tr>
                 );
@@ -111,6 +134,9 @@ export default function OperatorsPage({ me }: { me: string }) {
       {editing && (
         <EditOperator op={editing} onClose={() => setEditing(null)}
                       onSaved={async () => { setEditing(null); setDone("Saved."); await reload(); }} />
+      )}
+      {viewing && (
+        <AvatarLightbox url={avatarFor(viewing)} name={viewing.name} email={viewing.email} onClose={() => setViewing(null)} />
       )}
       {deleting && (
         <DeleteOperator op={deleting} onClose={() => setDeleting(null)}
@@ -134,8 +160,11 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
     <Modal title="Add operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <p className="muted small" style={{ margin: 0 }}>
-          They get an email with a temporary password. On first sign-in they choose their own password and set up an
-          authenticator app. They'll have the same rights as you, including managing operators.
+          Invite by email. Same rights as you.{" "}
+          <InfoTip label="About the invite">
+            They get an email with a temporary password. On first sign-in they choose their own password and set up an
+            authenticator app. They'll have the same rights as you, including managing operators.
+          </InfoTip>
         </p>
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
         <Field label="Name" required error={a.fields.name}>
@@ -165,10 +194,12 @@ function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: 
     <Modal title="Edit operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
-        <Field label="Name" required changed={dirty.dirty} error={a.fields.name}>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100} />
+        <Field label="Name" required changed={dirty.dirty} error={a.fields.name}
+               hint={undefined}>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100}
+                 placeholder={op.name ? undefined : "Add a name"} />
         </Field>
-        <Field label="Email" hint="The email is the sign-in name and can't be changed. Add a new operator instead.">
+        <Field label="Email" hint="Can't be changed">
           <input className="input" value={op.email} disabled />
         </Field>
         <div className="row">

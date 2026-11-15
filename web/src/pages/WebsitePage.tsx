@@ -1,4 +1,5 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { CtaButton, Disclosure } from "../components/ds";
 import { api } from "../api";
 import { BarLineChart, HBarChart, countTick } from "../components/charts";
 import { CountUp, Delta, useTrendPop } from "../components/motion";
@@ -14,6 +15,7 @@ import type { PageRow, VisitRow, WebsiteOverview } from "../website";
 import "./WebsitePage.css";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage } from "../components/Skeleton";
+import { InfoTip } from "../components/StepFlow";
 
 const PLACES = ["Countries", "Regions", "Cities"] as const;
 const TECH = ["Devices", "Browsers", "Operating systems", "Languages"] as const;
@@ -95,33 +97,23 @@ export default function WebsitePage() {
       ) : data && k && trends && (
         <>
           {empty && (
-            <Card title="No visits counted yet">
-              <p>
-                The figures come from booqy.se itself: every page sends one cookieless hit, and the counts are added up
-                every 15 minutes. Open the site (without Global Privacy Control or Do Not Track, which are never counted)
-                and the visit shows here within a quarter of an hour.
-              </p>
+            <Card title="No visits counted yet" info="The figures come from booqy.se itself: every page sends one cookieless hit, and the counts are added up every 15 minutes. Open the site (without Global Privacy Control or Do Not Track, which are never counted) and the visit shows here within a quarter of an hour.">
+              <p className="muted small">Updated every 15 minutes.</p>
             </Card>
           )}
 
           {/* 1. Reach and the one conversion that matters: a booked demo. */}
           <section className="kpis kpis--lead" aria-label="Visitors and demo bookings">
-            <Kpi label="Visitors" value={<CountUp value={k.visitors} format={fmtCount} />} trend={trends.visitors}
-                 sub="unique per day, summed" />
-            <Kpi label="Visits" value={<CountUp value={k.visits} format={fmtCount} />} trend={trends.visits}
-                 sub={k.pagesPerVisit === null ? "no visits" : `${fmtInt(k.pagesPerVisit)} pages per visit`} />
+            <Kpi label="Visitors" value={<CountUp value={k.visitors} format={fmtCount} />} trend={trends.visitors} />
+            <Kpi label="Visits" value={<CountUp value={k.visits} format={fmtCount} />} trend={trends.visits} />
             <Kpi label="Page views" value={<CountUp value={k.pageviews} format={fmtCount} />} trend={trends.pageviews} />
-            <Kpi label="Demo bookings" value={<CountUp value={k.conversions} format={fmtCount} />} trend={trends.conversions}
-                 sub={k.conversionRate === null ? "conversion rate -" : `${fmtPct(k.conversionRate)} of visits booked`} />
+            <Kpi label="Demo bookings" value={<CountUp value={k.conversions} format={fmtCount} />} trend={trends.conversions} />
           </section>
 
           <section className="kpis kpis--units" aria-label="Engagement">
-            <Kpi label="Conversion rate" value={k.conversionRate === null ? "-" : fmtPct(k.conversionRate)} trend={trends.rate}
-                 sub={`${fmtInt(k.convertedVisits)} visits with a demo booking`} />
-            <Kpi label="Bounce rate" value={k.bounceRate === null ? "-" : fmtPct(k.bounceRate)} trend={trends.bounce}
-                 sub="one page, under 10 s, no booking" />
-            <Kpi label="Engaged time" value={fmtDuration(k.avgEngagedSeconds)} trend={trends.seconds}
-                 sub="average per visit, tab in view" />
+            <Kpi label="Conversion rate" value={k.conversionRate === null ? "-" : fmtPct(k.conversionRate)} trend={trends.rate} />
+            <Kpi label="Bounce rate" value={k.bounceRate === null ? "-" : fmtPct(k.bounceRate)} trend={trends.bounce} />
+            <Kpi label="Engaged time" value={fmtDuration(k.avgEngagedSeconds)} trend={trends.seconds} />
           </section>
 
           <div className="charts">
@@ -140,63 +132,70 @@ export default function WebsitePage() {
             <CampaignTable rows={data.breakdowns.campaigns} />
             {(data.breakdowns.contents.length > 0 || data.breakdowns.terms.length > 0) && (
               <div className="web-pair">
-                <VisitTable title="utm_content" rows={data.breakdowns.contents} />
-                <VisitTable title="utm_term" rows={data.breakdowns.terms} />
+                <VisitTable title="utm_content" heading rows={data.breakdowns.contents} />
+                <VisitTable title="utm_term" heading rows={data.breakdowns.terms} />
               </div>
             )}
           </Card>
 
-          <div className="charts">
-            <Card title="Landing pages">
-              <VisitTable title="Page" rows={data.breakdowns.landing} mono />
-            </Card>
-            <Card title="Top pages">
-              <PageTable rows={data.breakdowns.pages} />
-            </Card>
-          </div>
+          <Disclosure title="Pages">
+            <div className="charts">
+              <Card title="Landing pages">
+                <VisitTable title="Page" rows={data.breakdowns.landing} mono />
+              </Card>
+              <Card title="Top pages">
+                <PageTable rows={data.breakdowns.pages} />
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Where visitors are">
-              <Tabs names={PLACES} on={places} set={setPlaces} />
-              {places === "Countries" && (
-                <VisitTable title="Country" rows={data.breakdowns.countries} label={(key) => `${countryName(key)} (${key})`} />
-              )}
-              {places === "Regions" && <VisitTable title="Region" rows={data.breakdowns.regions} label={placeLabel} />}
-              {places === "Cities" && <VisitTable title="City" rows={data.breakdowns.cities} label={placeLabel} />}
-            </Card>
-            <Card title="Devices and browsers">
-              <Tabs names={TECH} on={tech} set={setTech} />
-              {tech === "Devices" && <VisitTable title="Device" rows={data.breakdowns.devices} label={(key) => DEVICE_LABEL[key] ?? key} />}
-              {tech === "Browsers" && <VisitTable title="Browser" rows={data.breakdowns.browsers} />}
-              {tech === "Operating systems" && <VisitTable title="System" rows={data.breakdowns.os} />}
-              {tech === "Languages" && <VisitTable title="Language" rows={data.breakdowns.languages} />}
-            </Card>
-          </div>
+          <Disclosure title="Audience">
+            <div className="charts">
+              <Card title="Where visitors are">
+                <Tabs names={PLACES} on={places} set={setPlaces} />
+                {places === "Countries" && (
+                  <VisitTable title="Country" rows={data.breakdowns.countries} label={(key) => `${countryName(key)} (${key})`} />
+                )}
+                {places === "Regions" && <VisitTable title="Region" rows={data.breakdowns.regions} label={placeLabel} />}
+                {places === "Cities" && <VisitTable title="City" rows={data.breakdowns.cities} label={placeLabel} />}
+              </Card>
+              <Card title="Devices and browsers">
+                <Tabs names={TECH} on={tech} set={setTech} />
+                {tech === "Devices" && <VisitTable title="Device" rows={data.breakdowns.devices} label={(key) => DEVICE_LABEL[key] ?? key} />}
+                {tech === "Browsers" && <VisitTable title="Browser" rows={data.breakdowns.browsers} />}
+                {tech === "Operating systems" && <VisitTable title="System" rows={data.breakdowns.os} />}
+                {tech === "Languages" && <VisitTable title="Language" rows={data.breakdowns.languages} />}
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Scroll depth">
-              <p className="insight">How far down the page readers got, of the page views that reported it.</p>
-              <HBarChart rows={scrollReach(data.scroll).map((r) => ({ key: r.band, label: `${r.band} % of the page`, value: r.pct ?? 0 }))}
-                         ariaLabel="Share of page views reaching each scroll depth" valueLabel="Page views"
-                         format={(n) => fmtPct(n)} />
-            </Card>
-            <Card title="Clicks">
-              <div className="web-pair">
-                <EventTable title="Call to action" rows={data.events.cta ?? []} />
-                <EventTable title="Showcase tab" rows={data.events.tab ?? []} />
-              </div>
-            </Card>
-          </div>
+          <Disclosure title="Engagement">
+            <div className="charts">
+              <Card title="Scroll depth">
+                <HBarChart rows={scrollReach(data.scroll).map((r) => ({ key: r.band, label: `${r.band} % of the page`, value: r.pct ?? 0 }))}
+                           ariaLabel="Share of page views reaching each scroll depth" valueLabel="Page views"
+                           format={(n) => fmtPct(n)} />
+              </Card>
+              <Card title="Clicks">
+                <div className="web-pair">
+                  <EventTable title="Call to action" rows={data.events.cta ?? []} />
+                  <EventTable title="Showcase tab" rows={data.events.tab ?? []} />
+                </div>
+              </Card>
+            </div>
+          </Disclosure>
 
-          <div className="charts">
-            <Card title="Referring sites">
-              <VisitTable title="Site" rows={data.breakdowns.referrers} mono />
-            </Card>
-            <Card title="Time of day">
-              <p className="insight">Visits by the hour they started, Stockholm time.</p>
-              <HourStrip hours={data.hours} />
-            </Card>
-          </div>
+          <Disclosure title="Referrers and time of day">
+            <div className="charts">
+              <Card title="Referring sites">
+                <VisitTable title="Site" rows={data.breakdowns.referrers} mono />
+              </Card>
+              <Card title="Time of day">
+                <p className="insight">Stockholm time</p>
+                <HourStrip hours={data.hours} />
+              </Card>
+            </div>
+          </Disclosure>
         </>
       )}
     </>
@@ -209,8 +208,7 @@ function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => Pr
       <div>
         <h1>Website</h1>
         <p className="muted">
-          booqy.se, counted without cookies.{" "}
-          {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : ""}Days in Stockholm time.
+          booqy.se, no cookies{data?.asOf ? ` · as of ${fmtDate(data.asOf)}` : ""}
         </p>
       </div>
       <div className="row">
@@ -219,13 +217,13 @@ function Head({ data, reload }: { data: WebsiteOverview | null; reload: () => Pr
             <i aria-hidden="true" /> {fmtInt(data.live.visitors)} {data.live.visitors === 1 ? "visitor" : "visitors"} in the last {data.live.minutes} min
           </span>
         )}
-        <button className="btn btn--ghost" disabled={!data?.series?.length}
-                title="One row per day for the chosen period"
-                onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data))}>Export daily (CSV)</button>
+        <RefreshButton reload={reload} />
         <button className="btn btn--ghost" disabled={!data?.breakdowns}
                 title="Sources, campaigns, pages, places and devices for the chosen period"
                 onClick={() => data && downloadCsv(csvName("breakdowns", data.period), breakdownsCsv(data))}>Export breakdowns (CSV)</button>
-        <RefreshButton reload={reload} />
+        <CtaButton label="Export daily (CSV)" win="Klart!" disabled={!data?.series?.length}
+                   title="One row per day for the chosen period"
+                   onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data))} />
       </div>
     </div>
   );
@@ -236,16 +234,15 @@ function placeLabel(key: string): string {
   return `${place}, ${country}`;
 }
 
-/** A key figure, green or red by how it is doing against the previous period (src/trend.ts). */
-function Kpi({ label, value, sub, trend }: { label: string; value: ReactNode; sub?: string; trend: Trend }) {
+/** A key figure: only its label and number, green or red by how it is doing
+ * against the previous period (src/trend.ts), the change as a chip by the label. */
+function Kpi({ label, value, trend }: { label: string; value: ReactNode; trend: Trend }) {
   const shade: TrendTone = trend.tone;
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className="kpi">
-      <span className="kpi__label">{label}</span>
+      <span className="kpi__head"><span className="kpi__label">{label}</span><Delta trend={trend} /></span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
-      {trend.text && <span className="kpi__delta"><Delta trend={trend} /></span>}
     </div>
   );
 }
@@ -260,12 +257,34 @@ function Tabs<T extends string>({ names, on, set }: { names: readonly T[]; on: T
   );
 }
 
+/** A table that may scroll sideways: a named region, a tab stop only when it actually scrolls. */
+function WebScroll({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="web-scroll" tabIndex={scrolls ? 0 : undefined} role="region" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
 function SourcesTable({ data }: { data: WebsiteOverview }) {
   const rows = data.breakdowns.sources;
   const total = rows.reduce((a, r) => a + r.visits, 0);
   if (!rows.length) return <p className="web-none">No visits in this period.</p>;
   return (
-    <div className="web-scroll">
+    <WebScroll label="Traffic sources">
       <table className="table web-table">
         <thead><tr><th>Source</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -278,17 +297,17 @@ function SourcesTable({ data }: { data: WebsiteOverview }) {
                   <span className="strong">{SOURCE_LABEL[r.key] ?? r.key}</span>
                   {tr.text && <div className={`web-delta${toneClass(tr.tone)}`}>{tr.text}<span className="sr-only"> {tr.spoken}</span></div>}
                 </td>
-                <td className="num">{fmtInt(r.visits)}</td>
-                <td className="num web-col-share"><Bar pct={share(r.visits, total)} /></td>
-                <td className="num">{fmtInt(r.conversions)}</td>
-                <td className="num">{fmtPct(share(r.conversions, r.visits))}</td>
-                <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+                <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+                <td className="num web-col-share" data-label="Share">{fmtPct(share(r.visits, total))}</td>
+                <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+                <td className="num" data-label="Conv.">{fmtPct(share(r.conversions, r.visits))}</td>
+                <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
@@ -309,21 +328,12 @@ function HourStrip({ hours }: { hours: number[] }) {
   );
 }
 
-function Bar({ pct }: { pct: number | null }) {
-  return (
-    <span className="web-bar">
-      <span className="web-bar__fill" style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
-      <span className="web-bar__text">{fmtPct(pct)}</span>
-    </span>
-  );
-}
-
 function CampaignTable({ rows }: { rows: VisitRow[] }) {
   if (!rows.length) {
-    return <p className="web-none">No tagged visits. Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</p>;
+    return <p className="web-none">No tagged visits. <InfoTip label="Tagged visits">Add utm_source, utm_medium and utm_campaign to the links in ads, mails and posts to see them here.</InfoTip></p>;
   }
   return (
-    <div className="web-scroll">
+    <WebScroll label="Campaigns">
       <table className="table web-table">
         <thead><tr><th>Source</th><th>Medium</th><th>Campaign</th><th className="num">Visits</th><th className="num">Demo</th><th className="num">Conv.</th><th className="num">Bounce</th></tr></thead>
         <tbody>
@@ -331,76 +341,79 @@ function CampaignTable({ rows }: { rows: VisitRow[] }) {
             const c = campaignParts(r.key);
             return (
               <tr key={r.key}>
-                <td className="mono">{c.source}</td><td className="mono">{c.medium}</td><td className="mono">{c.campaign}</td>
-                <td className="num">{fmtInt(r.visits)}</td>
-                <td className="num">{fmtInt(r.conversions)}</td>
-                <td className={`num${r.conversions > 0 ? " web-good" : ""}`}>{fmtPct(share(r.conversions, r.visits))}</td>
-                <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+                <td className="mono">{c.source}</td><td className="mono" data-label="Medium">{c.medium}</td><td className="mono" data-label="Campaign">{c.campaign}</td>
+                <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+                <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+                <td className={`num${r.conversions > 0 ? " web-good" : ""}`} data-label="Conv.">{fmtPct(share(r.conversions, r.visits))}</td>
+                <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
-function VisitTable({ title, rows, label, mono }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean }) {
+function VisitTable({ title, rows, label, mono, heading }: { title: string; rows: VisitRow[]; label?: (key: string) => string; mono?: boolean; heading?: boolean }) {
   const total = rows.reduce((a, r) => a + r.visits, 0);
-  if (!rows.length) return <p className="web-none">Nothing in this period.</p>;
-  return (
-    <div className="web-scroll">
+  const body = !rows.length ? <p className="web-none">Nothing in this period.</p> : (
+    <WebScroll label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Visits</th><th className="num web-col-share">Share</th><th className="num">Demo</th><th className="num">Bounce</th></tr></thead>
         <tbody>
           {rows.slice(0, 25).map((r) => (
             <tr key={r.key}>
               <td className={`web-key${mono ? " mono" : ""}`}>{label ? label(r.key) : r.key}</td>
-              <td className="num">{fmtInt(r.visits)}</td>
-              <td className="num web-col-share"><Bar pct={share(r.visits, total)} /></td>
-              <td className="num">{fmtInt(r.conversions)}</td>
-              <td className="num">{fmtPct(share(r.bounces, r.visits))}</td>
+              <td className="num" data-label="Visits">{fmtInt(r.visits)}</td>
+              <td className="num web-col-share" data-label="Share">{fmtPct(share(r.visits, total))}</td>
+              <td className="num" data-label="Demo">{fmtInt(r.conversions)}</td>
+              <td className="num" data-label="Bounce">{fmtPct(share(r.bounces, r.visits))}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
+  // On phones the column header is hidden, so a table without a card title
+  // of its own says what it is in a small line above it.
+  if (!heading) return body;
+  return <div className="web-block"><div className="web-sub">{title}</div>{body}</div>;
 }
 
 function PageTable({ rows }: { rows: PageRow[] }) {
   if (!rows.length) return <p className="web-none">Nothing in this period.</p>;
   return (
-    <div className="web-scroll">
+    <WebScroll label="Pages">
       <table className="table web-table">
         <thead><tr><th>Page</th><th className="num">Views</th><th className="num">Engaged time</th></tr></thead>
         <tbody>
           {rows.slice(0, 25).map((r) => (
             <tr key={r.key}>
               <td className="web-key mono">{r.key}</td>
-              <td className="num">{fmtInt(r.pageviews)}</td>
-              <td className="num">{fmtDuration(r.avgSeconds)}</td>
+              <td className="num" data-label="Views">{fmtInt(r.pageviews)}</td>
+              <td className="num" data-label="Engaged time">{fmtDuration(r.avgSeconds)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 
 function EventTable({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
   return (
-    <div className="web-scroll">
+    <WebScroll label={title}>
       <table className="table web-table">
         <thead><tr><th>{title}</th><th className="num">Clicks</th></tr></thead>
         <tbody>
           {rows.slice(0, 15).map((r) => (
-            <tr key={r.key}><td className="web-key mono">{r.key}</td><td className="num">{fmtInt(r.count)}</td></tr>
+            <tr key={r.key}><td className="web-key mono">{r.key}</td><td className="num" data-label="Clicks">{fmtInt(r.count)}</td></tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={2} className="web-none">No clicks.</td></tr>}
         </tbody>
       </table>
-    </div>
+    </WebScroll>
   );
 }
 

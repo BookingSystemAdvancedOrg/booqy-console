@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { CtaButton, Disclosure } from "../components/ds";
 import { BarLineChart, HBarChart, LineChart } from "../components/charts";
 import { CountUp, Delta, deltaPct, useTrendPop } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
@@ -13,6 +14,10 @@ import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types"
 import { RefreshButton, SaveButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
 import { useRowOpen } from "../components/rowLink";
+import { helpSlug } from "../features/help/helpId";
+import { FreeBadge } from "../components/FreeFields";
+import { InfoTip } from "../components/StepFlow";
+import { Select } from "../components/Select";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -23,7 +28,7 @@ const VIEWS = ["Overview", "Payments"] as const;
 
 export default function FinancePage({ view: initialView = "Overview" }: { view?: (typeof VIEWS)[number] }) {
   const [view, setView] = useState<(typeof VIEWS)[number]>(initialView);
-  // A billing period (25th to 24th) and how many periods back from it; the period in progress runs to today.
+  // A billing period (a calendar month) and how many months back from it; the month in progress runs to today.
   const choices = useMemo(() => periodChoices(24), []);
   const [periodFrom, setPeriodFrom] = useState(() => choices[0].from);
   const [span, setSpan] = useState<Span>(1);
@@ -75,16 +80,13 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
     costPerBooking: trendOf(k.costPerBookingSek, before?.costPerBookingSek, "unitCost", prev),
     costPerOrder: trendOf(k.costPerOrderSek, before?.costPerOrderSek, "unitCost", prev),
-    sms: trendOf(k.smsRevenueSek, before?.smsRevenueSek, "sms", prev),
+    sms: trendOf(k.smsCostSek, before?.smsCostSek, "cost", prev),
   };
-  // A loss is red whatever the period before was; so is SMS sold below its AWS cost.
+  // A loss is red whatever the period before was.
   const marginTone: TrendTone = k && k.marginSek < 0 ? "bad" : trends?.margin.tone ?? "neutral";
-  const smsTone: TrendTone = k && k.smsMarginSek < 0 && k.smsCostSek > 0 ? "bad" : trends?.sms.tone ?? "neutral";
   const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const pastDue = data?.attention.pastDue.length ?? 0;
-  const invoiced = k ? k.collectedSek + k.outstandingSek : 0;
-  const collectedPct = k && invoiced > 0 ? (k.collectedSek / invoiced) * 100 : null;
   const noFigures = !!data && !empty && data.series.length === 0;
 
   return (
@@ -93,9 +95,12 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <div>
           <h1>Finance</h1>
           <p className="muted">
-            {data?.asOf ? `Figures as of ${fmtDate(data.asOf)}. ` : "No nightly figures yet. "}
-            {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
-            Revenue and cost in SEK excluding VAT.
+            {data?.asOf ? `As of ${fmtDate(data.asOf)} · SEK ex VAT` : "No nightly figures yet"}{" "}
+            <InfoTip label="About the figures">
+              {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
+              Revenue and cost in SEK excluding VAT. The figures come from the nightly job (Cost Explorer plus each
+              customer's usage) and from Stripe when invoices are created and paid.
+            </InfoTip>
           </p>
         </div>
         <div className="row">
@@ -112,13 +117,13 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           <RefreshButton reload={reload} />
           <SaveButton kind="ghost" type="button" label="Import from Stripe" busy={sync.busy} busyLabel="Reading Stripe…" done={sync.done} doneLabel="Imported"
                       onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }} />
-          <button className="btn btn--primary" onClick={() => setRebuild(true)}>Rebuild</button>
+          <CtaButton label="Rebuild" win="Kör!" onClick={() => setRebuild(true)} />
         </div>
       </div>
 
       <nav className="tabs">
         {VIEWS.map((name) => (
-          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} onClick={() => setView(name)}>{name}</button>
+          <button key={name} className={`tab${view === name ? " tab--on" : ""}`} data-help={`finance-tab:${helpSlug(name)}`} onClick={() => setView(name)}>{name}</button>
         ))}
       </nav>
 
@@ -127,12 +132,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       <div className="toolbar finance-toolbar">
         <div className="range">
           <label className="range__field range__field--period">
-            <span>Billing period</span>
-            <select className="input" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}>
-              {choices.map((p) => (
-                <option key={p.from} value={p.from}>{periodLabel(p)}{p.current ? " (now)" : ""}</option>
-              ))}
-            </select>
+            <Select aria-label="Billing period" title="Billing period" value={periodFrom} onChange={setPeriodFrom}
+                    options={choices.map((p) => ({ value: p.from, label: `${periodLabel(p)}${p.current ? " (now)" : ""}` }))} />
           </label>
         </div>
         <div className="chips" role="group" aria-label="How many periods">
@@ -147,11 +148,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </label>
         {customer && (data?.locations?.length ?? 0) > 0 && (
           <label className="range__field">
-            <span>Location</span>
-            <select className="input" value={locationId ?? ""} aria-label="Location" onChange={(e) => setLocationId(e.target.value || null)}>
-              <option value="">All locations</option>
-              {data!.locations!.map((l) => <option key={l.locationId} value={l.locationId}>{l.name ?? l.locationId}</option>)}
-            </select>
+            <Select value={locationId ?? ""} aria-label="Location" title="Location" onChange={(v) => setLocationId(v || null)}
+                    options={[{ value: "", label: "All locations" }, ...data!.locations!.map((l) => ({ value: l.locationId, label: l.name ?? l.locationId }))]} />
           </label>
         )}
         <div className="customer-filter">
@@ -184,8 +182,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       <ErrorNotice error={error ?? sync.error} />
       {data?.period.locationId && (
         <Notice kind="info">
-          Showing one location: usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
-          restaurant's, since there is one subscription per restaurant.
+          One location{" "}
+          <InfoTip label="One location">
+            Usage and its share of the AWS cost. Revenue, collected, outstanding and MRR are the whole
+            restaurant's, since there is one subscription per restaurant.
+          </InfoTip>
         </Notice>
       )}
 
@@ -203,55 +204,34 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <>
           {empty && (
             <Card title="Nothing to add up yet">
-              <p>
-                {customer || includeInactive ? "No figures for this selection." : "No active customers yet."} The figures
-                come from the nightly job (Cost Explorer plus each customer's usage) and from Stripe when invoices are
-                created and paid. Rebuild recomputes a date range once Cost Explorer is enabled in the AWS account.
-              </p>
+              <p>{customer || includeInactive ? "No figures for this selection." : "No active customers yet."}</p>
             </Card>
           )}
           {noFigures && (
             <Notice kind="info">
-              No day rows in this period yet. The nightly job writes yesterday's figures every morning; use Rebuild for
-              older days (requests can be counted for the last 30 days, the logs' retention).
+              No day rows in this period yet.{" "}
+              <InfoTip label="Day rows">
+                The nightly job writes yesterday's figures every morning; use Rebuild for older days (requests can be
+                counted for the last 30 days, the logs' retention).
+              </InfoTip>
             </Notice>
           )}
 
           {/* 1. Recurring revenue, customers and cash: what the founder checks first (docs/DASHBOARD.md). */}
           <section className="kpis kpis--lead" aria-label="Recurring revenue and cash">
-            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} sub={`${fmtSek(k.mrrSek * 12)} a year at this rate`}
-                 trend={trends.mrr} deltaLabel="since the period started" />
+            <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} trend={trends.mrr} />
             <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
-                 sub={`${fmtInt(k.newCustomers)} new, ${fmtInt(k.churnedCustomers)} churned${k.churnPct !== null ? ` (${fmtPct(k.churnPct)})` : ""}`}
                  trend={trends.customers} />
-            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
-                 sub={collectedPct === null ? "nothing invoiced yet" : `${fmtPct(collectedPct)} of what is invoiced`} />
+            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />} />
             <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
-                 sub={pastDue > 0 ? `${fmtInt(pastDue)} ${pastDue === 1 ? "customer" : "customers"} past due` : "open invoices, ex VAT"}
                  tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
           </section>
 
           {/* 2. Is it profitable: gross margin, AWS cost against revenue. */}
           <section className="hero" aria-label="The period at a glance">
             <div className="kpi kpi--hero">
-              <span className="kpi__label">Gross margin</span>
+              <span className="kpi__head"><span className="kpi__label">Gross margin</span><Delta trend={trends.margin} /></span>
               <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
-              <span className="kpi__insight">
-                {k.marginPct === null ? "No revenue in the period yet." : k.marginSek < 0
-                  ? `AWS cost exceeds revenue by ${fmtSek(-k.marginSek)}.`
-                  : `${fmtPct(k.marginPct)} of every krona invoiced stays as profit.`}
-              </span>
-              <Delta trend={trends.margin} />
-              <dl className="kpi__facts">
-                <dt>Revenue</dt><dd className={toneClass(trends.revenue.tone).trim()}><CountUp value={k.revenueSek} format={fmtSek} /></dd>
-                <dt>{wholeBill ? "AWS bill" : "AWS cost"}</dt><dd className={toneClass(trends.cost.tone).trim()}><CountUp value={k.costSek} format={fmtSek} /></dd>
-                {wholeBill && (
-                  <>
-                    <dt>Allocated to customers</dt><dd>{fmtSek(k.allocatedCostSek ?? 0)}</dd>
-                  </>
-                )}
-                <dt>Period</dt><dd>{fmtDay(data.period.from)} to {fmtDay(data.period.to)}, {data.period.days} days</dd>
-              </dl>
             </div>
             <div className="kpi kpi--rings">
               <Ring title="Where the revenue goes" total={Math.max(k.revenueSek, k.costSek, 0)} centerLabel="profit" empty="No revenue yet"
@@ -302,39 +282,25 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           ) : null}
 
           {/* 4. Revenue and unit economics, then the charts and the per-customer detail. */}
-          <section className="kpis kpis--units" aria-label="Revenue and unit economics">
-            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} sub="invoiced in the period"
-                 trend={trends.revenue} />
-            <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />}
-                 sub={wholeBill
-                   ? `${fmtSek(k.allocatedCostSek ?? 0)} allocated to customers${(k.unallocatedSek ?? 0) > 0 ? `, ${fmtSek(k.unallocatedSek ?? 0)} not` : ""}`
-                   : `${fmtInt(k.requests)} requests`}
-                 trend={trends.cost} />
-            <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} sub="MRR per paying customer" trend={trends.arpu} />
-            <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.bookings)} bookings`}
-                 trend={trends.costPerBooking} />
-            <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />} sub={`${fmtInt(k.orders)} orders`}
-                 trend={trends.costPerOrder} />
-            <Kpi label="SMS" value={<CountUp value={k.smsRevenueSek} format={fmtSek} />}
-                 sub={`${fmtInt(k.smsParts)} parts charged, ${fmtSek(k.smsCostSek, { decimals: true })} AWS cost`}
-                 trend={trends.sms} valueTone={smsTone} />
-          </section>
+          <Disclosure title="Revenue and unit economics" meta="ARPU, cost per booking and order, SMS">
+            <section className="kpis kpis--units" aria-label="Revenue and unit economics">
+              <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} trend={trends.revenue} />
+              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />} trend={trends.cost} />
+              <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} trend={trends.arpu} />
+              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />}
+                   trend={trends.costPerBooking} />
+              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />}
+                   trend={trends.costPerOrder} />
+              <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />} trend={trends.sms} />
+            </section>
+          </Disclosure>
 
           <div className="charts">
             <Card title={insightTitle("MRR", deltaPct(mrrEnd ?? NaN, mrrStart ?? NaN))}>
-              <p className="insight">
-                {mrrEnd !== null && mrrStart !== null
-                  ? `From ${fmtSek(mrrStart)} to ${fmtSek(mrrEnd)} a month over the period, ${fmtInt(k.payingCustomers)} paying customers today.`
-                  : "Monthly recurring revenue, as it stood each day."}
-              </p>
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
             <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
-              <p className="insight">
-                {k.revenueSek > 0
-                  ? `AWS cost was ${fmtPct((k.costSek / k.revenueSek) * 100)} of revenue this period; bars are revenue per ${grain}, the line is cost.`
-                  : `Nothing invoiced yet; the line is AWS cost per ${grain}.`}
-              </p>
+              {k.revenueSek > 0 && <p className="insight">AWS cost {fmtPct((k.costSek / k.revenueSek) * 100)} of revenue</p>}
               <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
                             barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
             </Card>
@@ -386,20 +352,17 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   );
 }
 
-/** A key figure. With a `trend` the figure turns green or red by how it is
- * doing (src/trend.ts) and the change stands under it; `valueTone` overrides
- * the colour when something else decides it (SMS sold at a loss). */
-function Kpi({ label, value, sub, tone, trend, deltaLabel, valueTone }: {
-  label: string; value: ReactNode; sub?: string; tone?: "warn"; trend?: Trend; deltaLabel?: string; valueTone?: TrendTone;
+/** A key figure: only its label and number. With a `trend` the figure turns
+ * green or red by how it is doing (src/trend.ts) and the change is a chip by the label. */
+function Kpi({ label, value, tone, trend }: {
+  label: string; value: ReactNode; tone?: "warn"; trend?: Trend;
 }) {
-  const shade: TrendTone = valueTone ?? trend?.tone ?? "neutral";
+  const shade: TrendTone = trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
-    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
-      <span className="kpi__label">{label}</span>
+    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
+      <span className="kpi__head"><span className="kpi__label">{label}</span>{trend && <Delta trend={trend} />}</span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
-      {trend && <span className="kpi__delta"><Delta trend={trend} label={deltaLabel} /></span>}
     </div>
   );
 }
@@ -422,22 +385,25 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
   const openRow = useRowOpen();
   return (
     <tr className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}?tab=billing`)}>
-      <td>
+      <td className="cell-title">
         <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
         <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
-      <td><span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span></td>
-      <td className="num">{fmtSek(t.mrrSek)}</td>
-      <td className="num">{fmtSek(t.revenueSek)}</td>
-      <td className="num">{fmtSek(t.collectedSek)}</td>
-      <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`}>{fmtSek(t.outstandingSek)}</td>
-      <td className="num">{fmtSek(t.costSek)}</td>
-      <td className={`num${t.marginSek < 0 ? " bad" : ""}`}>
+      <td className="cell-badge">
+        <span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span>
+        {t.free && <div><FreeBadge until={t.freeUntil ?? null} /></div>}
+      </td>
+      <td className="num" data-label="MRR">{fmtSek(t.mrrSek)}</td>
+      <td className="num" data-label="Revenue">{fmtSek(t.revenueSek)}</td>
+      <td className="num" data-label="Collected">{fmtSek(t.collectedSek)}</td>
+      <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`} data-label="Outstanding">{fmtSek(t.outstandingSek)}</td>
+      <td className="num" data-label="AWS cost">{fmtSek(t.costSek)}</td>
+      <td className={`num${t.marginSek < 0 ? " bad" : ""}`} data-label="Margin">
         {fmtSek(t.marginSek)}<div className="muted small">{t.marginPct === null ? "-" : fmtPct(t.marginPct)}</div>
       </td>
-      <td className="num">{fmtInt(t.bookings)}</td>
-      <td className="num">{fmtInt(t.orders)}</td>
-      <td className="num">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsRevenueSek)}</div></td>
+      <td className="num" data-label="Bookings">{fmtInt(t.bookings)}</td>
+      <td className="num" data-label="Orders">{fmtInt(t.orders)}</td>
+      <td className="num" data-label="SMS">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsCostSek, { decimals: true })} cost</div></td>
     </tr>
   );
 }
@@ -458,9 +424,12 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
     <Modal title="Rebuild figures" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="small">
-          Recomputes the AWS cost, usage and allocation for a date range (up to 92 days, yesterday at the latest).
-          Use it after changing the exchange rate or the cost allocation, or when a night was missed. The run takes a
-          few minutes; refresh the page afterwards. Request counts exist for the last 30 days only (log retention).
+          Up to 92 days, yesterday at the latest.{" "}
+          <InfoTip label="About Rebuild">
+            Recomputes the AWS cost, usage and allocation for a date range. Use it after changing the exchange rate or
+            the cost allocation, or when a night was missed. The run takes a few minutes; refresh the page afterwards.
+            Request counts exist for the last 30 days only (log retention).
+          </InfoTip>
         </p>
         <div className="range">
           <label className="range__field"><span>From</span><input className="input" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>

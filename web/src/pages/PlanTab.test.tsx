@@ -7,10 +7,11 @@ const mocks = vi.hoisted(() => ({ plans: vi.fn(), setPlan: vi.fn(), tenant: vi.f
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import TenantPage, { PlanTab } from "./TenantPage";
+import { pick, selectValue } from "../test/select";
 
 const tenant: Tenant = {
   tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", status: "active", planId: "starter",
-  entitlements: { maxLocations: 1, features: { reservations: true, ordering: true, kassa: false } }, locationCount: 1,
+  entitlements: { maxLocations: 1, features: { reservations: true, ordering: true, marketing: false } }, locationCount: 1,
 };
 const STARTER = { planId: "starter", name: "Starter", maxLocations: 1, features: { reservations: true, ordering: true }, priceSek: 3950 };
 
@@ -20,12 +21,177 @@ beforeEach(() => {
   mocks.setPlan.mockResolvedValue({ tenant });
 });
 
+const GROWTH = { planId: "growth", name: "Growth", maxLocations: 3, features: { reservations: true, ordering: true, catering: true, marketing: true }, priceSek: 8295 };
+const FREE = { ...GROWTH, planId: "free", name: "Free", priceSek: 0, free: true };
+
+describe("Plan tab: Free", () => {
+  beforeEach(() => mocks.plans.mockResolvedValue([STARTER, GROWTH, FREE]));
+
+  it("three options; a timed one needs the plan and price after it, then sends the preset", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-14T10:00:00Z"));
+    try {
+      render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+      await screen.findByText("Free");
+      expect(screen.getByText("No charge")).toBeInTheDocument();
+      expect(screen.getByText("Multiple locations")).toBeInTheDocument();
+      expect(screen.getByText("1 location")).toBeInTheDocument();
+      fireEvent.click(screen.getByText("Free"));
+      expect(screen.getByRole("radio", { name: /Free for 3 months/ })).toBeChecked();
+      expect(screen.getByRole("radio", { name: /Free until changed/ })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: /Free for 6 months/ })).not.toBeChecked();
+      expect(screen.getByTestId("free-fields").querySelector("input[type=date]")).toBeNull();   // no date picker
+      expect(screen.getByText("Free until 13 Feb 2027")).toBeInTheDocument();
+      expect(selectValue(screen.getByLabelText(/^Then switch to/))).toBe("");
+      expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);                 // Free starts at 1
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+      expect(mocks.setPlan).not.toHaveBeenCalled();
+      expect(screen.getByText("Pick the plan after Free")).toBeInTheDocument();
+      expect(screen.getByText("Set the monthly price after Free")).toBeInTheDocument();
+      pick(screen.getByLabelText(/^Then switch to/), "Starter");
+      expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(3950);  // filled in from the plan
+      fireEvent.click(screen.getByRole("radio", { name: /Free for 6 months/ }));
+      expect(screen.getByText("Free until 13 May 2027")).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText(/^Monthly price after Free/), { target: { value: "" } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+      expect(mocks.setPlan).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText(/^Monthly price after Free/), { target: { value: "450" } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+      expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
+        planId: "free", free: { preset: "6m", thenPlanId: "starter" }, priceSek: 450, overrides: expect.objectContaining({ maxLocations: 1 }) }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a customer with more locations moved onto Free keeps them on the stepper", async () => {
+    const growth = { ...tenant, planId: "growth", entitlements: { ...tenant.entitlements, maxLocations: 3 }, locationCount: 3 };
+    render(<PlanTab tenant={growth} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
+  });
+
+  it("the locations number can be cleared while typing and is clamped on blur", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    const input = screen.getByLabelText(/^Locations/);                       // a real label, also on the Plan tab
+    fireEvent.change(input, { target: { value: "" } });
+    expect(input).toHaveValue(null);
+    fireEvent.change(input, { target: { value: "5" } });
+    expect(input).toHaveValue(5);
+    fireEvent.change(input, { target: { value: "500" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue(100);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue(100);                                            // empty on blur: the last number
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    expect(input).toHaveValue(99);
+  });
+
+  it("free until changed: no end, no plan or price needed", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    fireEvent.click(screen.getByRole("radio", { name: /Free until changed/ }));
+    expect(screen.queryByLabelText(/^Then switch to/)).toBeNull();
+    expect(screen.queryByLabelText(/^Monthly price after Free/)).toBeNull();
+    expect(screen.queryByTestId("free-until")).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", free: { preset: "until_changed" } }));
+  });
+
+  it("an older Free customer with an own end date loads and saves it unchanged", async () => {
+    const onFree = { ...tenant, planId: "free", entitlements: { ...tenant.entitlements, maxLocations: 3 },
+                     billing: { freeUntil: "2027-02-20", freeSince: "2026-11-14", freeThenPlanId: "growth" } };
+    render(<PlanTab tenant={onFree} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    for (const name of [/Free until changed/, /Free for 3 months/, /Free for 6 months/]) expect(screen.getByRole("radio", { name })).not.toBeChecked();
+    expect(screen.getByText("Free until 20 Feb 2027")).toBeInTheDocument();
+    expect(selectValue(screen.getByLabelText(/^Then switch to/))).toBe("growth");
+    expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(8295);
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
+    expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "More locations" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
+      planId: "free", free: { until: "2027-02-20", thenPlanId: "growth" }, overrides: expect.objectContaining({ maxLocations: 4 }) }));
+  });
+
+  it("Free with Locations at Growth's own number still sends it, so it is kept after Free", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: String(GROWTH.maxLocations) } });
+    pick(screen.getByLabelText(/^Then switch to/), "Starter");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({
+      planId: "free", overrides: expect.objectContaining({ maxLocations: GROWTH.maxLocations }) }));
+  });
+
+  it("an older Free customer without an end loads as Free until changed", async () => {
+    const onFree = { ...tenant, planId: "free", billing: { freeThenPlanId: "starter" } };
+    render(<PlanTab tenant={onFree} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    expect(screen.getByRole("radio", { name: /Free until changed/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();
+  });
+
+  it("keeps an own price as the price after Free", async () => {
+    const own = { ...tenant, billing: { ...(tenant.billing ?? {}), priceSek: 500 } };
+    render(<PlanTab tenant={own} onSaved={() => {}} />);
+    await screen.findByText("Free");
+    fireEvent.click(screen.getByText("Free"));
+    expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(500);
+    pick(screen.getByLabelText(/^Then switch to/), "Growth");
+    expect(screen.getByLabelText(/^Monthly price after Free/)).toHaveValue(500);        // an own price stays
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan).toHaveBeenCalledWith("t1", expect.objectContaining({ planId: "free", priceSek: 500 }));
+  });
+});
+
+describe("Plan tab: locations and features", () => {
+  it("the stepper starts at the plan's number, stays within 1 to 100 and is saved", async () => {
+    mocks.plans.mockResolvedValue([STARTER, GROWTH]);
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.queryByLabelText(/Locations allowed/)).toBeNull();
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);
+    expect(screen.getByRole("button", { name: "Fewer locations" })).toBeDisabled();
+    fireEvent.click(screen.getByText("Growth"));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(3);
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fewer locations" }));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(1);
+    fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: "500" } });
+    fireEvent.blur(screen.getByLabelText(/^Locations/));
+    expect(screen.getByLabelText(/^Locations/)).toHaveValue(100);
+    expect(screen.getByRole("button", { name: "More locations" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/^Locations/), { target: { value: "5" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan.mock.calls[0][1]).toMatchObject({ planId: "growth", overrides: { maxLocations: 5 } });
+  });
+
+  it("Select all ticks every feature, Clear all unticks them", async () => {
+    render(<PlanTab tenant={tenant} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByLabelText("Marketing")).toBeChecked();
+    expect(screen.getByLabelText("Phone agent")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(screen.getByLabelText("Reservations")).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Select all" })).toBeInTheDocument();
+  });
+});
+
 describe("Plan tab", () => {
   it("lists every contract feature by its label, new ones unchecked", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");
     expect(screen.getByLabelText("Reservations")).toBeChecked();
-    expect(screen.getByLabelText("Kassa (cash register)")).not.toBeChecked();
+    expect(screen.getByLabelText("Marketing")).not.toBeChecked();
     for (const label of ["Meta ads", "Site builder", "Guest CRM", "Google Business Profile", "Gift cards", "Waitlist",
       "Social posting", "Staff ledger (personalliggare)", "Fortnox/Visma posting", "Margin per dish"]) {
       expect(screen.getByLabelText(label)).not.toBeChecked();
@@ -41,7 +207,7 @@ describe("Plan tab", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
-      overrides: { features: { kassa: false, siteBuilder: true }, limits: { siteBuilderAiEditsPerMonth: 25 } },
+      overrides: { features: { marketing: false, siteBuilder: true }, limits: { siteBuilderAiEditsPerMonth: 25 } },
     });
   });
 
@@ -52,7 +218,6 @@ describe("Plan tab", () => {
     expect(screen.getByLabelText("Phone agent")).not.toBeChecked();
     expect(screen.getByLabelText(/^Phone agent minutes per month/)).toHaveValue(0);
     expect(screen.getByLabelText(/^Phone agent minutes per month/)).toHaveAttribute("max", "100000");
-    expect(screen.getByText("Used with Phone agent. The plan's is 0")).toBeInTheDocument();
   });
 
   it("sends a changed phone minutes limit as an override, keeping the tenant's other override", async () => {
@@ -65,7 +230,7 @@ describe("Plan tab", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
-      overrides: { features: { kassa: false, phoneAgent: true },
+      overrides: { features: { marketing: false, phoneAgent: true },
                    limits: { siteBuilderAiEditsPerMonth: 25, phoneAgentMinutesPerMonth: 300 } },
     });
   });
@@ -78,6 +243,18 @@ describe("Plan tab", () => {
     expect(await screen.findByLabelText(/^Phone agent minutes per month/)).toHaveValue(300);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan.mock.calls[0][1].overrides.limits).toBeUndefined();
+  });
+
+  it("neither shows nor sends a retired feature key the tenant and plan still carry", async () => {
+    mocks.plans.mockResolvedValue([{ ...STARTER, features: { ...STARTER.features, terminal: true } }]);
+    const legacy = { ...tenant, entitlements: { ...tenant.entitlements, features: { ...tenant.entitlements.features, terminal: true } } };
+    render(<PlanTab tenant={legacy} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.queryByLabelText(/terminal/i)).toBeNull();
+    expect(screen.queryByText(/terminal/i)).toBeNull();
+    fireEvent.click(screen.getByLabelText("Site builder"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
+    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ marketing: false, siteBuilder: true });
   });
 
   it("sends no limit when it equals the plan's", async () => {
@@ -116,18 +293,23 @@ describe("Integrations tab", () => {
     const tabs = screen.getAllByRole("button").map((b) => b.textContent);
     expect(tabs.indexOf("Integrations")).toBe(tabs.indexOf("Website") + 1);
     fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-    expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
   });
 
   it("shows with only the phone agent on", async () => {
     await renderTenant({ phoneAgent: true });
     fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
-    expect(screen.getByText(/Connections this customer has made/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
   });
 
   it("stays hidden with only events and tickets on", async () => {
     await renderTenant({ events: true });
     expect(screen.queryByRole("button", { name: "Integrations" })).toBeNull();
+  });
+
+  it("leaves a retired feature key out of the Overview", async () => {
+    await renderTenant({ reservations: true, terminal: true });
+    expect(screen.getByText("Reservations")).toBeInTheDocument();
   });
 
   it("uses feature labels on the Overview", async () => {

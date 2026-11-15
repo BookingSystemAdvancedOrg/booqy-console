@@ -6,7 +6,10 @@ import { addDays, customerInvoices, isoDay, monthLabel, type CustomerInvoices } 
 import type { PaymentRow } from "../types";
 import { RefreshButton } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
+import { CtaAddLink } from "../components/ds";
 import { useRowOpen } from "../components/rowLink";
+import { FreeBadge } from "../components/FreeFields";
+import { FREE_PLAN_ID } from "../free";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 
@@ -47,11 +50,11 @@ export default function TenantsPage() {
       <div className="page-head">
         <div>
           <h1>Customers</h1>
-          <p className="muted">{data ? `${data.length} restaurants on the platform` : " "}</p>
+          <p className="muted" data-help="customers:count">{data ? `${data.length} restaurants` : " "}</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
-          <Link className="btn btn--primary" to="/tenants/new">+ New customer</Link>
+          <CtaAddLink to="/tenants/new" label="New customer" win="Welcome aboard" />
         </div>
       </div>
 
@@ -60,7 +63,7 @@ export default function TenantsPage() {
                onChange={(e) => setQ(e.target.value)} />
         <div className="chips">
           {FILTERS.map((f) => (
-            <button key={f} className={`chip${filter === f ? " chip--on" : ""}`} onClick={() => setFilter(f)}>
+            <button key={f} className={`chip${filter === f ? " chip--on" : ""}`} data-help={`customers:filter:${f}`} onClick={() => setFilter(f)}>
               {f === "all" ? "All" : <Status value={f} />}
               {f !== "all" && counts[f] ? <span className="chip__n">{counts[f]}</span> : null}
             </button>
@@ -74,23 +77,23 @@ export default function TenantsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th>Payments</th><th>Site</th><th>Created</th>
+                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((t) => (
                 <tr key={t.tenantId} className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}`)}>
-                  <td>
+                  <td className="cell-title">
                     <Link to={`/tenants/${t.tenantId}`} className="strong row-link__name">{t.name}</Link>
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
-                  <td><Status value={t.status} /></td>
-                  <td>{t.planId}</td>
-                  <td><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
-                  <td>{t.locationCount} / {t.maxLocations ?? "-"}</td>
-                  <td>{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
-                  <td className="small">{t.primaryDomain ?? <span className="muted">-</span>}</td>
-                  <td className="small">{fmtDate(t.createdAt)}</td>
+                  <td className="cell-badge"><Status value={t.status} /></td>
+                  <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : t.planId}</td>
+                  <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
+                  <td className="cell-fact" data-label="Locations">{t.locationCount} / {t.maxLocations ?? "-"}</td>
+                  <td className="phone-hide" data-label="Payments">{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
+                  <td className="small phone-hide" data-label="Site">{t.primaryDomain ?? <span className="muted">-</span>}</td>
+                  <td className="small phone-hide" data-label="Created">{fmtDate(t.createdAt)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (

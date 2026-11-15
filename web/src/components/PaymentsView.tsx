@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
+import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
 import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 import { useRowOpen } from "./rowLink";
+import { helpSlug } from "../features/help/helpId";
+import { InfoTip } from "./StepFlow";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -28,7 +30,12 @@ export default function PaymentsView() {
   return (
     <>
       <div className="row payments-actions">
-        <p className="muted small">Invoices are created on the 25th for the period from the 25th to the 24th (monthly price plus SMS parts). Run it by hand after a missed 25th, with a preview first.</p>
+        <p className="muted small">
+          Runs on the 1st{" "}
+          <InfoTip label="About invoicing">
+            Invoices are created on the 1st for that calendar month, in advance (the monthly price; SMS are included, Free has no charge). A new agreement gets its first month pro rata on its start day. The daily run catches up by itself; run it by hand with a preview first.
+          </InfoTip>
+        </p>
         <button className="btn btn--primary" onClick={() => setInvoicing(true)}>Run invoicing</button>
       </div>
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}
@@ -62,10 +69,10 @@ export default function PaymentsView() {
       {loading && !data ? <SkelPage label="Checking payments"><SkelKpis className="kpis--row" /><SkelTable rows={5} cols={8} /></SkelPage> : data && s && (
         <>
           <section className="kpis kpis--row" aria-label={`Payments ${monthLabel(month)}`}>
-            <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} sub={`${fmtSek(s.collectedSek)} of ${fmtSek(s.invoicedSek)} ex VAT`} />
-            <Kpi label="Outstanding" value={fmtSek(s.outstandingSek)} sub={`${fmtInt(s.open)} open invoices`} tone={s.outstandingSek > 0 ? "warn" : undefined} />
-            <Kpi label="Overdue" value={fmtSek(s.overdueSek)} sub={`${fmtInt(s.overdue)} past the due date`} tone={s.overdue > 0 ? "bad" : "good"} />
-            <Kpi label="Fees and interest" value={fmtSek(s.lateFeesSek + s.interestSek)} sub={`${fmtSek(s.lateFeesSek)} fees, ${fmtSek(s.interestSek, { decimals: true })} interest`} />
+            <Kpi label={monthLabel(month)} value={`${fmtInt(s.paid)} of ${fmtInt(s.invoices)} paid`} />
+            <Kpi label="Outstanding" value={fmtSek(s.outstandingSek)} tone={s.outstandingSek > 0 ? "warn" : undefined} />
+            <Kpi label="Overdue" value={fmtSek(s.overdueSek)} tone={s.overdue > 0 ? "bad" : "good"} />
+            <Kpi label="Fees and interest" value={fmtSek(s.lateFeesSek + s.interestSek)} />
           </section>
           {rows.length === 0 ? (
             <Notice kind="info">
@@ -89,7 +96,7 @@ export default function PaymentsView() {
   );
 }
 
-/** Preview (dry run) of what the 25th would invoice, then the real run. */
+/** Preview (dry run) of what the next run would invoice, then the real run. */
 function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const preview = useLoad(() => api.financeInvoicing(true));
   const run = useAction();
@@ -105,20 +112,19 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
             ) : (
               <div className="table-wrap table-wrap--inner">
                 <table className="table">
-                  <thead><tr><th>Customer</th><th>Period</th><th>Fee</th><th>SMS</th><th>Total ex VAT</th>{result && <th>Result</th>}</tr></thead>
+                  <thead><tr><th>Customer</th><th>Period</th><th>Fee</th><th>Total ex VAT</th>{result && <th>Result</th>}</tr></thead>
                   <tbody>
                     {shown.invoices.map((i) => (
                       <tr key={`${i.tenantId}-${i.periodEnd}`}>
-                        <td className="strong">{i.name}</td>
-                        <td className="small">{i.period}{i.activeDays < i.days ? ` (${i.activeDays} of ${i.days} days)` : ""}</td>
-                        <td className="num">{fmtSek(i.feeSek, { decimals: true })}</td>
-                        <td className="num">{fmtInt(i.smsParts)} × {fmtSek(i.smsPriceSek, { decimals: true })} = {fmtSek(i.smsSek, { decimals: true })}</td>
-                        <td className="num">{fmtSek(i.totalSek, { decimals: true })}</td>
-                        {result && <td className="small">{i.number ?? i.invoiceId}, {i.delivery}</td>}
+                        <td className="strong cell-title">{i.name}</td>
+                        <td className="small" data-label="Period">{i.period}{i.activeDays < i.days ? ` (${i.activeDays} of ${i.days} days)` : ""}</td>
+                        <td className="num" data-label="Fee">{fmtSek(i.feeSek, { decimals: true })}</td>
+                        <td className="num" data-label="Total ex VAT">{fmtSek(i.totalSek, { decimals: true })}</td>
+                        {result && <td className="small" data-label="Result">{i.number ?? i.invoiceId}, {i.delivery}</td>}
                       </tr>
                     ))}
                     {shown.errors.map((e) => (
-                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 5 : 4} className="bad">{e.error}</td></tr>
+                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad">{e.error}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -148,31 +154,31 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
 function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   const remind = useAction();
   const openRow = useRowOpen();
-  const overdue = r.status === "open" && r.daysLate > 0;
+  const overdue = isOverdue(r);
   const fees = (Number(r.lateFeeSek) || 0) + (Number(r.interestSek) || 0);
   return (
     <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
-      <td>
+      <td className="cell-title">
         <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong row-link__name">{r.name}</Link>
         <div className="muted small mono">{r.orgNumber ?? r.slug}{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
       </td>
-      <td className="mono small">
+      <td className="mono small cell-stack" data-label="Invoice">
         {r.hostedInvoiceUrl ? <a href={r.hostedInvoiceUrl} target="_blank" rel="noreferrer">{r.number ?? r.invoiceId}</a> : r.number ?? r.invoiceId}
         <div className="muted">{r.periodStart ? `${fmtDay(r.periodStart)} to ${fmtDay(r.periodEnd)}` : ""}</div>
       </td>
-      <td><span className={`status status--invoice-${invoiceStatus(r)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(r)] ?? r.status}</span></td>
-      <td className="num">{fmtSek(r.subtotalSek)}</td>
-      <td className="num">{fmtSek(r.totalSek)}</td>
-      <td className="small">{fmtDay(r.dueDate)}</td>
-      <td className="small">{r.paidAt ? `${fmtDay(r.paidAt)}${r.paidOutOfBand ? " (bankgiro)" : ""}` : "-"}</td>
-      <td className={`num${overdue ? " bad" : ""}`}>{r.daysLate > 0 ? `${r.daysLate} d` : "-"}</td>
-      <td className="small">
+      <td className="cell-badge"><span className={`status status--invoice-${invoiceStatus(r)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(r)] ?? r.status}</span></td>
+      <td className="num" data-label="Ex VAT">{fmtSek(r.subtotalSek)}</td>
+      <td className="num" data-label="Total">{fmtSek(r.totalSek)}</td>
+      <td className="small cell-fact" data-label="Due">{fmtDay(r.dueDate)}</td>
+      <td className="small cell-fact" data-label="Paid">{r.paidAt ? `${fmtDay(r.paidAt)}${r.paidOutOfBand ? " (bankgiro)" : ""}` : "-"}</td>
+      <td className={`num${overdue ? " bad" : ""}`} data-label="Late">{r.daysLate > 0 ? `${r.daysLate} d` : "-"}</td>
+      <td className="small cell-fact" data-label="Reminders">
         {r.remindersSent > 0 ? `${r.remindersSent} sent` : "-"}
         {r.lastReminderAt && <div className="muted">last {fmtDay(r.lastReminderAt)}</div>}
       </td>
-      <td className="num">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
+      <td className="num" data-label="Fees">{fees > 0 ? fmtSek(fees, { decimals: true }) : "-"}</td>
       <td>
-        {overdue && r.collectionMethod !== "charge_automatically" && (
+        {overdue && r.status === "open" && r.collectionMethod !== "charge_automatically" && (
           <SaveButton kind="plain" small type="button" label="Send reminder" busy={remind.busy} busyLabel="Sending…" done={remind.done} doneLabel="Sent"
                       onClick={async () => { if (await remind.run(() => api.remindInvoice(r.tenantId, r.invoiceId))) onChanged(); }} />
         )}
@@ -182,12 +188,12 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
   );
 }
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" | "warn" }) {
+/** A key figure: only its label and number. */
+function Kpi({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" | "warn" }) {
   return (
-    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`}>
+    <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
       <span className="kpi__label">{label}</span>
       <strong className="kpi__value">{value}</strong>
-      {sub && <span className="kpi__sub">{sub}</span>}
     </div>
   );
 }

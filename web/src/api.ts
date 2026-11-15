@@ -1,12 +1,19 @@
-import { accessToken, notifySignedOut, signOut } from "./auth";
+import { AuthUnavailableError, accessToken, notifySignedOut, refreshedAccessToken, signOut } from "./auth";
 import { withBusy } from "./busy";
+import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
+import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, TransferCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, TerminalAddress, ReaderFleet, TerminalReader, TerminalSetup, TerminalState, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, SupportReport, TransferCheck, Zone,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
+export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
+
 export class ApiError extends Error {
+  /** The API's own message when it had a useful one (errors.ts builds the who-acts text from it). */
+  serverMessage?: string;
+
   constructor(
     public status: number,
     public code: string,
@@ -21,53 +28,91 @@ export class ApiError extends Error {
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
 /** What to say when the response has no message of its own (a gateway
- * error page, a crash, a throttle). */
+ * error page, a crash, a throttle): who acts, as in errors.ts. */
 function fallbackMessage(status: number, requestId?: unknown): string {
-  const ref = requestId ? ` (reference ${requestId})` : "";
-  if (status === 403) return "You don't have access to this. Sign out and in again; if it persists, check that your account is an operator.";
-  if (status === 404) return "Not found - it may have been removed. Reload the page.";
+  const ref = requestId ? ` (request ${requestId})` : "";
+  if (status === 403) return "Your account isn't allowed to do this. Sign out and in again; if it persists, another operator checks your account under Operators.";
+  if (status === 404) return "Not found: it may have been removed elsewhere. The page shows what is left by itself.";
   if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
-  if (status > 500) return "The API didn't respond. Try again in a minute; after a save, reload first to see whether it went through.";
-  return `Something went wrong on our side${ref}. Try again; if it keeps failing, check the platform-tenants logs${ref ? " for that reference" : ""}.`;
+  return `Something failed on Booqy's side${ref}. This is a Booqy fault (a bug or an outage), not something you did. Try again; if it keeps failing, copy the details and look the request up in the logs.`;
 }
 
-// Every call shows the busy bar (busy.ts), so no load is ever silent.
+/** API Gateway's request id: the body's (platform-tenants puts it in 500s), else the header when it is readable. */
+function requestIdOf(res: Response, extra: Record<string, unknown>): string | undefined {
+  const raw = typeof extra.requestId === "string" ? extra.requestId : res.headers?.get?.("apigw-requestid");
+  return raw && /^[A-Za-z0-9=_.:-]{1,100}$/.test(raw) ? raw : undefined;
+}
+
+// Every call shows the busy bar (busy.ts), so no load is ever silent; only
+// the quiet live refetches (live.ts quietly) skip it. After a write, every
+// live page refetches at once (also after a 409: someone saved in between).
 function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  return withBusy(() => send<T>(method, path, body));
+  if (isQuiet() && method === "GET") return send<T>(method, path, body);
+  const call = withBusy(() => send<T>(method, path, body));
+  if (method === "GET") return call;
+  return call.then(
+    (value) => {
+      notifySaved({ path });
+      return value;
+    },
+    (err: unknown) => {
+      if (err instanceof ApiError && err.status === 409) notifySaved({ path, conflict: true });
+      throw err;
+    },
+  );
 }
 
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = await accessToken();
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      method,
-      headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
-  }
+  const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+  const call = async (token: string) => {
+    try {
+      return await fetch(`${BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw offline();
+    }
+  };
+  // Cognito unreachable while refreshing the token: a network error, never signed out.
+  const orOffline = async <R>(get: () => Promise<R>) => {
+    try {
+      return await get();
+    } catch (err) {
+      throw err instanceof AuthUnavailableError ? offline() : err;
+    }
+  };
+  let res = await call(await orOffline(accessToken));
   if (res.status === 401) {
-    // token rejected (revoked, account disabled/deleted) - back to the login page
-    await signOut().catch(() => undefined);
-    notifySignedOut();
-    throw new ApiError(401, "unauthorized", "Signed out");
+    // One rejected token is not a sign-out: refresh once and try again.
+    const fresh = await orOffline(refreshedAccessToken);
+    if (fresh) res = await call(fresh);
+    if (!fresh || res.status === 401) {
+      // token rejected (revoked, account disabled/deleted) - back to the login page
+      await signOut().catch(() => undefined);
+      notifySignedOut();
+      throw new ApiError(401, "unauthorized", "Signed out");
+    }
   }
   const text = await res.text();
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. Reload the page and try again.");
+    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. This is a Booqy fault, not something you did. Try again; if it keeps failing, look the request up in the logs.");
   }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
+    const requestId = requestIdOf(res, extra);
+    if (requestId) extra.requestId = requestId;
     // The generic 500 text says nothing useful - give what to do instead.
     const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
-    throw new ApiError(res.status, (error as string) ?? "error",
-                       useful ? (message as string) : fallbackMessage(res.status, extra.requestId),
-                       (fields as Record<string, string>) ?? {}, extra);
+    const err = new ApiError(res.status, typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error",
+                             useful ? (message as string) : fallbackMessage(res.status, requestId),
+                             (fields as Record<string, string>) ?? {}, extra);
+    if (useful) err.serverMessage = message as string;
+    throw err;
   }
   return data as T;
 }
@@ -82,7 +127,7 @@ export const api = {
     request<{ tenantId: string; status: string }>("POST", "/platform/tenants", input),
   updateTenant: (id: string, patch: Record<string, unknown>) =>
     request<{ tenant: Tenant }>("PATCH", t(id), patch),
-  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number }) =>
+  setPlan: (id: string, body: { planId: string; overrides?: unknown; force?: boolean; priceSek?: number; free?: FreeInput }) =>
     request<{ tenant: Tenant }>("PUT", `${t(id)}/plan`, body),
   suspend: (id: string, reason: string) => request("POST", `${t(id)}/suspend`, { reason }),
   resume: (id: string) => request("POST", `${t(id)}/resume`, {}),
@@ -140,11 +185,11 @@ export const api = {
 
   // Subscriptions (Stripe Billing on the platform account) and the Finance page
   billing: (id: string) => request<BillingView>("GET", `${t(id)}/billing`),
-  startSubscription: (id: string, body: { collectionMethod: "send_invoice" | "charge_automatically"; startDate?: string;
+  startSubscription: (id: string, body: { collectionPreference: "card" | "invoice"; startDate?: string;
                                           terms?: "trial" | "subscription"; priceSek?: number }) =>
     request<{ billing: BillingView["billing"] }>("POST", `${t(id)}/billing/subscription`, body),
-  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "set_sms_price",
-                       options: { offboardAtEnd?: boolean; smsPriceSek?: number | null } = {}) =>
+  updateSubscription: (id: string, action: "cancel" | "cancel_now" | "keep" | "convert" | "use_card" | "collection",
+                       options: { offboardAtEnd?: boolean; collectionPreference?: "card" | "invoice" } = {}) =>
     request<{ billing: BillingView["billing"] }>("PATCH", `${t(id)}/billing/subscription`, { action, ...options }),
   invoiceNow: (id: string) => request<InvoicingRun>("POST", `${t(id)}/billing/invoice`, {}),
   financeInvoicing: (dryRun: boolean) => request<InvoicingRun>("POST", "/platform/finance/invoicing", { dryRun }),
@@ -173,20 +218,13 @@ export const api = {
     request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
       "POST", "/platform/finance/stripe-sync", {}),
 
-  terminal: (id: string, locationId: string) =>
-    request<TerminalState>("GET", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`),
-  enableTerminal: (id: string, locationId: string, body: TerminalAddress & { displayName?: string }) =>
-    request<{ terminal: TerminalSetup }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
-  updateTerminal: (id: string, locationId: string, body: Partial<TerminalAddress> & { displayName?: string }) =>
-    request<{ terminal: TerminalSetup }>("PATCH", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal`, body),
-  registerReader: (id: string, locationId: string, registrationCode: string, label: string) =>
-    request<{ reader: TerminalReader }>("POST", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers`,
-                                        { registrationCode, label }),
-  allReaders: () => request<ReaderFleet>("GET", "/platform/terminal/readers"),
-  removeReader: (id: string, locationId: string, readerId: string) =>
-    request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}/terminal/readers/${encodeURIComponent(readerId)}`),
-
   operators: () => request<{ operators: OperatorAccount[] }>("GET", "/platform/operators").then((r) => r.operators),
+  // Your profile picture (avatar.ts): only your own can be changed.
+  myAvatar: () => request<{ url: string | null }>("GET", "/platform/me/avatar"),
+  avatarUpload: (body: { contentType: string; size: number }) =>
+    request<{ url: string; fields: Record<string, string> }>("POST", "/platform/me/avatar/upload", body),
+  avatarComplete: () => request<{ url: string }>("POST", "/platform/me/avatar/complete"),
+  deleteAvatar: () => request<unknown>("DELETE", "/platform/me/avatar"),
   createOperator: (email: string, name: string) =>
     request<{ operator: OperatorAccount }>("POST", "/platform/operators", { email, name }),
   updateOperator: (username: string, patch: { name?: string; enabled?: boolean }) =>
@@ -198,6 +236,12 @@ export const api = {
   outbox: (after?: string) =>
     request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  // Error reports from Booqy Admin ("Rapportera till Booqy"), newest first.
+  supportReports: (status: "all" | "open" | "handled" = "all", cursor?: string | null) =>
+    request<{ items: SupportReport[]; cursor: string | null }>(
+      "GET", `/platform/support/reports?status=${status}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`),
+  markReport: (reportId: string, handled: boolean) =>
+    request<SupportReport>("POST", `/platform/support/reports/${encodeURIComponent(reportId)}/handled`, { handled }),
   outboxMessage: (messageId: string) =>
     request<{ message: OutboxMessage }>("GET", `/platform/outbox/${encodeURIComponent(messageId)}`).then((r) => r.message),
 
@@ -213,6 +257,18 @@ export const api = {
     request<{ newsletter: Newsletter; recipients: NewsletterRecipient[] }>("GET", `/platform/mail/newsletters/${encodeURIComponent(id)}`),
   sendNewsletter: (body: { subject: string; body: string; test?: boolean }) =>
     request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
+  // The help assistant (features/help): status, and an answer grounded in the console's corpus.
+  helpStatus: () => request<{ enabled: boolean; mode: "ai" | "kb" | "off" }>("GET", "/platform/help-assistant"),
+  helpAnswer: (body: { question: string; history: { role: "user" | "assistant"; text: string }[] }) =>
+    request<{ answer: HelpAnswer; mode: "ai" | "kb" }>("POST", "/platform/help-assistant/answers", body),
+  // Your own pictures behind the glass: a library per operator (backdropStore.ts).
+  backdrops: () => request<{ items: BackdropItem[]; selectedId: string | null; max?: number }>("GET", "/platform/me/backdrops"),
+  backdropUpload: (body: { contentType: string; size: number; width: number; height: number }) =>
+    request<{ id: string; url: string; fields: Record<string, string> }>("POST", "/platform/me/backdrops/upload", body),
+  backdropComplete: (id: string) =>
+    request<{ item: BackdropItem }>("POST", `/platform/me/backdrops/${encodeURIComponent(id)}/complete`),
+  selectBackdrop: (id: string | null) => request<{ selectedId: string | null }>("PUT", "/platform/me/backdrops/selected", { id }),
+  deleteBackdrop: (id: string) => request<unknown>("DELETE", `/platform/me/backdrops/${encodeURIComponent(id)}`),
 };
 
 /** Browser -> S3 straight, with the presigned POST from documentUpload(). */

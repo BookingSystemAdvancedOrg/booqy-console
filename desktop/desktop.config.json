@@ -1,0 +1,21 @@
+{
+  "productName": "Booqy Console",
+  "appId": "se.booqy.console",
+  "fileName": "booqy-console",
+  "description": "Booqys operatörskonsol för plattformen.",
+  "background": "#f6f1ea",
+  "urls": {
+    "dev": "https://admin.dev.booqy.se/",
+    "prod": "https://admin.booqy.se/"
+  },
+  "downloads": {
+    "dev": "https://dev.booqy.se/downloads/console",
+    "prod": "https://booqy.se/downloads/console"
+  },
+  "leave": {
+    "message": "Leave this page?",
+    "detail": "Unsaved changes will be lost.",
+    "leave": "Leave",
+    "stay": "Stay"
+  }
+}

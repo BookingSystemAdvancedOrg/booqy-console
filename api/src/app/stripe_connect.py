@@ -32,9 +32,8 @@ def stripe_request(method: str, path: str, params: dict | None = None, *, accoun
     """One Stripe API call with the platform key. `path` without a version
     prefix is a v1 call (form-encoded); a path starting with /v2/ is an API
     v2 call (JSON body). `account` = act on a connected account
-    (Stripe-Account header) - how every restaurant-side object (Terminal
-    locations, readers) is created, so it belongs to the restaurant, not to
-    the platform."""
+    (Stripe-Account header) - how every restaurant-side object is created,
+    so it belongs to the restaurant, not to the platform."""
     v2 = path.startswith("/v2/")
     if v2:
         query = ""

@@ -83,7 +83,7 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
         <Notice kind="info">Managed from the production console. This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
       )}
       {site.status === "failed" && <Notice kind="error"><strong>Setup failed.</strong> {site.lastError}</Notice>}
-      {site.status === "creating" && <Notice kind="info">Setting up the repo, its deploy role and the first deploy… this updates by itself.</Notice>}
+      {site.status === "creating" && <Notice kind="info">Setting up the repo and the first deploy…</Notice>}
       {site.status === "none" && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
       {site.archived && <Notice kind="warn">The repo is archived (read-only). <strong>Set up</strong> brings it back for this environment.</Notice>}
       <dl className="dl">
@@ -94,7 +94,7 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
       </dl>
       {site.deploys && (
         <div className="table-wrap">
-          <table className="table table--stack">
+          <table className="table">
             <thead><tr><th>Environment</th><th>Last deploy</th><th>Version</th><th>By</th></tr></thead>
             <tbody>
               {(["dev", "prod"] as const).map((env) => <DeployRow key={env} env={env} run={site.deploys![env]} />)}
@@ -140,7 +140,7 @@ function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
         on {DOMAIN_STEP.dev} (one hostname can be on only one CloudFront distribution). The slug address keeps working.
       </p>
       <div className="table-wrap">
-        <table className="table table--stack">
+        <table className="table">
           <thead><tr><th>Environment</th><th>Slug address</th><th>Own domain</th><th><span className="sr-only">Action</span></th></tr></thead>
           <tbody>
             {envs.map((env) => (
@@ -169,16 +169,15 @@ function Hosting({ site, tenant, onChanged }: { site: SiteStatus; tenant: Tenant
 }
 
 function HostingRow({ env, h, manage, busy, done, onMount }: { env: "dev" | "prod"; h: SiteHosting; manage: boolean; busy: boolean; done: boolean; onMount: () => void }) {
-  const label = (text: string) => <span className="stack-label">{text}: </span>;
   const status = h.state === "attaching" && h.status ? h.status : h.state;
   return (
     <tr>
       <td className="strong">{ENV_LABEL[env]}</td>
-      <td>{label("Slug address")}{h.slugUrl
+      <td data-label="Slug address">{h.slugUrl
         ? <a href={h.slugUrl} target="_blank" rel="noreferrer">{h.slugUrl.replace(/^https:\/\//, "")}</a>
         : <span className="muted">not made yet (Domains tab: Re-run setup)</span>}</td>
-      <td>
-        {label("Own domain")}<Status value={status} />
+      <td data-label="Own domain">
+        <Status value={status} />
         {h.host && (h.state === "live"
           ? <> <a href={`https://${h.host}`} target="_blank" rel="noreferrer">{h.host}</a></>
           : <> <span className="mono small">{h.host}</span></>)}
@@ -197,17 +196,16 @@ function HostingRow({ env, h, manage, busy, done, onMount }: { env: "dev" | "pro
 }
 
 function DeployRow({ env, run }: { env: "dev" | "prod"; run: SiteDeploy | null }) {
-  const label = (text: string) => <span className="stack-label">{text}: </span>;
   if (!run) {
-    return <tr><td className="strong">{ENV_LABEL[env]}</td><td className="muted" colSpan={3}>{label("Last deploy")}Not deployed yet</td></tr>;
+    return <tr><td className="strong">{ENV_LABEL[env]}</td><td className="muted" colSpan={3} data-label="Last deploy">Not deployed yet</td></tr>;
   }
   const state = run.status === "completed" ? (run.conclusion === "success" ? "live" : run.conclusion === "cancelled" || run.conclusion === "skipped" ? run.conclusion : "failed") : "deploying";
   return (
     <tr>
       <td className="strong">{ENV_LABEL[env]}</td>
-      <td>{label("Last deploy")}<a href={run.url} target="_blank" rel="noreferrer"><Status value={state} /></a> <span className="small muted">{fmtDate(run.at)}</span></td>
-      <td className="mono">{label("Version")}{run.sha}</td>
-      <td>{label("By")}{run.by ?? <span className="muted">-</span>}</td>
+      <td data-label="Last deploy"><a href={run.url} target="_blank" rel="noreferrer"><Status value={state} /></a> <span className="small muted">{fmtDate(run.at)}</span></td>
+      <td className="mono" data-label="Version">{run.sha}</td>
+      <td data-label="By">{run.by ?? <span className="muted">-</span>}</td>
     </tr>
   );
 }

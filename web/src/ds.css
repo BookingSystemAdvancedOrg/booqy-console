@@ -1,0 +1,1300 @@
+/* Booqy design system for the console: the same tokens, glass layers, command
+   palette, primary CTA and accordion as admin (admin-front-end/src/shared/ds.css).
+   Loaded after styles.css, so these rules win.
+   Spacing on the 4/8 scale, seven text sizes with three weights, one accent
+   (espresso), radii 14/22/28/pill, three elevations and four glass layers that
+   get denser the higher they sit: main panel, side menu, popover, dialog. */
+
+/* console names for the shared tokens */
+:root {
+  --ink: var(--print);
+  --muted: var(--on-ox-2);
+  --surface: var(--paper);
+  --accent-ink: var(--on-ox-3);
+  --wall-tint: rgb(58 36 24 / 0.07);
+  --slip: #1a120e;
+  --on-slip: var(--bq-snow);
+  --focus: rgb(168 132 98 / 0.45);
+  --r-panel: 28px;
+  --font: var(--sans);
+}
+:root[data-theme="dark"] {
+  --wall-tint: rgb(213 196 174 / 0.1);
+  --slip: #f6f1ea;
+  --on-slip: #1a120e;
+  --focus: rgb(238 138 144 / 0.4);
+}
+
+:root {
+  --space-1: var(--bq-space-1, 4px);
+  --space-2: var(--bq-space-2, 8px);
+  --space-3: var(--bq-space-3, 12px);
+  --space-4: var(--bq-space-4, 16px);
+  --space-5: var(--bq-space-5, 20px);
+  --space-6: var(--bq-space-6, 24px);
+  --space-8: var(--bq-space-8, 32px);
+  --space-10: var(--bq-space-10, 40px);
+  --space-12: var(--bq-space-12, 48px);
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-md: 17px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 32px;
+  --fw-regular: 400;
+  --fw-strong: 600;
+  --fw-display: 800;
+
+  --radius-inner: var(--r-md);
+  --radius-card: var(--r-lg);
+  --radius-panel: var(--r-panel, 28px);
+  --radius-pill: var(--r-pill);
+
+  --elev-1: 0 1px 2px rgba(58, 36, 24, 0.06), 0 8px 20px -14px rgba(58, 36, 24, 0.35);
+  --elev-2: 0 2px 6px -2px rgba(58, 36, 24, 0.1), 0 22px 44px -26px rgba(58, 36, 24, 0.45);
+  --elev-3: 0 4px 12px -4px rgba(26, 18, 14, 0.18), 0 40px 80px -32px rgba(26, 18, 14, 0.55);
+
+  --hairline: rgba(58, 36, 24, 0.1);
+  --hairline-strong: rgba(58, 36, 24, 0.18);
+  --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
+
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.24);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.34);
+  --glass-pop: rgb(var(--bq-snow-rgb) / 0.8);
+  --glass-modal: rgb(var(--bq-snow-rgb) / 0.86);
+
+  /* Shared glass tokens (same names in admin, customer site and booqy.se):
+     tint, border, blur, the lit top edge and a denser tint behind body text
+     and tables (WCAG AA). */
+  --glass-bg: var(--glass-main);
+  --glass-border: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-blur: var(--blur-main);
+  --glass-highlight: rgb(var(--bq-snow-rgb) / 0.85);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.5);
+  /* Everything that sits on a panel: cards, tables, fields, wells. */
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.48);
+  --glass-fill: rgb(var(--bq-snow-rgb) / 0.32);
+  /* Liquid glass: a lit top edge, a soft inner glow, a sheen that fades down
+     and depth below. Same values in admin, customer site and booqy.se. */
+  --liquid-edge: inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.95), inset 0 0 0 1px rgb(var(--bq-snow-rgb) / 0.42), inset 0 -1px 0 rgb(58 36 24 / 0.1), inset 0 12px 28px -18px rgb(var(--bq-snow-rgb) / 0.7);
+  --liquid-sheen: linear-gradient(180deg, rgb(var(--bq-snow-rgb) / 0.46), rgb(var(--bq-snow-rgb) / 0.08) 38%, rgb(var(--bq-snow-rgb) / 0) 62%);
+  --liquid-depth: 0 28px 64px -30px rgb(26 18 14 / 0.5), 0 2px 8px -3px rgb(26 18 14 / 0.14);
+  --liquid-edge-dark: inset 0 1px 0 rgb(246 241 234 / 0.28), inset 0 0 0 1px rgb(213 196 174 / 0.16), inset 0 12px 28px -18px rgb(246 241 234 / 0.14);
+  --liquid-sheen-dark: linear-gradient(180deg, rgb(246 241 234 / 0.12), rgb(246 241 234 / 0.02) 40%, rgb(246 241 234 / 0) 62%);
+  /* Fields: a visible glass well with a 1 px line and a focus ring (AA). */
+  --field-bg: rgb(226 214 199 / 0.58);
+  --field-bg-focus: rgb(var(--bq-snow-rgb) / 0.86);
+  --field-border: rgb(58 36 24 / 0.55);
+  --field-border-hover: rgb(58 36 24 / 0.78);
+  --field-ring: rgb(107 74 46 / 0.34);
+  --field-inset: inset 0 2px 4px rgb(26 18 14 / 0.14), inset 0 -1px 0 rgb(var(--bq-snow-rgb) / 0.55);
+  --placeholder: #5f5751;
+  --glass-well: rgb(246 241 234 / 0.36);
+  --glass-saturate: 1.6;
+  --blur-main: 18px;
+  --blur-side: 22px;
+  --blur-pop: 24px;
+  --blur-modal: 28px;
+  --dim: rgba(26, 18, 14, 0.38);
+
+  --dur-fast: var(--bq-duration-fast, 160ms);
+  --dur-base: var(--bq-duration-base, 200ms);
+  --dur-slow: var(--bq-duration-slow, 360ms);
+  --dur-cta: 780ms;
+  --dur-add: 520ms;
+  --ease-out: var(--bq-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  --ease-std: var(--bq-ease-std, cubic-bezier(0.2, 0, 0, 1));
+
+  --nav-w: 248px;
+  --shell-gap: var(--space-3);
+}
+
+:root[data-theme='dark'] {
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 20px -14px rgba(0, 0, 0, 0.6);
+  --elev-2: 0 2px 6px -2px rgba(0, 0, 0, 0.4), 0 22px 44px -26px rgba(0, 0, 0, 0.7);
+  --elev-3: 0 4px 12px -4px rgba(0, 0, 0, 0.5), 0 40px 80px -32px rgba(0, 0, 0, 0.8);
+  --hairline: rgba(213, 196, 174, 0.12);
+  --hairline-strong: rgba(213, 196, 174, 0.22);
+  --glass-edge: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-border);
+  --glass-main: rgba(26, 18, 14, 0.36);
+  --glass-side: rgba(30, 21, 16, 0.46);
+  --glass-pop: rgba(36, 25, 19, 0.86);
+  --glass-modal: rgba(36, 25, 19, 0.9);
+  --glass-border: rgba(213, 196, 174, 0.14);
+  --glass-highlight: rgba(213, 196, 174, 0.22);
+  --glass-text-bg: rgba(26, 18, 14, 0.58);
+  --glass-surface: rgba(42, 29, 22, 0.5);
+  --glass-fill: rgba(58, 36, 24, 0.42);
+  --liquid-edge: var(--liquid-edge-dark);
+  --liquid-sheen: var(--liquid-sheen-dark);
+  --liquid-depth: 0 30px 70px -30px rgb(0 0 0 / 0.75), 0 2px 8px -3px rgb(0 0 0 / 0.4);
+  --field-bg: rgba(10, 7, 5, 0.46);
+  --field-bg-focus: rgba(26, 18, 14, 0.72);
+  --field-border: rgba(213, 196, 174, 0.5);
+  --field-border-hover: rgba(213, 196, 174, 0.74);
+  --field-ring: rgba(213, 196, 174, 0.3);
+  --field-inset: inset 0 2px 4px rgb(0 0 0 / 0.42), inset 0 -1px 0 rgb(246 241 234 / 0.07);
+  --placeholder: #b3a79f;
+  --glass-well: rgba(26, 18, 14, 0.4);
+  --dim: rgba(0, 0, 0, 0.55);
+}
+
+
+/* --- the shell ------------------------------------------------------------ */
+.topbar, .topbar.is-open {
+  background: var(--glass-side);
+  box-shadow: var(--glass-edge), var(--elev-2);
+  -webkit-backdrop-filter: blur(var(--blur-side)) saturate(1.5);
+  backdrop-filter: blur(var(--blur-side)) saturate(1.5);
+}
+.main {
+  box-shadow: var(--glass-edge), var(--elev-2);
+}
+@media (min-width: 768px) {
+  .main {
+    background: var(--glass-main);
+    -webkit-backdrop-filter: blur(var(--blur-main)) saturate(1.4);
+    backdrop-filter: blur(var(--blur-main)) saturate(1.4);
+  }
+}
+.topbar__nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: var(--fw-regular);
+}
+.topbar__nav a.active { font-weight: var(--fw-strong); }
+.topbar__nav a:focus-visible, .topbar__user .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.nav-icon { color: var(--accent-ink); }
+.topbar__nav a.active .nav-icon { color: inherit; }
+.topbar__user .btn { display: inline-flex; align-items: center; gap: var(--space-3); }
+.topbar__user .btn .icon { color: var(--accent-ink); }
+.topbar__user .btn.active .icon { color: inherit; }
+.topbar .palette-trigger { flex: 0 0 auto; }
+
+@media (min-width: 1024px) {
+  .topbar, .topbar.is-open { padding: var(--space-6) var(--space-3) var(--space-4); }
+  .topbar .palette-trigger { order: 0; margin: var(--space-5) var(--space-1) 0; width: auto; }
+  .topbar .palette-trigger-text { flex: 1 1 auto; }
+  .topbar__nav { margin-top: var(--space-4); }
+  .topbar__nav .topbar__heading:first-child { margin-top: var(--space-2); }
+  .topbar__heading {
+    margin: var(--space-5) var(--space-3) var(--space-2);
+    font: var(--fw-strong) var(--fs-xs) / 1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--on-ox-3);
+  }
+  .topbar__nav a { min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-inner); }
+  .topbar__user { border-top: 1px solid var(--hairline); }
+  .topbar__user .btn { border-radius: var(--radius-inner); padding: 0 var(--space-3); }
+}
+@media (max-width: 1023px) {
+  .topbar .palette-trigger { margin-left: auto; }
+  .topbar__nav a .nav-icon { display: none; }
+}
+@media (max-width: 760px) {
+  .topbar .palette-trigger { margin-left: auto; }
+  .topbar__menu { margin-left: 0; }
+  .topbar.is-open .topbar__nav a .nav-icon { display: inline-block; }
+  .topbar.is-open .topbar__nav a { display: flex; }
+}
+
+/* page head: title left, the one primary action last */
+.page-head { gap: var(--space-4); margin-bottom: var(--space-6); }
+.page-head .row { gap: var(--space-2); }
+
+/* the compact search widget with its shortcut */
+.palette-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--wall-tint);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font: var(--fw-regular) var(--fs-sm) / 1 var(--font);
+  color: var(--muted);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.palette-trigger:hover {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
+.palette-trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong), 0 0 0 3px var(--focus);
+}
+
+.palette-trigger-text {
+  min-width: 64px;
+  text-align: left;
+}
+
+.palette-trigger-kbd,
+.palette-kbd,
+.palette-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--space-2);
+  background: var(--glass-surface);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  font: var(--fw-strong) 11px/1 var(--mono);
+  color: var(--muted);
+}
+
+
+/* --- buttons: the primary CTA -------------------------------------------- */
+.btn.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-4) var(--space-5);
+}
+
+.cta-plane {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+}
+
+.cta-plane .icon {
+  display: block;
+}
+
+.cta.is-flying:not(:disabled) .cta-plane-fly {
+  animation: cta-fly var(--dur-cta) var(--ease-std) infinite;
+}
+
+@keyframes cta-fly {
+  0% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  42% {
+    transform: translate(18px, -18px);
+    opacity: 0;
+  }
+  43% {
+    transform: translate(-18px, 18px);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+}
+
+.cta-label {
+  position: relative;
+  display: inline-grid;
+  overflow: hidden;
+}
+
+.cta-text,
+.cta-win {
+  grid-area: 1 / 1;
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.cta-win {
+  justify-self: center;
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .cta:hover:not(:disabled) .cta-text {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  .cta:hover:not(:disabled) .cta-win {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Add CTA (CtaAddLink): the "+" turns a quarter and fades while a person with
+   a plus pops in with a small overshoot. One-shot on hover, back on leave. */
+.cta-add {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+.cta-add .icon {
+  grid-area: 1 / 1;
+  display: block;
+  transition:
+    transform var(--dur-add) var(--ease-std),
+    opacity var(--dur-base) var(--ease-out);
+}
+.cta-add-person {
+  opacity: 0;
+  transform: translateX(-6px) scale(0.4);
+}
+.cta--add .cta-add-person {
+  transition:
+    transform var(--dur-slow) cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity var(--dur-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .cta--add:hover .cta-add-plus,
+  .cta--add:focus-visible .cta-add-plus {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.3);
+  }
+  .cta--add:hover .cta-add-person,
+  .cta--add:focus-visible .cta-add-person {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The sidebar's "New customer": quieter, the "+" just turns a quarter. */
+.topbar__nav a[href="/tenants/new"] .icon {
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+@media (hover: hover) {
+  .topbar__nav a[href="/tenants/new"]:hover .icon {
+    transform: rotate(90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta.is-flying .cta-plane-fly {
+    animation: none !important;
+  }
+  .cta-text,
+  .cta-win,
+  .cta-add .icon,
+  .topbar__nav a[href="/tenants/new"] .icon {
+    transition: none !important;
+  }
+}
+
+
+/* --- accordions ------------------------------------------------------------ */
+.ds-acc {
+  border-radius: var(--radius-card);
+}
+
+.ds-acc-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-inner);
+  list-style: none;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.ds-acc-head::-webkit-details-marker {
+  display: none;
+}
+
+.ds-acc-head:hover {
+  background: var(--wall-tint);
+}
+
+.ds-acc-head:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.ds-acc-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--fw-display) var(--fs-lg) / 1.2 var(--display);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ds-acc-meta {
+  font: var(--fw-regular) var(--fs-sm) / 1.3 var(--font);
+  color: var(--muted);
+}
+
+.ds-acc-chevron {
+  color: var(--muted);
+  transition: rotate var(--dur-base) var(--ease-out);
+}
+
+.ds-acc[open] > .ds-acc-head .ds-acc-chevron {
+  rotate: 180deg;
+}
+
+.ds-acc-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.ds-acc--line {
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  padding-top: var(--space-2);
+}
+
+.ds-acc--line > .ds-acc-head {
+  padding-inline: var(--space-2);
+}
+
+.ds-acc--line .ds-acc-title {
+  font: var(--fw-strong) var(--fs-base) / 1.3 var(--font);
+  letter-spacing: 0;
+}
+
+.ds-acc + .ds-acc { margin-top: var(--space-2); }
+.main .ds-acc { margin-bottom: var(--space-2); }
+.ds-acc > .ds-acc-body > .charts, .ds-acc > .ds-acc-body > .card, .ds-acc > .ds-acc-body > .kpis { margin-bottom: 0; }
+
+/* --- command palette --------------------------------------------------------- */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: min(14vh, 120px) var(--space-4) var(--space-4);
+  background: var(--dim);
+  animation: palette-fade var(--dur-base) var(--ease-out);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  max-height: min(560px, 76vh);
+  border-radius: var(--radius-card);
+  background: var(--glass-modal);
+  box-shadow: var(--glass-edge), var(--elev-3);
+  -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
+  backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
+  overflow: hidden;
+  animation: palette-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes palette-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+.palette-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+}
+
+.palette-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Room inside the field: the text never touches its left edge, also when
+     the glass input style gives it a filled background (iPhone). */
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill, 999px);
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: var(--fw-regular) var(--fs-md) / 1.3 var(--font);
+  color: var(--ink);
+  outline: none;
+}
+
+.palette-input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.palette-input:focus-visible {
+  box-shadow: none;
+}
+
+.palette-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-2);
+  overscroll-behavior: contain;
+}
+
+.palette-group + .palette-group {
+  margin-top: var(--space-2);
+}
+
+.palette-group-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font: var(--fw-strong) var(--fs-xs) / 1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.palette-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-inner);
+  font: var(--fw-regular) var(--fs-base) / 1.3 var(--font);
+  color: var(--ink);
+}
+
+.palette-option[aria-selected='true'] {
+  background: var(--slip);
+  color: var(--on-slip);
+}
+
+.palette-option-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--space-2);
+  background: var(--wall-tint);
+  color: var(--accent-ink);
+}
+
+.palette-option[aria-selected='true'] .palette-option-icon {
+  background: transparent;
+  color: inherit;
+}
+
+.palette-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.palette-option-hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.palette-option[aria-selected='true'] .palette-option-hint {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.palette-option-go {
+  opacity: 0;
+}
+
+.palette-option[aria-selected='true'] .palette-option-go {
+  opacity: 1;
+}
+
+.palette-empty {
+  padding: var(--space-6) var(--space-4);
+  font-size: var(--fs-base);
+  text-align: center;
+  color: var(--muted);
+}
+
+.palette-foot {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--hairline);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.palette-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+
+.modal__panel {
+  margin: auto;
+  background: var(--glass-modal) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), var(--liquid-depth);
+  -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
+  backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
+}
+
+@media (max-width: 600px) {
+  .palette-trigger-kbd { display: none; }
+  /* icon only: the word stays for screen readers */
+  .palette-trigger-text { position: absolute; width: 1px; height: 1px; min-width: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .palette-trigger { width: 44px; height: 44px; justify-content: center; padding: 0; }
+  .palette-backdrop { padding-top: var(--space-4); }
+  .palette-foot { display: none; }
+}
+
+/* no blur, or less transparency wanted: solid surfaces */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .palette, .palette-backdrop { animation: none; }
+}
+
+/* ============================================================================
+   See-through glass (2026-11-13). Glass layers are almost clear and blur what
+   is behind: the room (photo plus soft brown and wine blobs, styles.css) in a
+   browser, the operator's own desktop in the desktop app (html.is-desktop-glass,
+   desktopGlass.ts). At most three stacked blur layers; blur is never animated.
+   ========================================================================== */
+
+/* Glass toggle: clear track, lit edge, raised knob. */
+.switch input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--wall-tint-2, rgba(58, 36, 24, 0.14));
+  box-shadow: inset 0 1px 2px rgba(26, 18, 14, 0.22), inset 0 0 0 1px var(--glass-border);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bq-snow);
+  box-shadow: 0 2px 6px rgba(26, 18, 14, 0.3);
+  transition: translate var(--dur-base) var(--ease-out);
+}
+.switch input:checked { background: var(--success, #2c6a3f); }
+.switch input:checked::after { translate: 16px 0; }
+.switch input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--glass-border), 0 0 0 3px var(--focus); }
+.switch input:disabled { opacity: 0.5; }
+
+/* --- desktop app: the desktop shows through ------------------------------- */
+/* A light tint and thin glass so the wallpaper reads (shapes and edges);
+   the cards carry the text on denser glass (AA). */
+html.is-desktop-glass {
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.34);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.42);
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.5);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.72);
+}
+html.is-desktop-glass[data-theme='dark'] {
+  --glass-main: rgba(26, 18, 14, 0.42);
+  --glass-side: rgba(30, 21, 16, 0.5);
+  --glass-surface: rgba(42, 29, 22, 0.52);
+  --glass-text-bg: rgba(26, 18, 14, 0.74);
+}
+/* Linux: no blur behind the window, the tint carries legibility alone. */
+html.is-desktop-glass[data-desktop-glass='tint'] {
+  --desk-veil: rgb(var(--bq-snow-rgb) / 0.55);
+  --glass-main: rgb(var(--bq-snow-rgb) / 0.86);
+  --glass-side: rgb(var(--bq-snow-rgb) / 0.9);
+  --glass-surface: rgb(var(--bq-snow-rgb) / 0.86);
+  --glass-text-bg: rgb(var(--bq-snow-rgb) / 0.9);
+}
+html.is-desktop-glass[data-desktop-glass='tint'][data-theme='dark'] {
+  --desk-veil: rgba(26, 18, 14, 0.6);
+  --glass-main: rgba(26, 18, 14, 0.88);
+  --glass-side: rgba(30, 21, 16, 0.9);
+  --glass-surface: rgba(42, 29, 22, 0.88);
+  --glass-text-bg: rgba(26, 18, 14, 0.9);
+}
+html.is-desktop-glass,
+html.is-desktop-glass body,
+html.is-desktop-glass .boot { background: transparent; }
+/* No photo, colour pools or veil behind the panels: whatever is behind the
+   window (other windows, the desktop) shows through the glass, live. */
+html.is-desktop-glass body::before { display: none; }
+html.is-desktop-glass[data-desktop-glass='tint'] body::before { display: block; background: linear-gradient(var(--desk-veil), var(--desk-veil)); }
+/* The OS already blurs the desktop; the page's own blur would only blur the
+   clear window. Modals and the palette keep theirs (they sit over content). */
+html.is-desktop-glass .topbar,
+html.is-desktop-glass .topbar.is-open,
+html.is-desktop-glass .main,
+html.is-desktop-glass .auth__main {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (min-width: 768px) {
+  html.is-desktop-glass .main { background: var(--glass-main); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html.is-desktop-glass,
+  html.is-desktop-glass body { background: var(--ox-800); }
+  html.is-desktop-glass .topbar,
+  html.is-desktop-glass .main { background: var(--paper); }
+  .switch input::after { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch input, .switch input::after { transition: none; }
+}
+
+
+/* Less transparency wanted: the glass surfaces turn back into solid paper.
+   !important wins over the desktop app's tints above. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-surface: var(--paper) !important;
+    --glass-fill: var(--paper-2) !important;
+    --glass-well: var(--ox-800) !important;
+    --glass-text-bg: var(--paper) !important;
+  }
+}
+
+
+/* Liquid refraction, Chromium and Electron only (glassFilter.ts sets
+   .glass-refract there). Safari keeps the plain -webkit- blur above. */
+.glass-refract .main,
+.glass-refract .topbar,
+.glass-refract .auth__main,
+.glass-refract .auth__brand {
+  backdrop-filter: url(#booqy-glass) blur(var(--blur-main)) saturate(1.7);
+}
+html.is-desktop-glass.glass-refract .main,
+html.is-desktop-glass.glass-refract .topbar,
+html.is-desktop-glass.glass-refract .auth__main { backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) {
+  .glass-refract .main, .glass-refract .topbar, .glass-refract .auth__main, .glass-refract .auth__brand { backdrop-filter: none; }
+}
+
+/* Disabled fields look disabled: flat, dashed edge, dimmed. */
+.input:disabled, .input[readonly] { background: transparent; border-style: dashed; box-shadow: none; }
+.input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Every field, with or without the .input class (feature slices such as
+   Meta ads and the phone agent render bare inputs): the same glass well.
+   :where() keeps the weight at zero so .input and small pills still win. */
+:where(
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="submit"], [type="button"], [type="reset"], [type="hidden"], [type="image"]),
+  select,
+  textarea
+) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  background-color: var(--field-bg);
+  box-shadow: var(--field-inset);
+  font: inherit;
+  color: var(--print);
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+:where(input, textarea)::placeholder { color: var(--placeholder); opacity: 1; }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):hover { border-color: var(--field-border-hover); }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):focus-visible {
+  outline: none; border-color: var(--print); background-color: var(--field-bg-focus);
+  box-shadow: var(--field-inset), 0 0 0 3px var(--field-ring);
+}
+:where(input, select, textarea):disabled { border-style: dashed; background-color: transparent; box-shadow: none; opacity: 0.6; cursor: not-allowed; }
+/* Number fields: no native spinner, digits line up. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* --- Row actions (components/RowActions.tsx): quiet, the same in every table --- */
+.table-wrap { container-type: inline-size; }
+.table th.right, .table td.right { text-align: right; }
+.row-actions-box { display: inline-flex; justify-content: flex-end; vertical-align: middle; }
+.row-actions--inline { gap: 2px; flex-wrap: nowrap; }
+.row-action {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--print); font: 600 13.5px/1.2 var(--sans); white-space: nowrap;
+  cursor: pointer; text-decoration: none; transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+.row-action:hover:not(:disabled), .row-action:focus-visible, .row-action[aria-expanded="true"] { background: var(--glass-fill); }
+.row-action:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.row-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.row-action--danger { color: var(--danger); }
+.row-menu { display: none; }
+.row-menu__toggle { min-width: 36px; font-size: 18px; letter-spacing: 0.05em; }
+.row-menu__list {
+  display: grid; justify-items: stretch; margin-top: 4px; padding: 4px; min-width: 150px;
+  border-radius: var(--r-md); background: var(--glass-surface); box-shadow: var(--liquid-edge);
+}
+.row-menu__list .row-action { justify-content: flex-start; width: 100%; }
+@container (max-width: 560px) {
+  .row-actions--inline { display: none; }
+  .row-menu { display: inline-grid; justify-items: end; }
+}
+@media (prefers-reduced-motion: reduce) { .row-action { transition: none; } }
+
+/* Background: Colour (glassBackdrop.ts). A soft field in the chosen colour,
+   mixed towards the theme (light: paper, dark: espresso) so text on the glass
+   stays AA whatever colour is picked. The last layer is opaque, so in the
+   desktop app the system glass is covered completely. */
+html[data-glass-backdrop="colour"] body::before,
+html.is-desktop-glass[data-glass-backdrop="colour"] body::before {
+  display: block;
+  --uc-base: color-mix(in srgb, var(--user-colour) 55%, #f6f1ea);
+  --uc-hi: color-mix(in srgb, var(--uc-base) 65%, #fbfaf6);
+  --uc-lo: color-mix(in srgb, var(--uc-base) 78%, #1a120e);
+  background:
+    radial-gradient(42% 50% at 8% 12%, var(--uc-hi), transparent 72%),
+    radial-gradient(38% 46% at 92% 88%, var(--uc-lo), transparent 72%),
+    radial-gradient(30% 36% at 82% 8%, color-mix(in srgb, var(--user-colour) 55%, transparent), transparent 70%),
+    radial-gradient(34% 40% at 30% 92%, color-mix(in srgb, var(--uc-base) 55%, var(--user-colour)), transparent 70%),
+    linear-gradient(155deg, var(--uc-hi), var(--uc-base) 50%, var(--uc-lo));
+}
+html[data-glass-backdrop="colour"][data-theme="dark"] body::before,
+html.is-desktop-glass[data-glass-backdrop="colour"][data-theme="dark"] body::before {
+  --uc-base: color-mix(in srgb, var(--user-colour) 50%, #1a120e);
+  --uc-hi: color-mix(in srgb, var(--uc-base) 80%, #6b4a2e);
+  --uc-lo: color-mix(in srgb, var(--uc-base) 70%, #0f0a08);
+}
+
+/* Background setting (components/BackdropSetting.tsx): a segment and swatches. */
+.backdrop-setting { display: grid; gap: 10px; justify-items: end; }
+.backdrop-segment { display: inline-flex; padding: 3px; border-radius: var(--r-pill); background: var(--glass-fill); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.backdrop-segment button { appearance: none; min-height: 38px; padding: 0 16px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--print); font: 600 14px/1 var(--sans); cursor: pointer; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+.backdrop-segment button[aria-pressed="true"] { background: #1a120e; color: var(--bq-snow); }
+:root[data-theme="dark"] .backdrop-segment button[aria-pressed="true"] { background: #f6f1ea; color: #1a120e; }
+.backdrop-segment button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.backdrop-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.backdrop-swatch { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px; box-shadow: inset 0 0 0 1px rgb(26 18 14 / 0.18), inset 0 1px 0 rgb(var(--bq-snow-rgb) / 0.45); color: var(--print); cursor: pointer; }
+.backdrop-swatch[aria-pressed="true"], .backdrop-swatch[data-selected="true"] { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--print); }
+.backdrop-swatch:focus-visible, .backdrop-swatch--custom:has(input:focus-visible) { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.backdrop-swatch--brand { background: radial-gradient(60% 60% at 25% 25%, #a88462, transparent 70%), radial-gradient(60% 60% at 80% 80%, #350001, transparent 70%), #e8dccb; }
+.backdrop-swatch--custom { background: var(--glass-fill); font: 600 18px/1 var(--sans); }
+.backdrop-swatch--custom input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
+@container (max-width: 520px) { .backdrop-setting, .backdrop-swatches { justify-items: start; justify-content: flex-start; } }
+
+/* Background: Your image. Until the picture is decoded Booqy's backdrop shows,
+   also in the desktop app (image-loading). Then the picture, under a light veil
+   in the theme's tone so text on the glass stays AA. */
+html.is-desktop-glass[data-glass-backdrop="image-loading"] body::before {
+  display: block;
+  background: var(--backdrop-blobs), url("./assets/backdrop.webp") center / cover no-repeat, var(--ox-800);
+}
+html[data-glass-backdrop="image"] body::before,
+html.is-desktop-glass[data-glass-backdrop="image"] body::before {
+  display: block;
+  background: linear-gradient(rgb(246 241 234 / 0.28), rgb(246 241 234 / 0.28)), var(--user-image) center / cover no-repeat, var(--ox-800);
+}
+html[data-glass-backdrop="image"][data-theme="dark"] body::before,
+html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::before {
+  background: linear-gradient(rgb(26 18 14 / 0.42), rgb(26 18 14 / 0.42)), var(--user-image) center / cover no-repeat, var(--ox-800);
+}
+
+/* Phones: the open menu never grows past the screen; it scrolls inside
+   (dvh follows Safari's toolbar, svh is the fallback), with room for the home
+   indicator, and the page behind does not scroll along. */
+@media (max-width: 1023px) {
+  .topbar.is-open {
+    max-block-size: calc(100svh - 24px);
+    max-block-size: calc(100dvh - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* --- Your image: the library (components/BackdropLibrary.tsx) ------------- */
+/* The row takes the full width when the library shows. */
+.setting-row:has(.bg-library) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.backdrop-setting:has(.bg-library) {
+  justify-items: stretch;
+}
+.bg-library {
+  --bg-thumb-min: 8rem;
+  --bg-chip: 1.75rem;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.bg-library-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  font-size: 13px;
+  color: var(--print-2);
+}
+.bg-library-empty,
+.bg-library-error {
+  margin: 0;
+  font-size: 13px;
+}
+.bg-library-empty {
+  color: var(--print-2);
+}
+.bg-library-error {
+  color: var(--danger);
+}
+.bg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bg-thumb-min)), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bg-cell {
+  min-width: 0;
+}
+.bg-tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-md);
+}
+.bg-thumb {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: inset 0 0 0 1px var(--glass-border);
+  cursor: default;
+}
+.bg-thumb img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.bg-thumb:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+.bg-tile.is-selected .bg-thumb {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--print);
+}
+.bg-check {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+  display: grid;
+  place-items: center;
+  inline-size: var(--bg-chip);
+  block-size: var(--bg-chip);
+  border-radius: var(--r-pill);
+  background: var(--print);
+  color: var(--paper);
+  pointer-events: none;
+}
+.bg-check svg {
+  inline-size: 60%;
+  block-size: 60%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bg-tile-menu {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bg-tile-more {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  inline-size: var(--bg-chip);
+  block-size: var(--bg-chip);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-pop);
+  color: var(--print);
+  box-shadow: var(--liquid-edge);
+  font: 600 15px/1 var(--sans);
+  pointer-events: auto;
+  cursor: default;
+}
+.bg-tile-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+/* The menu opens inside the tile, so it never sticks out of the card. */
+.bg-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  align-content: center;
+  gap: 0;
+  padding: var(--space-1);
+  padding-inline-end: calc(var(--bg-chip) + var(--space-2));
+  border-radius: inherit;
+  background: var(--glass-pop) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge);
+  -webkit-backdrop-filter: blur(var(--blur-pop)) saturate(1.5);
+  backdrop-filter: blur(var(--blur-pop)) saturate(1.5);
+  pointer-events: auto;
+}
+.bg-menu .row-action {
+  justify-content: flex-start;
+  min-block-size: 0;
+  padding-block: var(--space-1);
+  font-size: 13px;
+  white-space: normal;
+  text-align: start;
+}
+.bg-tile--upload {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: inset 0 0 0 1px var(--field-border);
+  color: var(--print);
+  text-align: center;
+  cursor: default;
+}
+.bg-tile--upload:has(.bg-upload-input:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--field-border), 0 0 0 3px var(--field-ring);
+}
+.bg-tile--upload.is-disabled {
+  opacity: 0.6;
+}
+.bg-upload-input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: default;
+}
+.bg-upload-label {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  font: 600 13px/1.25 var(--sans);
+}
+.bg-upload-plus {
+  font-size: 22px;
+  line-height: 1;
+}
+.bg-upload-progress {
+  display: grid;
+  gap: var(--space-1);
+  inline-size: 80%;
+  font: 600 12px/1 var(--sans);
+}
+.bg-upload-progress::before {
+  content: '';
+  grid-area: 1 / 1;
+  block-size: 6px;
+  border-radius: var(--r-pill);
+  background: var(--glass-border);
+}
+.bg-upload-bar {
+  grid-area: 1 / 1;
+  block-size: 6px;
+  border-radius: var(--r-pill);
+  background: var(--print);
+}
+
+/* The preview (components/BackdropPreview.tsx) */
+.bg-preview {
+  display: grid;
+  gap: var(--space-3);
+}
+.bg-preview-stage {
+  position: relative;
+  inline-size: 100%;
+  max-block-size: min(60svh, 36rem);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--glass-fill);
+  touch-action: pan-y;
+}
+.bg-preview-thumb,
+.bg-preview-full {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.bg-preview-thumb {
+  object-fit: cover;
+  filter: blur(14px);
+  transform: scale(1.06);
+}
+.bg-preview-full {
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 220ms var(--ease);
+}
+.bg-preview-full.is-loaded {
+  opacity: 1;
+}
+.bg-preview-nav {
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-pop);
+  color: var(--print);
+  box-shadow: var(--liquid-edge), var(--elev-1);
+  font: 500 24px/1 var(--sans);
+  cursor: default;
+}
+.bg-preview-nav--prev {
+  inset-inline-start: var(--space-2);
+}
+.bg-preview-nav--next {
+  inset-inline-end: var(--space-2);
+}
+.bg-preview-nav:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--field-ring);
+}
+.bg-preview-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--print-2);
+}
+.bg-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bg-preview-full {
+    transition: none;
+  }
+}
+
+/* --- Profile pictures (components/Avatar.tsx, AvatarSetting.tsx) ----------- */
+:root {
+  --avatar-sm: 1.75rem;
+  --avatar-md: 2.25rem;
+  --avatar-lg: 3.5rem;
+  --avatar-crop: 15rem;
+}
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--avatar-md);
+  block-size: var(--avatar-md);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--glass-fill) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), inset 0 0 0 1px var(--glass-border);
+  color: var(--print);
+  font: 700 0.8125rem/1 var(--sans);
+  letter-spacing: 0.02em;
+}
+.avatar__initials::before { content: attr(data-initials); }
+.avatar--sm { inline-size: var(--avatar-sm); block-size: var(--avatar-sm); font-size: 0.6875rem; }
+.avatar--lg { inline-size: var(--avatar-lg); block-size: var(--avatar-lg); font-size: 1.125rem; }
+.avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.operator-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.topbar__me { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-3); color: var(--print-2); font-size: 0.8125rem; }
+.topbar__me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar-setting__who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.avatar-setting__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.avatar-setting__choose { position: relative; align-items: center; }
+.avatar-setting__input { position: absolute; inset: 0; inline-size: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
+.avatar-setting__choose:has(.avatar-setting__input:focus-visible) { box-shadow: 0 0 0 3px var(--field-ring); }
+.avatar-crop { display: grid; justify-items: center; gap: var(--space-3); }
+.avatar-crop__view {
+  position: relative;
+  max-inline-size: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--glass-fill);
+  box-shadow: var(--liquid-edge), 0 0 0 1px var(--glass-border);
+  touch-action: none;
+  cursor: grab;
+}
+.avatar-crop__view:active { cursor: grabbing; }
+.avatar-crop__view:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.avatar-crop__view img { position: absolute; inset-block-start: 0; inset-inline-start: 0; max-inline-size: none; transform-origin: 0 0; user-select: none; -webkit-user-select: none; }
+.avatar-crop__zoom { display: grid; gap: var(--space-1); inline-size: min(100%, var(--avatar-crop)); }
+.avatar-crop__actions { justify-content: flex-end; inline-size: 100%; }
+
+/* --- Profile picture lightbox (components/AvatarLightbox.tsx) -------------- */
+/* Same pattern as admin's dish image lightbox: a thin glass frame, centred. */
+:root { --avatar-xl: min(16rem, calc(100vw - 96px)); }
+.avatar--xl { inline-size: var(--avatar-xl); block-size: var(--avatar-xl); font-size: calc(var(--avatar-xl) * 0.36); letter-spacing: 0.01em; }
+.avatar-btn { display: inline-grid; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; cursor: default; }
+.avatar-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.operator-name__fallback { color: var(--print-2); font-weight: 500; }
+:root[data-theme="dark"] .operator-name__fallback { color: var(--on-ox-2); }
+.lightbox-overlay { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 24px; overflow-y: auto; background: rgb(26 18 14 / 0.36); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); animation: lightbox-fade 200ms var(--ease) both; }
+.lightbox {
+  position: relative; display: grid; place-items: center; margin: auto; max-inline-size: 100%;
+  padding: 40px 32px 28px; border-radius: var(--r-lg);
+  background: var(--glass-modal) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), var(--liquid-depth);
+  -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(1.5);
+  backdrop-filter: blur(var(--blur-modal)) saturate(1.5);
+  animation: lightbox-in 240ms var(--ease) both;
+}
+.avatar-lightbox { display: grid; justify-items: center; gap: var(--space-3); margin: 0; min-width: 0; }
+.avatar-lightbox figcaption { display: grid; justify-items: center; gap: 2px; max-inline-size: var(--avatar-xl); text-align: center; }
+.avatar-lightbox__name { font: 700 1.125rem/1.3 var(--sans); overflow-wrap: anywhere; }
+.avatar-lightbox__email { font-size: 13px; color: var(--print-2); overflow-wrap: anywhere; }
+:root[data-theme="dark"] .avatar-lightbox__email { color: var(--on-ox-2); }
+.lightbox__close {
+  position: absolute; inset-block-start: 10px; inset-inline-end: 10px; display: grid; place-items: center;
+  inline-size: 36px; block-size: 36px; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: var(--glass-pop); color: var(--ink); box-shadow: var(--liquid-edge);
+  cursor: pointer; transition: scale 160ms var(--ease);
+}
+.lightbox__close:hover { scale: 1.06; }
+.lightbox__close:focus-visible { outline: none; box-shadow: var(--liquid-edge), 0 0 0 3px var(--field-ring); }
+@keyframes lightbox-in { from { opacity: 0; scale: 0.97; } }
+@keyframes lightbox-fade { from { opacity: 0; } }
+@media (max-width: 600px) { .lightbox-overlay { padding: 12px; } .lightbox { padding: 36px 20px 20px; } }
+@media (prefers-reduced-motion: reduce) { .lightbox, .lightbox-overlay { animation: none; } .lightbox__close { transition: none; } }
+@media (prefers-reduced-transparency: reduce) { .lightbox { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; } }

@@ -1,0 +1,142 @@
+/* Phones (640 px and narrower): no table scrolls sideways. Every .table turns
+   into a list of cards, one per row, so the whole row is readable at once.
+
+   Cells say what they are with data-label="..." (the column name, shown as a
+   small label beside or above the value). Optional classes on a cell:
+     cell-title  the card's heading (default: the first cell)
+     cell-badge  a status, right under the heading
+     cell-fact   a short figure: label over value, three across (td.num too)
+     cell-stack  a long value (an email, an address): label above, full width
+     phone-hide  left out on phones (the detail page has it)
+   A list that is the page's own content (.table-wrap outside a card or a
+   dialog) becomes separate glass cards; a table inside a card becomes rows
+   with a line between them. Tablet and desktop are untouched. */
+/* a table title only phones need: wider screens read it in the header */
+.web-sub { display: none; }
+.web-block { min-width: 0; }
+
+@media (max-width: 640px) {
+  .table.table, .table.table > tbody { display: block; width: 100%; min-width: 0; }
+  .table.table > thead { display: none; }
+
+  .table.table > tbody > tr {
+    position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: 12px; row-gap: 0;
+    padding: 14px 2px; border-bottom: 1px solid var(--paper-line);
+  }
+  .table.table > tbody > tr:last-child { border-bottom: 0; }
+
+  /* every cell: the label on the left, the value on the right */
+  .table.table > tbody > tr > td {
+    grid-column: 1 / -1; display: flow-root; min-width: 0; width: auto; max-width: none;
+    padding: 5px 0 !important; border: 0 !important; box-shadow: none !important; background: none !important;
+    text-align: right !important; white-space: normal !important; overflow-wrap: anywhere;
+    font-size: 14.5px; line-height: 1.4;
+  }
+  .table.table > tbody > tr > td[data-label]::before {
+    content: attr(data-label); float: left; margin-right: 14px; max-width: 48%;
+    font: 600 13px/1.55 var(--sans); letter-spacing: 0; text-transform: none; text-align: left; color: var(--print-2);
+  }
+  .table.table > tbody > tr > td:not([data-label]) { text-align: left !important; }
+  .table.table > tbody > tr > td:empty { display: none; }
+  .table.table > tbody > tr > td.phone-hide { display: none; }
+  .table.table > tbody > tr > td .small, .table.table > tbody > tr > td.small { font-size: 13px; }
+  .table.table td .row-actions-box, .table.table td .btn { white-space: normal; }
+
+  /* the heading: big, on its own line, no label */
+  .table.table > tbody > tr > td.cell-title,
+  .table.table > tbody > tr:not(:has(> td.cell-title)) > td:first-child:not(.empty) {
+    order: -2; padding: 0 0 8px !important; text-align: left !important;
+    font: 700 17px/1.3 var(--sans); letter-spacing: -0.01em; color: var(--print);
+  }
+  .table.table > tbody > tr > td.cell-title::before,
+  .table.table > tbody > tr:not(:has(> td.cell-title)) > td:first-child::before { content: none; }
+  .table.table > tbody > tr > td.cell-title :is(.small, .muted),
+  .table.table > tbody > tr:not(:has(> td.cell-title)) > td:first-child :is(.small, .muted) { font-weight: 500; font-size: 13px; letter-spacing: 0; }
+
+  /* the status: right under the heading, so the name keeps the whole width */
+  .table.table > tbody > tr > td.cell-badge { order: -1; padding: 0 0 8px !important; text-align: left !important; }
+  .table.table > tbody > tr > td.cell-badge::before { content: none; }
+  .table.table > tbody > tr:has(> td.cell-badge) > td.cell-title,
+  .table.table > tbody > tr:has(> td.cell-badge):not(:has(> td.cell-title)) > td:first-child { padding-bottom: 6px !important; }
+
+  /* short figures: label over value, three side by side */
+  .table.table > tbody > tr > td:is(.cell-fact, .num) {
+    grid-column: span 2; padding: 6px 0 !important; text-align: left !important;
+    font-family: var(--sans); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums;
+  }
+  .table.table > tbody > tr > td:is(.cell-fact, .num)::before { float: none; display: block; max-width: none; margin: 0 0 1px; }
+  .table.table > tbody > tr > td:is(.cell-fact, .num) :is(div, .small, .muted) { font-weight: 500; font-size: 12.5px; }
+
+  /* long values: the label above, the value across the whole card */
+  .table.table > tbody > tr > td.cell-stack { text-align: left !important; }
+  .table.table > tbody > tr > td.cell-stack::before { float: none; display: block; max-width: none; margin: 0 0 2px; }
+
+  /* the "you" tag never breaks in half */
+  .operator-name .tag { flex: none; white-space: nowrap; }
+
+  /* a table's own title (its column header is hidden on phones) */
+  .web-sub { display: block; margin: 14px 0 2px; font: 600 13px/1.4 var(--sans); color: var(--print-2); }
+
+  /* nothing to show: centred and short */
+  .table.table > tbody > tr:has(> td.empty) { display: block; padding: 0; border: 0; }
+  .table.table > tbody > tr > td.empty { display: block; padding: 28px 12px !important; text-align: center !important; font-size: 15px; }
+
+  /* the page's own lists: each row is its own glass card */
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) {
+    overflow: visible; border-radius: 0; background: none !important; box-shadow: none !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; animation: none;
+  }
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table > tbody {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table > tbody > tr {
+    padding: 16px 18px 12px; border: 0; border-radius: var(--r-lg);
+    background: var(--glass-text-bg) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--card-shadow);
+    transition: scale 120ms var(--ease), background-color 160ms var(--ease);
+  }
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table > tbody > tr.row-link { padding-right: 40px; }
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) > .table > tbody > tr:has(> td.empty) {
+    padding: 0; border-radius: var(--r-lg); background: var(--glass-text-bg) var(--liquid-sheen); box-shadow: var(--liquid-edge), var(--card-shadow);
+  }
+
+  /* the last card scrolls clear of the floating Ask Booqy button */
+  .table-wrap:not(.table-wrap--inner):not(.card .table-wrap):not(.modal .table-wrap) { margin-bottom: 72px; }
+
+  /* rows that open something: the whole card is the button */
+  .table.table > tbody > tr.row-link { -webkit-tap-highlight-color: transparent; }
+  .table.table > tbody > tr.row-link.is-pressed-text { opacity: 1; scale: 0.98; }
+  .table.table > tbody > tr.row-link:focus-visible,
+  .table.table > tbody > tr.row-link:has(.row-link__name:focus-visible) { outline: 2px solid #1a120e; outline-offset: 2px; }
+  :root[data-theme="dark"] .table.table > tbody > tr.row-link:focus-visible,
+  :root[data-theme="dark"] .table.table > tbody > tr.row-link:has(.row-link__name:focus-visible) { outline-color: #f6f1ea; }
+  .table.table > tbody > tr.row-link.selected { background-color: rgb(168 132 98 / 0.18); }
+  .table.table > tbody > tr.row-link { padding-right: 40px; }
+  .table.table > tbody > tr.row-link::after {
+    content: ""; position: absolute; right: 16px; top: 50%; width: 9px; height: 9px; margin-top: -5px;
+    border: solid var(--print-2); border-width: 2px 2px 0 0; rotate: 45deg; pointer-events: none;
+  }
+  .finance-table tr.overdue > td:first-child { box-shadow: none !important; }
+  .finance-table tr.overdue { box-shadow: inset 3px 0 0 var(--ink-red), var(--liquid-edge), var(--card-shadow) !important; }
+  .table.table .web-key { min-width: 0; max-width: none; }
+
+  /* inputs in a card row (the DNS records editor) take the full width */
+  .table.table > tbody > tr > td :is(.input, textarea, select) { width: 100%; max-width: none; text-align: left; }
+  .table.table > tbody > tr > td:has(> :is(.input, textarea, select))::before { float: none; display: block; margin: 0 0 4px; }
+
+  /* filter chips and tabs wrap onto more lines instead of scrolling */
+  [data-glide="track"] { flex-wrap: wrap !important; width: 100%; height: auto !important; overflow: visible; border-radius: 20px !important; row-gap: 3px !important; }
+  [data-glide] > :is(button, a) { flex: 1 0 auto; }
+  /* a filter group: an even grid, every option the same size */
+  .chips[data-glide="track"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+  .chips[data-glide="track"] > :is(button, a) { justify-content: center; min-height: 36px; }
+  .toolbar > .input.search { flex: 1 1 100%; width: 100%; max-width: none; }
+}
+
+/* the smallest phones: figures sit two side by side */
+@media (max-width: 360px) {
+  .table.table > tbody > tr > td:is(.cell-fact, .num) { grid-column: span 3; }
+}
+
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .table.table > tbody > tr.row-link.is-pressed-text { scale: none; opacity: 0.75; }
+}

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Billing, BillingView, Tenant } from "../types";
-import { endDateFor, periodOf, isoDay, addDays } from "../finance";
+import { endDateFor, monthOf, isoDay, addDays } from "../finance";
 
 const mocks = vi.hoisted(() => ({
   billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(), invoiceNow: vi.fn(),
@@ -16,14 +16,14 @@ const tenant: Tenant = {
   entitlements: { maxLocations: 1, features: {} }, locationCount: 1, legalName: "Roma Restaurang AB", ownerEmail: "owner@roma.se",
 };
 const today = isoDay(new Date());
-const { start, end } = periodOf(today);
+const { start, end } = monthOf(today);
 
 function billing(extra: Partial<Billing> = {}): BillingView {
   return {
     billing: {
-      status: "none", subscribed: false, terms: "trial", monthlySek: 990, smsPrice: 0.7, smsPriceDefaultSek: 0.7,
-      collectionMethod: "send_invoice", hasCard: false, autoSuspended: false, offboardAtEnd: false, noticeMonths: 3, trialMonths: 6,
-      daysUntilDue: 30, suspendAfterDays: 14, plan: { planId: "starter", name: "Starter", priceSek: 990 },
+      status: "none", subscribed: false, terms: "trial", monthlySek: 990, free: null,
+      collectionMethod: "send_invoice", collectionPreference: "card", hasCard: false, cycle: "advance", autoSuspended: false, offboardAtEnd: false, noticeMonths: 3, trialMonths: 6,
+      daysUntilDue: 10, suspendAfterDays: 0, reminderSteps: [3, 7, 14], finalNoticeDays: 30, sellerMissing: [], plan: { planId: "starter", name: "Starter", priceSek: 990 },
       nextInvoice: null, pendingPeriods: 0, ...extra,
     } as Billing,
     invoices: [],
@@ -33,11 +33,9 @@ function billing(extra: Partial<Billing> = {}): BillingView {
 const running = (extra: Partial<Billing> = {}) => billing({
   status: "active", subscribed: true, customerId: "cus_1", startsAt: "2026-09-10", termsSince: "2026-09-10T00:00:00Z",
   trialEndsAt: "2027-03-10T00:00:00Z",
-  nextInvoice: { periodStart: start, periodEnd: end, period: "25 sep till 24 okt 2026", days: 30, activeDays: 30, monthlySek: 990,
-                 feeSek: 990, feeText: "Booqy Starter, 25 sep till 24 okt 2026", smsParts: 412, smsPriceSek: 0.7, smsSek: 288.4,
-                 smsText: "SMS 25 sep till 24 okt 2026: 412 delar x 0,70 kr (Södermalm 300, Vasastan 112)",
-                 smsByLocation: { "Södermalm": 300, Vasastan: 112 }, totalSek: 1278.4, final: false,
-                 date: addDays(end, 1), dueDate: addDays(end, 31), smsSoFar: true },
+  nextInvoice: { periodStart: start, periodEnd: end, period: "1 dec till 31 dec 2026", days: 31, activeDays: 31, billedDays: 31,
+                 monthlySek: 990, feeSek: 990, feeText: "Booqy Starter, 1 dec till 31 dec 2026", totalSek: 990, final: false,
+                 date: addDays(end, 1), dueDate: addDays(end, 11), kind: "advance" },
   ...extra,
 });
 
@@ -52,14 +50,15 @@ describe("BillingTab", () => {
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={onChanged} />);
     expect(await screen.findByText("No agreement")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start agreement" }));
-    expect(screen.getByText(/Nothing is charged now/)).toBeInTheDocument();
+    expect(screen.getByText(/Billed in advance/)).toBeInTheDocument();
+    expect(screen.getByText(/First invoice on .*then on the 1st of every month, in advance/)).toBeInTheDocument();
     await user.click(screen.getByText("Subscription", { selector: "strong" }));
     const priceInput = screen.getByLabelText(/Monthly price/);
     await user.clear(priceInput);
     await user.type(priceInput, "790");
     await user.click(screen.getAllByRole("button", { name: "Start agreement" }).at(-1)!);
     await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", {
-      collectionMethod: "send_invoice", startDate: today, terms: "subscription", priceSek: 790 }));
+      collectionPreference: "card", startDate: today, terms: "subscription", priceSek: 790 }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
@@ -71,9 +70,11 @@ describe("BillingTab", () => {
     expect(await screen.findByText("Active")).toBeInTheDocument();
     expect(screen.getByText(/Try-out period since 10 sep/)).toBeInTheDocument();
     expect(screen.getByText(/Next invoice:/)).toBeInTheDocument();
-    expect(screen.getByText("Booqy Starter, 25 sep till 24 okt 2026")).toBeInTheDocument();
-    expect(screen.getByText(/412 delar x 0,70 kr/)).toBeInTheDocument();
-    expect(screen.getByText(/SMS per location: Södermalm 300, Vasastan 112/)).toBeInTheDocument();
+    expect(screen.getByText("Booqy Starter, 1 dec till 31 dec 2026")).toBeInTheDocument();
+    // SMS are included in the price: no SMS line, no SMS price
+    expect(screen.queryByText(/delar x/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SMS per location/)).not.toBeInTheDocument();
+    expect(screen.getByText("Included in the price")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Convert to subscription" }));
     await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "convert", {}));
   });
@@ -101,7 +102,7 @@ describe("BillingTab", () => {
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByText(/ends on 24 jan/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel agreement" })).not.toBeInTheDocument();
-    expect(screen.getByText(/2 complete periods are/)).toBeInTheDocument();
+    expect(screen.getByText(/2 months are/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Invoice now" }));
     await waitFor(() => expect(mocks.invoiceNow).toHaveBeenCalledWith("t1"));
     expect(await screen.findByText(/1 invoice created/)).toBeInTheDocument();
@@ -120,23 +121,34 @@ describe("BillingTab", () => {
     expect(screen.queryByRole("button", { name: "Keep the agreement" })).not.toBeInTheDocument();
     expect(screen.getByText(/on the next invoice$/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start a new agreement" }));
-    expect(screen.getByText(/goes on the same invoice/)).toBeInTheDocument();
+    expect(screen.getByText(/earlier agreement .* already paid are not charged again/)).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Start agreement" }).at(-1)!);
     await waitFor(() => expect(mocks.startSubscription).toHaveBeenCalledWith("t1", expect.objectContaining({ startDate: today })));
   });
 
-  it("changes the SMS price", async () => {
-    const user = userEvent.setup();
+  it("has no SMS price to change", async () => {
     mocks.billing.mockResolvedValue(running());
-    mocks.updateSubscription.mockResolvedValue({ billing: running({ smsPriceSek: 0.55, smsPrice: 0.55 }).billing });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
-    await screen.findByText(/0,70 kr per part ex VAT/);
-    await user.click(screen.getByRole("button", { name: "Change" }));
-    const input = screen.getByLabelText("Price per SMS part");
-    await user.clear(input);
-    await user.type(input, "0.55");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "set_sms_price", { smsPriceSek: 0.55 }));
+    await screen.findByText("Included in the price");
+    expect(screen.queryByLabelText("Price per SMS part")).not.toBeInTheDocument();
+    expect(screen.queryByText(/per part/)).not.toBeInTheDocument();
+  });
+
+  it("shows the Free plan's period and charges nothing", async () => {
+    mocks.billing.mockResolvedValue(running({
+      monthlySek: 0, plan: { planId: "free", name: "Free", priceSek: 0, free: true },
+      free: { until: "2027-02-14", switchOn: "2027-02-15", thenPlanId: "starter", thenPlanName: "Starter", thenPriceSek: 990 },
+    }));
+    render(<BillingTab tenant={{ ...tenant, planId: "free" }} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText("Nothing (Free)")).toBeInTheDocument();
+    expect(screen.getByText(/Until 14 Feb 2027, then Starter \(990 kr per month\) from 15 Feb 2027/)).toBeInTheDocument();
+  });
+
+  it("shows Free without an end date", async () => {
+    mocks.billing.mockResolvedValue(billing({ monthlySek: 0, plan: { planId: "free", name: "Free", priceSek: 0, free: true },
+                                              free: { until: null, thenPlanId: "starter" } }));
+    render(<BillingTab tenant={{ ...tenant, planId: "free" }} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText(/No end date: free until the plan is changed/)).toBeInTheDocument();
   });
 
   it("lists invoices with their period, fee and SMS lines and a reminder button", async () => {
@@ -157,6 +169,41 @@ describe("BillingTab", () => {
     expect(screen.getByText("12 days")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Send reminder" }));
     await waitFor(() => expect(mocks.remindInvoice).toHaveBeenCalledWith("t1", "in_1"));
+  });
+
+  it("shows no SMS column for invoices without an SMS line", async () => {
+    mocks.billing.mockResolvedValue({
+      ...running(),
+      invoices: [{ invoiceId: "in_2", number: "F-0002", status: "paid", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5,
+                   amountPaidSek: 1237.5, amountRemainingSek: 0, outstandingSek: 0, periodStart: "2026-10-25", periodEnd: "2026-11-24",
+                   paidOutOfBand: false, daysLate: 0, remindersSent: 0, feeSek: 990 }],
+    });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText("F-0002")).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "SMS" })).not.toBeInTheDocument();
+  });
+
+  it("chooses card or invoice, shows the card and flags overdue invoices", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({
+      ...running({ hasCard: true, cardBrand: "visa", cardLast4: "4242", collectionMethod: "charge_automatically",
+                   billingEmail: "faktura@roma.se" }),
+      invoices: [{ invoiceId: "in_9", number: "F-0009", status: "open", subtotalSek: 990, taxSek: 247.5, totalSek: 1237.5,
+                   amountPaidSek: 0, amountRemainingSek: 1237.5, outstandingSek: 990, periodStart: "2026-11-01", periodEnd: "2026-11-30",
+                   paidOutOfBand: false, daysLate: 8, remindersSent: 1, reminderStep: 7, kind: "advance",
+                   collectionMethod: "charge_automatically" }],
+    });
+    mocks.updateSubscription.mockResolvedValue({ billing: running().billing });
+    render(<BillingTab tenant={tenant} cardParam="added" onChanged={() => {}} />);
+    expect(await screen.findByTestId("overdue-badge")).toHaveTextContent("1 overdue");
+    expect(screen.getByText(/One invoice is overdue, the oldest 8 days/)).toBeInTheDocument();
+    expect(screen.getByText(/VISA ending 4242/)).toBeInTheDocument();
+    expect(screen.getByText("faktura@roma.se")).toBeInTheDocument();
+    expect(screen.getByText("reminder at day 7")).toBeInTheDocument();
+    expect(screen.getByText(/becomes the default by itself/)).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Collection" }));
+    await user.click(screen.getByRole("option", { name: "Invoice (pay within 30 days)" }));
+    await waitFor(() => expect(mocks.updateSubscription).toHaveBeenCalledWith("t1", "collection", { collectionPreference: "invoice" }));
   });
 
   it("cannot start for a customer that is not active or a plan without a price", async () => {

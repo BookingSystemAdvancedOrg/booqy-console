@@ -32,7 +32,19 @@ describe("deltas and periods", () => {
     expect(stamps[0]).toHaveTextContent("+20");
     expect(stamps[1]).toHaveClass("delta--bad");
     expect(stamps[0].querySelector(".sr-only")?.textContent).toBe("up 20\u00a0% vs previous period");
-    expect(screen.getByText("no comparison yet")).toBeInTheDocument();
+    expect(stamps).toHaveLength(2);                                                 // nothing to compare with: no chip
+    expect(container.querySelector(".delta__label")).toBeNull();                    // a chip: arrow and percent, no words
     expect(screen.getByText("2980 kr")).toBeInTheDocument();
+  });
+
+  it("shows an unchanged figure as 0 % and a new one as the arrow alone", () => {
+    const { container } = render(<>
+      <Delta trend={trendOf(100, 100, "revenue", "previous period")} />
+      <Delta trend={trendOf(5000, 0, "revenue", "previous period")} />
+    </>);
+    const shown = [...container.querySelectorAll('[aria-hidden="true"]')].map((e) => e.textContent).join(" ");
+    expect(shown).not.toMatch(/unchanged|new/);
+    expect(screen.getByText(/^0\s%$/)).toBeInTheDocument();
+    expect(container.querySelectorAll(".delta .trend-arrow")).toHaveLength(1);     // the new figure: the arrow alone
   });
 });

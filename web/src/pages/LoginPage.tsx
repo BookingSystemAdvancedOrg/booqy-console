@@ -159,7 +159,6 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
         <div className="brand auth__logo"><Logo className="brand__logo" /><span className="brand__app">Console</span></div>
         <div>
           <p className="auth__lead">The operator console for <em>every restaurant</em> on the platform.</p>
-          <p className="auth__sub">Customers, plans, domains and payments - in one place.</p>
         </div>
         {IS_DEV && <span className="env">dev</span>}
       </aside>
@@ -364,7 +363,7 @@ function Input(props: {
 function Qr({ uri }: { uri: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fffdf8" } }).then(setSrc);
+    QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fdfaf6" } }).then(setSrc);
   }, [uri]);
   return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : <Printing inline label="Making the code" />}</div>;
 }

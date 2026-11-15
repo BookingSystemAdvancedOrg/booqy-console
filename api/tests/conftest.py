@@ -81,16 +81,16 @@ class Ctx:
     aws_request_id = "req-1"
 
 
-def call(route, path=None, body=None, groups="[platform_admin]", query=None, actor="op-1"):
+def call(route, path=None, body=None, groups="[platform_admin]", query=None, actor="op-1", sub=None):
     from app.handler import handler
-    claims = {"username": actor}
+    claims = {"username": actor, **({"sub": sub} if sub else {})}
     if groups is not None:
         claims["cognito:groups"] = groups
     event = {"routeKey": route, "pathParameters": path or {}, "queryStringParameters": query,
              "body": json.dumps(body) if body is not None else None,
              "requestContext": {"authorizer": {"jwt": {"claims": claims}}}}
     resp = handler(event, Ctx())
-    return resp["statusCode"], json.loads(resp["body"])
+    return resp["statusCode"], (json.loads(resp["body"]) if resp["body"] else None)
 
 
 NEW_TENANT = {

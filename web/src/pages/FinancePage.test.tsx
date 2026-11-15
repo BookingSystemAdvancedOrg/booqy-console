@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import FinancePage from "./FinancePage";
+import { selectValue } from "../test/select";
 
 const tenants: TenantSummary[] = [
   { tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", status: "active", planId: "starter", locationCount: 1, chargesEnabled: true },
@@ -29,7 +30,7 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
       mrrSek: 2980, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costSek: 100, marginSek: 2780, marginPct: 96.5,
       customers: 2, activeCustomers: 2, payingCustomers: 2, newCustomers: 0, churnedCustomers: 0, churnPct: 0, arpuSek: 1490,
       bookings: 23, orders: 11, costPerBookingSek: 4.35, costPerOrderSek: 9.09, requests: 650, emails: 5, sms: 0,
-      smsParts: 412, smsRevenueSek: 288.4, smsCostSek: 61.5, smsMarginSek: 226.9,
+      smsParts: 412, smsCostSek: 61.5, freeCustomers: 1,
     },
     series: [
       { day: "2026-10-01", invoicedSek: 2980, paidSek: 0, costSek: 60, mrrSek: 2980, bookings: 14, orders: 7, requests: 400, activeTenants: 2 },
@@ -40,12 +41,12 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
         mrrSek: 1990, revenueSek: 1890, collectedSek: 0, creditedSek: 100, outstandingSek: 1990, costSek: 70,
         costSplitSek: { baseline: 10, requests: 60, email: 0, sms: 0 }, marginSek: 1820, marginPct: 96.3, bookings: 18, orders: 9,
         requests: 500, emails: 0, sms: 0, marketingEmails: 0, costPerBookingSek: 3.89, costPerOrderSek: 7.78, activeDays: 2, invoiceCount: 1,
-        smsParts: 300, smsRevenueSek: 210, smsCostSek: 45, smsMarginSek: 165 },
+        smsParts: 300, smsCostSek: 45 },
       { tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", status: "active", planId: "starter", billingStatus: "past_due",
         pastDueSince: "2026-10-10T00:00:00Z", mrrSek: 990, revenueSek: 990, collectedSek: 990, creditedSek: 0, outstandingSek: 0, costSek: 30,
         costSplitSek: { baseline: 10, requests: 15, email: 5, sms: 0 }, marginSek: 960, marginPct: 97, bookings: 5, orders: 2,
         requests: 150, emails: 5, sms: 0, marketingEmails: 0, costPerBookingSek: 6, costPerOrderSek: 15, activeDays: 2, invoiceCount: 1,
-        smsParts: 112, smsRevenueSek: 78.4, smsCostSek: 16.5, smsMarginSek: 61.9 },
+        smsParts: 112, smsCostSek: 16.5, free: true, freeUntil: "2027-02-14" },
     ],
     attention: { pastDue: [{ tenantId: "t1", name: "Pizzeria Roma", since: "2026-10-10T00:00:00Z", status: "active" }], noSubscription: [] },
     job: { finishedAt: "2026-10-21T04:35:00Z", warnings: [] },
@@ -74,9 +75,8 @@ describe("FinancePage", () => {
     });
     renderPage();
     expect(await screen.findByText(/AWS cost known up to 20 okt/)).toBeInTheDocument();
-    expect(screen.getAllByText("AWS bill").length).toBe(2);                       // hero fact and the tile
-    expect(screen.getByText(/^100\skr allocated to customers, 40,00\skr not$/)).toBeInTheDocument();
-    expect(screen.getByText("Allocated to customers")).toBeInTheDocument();
+    expect(screen.getAllByText("AWS bill").length).toBe(1);                       // the tile: label and number only
+    expect(screen.queryByText(/allocated to customers/i)).not.toBeInTheDocument();
   });
 
   it("puts MRR, paying customers and cash first, with the past due count", async () => {
@@ -84,19 +84,22 @@ describe("FinancePage", () => {
     const lead = await screen.findByRole("region", { name: "Recurring revenue and cash" });
     const labels = Array.from(lead.querySelectorAll(".kpi__label"), (el) => el.textContent);
     expect(labels).toEqual(["MRR", "Paying customers", "Collected", "Outstanding"]);
-    expect(within(lead).getByText(/customer past due$/)).toBeInTheDocument();
-    expect(within(lead).getByText(/of what is invoiced$/)).toBeInTheDocument();
+    // Each tile shows only its label and number: no line under it.
+    expect(lead).not.toHaveTextContent(/past due|invoiced|a year at this rate/);
   });
 
   it("shows the key figures, the charts and the customers", async () => {
     renderPage();
     expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR
     expect(screen.getAllByText("2 880 kr").length).toBeGreaterThan(0);             // revenue (tile and hero facts)
-    expect(screen.getByText(/96,5 % of every krona invoiced stays as profit/)).toBeInTheDocument();
+    expect(screen.getByText(/AWS cost 3,5 % of revenue/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
-    expect(screen.getAllByText(/vs previous period/).length).toBeGreaterThan(0);
-    expect(screen.getByText("412 parts charged, 61,50 kr AWS cost")).toBeInTheDocument();   // the SMS tile
+    expect(document.querySelectorAll(".kpi .delta").length).toBeGreaterThan(0);   // trends are chips
+    expect(document.querySelector(".delta__label")).toBeNull();                   // with no words
+    expect(screen.queryByText("412 parts")).not.toBeInTheDocument();              // the SMS tile: cost only
+    expect(screen.queryByText(/SMS revenue|parts charged/)).not.toBeInTheDocument();
+    expect(screen.getByText("Free until 14 Feb 2027")).toBeInTheDocument();
     expect(mocks.financeOverview).toHaveBeenCalledTimes(2);                        // this period and the one before
     expect(screen.getByRole("img", { name: /Revenue and AWS cost per day/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Monthly recurring revenue/ })).toBeInTheDocument();
@@ -113,16 +116,21 @@ describe("FinancePage", () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findAllByText("2 980 kr");
-    const period = screen.getByLabelText("Billing period") as HTMLSelectElement;
-    expect(period.options).toHaveLength(24);
-    expect(period.options[0].textContent).toMatch(/\(now\)$/);
+    const period = screen.getByRole("combobox", { name: "Billing period" });
+    await user.click(period);
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(24);
+    expect(options[0].textContent).toMatch(/\(now\)$/);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByLabelText("From")).toBeNull();                 // no free date pickers any more
-    await user.selectOptions(period, period.options[2].value);
-    const picked = period.options[2].value;
+    const third = options[2].textContent!;
+    await user.click(options[2]);
+    const picked = selectValue(period)!;
+    expect(period).toHaveTextContent(third);
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ from: picked })));
-    await user.click(screen.getByRole("button", { name: "3 periods" }));
+    await user.click(screen.getByRole("button", { name: "3 months" }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(
-      expect.objectContaining({ to: expect.any(String), from: expect.stringMatching(/-25$/) })));
+      expect.objectContaining({ to: expect.any(String), from: expect.stringMatching(/-01$/) })));
     await user.click(screen.getByLabelText("Include inactive customers"));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenLastCalledWith(expect.objectContaining({ includeInactive: true })));
   });
@@ -149,10 +157,11 @@ describe("FinancePage", () => {
     expect(screen.queryByLabelText("Location")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Filter by customer"), "roma");
     await user.click(await screen.findByRole("option", { name: /Pizzeria Roma/ }));
-    const select = await screen.findByLabelText("Location");
-    await user.selectOptions(select, "loc-2");
+    const select = await screen.findByRole("combobox", { name: "Location" });
+    await user.click(select);
+    await user.click(screen.getByRole("option", { name: "Vasastan" }));
     await waitFor(() => expect(mocks.financeOverview).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "t1", locationId: "loc-2" })));
-    expect(await screen.findByText(/Showing one location/)).toBeInTheDocument();
+    expect(await screen.findByText(/One location/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show all customers" }));
     await waitFor(() => expect(screen.queryByLabelText("Location")).not.toBeInTheDocument());
   });
@@ -237,10 +246,10 @@ describe("FinancePage", () => {
       invoices: [] });
     const line = { tenantId: "t1", name: "Pizzeria Roma", periodStart: "2026-08-25", periodEnd: "2026-09-24", period: "25 aug till 24 sep 2026",
                    days: 31, activeDays: 15, monthlySek: 990, feeSek: 479.03, feeText: "Booqy Starter, 25 aug till 24 sep 2026 (15 av 31 dagar)",
-                   smsParts: 412, smsPriceSek: 0.7, smsSek: 288.4, smsText: "SMS ...", totalSek: 767.43, final: false };
+                   totalSek: 479.03, final: false };
     mocks.financeInvoicing.mockImplementation(async (dryRun: boolean) => ({
       dryRun, today: "2026-09-25", invoices: [dryRun ? line : { ...line, invoiceId: "in_1", number: "F-0001", delivery: "sent" }],
-      skipped: [], errors: [], migrated: [], totalSek: 767.43 }));
+      skipped: [], errors: [], migrated: [], totalSek: 479.03 }));
     renderPage();
     await screen.findAllByText("2 980 kr");
     await user.click(screen.getByRole("button", { name: "Payments" }));

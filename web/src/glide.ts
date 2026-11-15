@@ -1,6 +1,6 @@
 /**
- * The chosen option glides, like the "Boka bord · Beställ mat · Catering ·
- * Kassa" tabs on booqy.se: every pick-one control (the page tabs and the chip
+ * The chosen option glides, like the "Boka bord · Beställ mat · Catering"
+ * tabs on booqy.se: every pick-one control (the page tabs and the chip
  * groups) gets a sand track and one espresso pill (::before) that slides and
  * stretches to the chosen option instead of jumping.
  *

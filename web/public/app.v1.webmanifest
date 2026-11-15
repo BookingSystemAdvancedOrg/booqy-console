@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Booqy Console",
+  "short_name": "Console",
+  "description": "Booqy's operator console.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f1ea",
+  "theme_color": "#f6f1ea",
+  "icons": [
+    { "src": "/pwa/icon-192.v1.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/icon-512.v1.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/maskable-512.v1.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/pwa/icon-180.v1.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

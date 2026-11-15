@@ -6,13 +6,13 @@ import type { FinancePoint, FinanceTenantRow, Invoice } from "./types";
 export type Span = 1 | 3 | 12;
 
 export const SPANS: { id: Span; label: string }[] = [
-  { id: 1, label: "Period" },
-  { id: 3, label: "3 periods" },
-  { id: 12, label: "12 periods" },
+  { id: 1, label: "Month" },
+  { id: 3, label: "3 months" },
+  { id: 12, label: "12 months" },
 ];
 
-/** Billing periods run from the 25th to the 24th (the invoice of a period is made on the next 25th). */
-export const PERIOD_START_DAY = 25;
+/** Billing periods are calendar months (each invoiced in advance on its 1st). */
+export const PERIOD_START_DAY = 1;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -50,7 +50,7 @@ export function periodChoices(count = 24, today = new Date()): { from: string; t
   return Array.from({ length: count }, (_, i) => ({ ...(i ? periodBefore(current.from, i) : current), current: i === 0 }));
 }
 
-/** Label for the period dropdown: "25 sep. to 24 okt. 2026". */
+/** Label for the period dropdown: "1 okt. to 31 okt. 2026". */
 export function periodLabel(p: { from: string; to: string }): string {
   return `${fmtDay(p.from)} to ${fmtDay(p.to)} ${p.to.slice(0, 4)}`;
 }
@@ -158,7 +158,7 @@ export function topAndBottom<T extends { marginSek: number }>(rows: T[], n: numb
 }
 
 export type SortKey = keyof Pick<FinanceTenantRow,
-  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costSek" | "mrrSek" | "bookings" | "orders" | "requests" | "smsParts" | "smsRevenueSek">;
+  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costSek" | "mrrSek" | "bookings" | "orders" | "requests" | "smsParts" | "smsCostSek">;
 
 export function sortRows(rows: FinanceTenantRow[], key: SortKey, dir: "asc" | "desc"): FinanceTenantRow[] {
   const sign = dir === "asc" ? 1 : -1;
@@ -227,15 +227,13 @@ export function addMonths(iso: string, n: number): string {
   return isoDay(target);
 }
 
-// --- billing periods: the 25th to the 24th ------------------------------------------
+// --- billing periods: calendar months -----------------------------------------------
 const SV_MONTHS = ["jan", "feb", "mars", "apr", "maj", "juni", "juli", "aug", "sep", "okt", "nov", "dec"];
 
-/** The period a day falls in: from the 25th to the 24th. */
+/** The period a day falls in: its calendar month. */
 export function periodOf(iso: string): { start: string; end: string } {
   const d = parseDay(iso.slice(0, 10));
-  const start = d.getDate() >= 25 ? new Date(d.getFullYear(), d.getMonth(), 25) : new Date(d.getFullYear(), d.getMonth() - 1, 25);
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 24);
-  return { start: isoDay(start), end: isoDay(end) };
+  return { start: isoDay(new Date(d.getFullYear(), d.getMonth(), 1)), end: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
 }
 
 export function nextPeriod(endIso: string): { start: string; end: string } {
@@ -247,11 +245,26 @@ export function periodText(startIso: string, endIso: string): string {
   return `${a.getDate()} ${SV_MONTHS[a.getMonth()]} till ${b.getDate()} ${SV_MONTHS[b.getMonth()]} ${b.getFullYear()}`;
 }
 
-/** When a cancellation takes effect: a try-out with the current period, a subscription `noticeMonths` periods later. */
+// --- invoicing: calendar months, in advance -------------------------------------------
+
+/** The calendar month a day falls in (what an invoice pays for, in advance). */
+export function monthOf(iso: string): { start: string; end: string } {
+  const d = parseDay(iso.slice(0, 10));
+  return { start: isoDay(new Date(d.getFullYear(), d.getMonth(), 1)), end: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+}
+
+/** What the first invoice covers for an agreement from `startIso`: that day to the month's end, on that day. */
+export function firstInvoiceText(startIso: string, startLabel = fmtDay(startIso)): string {
+  const { start, end } = monthOf(startIso);
+  const full = startIso === start;
+  return `First invoice on ${startLabel}, for ${periodText(startIso, end)}${full ? "" : " (pro rata)"}; then on the 1st of every month, in advance.`;
+}
+
+/** When a cancellation takes effect: a try-out at the end of this month, a subscription `noticeMonths` months after that. */
 export function endDateFor(terms: "trial" | "subscription", noticeMonths: number, today = isoDay(new Date())): string {
-  let { end } = periodOf(today);
+  let { end } = monthOf(today);
   if (terms === "trial") return end;
-  for (let i = 0; i < noticeMonths; i++) end = nextPeriod(end).end;
+  for (let i = 0; i < noticeMonths; i++) end = monthOf(addDays(end, 1)).end;
   return end;
 }
 
@@ -267,28 +280,32 @@ const toCsvText = (rows: string[][]) => "﻿" + rows.map((r) => r.map(csvEscape)
 export function customersCsv(rows: FinanceTenantRow[]): string {
   const head = ["Customer", "Legal name", "Org number", "Status", "Billing", "MRR SEK", "Revenue SEK", "Collected SEK", "Credited SEK",
     "Outstanding SEK", "Cost SEK", "Cost baseline SEK", "Cost requests SEK", "Cost email SEK", "Cost SMS SEK", "Margin SEK", "Margin %",
-    "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS revenue SEK", "SMS cost SEK", "SMS margin SEK",
+    "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS cost SEK", "Free until",
     "Cost per booking SEK", "Cost per order SEK", "Active days", "Invoices"];
   const body = rows.map((t) => [t.name, t.legalName ?? "", t.orgNumber ?? "", t.status, t.billingStatus, csvNumber(t.mrrSek), csvNumber(t.revenueSek),
     csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.outstandingSek), csvNumber(t.costSek), csvNumber(t.costSplitSek?.baseline),
     csvNumber(t.costSplitSek?.requests), csvNumber(t.costSplitSek?.email), csvNumber(t.costSplitSek?.sms), csvNumber(t.marginSek),
     csvNumber(t.marginPct, 1), csvNumber(t.bookings, 0), csvNumber(t.orders, 0), csvNumber(t.requests, 0), csvNumber(t.emails, 0),
-    csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsRevenueSek), csvNumber(t.smsCostSek),
-    csvNumber(t.smsMarginSek), csvNumber(t.costPerBookingSek), csvNumber(t.costPerOrderSek), csvNumber(t.activeDays, 0), csvNumber(t.invoiceCount, 0)]);
+    csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsCostSek),
+    t.free ? t.freeUntil ?? "no end date" : "", csvNumber(t.costPerBookingSek), csvNumber(t.costPerOrderSek), csvNumber(t.activeDays, 0), csvNumber(t.invoiceCount, 0)]);
   return toCsvText([head, ...body]);
 }
 
 /** One row per day for the chosen period (the chart data). */
 export function dailyCsv(series: FinancePoint[]): string {
-  const head = ["Day", "Invoiced SEK", "Paid SEK", "Cost SEK", "MRR SEK", "Bookings", "Orders", "Requests", "Active customers", "SMS parts", "SMS revenue SEK"];
+  const head = ["Day", "Invoiced SEK", "Paid SEK", "Cost SEK", "MRR SEK", "Bookings", "Orders", "Requests", "Active customers", "SMS parts"];
   const body = series.map((p) => [p.day, csvNumber(p.invoicedSek), csvNumber(p.paidSek), csvNumber(p.costSek), csvNumber(p.mrrSek),
-    csvNumber(p.bookings, 0), csvNumber(p.orders, 0), csvNumber(p.requests, 0), csvNumber(p.activeTenants, 0), csvNumber(p.smsParts, 0),
-    csvNumber(p.smsRevenueSek)]);
+    csvNumber(p.bookings, 0), csvNumber(p.orders, 0), csvNumber(p.requests, 0), csvNumber(p.activeTenants, 0), csvNumber(p.smsParts, 0)]);
   return toCsvText([head, ...body]);
 }
 
 export function csvName(kind: "customers" | "daily", period: { from: string; to: string }): string {
   return `booqy-finance-${kind}-${period.from}-${period.to}.csv`;
+}
+
+/** Still owed and past the due date: open, or uncollectible after Stripe's last card retry (still payable). */
+export function isOverdue(i: Pick<Invoice, "status" | "daysLate">): boolean {
+  return (i.status === "open" || i.status === "uncollectible") && i.daysLate > 0;
 }
 
 /** An invoice's status as the operator reads it: open past its due date is overdue. */

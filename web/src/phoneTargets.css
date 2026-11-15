@@ -1,0 +1,31 @@
+/* Phones (up to 640 px): every control is at least 44 px to tap (WCAG 2.5.5).
+   Prefixed with :root so lazily loaded page styles do not undo it. Small round controls
+   grow their hit area with a negative margin, so the layout stays put. */
+@media (max-width: 640px) {
+  :root .btn, :root .btn.btn--small, :root .chip, :root .tab, :root .theme-toggle, :root .row-action, :root .backdrop-segment button, :root .setting-toggle, :root .input, :root select, :root textarea,
+  :root input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]),
+  :root .chips[data-glide="track"] > :is(button, a) {
+    min-height: 44px;
+  }
+  :root .row-action.row-menu__toggle { min-width: 44px; }
+
+  :root .topbar .brand { display: inline-flex; align-items: center; min-height: 44px; }
+  :root a.cell-link { min-height: 44px; }
+  :root .link { display: inline-flex; align-items: center; min-height: 44px; }
+  :root summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
+
+  /* names that open a row: taller hit area, same line height */
+  :root .row-link__btn { display: inline-flex; align-items: center; min-height: 44px; margin-block: -11px; }
+
+  :root .backdrop-swatch { width: 44px; height: 44px; }
+  :root .info-tip__btn { width: 44px; height: 44px; margin: -8px; }
+  :root .avatar-btn { min-width: 44px; min-height: 44px; place-items: center; margin: -9px; }
+
+  /* the volume slider: a 44 px tall input, the track drawn 6 px in the middle */
+  :root .sound-volume input[type="range"] {
+    height: 44px;
+    background-size: 100% 6px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+}

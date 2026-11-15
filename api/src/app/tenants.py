@@ -5,6 +5,7 @@ offboarding) is done by the Step Functions workflows in the infrastructure
 repo - this module only writes the rows and starts them."""
 
 import json
+from datetime import date, timedelta
 
 from botocore.exceptions import ClientError
 
@@ -58,9 +59,136 @@ def owner_email_problem(email: str | None, tenant_id: str | None = None) -> str 
     return f"Already signs in to {other} - use another address, e.g. {local}+{domain.split('.')[0]}2@{domain}"
 
 
-def get_plan(plan_id: str) -> dict | None:
+# Free: no monthly charge, Growth's features and limits. Not a row in the
+# catalog (no Stripe product, nothing to keep in step): derived from
+# PLAN#growth on every read, so it always follows Growth. A limited free
+# period ends on billing.freeUntil (the last free day) and the daily task
+# (billing.free_step) moves the customer to billing.freeThenPlanId.
+FREE_PLAN_ID = "free"
+FREE_BASE_PLAN_ID = "growth"
+FREE_MONTHS = 3
+FREE_NOTICE_DAYS = 14          # the owner is told this many days before the first paid day
+
+
+def _plan_row(plan_id: str) -> dict | None:
     return from_ddb(client("dynamodb").get_item(
         TableName=tenant_table(), Key={"PK": {"S": f"PLAN#{plan_id}"}, "SK": {"S": "PLAN"}}).get("Item"))
+
+
+def free_plan(base: dict | None) -> dict | None:
+    if not base:
+        return None
+    return {**base, "planId": FREE_PLAN_ID, "name": "Free", "priceSek": 0, "free": True,
+            "stripePriceId": None, "stripeProductId": None, "GSI1SK": FREE_PLAN_ID}
+
+
+def get_plan(plan_id: str) -> dict | None:
+    if plan_id == FREE_PLAN_ID:
+        return free_plan(_plan_row(FREE_BASE_PLAN_ID))
+    return _plan_row(plan_id)
+
+
+def add_months(day: date, months: int) -> date:
+    month = day.month - 1 + months
+    year = day.year + month // 12
+    month = month % 12 + 1
+    last = (date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)).day
+    return day.replace(year=year, month=month, day=min(day.day, last))
+
+
+def default_free_until(today: date | None = None) -> date:
+    """The default last free day: three months from today (Stockholm), the
+    day before the same date three months on (from 14 Nov: 13 Feb, the
+    first paid day 14 Feb)."""
+    from .website import stockholm_today          # website imports nothing from here
+    return add_months(today or stockholm_today(), FREE_MONTHS) - timedelta(days=1)
+
+
+def _stockholm_today() -> date:
+    """Today in Stockholm: the day a free period counts from (freeSince), like its end."""
+    from .website import stockholm_today          # website imports nothing from here
+    return stockholm_today()
+
+
+FREE_PRESETS = {"until_changed": None, "3m": 3, "6m": 6}
+
+
+def free_until_for(preset: str, start: date) -> date | None:
+    """The last free day of a preset: none for until_changed, else the day
+    before the same date 3 or 6 calendar months on (from 14 Nov 2026, 3m
+    ends 13 Feb 2027; from 31 Aug, 6m ends 27 Feb as 28 Feb is the first paid day)."""
+    months = FREE_PRESETS[preset]
+    return None if months is None else add_months(start, months) - timedelta(days=1)
+
+
+def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_until: str | None = None,
+               start: date | None = None, current_preset: str | None = None) -> dict | None:
+    """The `free` object next to planId "free". Either a preset,
+    {preset: "until_changed" | "3m" | "6m", thenPlanId}, the end computed
+    here from `start` (the free period's first day, Stockholm; today when
+    left out) and thenPlanId required for 3m/6m; or, for older callers,
+    {until: yyyy-mm-dd | null (no end date), thenPlanId (default starter)}.
+    Left out: three months, then Starter. A new last free day is at least
+    14 days ahead, so the owner can be told 14 days before the first paid
+    day (`current_until`, the one already set, may stay, and so does the
+    saved end of an unchanged preset, `current_preset`)."""
+    if plan_id != FREE_PLAN_ID:
+        return None
+    from .website import stockholm_today
+    today = stockholm_today()
+    raw = f.data.get(field)
+    if raw is None:
+        return {"until": default_free_until(today).isoformat(), "thenPlanId": "starter"}
+    if not isinstance(raw, dict):
+        f.fail(field, "Must be an object")
+        return None
+    out = {"until": None, "thenPlanId": "starter"}
+    preset = raw.get("preset")
+    if preset is not None:
+        if not isinstance(preset, str) or preset not in FREE_PRESETS:
+            f.fail(f"{field}.preset", "Pick until_changed, 3m or 6m")
+            return None
+        out["preset"] = preset
+        if preset == current_preset and current_until is not None:
+            out["until"] = current_until          # unchanged: the saved end stays
+        else:
+            day = free_until_for(preset, start or today)
+            if day is not None and day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
+                f.fail(f"{field}.preset", f"Less than {FREE_NOTICE_DAYS} days of that period are left: "
+                                          "pick a longer one or Free until changed")
+            out["until"] = day.isoformat() if day else None
+        if preset != "until_changed" and not raw.get("thenPlanId"):
+            f.fail(f"{field}.thenPlanId", "Pick the plan after Free")
+            return out
+    else:
+        until = raw.get("until")
+        if until is not None:
+            try:
+                day = date.fromisoformat(str(until)[:10]) if isinstance(until, str) else None
+            except ValueError:
+                day = None
+            if day is None:
+                f.fail(f"{field}.until", "Use yyyy-mm-dd, or null for no end date")
+            elif day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
+                f.fail(f"{field}.until", f"At least {FREE_NOTICE_DAYS} days ahead, so the owner is told "
+                                         f"{FREE_NOTICE_DAYS} days before the first paid day")
+            elif day > today + timedelta(days=3 * 366):
+                f.fail(f"{field}.until", "At most three years ahead")
+            else:
+                out["until"] = day.isoformat()
+    then = raw.get("thenPlanId") or "starter"
+    if not isinstance(then, str) or then == FREE_PLAN_ID or _plan_row(then) is None:
+        f.fail(f"{field}.thenPlanId", "Pick Starter or Growth")
+    else:
+        out["thenPlanId"] = then
+    return out
+
+
+def free_price_problem(free: dict | None, price_sek: int | None) -> str | None:
+    """A timed preset (3m, 6m) needs the monthly price after Free, above 0."""
+    if free and free.get("preset") in ("3m", "6m") and not price_sek:
+        return "Set the monthly price after Free"
+    return None
 
 
 def _profile_fields(f: v.Fields) -> dict:
@@ -88,13 +216,17 @@ def _profile_fields(f: v.Fields) -> dict:
 
 # ---------------------------------------------------------------------- plans
 def list_plans(req) -> tuple[int, dict]:
-    plans = query_all(TableName=tenant_table(), IndexName="GSI1",
-                      KeyConditionExpression="GSI1PK = :p", ExpressionAttributeValues={":p": {"S": "PLAN"}})
+    plans = [p for p in query_all(TableName=tenant_table(), IndexName="GSI1",
+                                  KeyConditionExpression="GSI1PK = :p", ExpressionAttributeValues={":p": {"S": "PLAN"}})
+             if p.get("planId") != FREE_PLAN_ID]
+    plans.sort(key=lambda p: (p.get("priceSek") is None, p.get("priceSek") or 0, p["planId"]))
+    free = free_plan(next((p for p in plans if p["planId"] == FREE_BASE_PLAN_ID), None))
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
          "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
-         "limits": p.get("limits", {}), "priceSek": p.get("priceSek")}
-        for p in plans]}
+         "limits": p.get("limits", {}), "priceSek": p.get("priceSek"), "free": bool(p.get("free"))}
+        for p in plans + ([free] if free else [])],
+        "freeDefaultUntil": default_free_until().isoformat()}
 
 
 def _entitlements(plan: dict, overrides: dict | None) -> dict:
@@ -128,10 +260,10 @@ def _overrides(f: v.Fields) -> dict | None:
     if feats is not None:
         if not isinstance(feats, dict) or not all(isinstance(x, bool) for x in feats.values()):
             sub.fail("features", "Map of feature -> true/false")
-        elif any(k not in FEATURE_KEYS for k in feats):
-            sub.fail("features", "Unknown feature")
         else:
-            out["features"] = feats
+            # Keys no longer in the contract (a retired feature, e.g. "terminal", still on
+            # stored entitlements and sent back) are dropped, not rejected.
+            out["features"] = {k: on for k, on in feats.items() if k in FEATURE_KEYS}
     lims = raw.get("limits")
     if lims is not None:
         if not isinstance(lims, dict):
@@ -171,9 +303,12 @@ def _billing_input(f: v.Fields) -> dict:
     if terms not in ("trial", "subscription"):
         sub.fail("terms", "trial (try-out period) or subscription")
     out = {"terms": terms, "priceSek": price_field(sub), "startInvoicing": sub.boolean("startInvoicing") or False,
-           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10)}
+           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10),
+           "collectionPreference": sub.text("collectionPreference", max_len=20)}
     if out["collectionMethod"] not in (None, "send_invoice", "charge_automatically"):
         sub.fail("collectionMethod", "send_invoice or charge_automatically")
+    if out["collectionPreference"] not in (None, "card", "invoice"):
+        sub.fail("collectionPreference", "card (charged automatically) or invoice (pay within 30 days)")
     for k, msg in sub.errors.items():
         f.fail(f"billing.{k}", msg)
     return out
@@ -198,6 +333,8 @@ def list_tenants(req) -> tuple[int, dict]:
             "chargesEnabled": bool(stripe.get("chargesEnabled")),
             "primaryDomain": t.get("primaryDomain"), "ownerEmail": t.get("ownerEmail"),
             "createdAt": t.get("createdAt"),
+            "freeUntil": (t.get("billing") or {}).get("freeUntil") if t.get("planId") == FREE_PLAN_ID
+            and isinstance(t.get("billing"), dict) else None,
         })
     rows.sort(key=lambda r: (r["name"] or "").lower())
     return 200, {"tenants": rows}
@@ -214,6 +351,11 @@ def create_tenant(req) -> tuple[int, dict]:
     fields = _profile_fields(f)
     overrides = _overrides(f)
     billing_input = _billing_input(f)
+    free_start = _start_day(billing_input)
+    free = free_input(f, plan_id, start=free_start)
+    price_problem = free_price_problem(free, billing_input.get("priceSek"))
+    if price_problem:
+        f.fail("billing.priceSek", price_problem)
     raw_locations = req.body.get("locations") or []
     if not isinstance(raw_locations, list):
         f.fail("locations", "Must be a list")
@@ -252,7 +394,12 @@ def create_tenant(req) -> tuple[int, dict]:
     slug_claim = {"ConditionExpression": "tenantId = :old", "ExpressionAttributeValues": {":old": {"S": previous}}} \
         if previous else {"ConditionExpression": "attribute_not_exists(PK)"}
     billing = {"terms": billing_input["terms"]}
-    if billing_input.get("priceSek") is not None and plan and billing_input["priceSek"] != plan.get("priceSek"):
+    # On Free an own price is the price after it (compared with the next plan's).
+    price_plan = (get_plan(free.get("thenPlanId") or "starter") or {}) if free is not None else plan
+    if free is not None:
+        billing.update({k: val for k, val in free_fields(free, (free_start or _stockholm_today()).isoformat(), overrides).items()
+                        if val is not None})
+    if billing_input.get("priceSek") is not None and price_plan and billing_input["priceSek"] != price_plan.get("priceSek"):
         billing["priceSek"] = billing_input["priceSek"]
     profile = {
         "PK": f"TENANT#{tenant_id}", "SK": "PROFILE", "GSI1PK": "TENANT", "GSI1SK": slug,
@@ -281,6 +428,7 @@ def create_tenant(req) -> tuple[int, dict]:
                                               **v.app_location_fields(loc), **loc})}})
     items.append(audit_put(tenant_id, "tenant_created", req.actor,
                            {"planId": plan_id, "ownerEmail": owner_email, "locations": len(locations),
+                            **({"free": free} if free else {}),
                             **({"slugFromPurgedTenant": previous} if previous else {})}))
     try:
         client("dynamodb").transact_write_items(TransactItems=items)
@@ -300,7 +448,8 @@ def create_tenant(req) -> tuple[int, dict]:
         from .billing import start_for                 # billing imports this module
         try:
             out["billing"] = start_for(tenant_id, get_profile(tenant_id), actor=req.actor,
-                                       method=billing_input.get("collectionMethod") or "send_invoice",
+                                       method=billing_input.get("collectionMethod"),
+                                       preference=billing_input.get("collectionPreference"),
                                        start_day=billing_input.get("startDate"), price_sek=billing_input.get("priceSek"),
                                        terms=billing_input["terms"])
         except ApiError as e:
@@ -432,6 +581,31 @@ def update_tenant(req) -> tuple[int, dict]:
     return 200, {"tenant": public(from_ddb(out["Attributes"]))}
 
 
+def _day(text) -> date | None:
+    try:
+        return date.fromisoformat(str(text)[:10]) if text else None
+    except ValueError:
+        return None
+
+
+def _start_day(billing_input: dict) -> date | None:
+    """The agreement's first day when given (create form), else None = today."""
+    return _day(billing_input.get("startDate")) if billing_input.get("startInvoicing") else None
+
+
+def free_fields(free: dict | None, since: str | None = None, overrides: dict | None = None) -> dict:
+    """PROFILE.billing fields of a free period (None values = REMOVE).
+    freeLocationsChosen: the operator set the number of locations on Free
+    (kept after it, billing._kept_locations), so a number equal to the Free
+    plan's own still counts as chosen."""
+    if free is None:
+        return {"freeUntil": None, "freeThenPlanId": None, "freeSince": None, "freeNoticeFor": None, "freePreset": None,
+                "freeLocationsChosen": None}
+    return {"freeUntil": free.get("until"), "freeThenPlanId": free.get("thenPlanId") or "starter", "freeSince": since,
+            "freePreset": free.get("preset"),
+            "freeLocationsChosen": (overrides or {}).get("maxLocations") is not None}
+
+
 def set_plan(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     f = v.Fields(req.body)
@@ -439,13 +613,42 @@ def set_plan(req) -> tuple[int, dict]:
     overrides = _overrides(f)
     force = f.boolean("force") or False
     price_sek = price_field(f)
-    f.done()
     profile = get_profile(tenant_id)
+    old = (profile.get("billing") or {}) if profile.get("planId") == FREE_PLAN_ID else {}
+    since = _day(old.get("freeSince"))
+    free = free_input(f, plan_id, current_until=old.get("freeUntil"), start=since,
+                      current_preset=old.get("freePreset"))
+    price_problem = free_price_problem(free, price_sek)
+    if price_problem:
+        f.fail("priceSek", price_problem)
+    f.done()
     plan = get_plan(plan_id)
     if plan is None:
         raise ApiError(400, "validation_failed", "Unknown plan", fields={"planId": "Unknown plan"})
+    tenant, subscription = apply_plan(tenant_id, profile, plan, req.actor, overrides=overrides, force=force,
+                                      price_sek=price_sek, free=free)
+    return 200, {"tenant": tenant, "subscription": subscription}
+
+
+def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrides: dict | None = None,
+               force: bool = False, price_sek: int | None = None, free: dict | None = None,
+               expect_free_until: str | None = None, price_from: date | None = None,
+               agreement_pending: str | None = None) -> tuple[dict, dict | None]:
+    """Sets the plan, its entitlements (plus overrides) and the customer's
+    own price; Free also sets its period (`free`), any other plan ends one.
+    On Free the own price is the price after it: `price_sek` sets it (the
+    next plan's price = none), left out it stays as it is.
+    `expect_free_until`: only while the customer is still on that free
+    period (the daily switch, so a re-run never switches twice).
+    `agreement_pending`: the day an agreement should start from, kept
+    until one runs (billing.freeSwitchAgreementPending)."""
+    plan_id = plan["planId"]
+    is_free = plan_id == FREE_PLAN_ID
     ent = _entitlements(plan, overrides)
-    custom_price = price_sek if price_sek is not None and price_sek != plan.get("priceSek") else None
+    old_billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
+    keep_price = is_free and price_sek is None
+    price_plan = (get_plan((free or {}).get("thenPlanId") or "starter") or {}) if is_free else plan
+    custom_price = price_sek if price_sek is not None and price_sek != price_plan.get("priceSek") else None
     count = int(profile.get("locationCount", 0))
     if ent["maxLocations"] < count and not force:
         raise ApiError(409, "below_location_count",
@@ -453,7 +656,8 @@ def set_plan(req) -> tuple[int, dict]:
                        "Send force=true to apply anyway (existing locations keep working, no new ones).",
                        locationCount=count)
     ensure_billing_map(tenant_id)
-    values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": req.actor}}
+    values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": actor}}
+    names: dict = {}
     ever = _turned_on(ent)
     if isinstance(profile.get("entitlements"), dict):
         # Field by field, so featuresEver is only ever added to (ADD is a set union, safe against concurrent writes).
@@ -469,23 +673,49 @@ def set_plan(req) -> tuple[int, dict]:
     else:
         values[":e"] = to_ddb_value({**ent, **({"featuresEver": ever} if ever else {})})
         expression, expression_add = "SET planId = :p, entitlements = :e, updatedAt = :n, updatedBy = :b", ""
+    removes = []
     if custom_price is not None:
         values[":price"] = {"N": str(custom_price)}
         expression += ", billing.priceSek = :price"
-    else:
-        expression += " REMOVE billing.priceSek"
+    elif not keep_price:
+        removes.append("billing.priceSek")
+    if agreement_pending:
+        values[":pending"] = {"S": agreement_pending}
+        expression += ", billing.freeSwitchAgreementPending = :pending"
+    was_free = profile.get("planId") == FREE_PLAN_ID
+    since = old_billing.get("freeSince") if was_free and old_billing.get("freeSince") else _stockholm_today().isoformat()
+    fields = free_fields(free if is_free else None, since, overrides)
+    if is_free and old_billing.get("freeNoticeFor") and old_billing.get("freeNoticeFor") != free.get("until"):
+        fields["freeNoticeFor"] = None          # a new end date gets its own notice
+    for i, (key, val) in enumerate(fields.items()):
+        names[f"#fr{i}"] = key
+        if val is None:
+            removes.append(f"billing.#fr{i}")
+        else:
+            values[f":fr{i}"] = to_ddb_value(val)
+            expression += f", billing.#fr{i} = :fr{i}"
+    if removes:
+        expression += " REMOVE " + ", ".join(removes)
     expression += expression_add
+    condition = "attribute_exists(PK)"
+    if expect_free_until:
+        condition += " AND planId = :free AND billing.freeUntil = :until"
+        values.update({":free": {"S": FREE_PLAN_ID}, ":until": {"S": expect_free_until}})
     out = client("dynamodb").update_item(
-        TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression,
-        ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues=values, ReturnValues="ALL_NEW")
-    write_audit(tenant_id, "plan_changed", req.actor, {
+        TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expression, ConditionExpression=condition,
+        ExpressionAttributeValues=values, ReturnValues="ALL_NEW", **({"ExpressionAttributeNames": names} if names else {}))
+    write_audit(tenant_id, "plan_changed", actor, {
         "from": {"planId": profile.get("planId"), "entitlements": profile.get("entitlements"),
-                 "priceSek": (profile.get("billing") or {}).get("priceSek") if isinstance(profile.get("billing"), dict) else None},
-        "to": {"planId": plan_id, "entitlements": ent, "priceSek": custom_price}})
+                 "priceSek": old_billing.get("priceSek"),
+                 **({"freeUntil": old_billing.get("freeUntil")} if was_free else {})},
+        "to": {"planId": plan_id, "entitlements": ent,
+               "priceSek": old_billing.get("priceSek") if keep_price else custom_price, **({"free": free} if is_free else {})}})
     from .billing import after_plan_change          # billing imports this module
-    subscription = after_plan_change(tenant_id, from_ddb(out["Attributes"]), plan, req.actor)
+    from .website import stockholm_today
+    subscription = after_plan_change(tenant_id, from_ddb(out["Attributes"]), plan, actor,
+                                     exact=is_free or was_free, on=price_from or stockholm_today(), before=profile)
     tenant = public(from_ddb(out["Attributes"])) if subscription is None else public(get_profile(tenant_id))
-    return 200, {"tenant": tenant, "subscription": subscription}
+    return tenant, subscription
 
 
 def ensure_billing_map(tenant_id: str) -> None:
