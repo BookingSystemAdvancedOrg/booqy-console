@@ -192,7 +192,7 @@ function EditOperator({ op, canChangeEmail, onClose, onSaved }: { op: OperatorAc
   const [name, setName] = useState(op.name);
   const [email, setEmail] = useState(op.email);
   const a = useAction();
-  const dirty = useDirty(name.trim(), op.name);
+  const dirty = useDirty(name.trim() || op.name, op.name);
   const emailDirty = useDirty(email.trim().toLowerCase(), op.email.toLowerCase());
   const submit = async (e: FormEvent) => {
     e.preventDefault();

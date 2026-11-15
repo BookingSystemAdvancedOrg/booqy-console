@@ -33,6 +33,13 @@ describe("My profile", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it("an emptied name is not a change", async () => {
+    mocks.operators.mockResolvedValue({ operators: [mine], canChangeEmail: false });
+    render(<ProfilePage me={me} onSaved={vi.fn().mockResolvedValue(undefined)} />);
+    await userEvent.clear(await screen.findByDisplayValue("Lamo Koura"));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it("lets an owner change their own email", async () => {
     mocks.operators.mockResolvedValue({ operators: [{ ...mine, role: "owner" }], canChangeEmail: true });
     render(<ProfilePage me={me} onSaved={vi.fn().mockResolvedValue(undefined)} />);

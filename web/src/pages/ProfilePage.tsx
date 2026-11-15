@@ -25,7 +25,8 @@ export default function ProfilePage({ me, onSaved }: { me: Operator; onSaved: ()
   // Once the list arrives (or after a save), the fields start from what is stored.
   useEffect(() => { setName(savedName); setEmail(savedEmail); }, [savedName, savedEmail]);
   const a = useAction();
-  const nameDirty = useDirty(name.trim(), savedName);
+  // An emptied name is not a change: the API keeps the stored one.
+  const nameDirty = useDirty(name.trim() || savedName, savedName);
   const emailDirty = useDirty(email.trim().toLowerCase(), savedEmail.toLowerCase());
   const dirty = nameDirty.dirty || (canChangeEmail && emailDirty.dirty);
 
