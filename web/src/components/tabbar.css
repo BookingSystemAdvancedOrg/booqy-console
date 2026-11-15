@@ -121,8 +121,10 @@
     -webkit-tap-highlight-color: transparent;
     transition: background-color 160ms var(--ease-out);
   }
-  .ws-row:hover { background: rgb(58 36 24 / 0.06); }
-  :root[data-theme="dark"] .ws-row:hover { background: rgb(213 196 174 / 0.08); }
+  @media (hover: hover) {
+    .ws-row:hover { background: rgb(58 36 24 / 0.06); }
+    :root[data-theme="dark"] .ws-row:hover { background: rgb(213 196 174 / 0.08); }
+  }
   .ws-row.active { background: var(--lacquer); box-shadow: var(--lacquer-rim); color: var(--bq-snow); }
   :root[data-theme="dark"] .ws-row.active { color: #1a120e; }
   .ws-row:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }

@@ -118,6 +118,10 @@ describe("TabBar (phones)", () => {
     expect(document.activeElement).toBe(rows[0]);
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(rows[rows.length - 1]);
+    // every step is moved by hand (Safari skips links on Tab and would drop focus on the body)
+    rows[0].focus();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab" });
+    expect(document.activeElement).toBe(rows[1]);
   });
 
   it("shows a dot on Inbox while reports are open", async () => {
