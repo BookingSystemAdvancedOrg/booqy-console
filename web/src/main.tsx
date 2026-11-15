@@ -28,6 +28,7 @@ import "./phoneTargets.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";
+import { TabBar } from "./components/TabBar";
 import { helpChatEnabled, openHelpChat } from "./features/help/chatState";
 
 // Each page loads when it is opened, so the first load only fetches the shell
@@ -116,6 +117,8 @@ const ALL_NAV: NavItem[] = [
   ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
   ...(SHOW_INSTALL ? [{ to: "/settings#desktop-app", label: "Install app", icon: "download" as const }] : []),
 ];
+// "My profile" in the phones' Workspace sheet: the profile card at the top of Settings.
+const PROFILE_PATH = "/settings";
 const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
 
 // Pages visited in this tab (memory only): the palette's "Recent".
@@ -151,10 +154,6 @@ function Shell() {
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [appHint, closeAppHint] = useDesktopHint();
-  // Phones: the links sit behind a Menu button. The menu belongs to the page
-  // it was opened on, so going to another page closes it.
-  const [menuAt, setMenuAt] = useState<string | null>(null);
-  const menuOpen = menuAt === location.pathname;
   // Cognito unreachable (offline, waking from sleep, an outage): still signed
   // in, the current page stays and the check runs again until it answers.
   const [offline, setOffline] = useState(false);
@@ -192,22 +191,13 @@ function Shell() {
   return (
     <div className="app">
       {notice}
-      {/* A dirty form asks before any top bar link takes the operator away. */}
-      <header className={menuOpen ? "topbar is-open" : "topbar"} onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
+      {/* A dirty form asks before any top bar link takes the operator away.
+          Phones show only the logo here; the links are in the bottom bar (TabBar). */}
+      <header className="topbar" onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         {IS_DEV && <span className="env">dev</span>}
         <PaletteTrigger />
-        <button
-          type="button"
-          className="topbar__menu"
-          aria-expanded={menuOpen}
-          aria-controls="topbar-menu"
-          aria-label={menuOpen ? "Close menu" : "Menu"}
-          onClick={() => setMenuAt(menuOpen ? null : location.pathname)}
-        >
-          <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
-        </button>
-        <nav className="topbar__nav" id="topbar-menu">
+        <nav className="topbar__nav">
           {/* The headings only show in the side menu on wide screens. */}
           {NAV.map((group) => (
             <Fragment key={group.label}>
@@ -234,6 +224,14 @@ function Shell() {
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>
+      <TabBar
+        email={user.email}
+        username={user.username}
+        profilePath={PROFILE_PATH}
+        showInstall={SHOW_INSTALL}
+        showDownload={SHOW_DOWNLOAD}
+        onSignOut={() => setConfirmSignOut(true)}
+      />
       <ConsolePalette onSignOut={() => setConfirmSignOut(true)} />
       <HelpChat />
       {confirmSignOut && (

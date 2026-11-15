@@ -24,21 +24,21 @@ for (const vp of SIZES) {
     const phone = vp.kind === 'phone'
 
     if (phone) {
-      test(`menu drawer ${vp.name} ${theme}`, async ({ page }, info) => {
+      test(`workspace sheet ${vp.name} ${theme}`, async ({ page }, info) => {
         await open(page, '/', vp, theme)
         const issues: Issue[] = []
-        const burger = page.locator('button[aria-expanded]').first()
-        await burger.click()
+        const you = page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Workspace' })
+        await you.click()
         await page.waitForTimeout(400)
-        const nav = page.locator('nav').filter({ visible: true }).first()
-        const b = await nav.boundingBox()
-        if (!b || b.x < -1 || b.x + b.width > vp.width + 1) issues.push({ kind: 'drawer-bounds', severity: 'high', message: `Menu outside the window: ${JSON.stringify(b)}` })
+        const sheet = page.getByRole('dialog', { name: 'Workspace' })
+        const b = await sheet.boundingBox()
+        if (!b || b.x < -1 || b.x + b.width > vp.width + 1 || b.y + b.height > vp.height + 1) issues.push({ kind: 'sheet-bounds', severity: 'high', message: `Sheet outside the window: ${JSON.stringify(b)}` })
         issues.push(...(await layoutAudit(page, { ...opts(true), atBottom: false })).filter((i) => i.kind !== 'tap-target'))
-        await page.screenshot({ path: info.outputPath('drawer-open.png') })
+        await page.screenshot({ path: info.outputPath('sheet-open.png') })
         await page.keyboard.press('Escape')
-        if ((await burger.getAttribute('aria-expanded')) === 'true') await burger.click()
-        await expect(burger).toHaveAttribute('aria-expanded', 'false')
-        record(info, 'console', 'interaction:drawer', vp.name, theme, issues)
+        await expect(sheet).toHaveCount(0)
+        await expect(you).toHaveAttribute('aria-expanded', 'false')
+        record(info, 'console', 'interaction:workspace-sheet', vp.name, theme, issues)
         assertNoIssues(issues)
       })
     }

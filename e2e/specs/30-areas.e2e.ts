@@ -147,11 +147,11 @@ test.describe('Console: mail, finance, website, settings, help', () => {
 })
 
 test.describe('Console: mobile', () => {
-  test('drawer opens and navigates @mobile', async ({ page }) => {
-    test.skip((page.viewportSize()?.width ?? 1400) >= 768, 'phones only (tablets show the sidebar)')
+  test('bottom bar and Workspace sheet navigate @mobile', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 1400) > 760, 'phones only (wider screens show the side menu)')
     await page.goto('/')
-    await page.getByRole('button', { name: /menu|meny/i }).first().click()
-    await page.getByRole('link', { name: 'Operators' }).click()
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Workspace' }).click()
+    await page.getByRole('dialog', { name: 'Workspace' }).getByRole('link', { name: 'Operators' }).click()
     await expect(page.getByRole('heading', { level: 1, name: /Operators/ })).toBeVisible()
   })
 })

@@ -143,7 +143,7 @@
 
 
 /* --- the shell ------------------------------------------------------------ */
-.topbar, .topbar.is-open {
+.topbar {
   background: var(--glass-side);
   box-shadow: var(--glass-edge), var(--elev-2);
   -webkit-backdrop-filter: blur(var(--blur-side)) saturate(1.5);
@@ -178,7 +178,7 @@
 .topbar .palette-trigger { flex: 0 0 auto; }
 
 @media (min-width: 1024px) {
-  .topbar, .topbar.is-open { padding: var(--space-6) var(--space-3) var(--space-4); }
+  .topbar { padding: var(--space-6) var(--space-3) var(--space-4); }
   .topbar .palette-trigger { order: 0; margin: var(--space-5) var(--space-1) 0; width: auto; }
   .topbar .palette-trigger-text { flex: 1 1 auto; }
   .topbar__nav { margin-top: var(--space-4); }
@@ -197,12 +197,6 @@
 @media (max-width: 1023px) {
   .topbar .palette-trigger { margin-left: auto; }
   .topbar__nav a .nav-icon { display: none; }
-}
-@media (max-width: 760px) {
-  .topbar .palette-trigger { margin-left: auto; }
-  .topbar__menu { margin-left: 0; }
-  .topbar.is-open .topbar__nav a .nav-icon { display: inline-block; }
-  .topbar.is-open .topbar__nav a { display: flex; }
 }
 
 /* page head: title left, the one primary action last */
@@ -661,10 +655,10 @@
 
 /* no blur, or less transparency wanted: solid surfaces */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); }
+  .topbar, .main, .modal__panel, .palette { background: var(--paper); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .topbar, .main, .modal__panel, .palette { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .palette, .palette-backdrop { animation: none; }
@@ -748,7 +742,6 @@ html.is-desktop-glass[data-desktop-glass='tint'] body::before { display: block; 
 /* The OS already blurs the desktop; the page's own blur would only blur the
    clear window. Modals and the palette keep theirs (they sit over content). */
 html.is-desktop-glass .topbar,
-html.is-desktop-glass .topbar.is-open,
 html.is-desktop-glass .main,
 html.is-desktop-glass .auth__main {
   -webkit-backdrop-filter: none;
@@ -915,19 +908,6 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
   background: linear-gradient(rgb(26 18 14 / 0.42), rgb(26 18 14 / 0.42)), var(--user-image) center / cover no-repeat, var(--ox-800);
 }
 
-/* Phones: the open menu never grows past the screen; it scrolls inside
-   (dvh follows Safari's toolbar, svh is the fallback), with room for the home
-   indicator, and the page behind does not scroll along. */
-@media (max-width: 1023px) {
-  .topbar.is-open {
-    max-block-size: calc(100svh - 24px);
-    max-block-size: calc(100dvh - 24px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    padding-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-}
 
 /* --- Your image: the library (components/BackdropLibrary.tsx) ------------- */
 /* The row takes the full width when the library shows. */

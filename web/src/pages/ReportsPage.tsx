@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InboxSwitch } from "../components/InboxSwitch";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { ErrorNotice, fmtDate, useAction, useLoad } from "../components/ui";
@@ -75,6 +76,7 @@ export default function ReportsPage() {
 
   return (
     <>
+      <InboxSwitch on="reports" />
       <div className="page-head">
         <div>
           <h1>Reports</h1>

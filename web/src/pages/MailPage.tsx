@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InboxSwitch } from "../components/InboxSwitch";
 import { api } from "../api";
 import {
   Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
@@ -62,6 +63,7 @@ export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
   const [sentNotice, setSentNotice] = useState<string | null>(null);
   return (
     <>
+      <InboxSwitch on="mail" />
       <div className="page-head">
         <div>
           <h1>Mail</h1>
