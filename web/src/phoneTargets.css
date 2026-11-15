@@ -19,6 +19,9 @@
 
   :root .backdrop-swatch { width: 44px; height: 44px; }
   :root .info-tip__btn { width: 44px; height: 44px; margin: -8px; }
+  /* a trend chip: a 44 px hit area around the small pill, the layout stays put */
+  :root .delta-tip { min-width: 44px; min-height: 44px; margin: -12px -4px; }
+  :root .switch { min-height: 44px; }
   :root .avatar-btn { min-width: 44px; min-height: 44px; place-items: center; margin: -9px; }
 
   /* the volume slider: a 44 px tall input, the track drawn 6 px in the middle */

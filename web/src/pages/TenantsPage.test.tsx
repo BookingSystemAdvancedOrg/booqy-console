@@ -37,6 +37,18 @@ beforeEach(() => {
 
 const cardOf = async (name: string) => (await screen.findByText(name)).closest("tr") as HTMLTableRowElement;
 
+describe("Customers when the list fails", () => {
+  it("shows the error with Try again, not an empty list", async () => {
+    mocks.tenants.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText(/No customers match/)).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Pizzeria Roma")).toBeInTheDocument();
+  });
+});
+
 describe("Customers list as phone cards", () => {
   it("gives each card a heading, a status badge and the key facts with their labels", async () => {
     renderPage();

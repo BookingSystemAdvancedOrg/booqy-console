@@ -56,11 +56,12 @@ export default function OperatorsPage({ me }: { me: string }) {
         </div>
       </div>
 
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} onRetry={() => void reload()} />
       <ErrorNotice error={row.error} />
       {done && <Notice kind="ok">{done}</Notice>}
 
-      {loading && !data ? <SkelPage label="Loading operators"><SkelTable rows={4} cols={4} /></SkelPage> : (
+      {/* A failed load is not an empty list: no "No operators" under the error. */}
+      {loading && !data ? <SkelPage label="Loading operators"><SkelTable rows={4} cols={4} /></SkelPage> : data && (
         <div className="table-wrap">
           <table className="table">
             <thead>

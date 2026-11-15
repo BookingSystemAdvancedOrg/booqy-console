@@ -164,7 +164,7 @@ for (const theme of ['light', 'dark'] as const) {
   test(`customers toolbar 320 ${theme}`, async ({ page }, info) => {
     await open(page, '/', VIEWPORTS.find((v) => v.name === '320')!, theme)
     const refresh = page.getByRole('button', { name: 'Refresh' })
-    const add = page.getByRole('link', { name: /New customer/ })
+    const add = page.getByRole('main').getByRole('link', { name: /New customer/ })
     const [r, a] = [await refresh.boundingBox(), await add.boundingBox()]
     expect(r!.width).toBeGreaterThanOrEqual(44)
     expect(r!.height).toBeGreaterThanOrEqual(44)

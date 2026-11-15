@@ -22,6 +22,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 10, text: "Bottom navigation" },
   { n: 11, text: "Date fields on phones" },
   { n: 12, text: "My profile" },
+  { n: 13, text: "Finance dates and tiles" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

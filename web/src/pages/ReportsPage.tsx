@@ -88,13 +88,14 @@ export default function ReportsPage() {
             </InfoTip>
           </p>
         </div>
-        <div className="row">
-          <div className="row reports-filter" role="group" aria-label="Show">
+        <div className="row reports-actions">
+          {/* the same gliding chip group as the Finance periods: 44 px to tap on phones */}
+          <div className="chips reports-filter" role="group" aria-label="Show">
             {SHOW.map((s) => (
               <button
                 key={s.key}
                 type="button"
-                className={`btn btn--small ${show === s.key ? "btn--primary" : "btn--ghost"}`}
+                className={`chip${show === s.key ? " chip--on" : ""}`}
                 aria-pressed={show === s.key}
                 onClick={() => setShow(s.key)}
               >

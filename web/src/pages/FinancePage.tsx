@@ -18,6 +18,7 @@ import { helpSlug } from "../features/help/helpId";
 import { FreeBadge } from "../components/FreeFields";
 import { InfoTip } from "../components/StepFlow";
 import { Select } from "../components/Select";
+import { ScrollEdges } from "../components/ScrollEdges";
 
 const BILLING_TEXT: Record<string, string> = {
   none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
@@ -95,7 +96,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <div>
           <h1>Finance</h1>
           <p className="muted">
-            {data?.asOf ? `As of ${fmtDate(data.asOf)} · SEK ex VAT` : "No nightly figures yet"}{" "}
+            {data?.asOf ? `As of ${fmtDate(data.asOf)} · SEK ex VAT` : data ? "No nightly figures yet" : "SEK ex VAT"}{" "}
             <InfoTip label="About the figures">
               {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
               Revenue and cost in SEK excluding VAT. The figures come from the nightly job (Cost Explorer plus each
@@ -179,7 +180,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         </div>
       </div>
 
-      <ErrorNotice error={error ?? sync.error} />
+      <ErrorNotice error={error ?? sync.error} onRetry={error ? () => void reload() : undefined} />
       {data?.period.locationId && (
         <Notice kind="info">
           One location{" "}
@@ -319,6 +320,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             </div>
           )}
 
+          <ScrollEdges>
           <div className="table-wrap">
             <table className="table finance-table">
               <thead>
@@ -342,6 +344,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               </tbody>
             </table>
           </div>
+          </ScrollEdges>
         </>
       )}
 

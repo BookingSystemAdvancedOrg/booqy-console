@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../auth", () => ({ AuthUnavailableError: class extends Error {}, accessToken: async () => "t", refreshedAccessToken: async () => "t", notifySignedOut: () => undefined, signOut: async () => undefined }));
 
 import { ApiError } from "../api";
-import { ErrorNotice, Field, errorMessage } from "./ui";
+import { ErrorNotice, Field, errorMessage, fmtDate } from "./ui";
 
 describe("errorMessage", () => {
   it("never shows [object Object] or the browser's network text", () => {
@@ -17,6 +17,26 @@ describe("errorMessage", () => {
   it("renders as an alert", () => {
     render(<ErrorNotice error={{ weird: true }} />);
     expect(screen.getByRole("alert")).not.toHaveTextContent("object");
+  });
+});
+
+describe("ErrorNotice Try again", () => {
+  it("offers Try again for a Booqy fault and a lost connection, not for the operator's own fix", () => {
+    const retry = vi.fn();
+    const { rerender } = render(<ErrorNotice error={new ApiError(500, "internal_error", "boom")} onRetry={retry} />);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    rerender(<ErrorNotice error={new TypeError("Failed to fetch")} onRetry={retry} />);
+    screen.getByRole("button", { name: "Try again" }).click();
+    expect(retry).toHaveBeenCalledTimes(1);
+    rerender(<ErrorNotice error="Pick a plan first." onRetry={retry} />);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+});
+
+describe("fmtDate", () => {
+  it("is English like the rest of the console", () => {
+    expect(fmtDate("2026-09-01T10:00:00Z")).toMatch(/^1 Sept? 2026, \d\d:\d\d$/);
+    expect(fmtDate(undefined)).toBe("-");
   });
 });
 

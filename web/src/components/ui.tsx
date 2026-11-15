@@ -128,13 +128,15 @@ export function errorMessage(error: unknown): string {
 export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
   const info = describeError(error);
+  // Try again wherever the text says so: a Booqy fault, no connection, too many requests.
+  const retry = onRetry && (info.actor === "booqy" || info.code === "network" || info.status === 429 || info.code === "too_many_requests" || info.code === "rate_limited");
   return (
     <Notice kind="error">
       <span>{info.text}</span>
-      {(info.link || info.actor === "booqy") && (
+      {(info.link || info.actor === "booqy" || retry) && (
         <span className="error-notice__actions">
           {info.link && <Link className="btn btn--ghost btn--small" to={info.link.to}>{info.link.label}</Link>}
-          {info.actor === "booqy" && onRetry && <button type="button" className="btn btn--ghost btn--small" onClick={onRetry}>Try again</button>}
+          {retry && <button type="button" className="btn btn--ghost btn--small" onClick={onRetry}>Try again</button>}
           {info.actor === "booqy" && <CopyDetails info={info} />}
         </span>
       )}
@@ -295,7 +297,8 @@ export function useAction() {
 
 export function fmtDate(iso?: string) {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("sv-SE", { dateStyle: "medium", timeStyle: "short" });
+  // en-GB, the console's language: "1 Sept 2026, 12:00" (sv-SE gave "1 sep. 2026 12:00" next to English dates)
+  return new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
 /** Drops empty strings so optional fields are omitted, not sent blank. */

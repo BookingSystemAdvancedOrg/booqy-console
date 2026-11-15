@@ -90,8 +90,9 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <ErrorNotice error={error} />
-      {loading && !data ? <SkelPage label="Loading customers"><SkelTable rows={6} cols={5} /></SkelPage> : (
+      <ErrorNotice error={error} onRetry={() => void reload()} />
+      {/* A failed load is not an empty list: no "No customers match" under the error. */}
+      {loading && !data ? <SkelPage label="Loading customers"><SkelTable rows={6} cols={5} /></SkelPage> : data && (
         <div className="table-wrap">
           <table className="table table--slim">
             <thead>

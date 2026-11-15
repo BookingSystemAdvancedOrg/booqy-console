@@ -731,7 +731,10 @@ textarea.input { resize: vertical; }
 /* A tile shows only its label and number; a trend is a small chip beside the label. */
 .kpi__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .kpi__head .kpi__label { min-width: 0; }
-.kpi__head .delta { flex: none; }
+.kpi__head .delta, .kpi__head .info-tip { flex: none; }
+/* The chip is a button: a tap, hover or focus shows what it compares with. */
+.delta-tip { display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0; border: 0; background: none; color: inherit; font: inherit; cursor: help; border-radius: var(--r-pill); }
+.delta-tip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus, #a88462); }
 .delta { display: inline-flex; flex-wrap: nowrap; gap: 2px 4px; white-space: nowrap; align-items: center; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: var(--r-md); border: 1.5px solid currentColor; max-width: 100%; }
 .delta--good { color: var(--trend-good); }
 .delta--bad { color: var(--trend-bad); }
@@ -1348,6 +1351,29 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .kpi__value { font-size: clamp(20px, 6.4vw, 26px); }
   .kpis--lead .kpi__value { font-size: clamp(22px, 7vw, 30px); }
 }
+/* a figure never leaves its tile: in a narrow tile (a tablet beside the sidebar, 1024 px)
+   it shrinks with the tile (24 % of its width fits "12 990 kr"); a tile with room keeps the sizes above */
+.kpis > .kpi { container-type: inline-size; }
+.kpis > .kpi > .kpi__value { font-size: min(30px, 24cqi); }
+.kpis--lead > .kpi > .kpi__value { font-size: min(36px, 24cqi); }
+@media (max-width: 760px) {
+  .kpis > .kpi > .kpi__value { font-size: min(clamp(20px, 6.4vw, 26px), 24cqi); }
+  .kpis--lead > .kpi > .kpi__value { font-size: min(clamp(22px, 7vw, 30px), 24cqi); }
+}
+/* a table wider than its ticket: a soft shadow on the side that has more (ScrollEdges) */
+.scroll-edges { position: relative; margin-bottom: 22px; }
+.scroll-edges > .table-wrap { margin-bottom: 0; }
+.scroll-edges::before, .scroll-edges::after {
+  content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 28px; pointer-events: none;
+  opacity: 0; transition: opacity 200ms var(--ease);
+}
+.scroll-edges::before { left: 0; border-radius: var(--r-lg) 0 0 var(--r-lg); background: linear-gradient(to right, rgb(26 18 14 / 0.16), transparent); }
+.scroll-edges::after { right: 0; border-radius: 0 var(--r-lg) var(--r-lg) 0; background: linear-gradient(to left, rgb(26 18 14 / 0.16), transparent); }
+:root[data-theme="dark"] .scroll-edges::before { background: linear-gradient(to right, rgb(0 0 0 / 0.45), transparent); }
+:root[data-theme="dark"] .scroll-edges::after { background: linear-gradient(to left, rgb(0 0 0 / 0.45), transparent); }
+.scroll-edges[data-more~="left"]::before, .scroll-edges[data-more~="right"]::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .scroll-edges::before, .scroll-edges::after { transition: none; } }
+@media (max-width: 640px) { .scroll-edges { margin-bottom: 0; } }   /* phones: the cards keep their own end space */
 .kpi__sub, .ring__legend, .mail-meta, .next-invoice__lines, .kpi__facts, .chart__svg { font-family: var(--sans); font-stretch: 100%; }
 .kpi__sub { font-size: 13px; }
 .table th { font: 600 12.5px/1.3 var(--sans); letter-spacing: 0; text-transform: none; color: var(--print-2); }
@@ -1695,7 +1721,12 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .error-notice__details { flex-basis: 100%; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r-sm, 8px); background: var(--glass-surface); font: 12px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
 /* Reports (pages/ReportsPage): error reports from Booqy Admin. */
-.reports-filter { gap: 4px; }
+@media (max-width: 640px) {
+  /* phones: Open, Handled and All side by side across the row, Refresh beside them below */
+  .page-head > .reports-actions { flex: 1 1 100%; }
+  .page-head .reports-filter { flex: 1 1 100%; }
+  .page-head .chips.reports-filter[data-glide="track"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .reports-who { display: block; }
 .reports-id { overflow-wrap: anywhere; }
 .reports-row--handled td { color: var(--muted, inherit); }

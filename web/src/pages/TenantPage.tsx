@@ -60,7 +60,18 @@ export default function TenantPage() {
       </div>
     </SkelPage>
   );
-  if (!data) return <ErrorNotice error={error ?? "Not found"} />;
+  // A failed load keeps the way back and a retry: never a page with only the error box.
+  if (!data) return (
+    <>
+      <p className="crumbs"><Link to="/">Customers</Link> / Customer</p>
+      <div className="page-head">
+        <div><h1>Customer</h1></div>
+        <RefreshButton reload={reload} />
+      </div>
+      <ErrorNotice error={error ?? "Not found"} onRetry={() => void reload()} />
+      <p><Link className="btn btn--ghost" to="/">Back to Customers</Link></p>
+    </>
+  );
   const t = data.tenant;
 
   return (
