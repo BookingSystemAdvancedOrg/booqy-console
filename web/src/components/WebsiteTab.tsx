@@ -38,7 +38,7 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     return (
       <>
       <Notice kind="info">
-        Site repos aren't switched on in this environment yet: the "Booqy Customer Sites" GitHub App key has to be stored first
+        Site repos aren't switched on in this environment yet: this environment's GitHub App key has to be stored first
         (CUSTOMER-SITE-RUNBOOK.md). Until then the restaurant uses the shared site.
       </Notice>
       {builder}
@@ -83,11 +83,11 @@ function Repo({ site, tenant, readOnly, onChanged }: { site: SiteStatus; tenant:
         <Notice kind="info"><strong>Legacy dev customer.</strong> {site.lastError}</Notice>
       )}
       {readOnly && site.status !== "legacy" && (
-        <Notice kind="info">Managed from the production console. This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
+        <Notice kind="info">Managed from the production console (setup, deploys, access). This is the repo's dev side: pushes to <span className="mono">dev</span> deploy here.</Notice>
       )}
       {site.status === "failed" && <Notice kind="error"><strong>Setup failed.</strong> {site.lastError}</Notice>}
       {site.status === "creating" && <Notice kind="info">Setting up the repo and the first deploy…</Notice>}
-      {site.status === "none" && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
+      {site.status === "none" && !readOnly && <Notice kind="info">No site repo yet: this customer was created before site repos were switched on. <strong>Set up</strong> creates it.</Notice>}
       {site.archived && <Notice kind="warn">The repo is archived (read-only). <strong>Set up</strong> brings it back for this environment.</Notice>}
       <dl className="dl">
         <dt>Repo</dt>

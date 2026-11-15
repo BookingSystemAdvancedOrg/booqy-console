@@ -129,11 +129,36 @@ def test_prod_link_names_the_field_it_cannot_mirror(site_repo, aws):
     assert out["error"] == "validation_failed" and "ownerName: Required" in out["message"]
 
 
-def test_prod_link_adopts_an_active_dev_tenant_and_sets_up_its_site(site_repo, aws, tenant):
+REPO = {"name": "site-pizzeria-roma", "id": 9001, "html_url": "https://github.com/BooqyCustomers/site-pizzeria-roma",
+        "owner": {"login": "BooqyCustomers", "id": 356944191}}
+
+
+def test_prod_link_adopts_an_active_dev_tenant_and_writes_its_dev_role_for_the_repo_prod_names(site_repo, aws, tenant):
     _activate(aws, tenant)
-    out = _task({"action": "mirror", **PROD_PROFILE, "planId": "unknown-in-dev"})
-    assert out == {"tenantId": tenant, "status": "adopted"}
-    assert site_repo.calls == [("Event", {"action": "provision", "tenantId": tenant})]
+    site_repo.answer = {"tenantId": tenant, "roleArn": "arn:aws:iam::1:role/booqy-sites/dev-site-pizzeria-roma",
+                        "variables": {"DEV_TENANT_ID": tenant}, "config": {"tenantId": tenant}}
+    out = _task({"action": "mirror", **PROD_PROFILE, "planId": "unknown-in-dev", "repo": REPO})
+    assert out == {"tenantId": tenant, "status": "adopted", "site": site_repo.answer}
+    # Synchronous, AWS only: dev site-repo never calls GitHub for BooqyCustomers.
+    assert site_repo.calls == [("RequestResponse", {"action": "linkProvision", "tenantId": tenant, "repo": REPO})]
+    # Without a repo (an older prod): only the tenant.
+    assert _task({"action": "mirror", **PROD_PROFILE}) == {"tenantId": tenant, "status": "adopted"}
+    assert len(site_repo.calls) == 1
+
+
+def test_prod_link_creates_the_dev_tenant_then_its_role(site_repo, aws):
+    site_repo.answer = {"roleArn": "arn:aws:iam::1:role/booqy-sites/dev-site-pizzeria-roma"}
+    out = _task({"action": "mirror", **PROD_PROFILE, "repo": REPO})
+    assert out["status"] == "created" and out["site"] == site_repo.answer
+    assert site_repo.calls == [("RequestResponse", {"action": "linkProvision", "tenantId": out["tenantId"], "repo": REPO})]
+    assert _profile(aws, out["tenantId"])["siteKind"] == "prod-link"
+
+
+def test_a_dev_side_site_repo_refusal_reaches_prod(site_repo, aws, tenant):
+    _activate(aws, tenant)
+    site_repo.error = "refused: 'site-pizzeria-roma' owner id is not 356944191 (1)"
+    out = _task({"action": "mirror", **PROD_PROFILE, "repo": REPO})
+    assert out["error"] == "site_repo_failed" and "owner id" in out["message"]
 
 
 def test_prod_link_archives_the_dev_side(site_repo, tenant):
@@ -235,8 +260,11 @@ def test_a_refused_repo_delete_is_logged_and_the_data_still_goes(site_repo, aws,
 def test_prod_link_restores_an_offboarded_dev_tenant(site_repo, aws, tenant):
     from test_api import _offboarded
     _offboarded(aws, tenant)
-    assert _task({"action": "mirror", **PROD_PROFILE}) == {"tenantId": tenant, "status": "restored"}
+    site_repo.answer = {"roleArn": "arn:aws:iam::1:role/booqy-sites/dev-site-pizzeria-roma"}
+    out = _task({"action": "mirror", **PROD_PROFILE, "repo": REPO})
+    assert out == {"tenantId": tenant, "status": "restored", "site": site_repo.answer}
     assert call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})[1]["tenant"]["status"] == "active"
+    assert _profile(aws, tenant)["siteKind"] == "prod-link"
 
 
 def test_prod_link_replaces_a_purged_dev_tenant(site_repo, aws, tenant):
@@ -297,32 +325,58 @@ def test_an_adopted_dev_tenant_becomes_a_prod_link(site_repo, aws, tenant):
     assert _profile(aws, tenant)["siteKind"] == "prod-link"
 
 
-def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aws, tenant, test_sites):
+def _make_test(aws, tenant):
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
                            UpdateExpression="SET siteKind = :k", ExpressionAttributeValues={":k": {"S": "test"}})
+
+
+def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aws, tenant, test_sites):
+    _make_test(aws, tenant)
     p = {"tenantId": tenant}
+    site_repo.answer = {"label": "example-se", "op": "put", "result": "done"}
     status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "www.example.se"})
-    assert status == 202 and body["domain"] == "example.se" and body["test"] is True
+    assert status == 202 and body["domain"] == "example.se" and body["test"] is True and body["status"] == "active"
     assert body["hosts"] == [{"stage": "main", "host": "example-se.test.booqy.se"},
                              {"stage": "dev", "host": "example-se.test-dev.booqy.se"}]
-    executions = aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"]
-    inputs = sorted((json.loads(aws["sfn"].describe_execution(executionArn=e["executionArn"])["input"]) for e in executions),
-                    key=lambda i: i["domain"])
-    assert inputs == [
-        {"tenantId": tenant, "domain": "example-se.test-dev.booqy.se", "makePrimary": False, "requestedBy": "op-1",
-         "sandbox": True, "stage": "dev", "mappedFrom": "example.se"},
-        {"tenantId": tenant, "domain": "example-se.test.booqy.se", "makePrimary": True, "requestedBy": "op-1",
-         "sandbox": True, "stage": "main", "mappedFrom": "example.se"}]
+    # No workflow and no distribution tenant: the label goes into the sandbox's host map.
+    assert aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"] == []
+    assert site_repo.calls == [("RequestResponse", {"action": "testHost", "op": "put", "tenantId": tenant,
+                                                    "label": "example-se"})]
     from app.domains import _domain_row
-    row = _domain_row(tenant, "example-se.test.booqy.se")
-    assert row["kind"] == "custom" and row["stage"] == "main" and row["mappedFrom"] == "example.se"
+    for stage, host in (("main", "example-se.test.booqy.se"), ("dev", "example-se.test-dev.booqy.se")):
+        row = _domain_row(tenant, host)
+        assert row["kind"] == "custom" and row["stage"] == stage and row["mappedFrom"] == "example.se"
+        assert row["status"] == "active" and row["sandbox"] is True
+        claim = aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": f"DOMAIN#{host}"}, "SK": {"S": "TENANT"}})
+        assert claim["Item"]["tenantId"]["S"] == tenant
+    assert _profile(aws, tenant)["primaryDomain"] == "example-se.test.booqy.se"
     # Again: already mapped.
     assert call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "example.se"})[1]["error"] == "domain_exists"
-    # Removing one removes the pair.
-    status, body = call("DELETE /platform/tenants/{tenantId}/domains/{domain}", {**p, "domain": "example-se.test.booqy.se"})
+    # Removing one removes the pair, host map first.
+    site_repo.answer = {"label": "example-se", "op": "delete", "result": "done"}
+    status, body = call("DELETE /platform/tenants/{tenantId}/domains/{domain}", {**p, "domain": "example-se.test-dev.booqy.se"})
     assert status == 202 and body["hosts"] == ["example-se.test.booqy.se", "example-se.test-dev.booqy.se"]
-    detaches = aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_DETACH_STATE_MACHINE_ARN"])["executions"]
-    assert len(detaches) == 2
+    assert site_repo.calls[-1] == ("RequestResponse", {"action": "testHost", "op": "delete", "tenantId": tenant,
+                                                       "label": "example-se"})
+    assert _domain_row(tenant, "example-se.test.booqy.se") is None and _domain_row(tenant, "example-se.test-dev.booqy.se") is None
+    assert "Item" not in aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": "DOMAIN#example-se.test.booqy.se"},
+                                                                          "SK": {"S": "TENANT"}})
+    assert _profile(aws, tenant)["primaryDomain"] == "pizzeria-roma.test.booqy.se"
+    assert aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_DETACH_STATE_MACHINE_ARN"])["executions"] == []
+
+
+def test_a_mapped_label_another_customer_holds_is_refused_and_a_failed_map_is_rolled_back(site_repo, aws, tenant, test_sites):
+    _make_test(aws, tenant)
+    p = {"tenantId": tenant}
+    aws["ddb"].put_item(TableName="dev-tenant", Item={"PK": {"S": "DOMAIN#example-se.test.booqy.se"}, "SK": {"S": "TENANT"},
+                                                       "tenantId": {"S": "t-other"}})
+    status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "example.se"})
+    assert status == 409 and body["error"] == "domain_in_use" and site_repo.calls == []
+    site_repo.error = "the test sites host map kept changing, try again"
+    status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "other.se"})
+    assert status == 502
+    from app.domains import _domain_row
+    assert _domain_row(tenant, "other-se.test.booqy.se") is None and _domain_row(tenant, "other-se.test-dev.booqy.se") is None
 
 
 def test_test_hosts_are_never_added_directly_and_real_customers_are_managed_from_prod(site_repo, aws, tenant, test_sites):

@@ -29,8 +29,10 @@ serves the shared customer-front-end build instead of the repo's site.
 A repo is born in the PROD console. Prod's site-repo reaches dev only
 through the dev account's booqy-sites-prod-link role, which may invoke this
 function with {"siteTask": {...}} and nothing else (site_task below, dev
-only): create or adopt the restaurant's empty dev tenant by slug (its own
-onboarding then sets up the dev side of the repo), or archive that side.
+only): create or adopt the restaurant's empty dev tenant by slug and write
+its dev deploy role for the repo prod names (site-repo linkProvision; dev
+answers with the role and booqy.json values, prod writes them on GitHub:
+dev holds no key for BooqyCustomers), or archive that side.
 A prod customer restored after offboarding restores its offboarded dev
 customer the same way; a purged dev customer's slug goes to a new one.
 
@@ -305,29 +307,42 @@ def site_task(event: dict) -> dict:
             return {"error": "slug_used_by_test_customer",
                     "message": f"{slug} is a test customer in the dev console: delete it there first, then Run setup again"}
         if status == "offboarded":
-            restore_tenant(tenant_id, LINK_ACTOR)        # its re-run onboarding sets up the dev side
-            return {"tenantId": tenant_id, "status": "restored"}
+            restore_tenant(tenant_id, LINK_ACTOR)
+            _mark_linked(tenant_id, existing)
+            return _with_dev_side({"tenantId": tenant_id, "status": "restored"}, task)
         if tenant_id and status != "purged":
             # The same restaurant already has a dev tenant: keep its test data,
-            # set up the dev side of the repo now (provision is idempotent).
+            # set up the dev side of the repo now (idempotent).
             if status == "offboarding":
                 return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
-            if not existing.get("siteKind"):
-                client("dynamodb").update_item(
-                    TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
-                    UpdateExpression="SET siteKind = :k", ConditionExpression="attribute_exists(PK)",
-                    ExpressionAttributeValues={":k": {"S": "prod-link"}})
-            if status in ("active", "suspended"):
-                invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
+            _mark_linked(tenant_id, existing)
             write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
-            return {"tenantId": tenant_id, "status": "adopted"}
+            return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
         body["planId"] = _dev_plan(task.get("planId"))
-        return _create_mirror(body, slug)
+        return _with_dev_side(_create_mirror(body, slug), task)
     except ApiError as e:
         fields = e.extra.get("fields") or {}
         detail = "; ".join(f"{k}: {msg}" for k, msg in fields.items())
         return {"error": e.code, "message": f"{e} ({detail})" if detail else str(e)}
+
+
+def _mark_linked(tenant_id: str, existing: dict) -> None:
+    if existing.get("siteKind") != "prod-link":
+        client("dynamodb").update_item(
+            TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
+            UpdateExpression="SET siteKind = :k", ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":k": {"S": "prod-link"}})
+
+
+def _with_dev_side(out: dict, task: dict) -> dict:
+    """The dev deploy role for the repo prod names (owner login and id, repo
+    id): site-repo checks the owner is BooqyCustomers by login and id.
+    Answer "site": the role ARN, DEV_* values and booqy.json's dev section,
+    which prod writes on GitHub."""
+    if "repo" not in task:
+        return out
+    return {**out, "site": invoke({"action": "linkProvision", "tenantId": out["tenantId"], "repo": task["repo"]})}
 
 
 def _create_mirror(body: dict, slug: str) -> dict:

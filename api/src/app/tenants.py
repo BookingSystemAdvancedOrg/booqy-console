@@ -345,9 +345,11 @@ def _site_kind(actor: str) -> dict:
     console is a test customer (repo in BooqyCustomersDev, hosts on
     test.booqy.se / test-dev.booqy.se); one prod creates through the link is
     the dev side of a real customer. Prod never sets it."""
-    if env("ENVIRONMENT") == "prod" or env("TEST_SITES_ENABLED", "false") != "true":
+    if env("ENVIRONMENT") == "prod":
         return {}
-    return {"siteKind": "prod-link" if actor == "prod-site-repo" else "test"}
+    if actor == "prod-site-repo":
+        return {"siteKind": "prod-link"}
+    return {"siteKind": "test"} if env("TEST_SITES_ENABLED", "false") == "true" else {}
 
 
 def create_tenant(req) -> tuple[int, dict]:
