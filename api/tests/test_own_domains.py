@@ -670,6 +670,15 @@ def test_simulated_buy_records_and_connect(sim, aws):
     assert body["result"] == "done"
     assert _task("prepare_records", t, "roma.nu", requestedBy="op-1") == {"status": "done", "attach": False}
 
+    # a simulated timeout, then Retry: the order waits again instead of timing out at once
+    call("POST /platform/tenants/{tenantId}/domains/records", {"tenantId": t}, {"domain": "roma.dk"})
+    p = {"tenantId": t, "domain": "roma.dk"}
+    body = call("POST /platform/tenants/{tenantId}/zones/{domain}/simulate", p, {"event": "expire"})[1]
+    assert body["result"] == "failed" and body["zone"]["status"] == "records_timeout" and body["zone"]["canRetry"]
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", p)
+    assert status == 202 and body["zone"]["status"] == "awaiting_records" and "simState" not in body["zone"]
+    assert _task("records_status", t, "roma.dk", attempt=2) == {"status": "pending"}
+
     status, body = call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": t},
                         {"domain": "roma.fi", "records": []})
     assert status == 202 and body["nameServers"][0].startswith("ns-1.awsdns-sim")

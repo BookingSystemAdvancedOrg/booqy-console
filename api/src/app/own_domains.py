@@ -706,6 +706,8 @@ def retry(req) -> tuple[int, dict]:
         raise ApiError(409, "not_retryable", "Start the transfer again from the Domains tab")
     attempt = int(row.get("attempt") or 1) + 1
     fields = {"attempt": attempt}
+    if row.get("simulated"):
+        fields["simState"] = None              # the retried order waits again (Simulate moves it on)
     if dev_only:
         fields.update(devStatus="waiting_for_prod", devError=None, devMountAttempts=0)
     else:
