@@ -36,7 +36,7 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     return (
       <>
       <Notice kind="info">
-        Site repos aren't switched on in this environment yet: the "Booqy Sites" GitHub App key has to be stored first
+        Site repos aren't switched on in this environment yet: the "Booqy Customer Sites" GitHub App key has to be stored first
         (CUSTOMER-SITE-RUNBOOK.md). Until then the restaurant uses the shared site.
       </Notice>
       {builder}
@@ -286,7 +286,7 @@ function Access({ site, tenant }: { site: SiteStatus; tenant: Tenant }) {
   return (
     <Card title="Give access">
       <p className="small muted">
-        A developer gets write access to <span className="mono">{site.repo}</span> only, through the Booqy Sites app. They accept the invitation on
+        A developer gets write access to <span className="mono">{site.repo}</span> only, through the Booqy Customer Sites app. They accept the invitation on
         GitHub. Nothing to copy: no tokens are created or shown.
       </p>
       <form className="row" onSubmit={invite}>

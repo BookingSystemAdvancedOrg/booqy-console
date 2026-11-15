@@ -12,8 +12,8 @@ import WebsiteTab from "./WebsiteTab";
 
 const tenant = { tenantId: "t1", slug: "roma", name: "Roma", status: "active" } as Tenant;
 const ready: SiteStatus = {
-  enabled: true, repo: "site-roma", org: "BookingSystemAdvancedOrg", environment: "prod", status: "ready",
-  createdAt: "2026-10-27T10:00:00Z", repoExists: true, repoUrl: "https://github.com/BookingSystemAdvancedOrg/site-roma",
+  enabled: true, repo: "site-roma", org: "BooqyCustomers", environment: "prod", status: "ready",
+  createdAt: "2026-10-27T10:00:00Z", repoExists: true, repoUrl: "https://github.com/BooqyCustomers/site-roma",
   archived: false,
   deploys: {
     dev: { status: "completed", conclusion: "success", sha: "abc1234", at: "2026-10-27T10:05:00Z", by: "anna-dev",
@@ -36,7 +36,7 @@ beforeEach(() => {
 describe("WebsiteTab", () => {
   it("shows the repo, its deploys and the links", async () => {
     render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByRole("link", { name: "BookingSystemAdvancedOrg/site-roma" })).toHaveAttribute("href", ready.repoUrl);
+    expect(await screen.findByRole("link", { name: "BooqyCustomers/site-roma" })).toHaveAttribute("href", ready.repoUrl);
     expect(screen.getByRole("link", { name: "roma.dev.booqy.se" })).toHaveAttribute("href", "https://roma.dev.booqy.se");
     expect(screen.getByRole("link", { name: "roma.booqy.se" })).toHaveAttribute("href", "https://roma.booqy.se");
     expect(screen.getAllByText("No own domain yet")).toHaveLength(2);
@@ -44,7 +44,7 @@ describe("WebsiteTab", () => {
     expect(screen.getByText("abc1234")).toBeInTheDocument();
     expect(screen.getByText("anna-dev")).toBeInTheDocument();
     expect(screen.getByText("Not deployed yet")).toBeInTheDocument();
-    expect(screen.getByText(/git clone git@github.com:BookingSystemAdvancedOrg\/site-roma.git/)).toBeInTheDocument();
+    expect(screen.getByText(/git clone git@github.com:BooqyCustomers\/site-roma.git/)).toBeInTheDocument();
   });
 
   it("keeps the .env.local values behind Show", async () => {
@@ -105,10 +105,10 @@ describe("WebsiteTab", () => {
 
   it("shows the dev dry run, and full controls for site-test-* repos", async () => {
     mocks.site.mockResolvedValueOnce({ ...ready, environment: "dev", status: "simulated", repoExists: undefined, deploys: undefined,
-                                       plan: ["Repo BookingSystemAdvancedOrg/site-roma from site-template"] });
+                                       plan: ["Repo BooqyCustomers/site-roma from site-template"] });
     const { unmount } = render(<WebsiteTab tenant={tenant} />);
     expect(await screen.findByText("Dry run.")).toBeInTheDocument();
-    expect(screen.getByText("Repo BookingSystemAdvancedOrg/site-roma from site-template")).toBeInTheDocument();
+    expect(screen.getByText("Repo BooqyCustomers/site-roma from site-template")).toBeInTheDocument();
     unmount();
     mocks.site.mockResolvedValue({ ...ready, environment: "dev", repo: "site-test-roma" });
     render(<WebsiteTab tenant={tenant} />);
