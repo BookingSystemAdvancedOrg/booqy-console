@@ -8,11 +8,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ tenants: vi.fn(), financeInvoices: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
-import TenantsPage from "./TenantsPage";
+import TenantsPage, { matchesSearch } from "./TenantsPage";
 
 const tenants = [
   { tenantId: "t1", name: "Pizzeria Roma", slug: "roma", status: "active", planId: "starter", locationCount: 1, maxLocations: 3,
-    chargesEnabled: true, ownerEmail: "roma@example.test", primaryDomain: "roma.example.test", createdAt: "2026-09-01T10:00:00Z" },
+    chargesEnabled: true, ownerEmail: "roma@example.test", primaryDomain: "roma.example.test", createdAt: "2026-09-01T10:00:00Z",
+    orgNumber: "559123-4567" },
   { tenantId: "t2", name: "Krogen Norr", slug: "norr", status: "provisioning_failed", planId: "growth", locationCount: 0,
     chargesEnabled: false, createdAt: "2026-11-01T10:00:00Z" },
 ];
@@ -35,6 +36,18 @@ beforeEach(() => {
 });
 
 const cardOf = async (name: string) => (await screen.findByText(name)).closest("tr") as HTMLTableRowElement;
+
+describe("Customers when the list fails", () => {
+  it("shows the error with Try again, not an empty list", async () => {
+    mocks.tenants.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText(/No customers match/)).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Pizzeria Roma")).toBeInTheDocument();
+  });
+});
 
 describe("Customers list as phone cards", () => {
   it("gives each card a heading, a status badge and the key facts with their labels", async () => {
@@ -73,7 +86,7 @@ describe("Customers list as phone cards", () => {
   it("keeps a short, centred empty state when the search finds nothing", async () => {
     renderPage();
     await screen.findByText("Pizzeria Roma");
-    await userEvent.type(screen.getByPlaceholderText(/Search name/), "zzz");
+    await userEvent.type(screen.getByLabelText("Search customers"), "zzz");
     const empty = document.querySelector("td.empty");
     expect(empty).toHaveTextContent("No customers match. Add one");
   });
@@ -87,6 +100,64 @@ describe("Customers list as phone cards", () => {
   });
 });
 
+describe("Status filter (one pill beside the search where the chips do not fit)", () => {
+  it("shows the chosen status with its count and lists every status with its count", async () => {
+    renderPage();
+    await screen.findByText("Pizzeria Roma");
+    const pill = screen.getByRole("combobox", { name: "Status filter" });
+    expect(pill).toHaveTextContent("Active1");
+    await userEvent.click(pill);
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(options).toEqual(["All2", "Active1", "Setting up", "Setup failed1", "Suspended", "Offboarded", "Data deleted"]);
+  });
+
+  it("filters the list by the chosen status", async () => {
+    renderPage();
+    await screen.findByText("Pizzeria Roma");
+    await userEvent.click(screen.getByRole("combobox", { name: "Status filter" }));
+    await userEvent.click(screen.getByRole("option", { name: /^Setup failed/ }));
+    expect(screen.getByRole("combobox", { name: "Status filter" })).toHaveTextContent("Setup failed1");
+    expect(await screen.findByRole("link", { name: "Krogen Norr" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Pizzeria Roma" })).not.toBeInTheDocument();
+    // the chip bar follows the same choice
+    expect(document.querySelector(".chips .chip--on")).toHaveTextContent("Setup failed");
+  });
+
+  it("keeps the chip bar for wide pages and hides it where the pill shows (styles.css)", () => {
+    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+    const q = css.slice(css.indexOf("@container tenants-toolbar"));
+    expect(css).toContain(".tenants-toolbar { container: tenants-toolbar / inline-size; }");
+    expect(q).toContain(".tenants-toolbar > .chips { display: none !important; }");
+    expect(q).toContain(".tenants-filter { display: block; flex: 0 1 auto; min-width: 0; max-width: min(55%, calc(100% - 132px)); }");
+    // the search keeps its room next to a long status (320 px, "Data deleted")
+    expect(q).toMatch(/\.input\.search \{[^}]*min-width: 120px/);
+    expect(css).toMatch(/\.status-filter \.select__label \{[^}]*text-overflow: ellipsis/);
+    expect(css).toMatch(/\.input\.select\.status-filter \{[^}]*min-height: 44px/);
+  });
+});
+
+describe("Search", () => {
+  const roma = tenants[0] as Parameters<typeof matchesSearch>[0];
+  it("matches name, slug, owner email and domain", () => {
+    for (const q of ["roma", "ROMA", "roma@example", "example.test"]) expect(matchesSearch(roma, q)).toBe(true);
+    expect(matchesSearch(roma, "norr")).toBe(false);
+  });
+  it("matches the org. number with or without the dash", () => {
+    for (const q of ["559123-4567", "5591234567", "5591234", "  5591234567 "]) expect(matchesSearch(roma, q)).toBe(true);
+    expect(matchesSearch(roma, "5591239999")).toBe(false);
+    expect(matchesSearch({ ...roma, orgNumber: undefined }, "5591234567")).toBe(false);
+  });
+  it("finds a customer by org. number in the list", async () => {
+    renderPage();
+    await screen.findByText("Pizzeria Roma");
+    await userEvent.type(screen.getByLabelText("Search customers"), "5591234567");
+    expect(screen.getByRole("link", { name: "Pizzeria Roma" })).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText("Search customers"));
+    await userEvent.type(screen.getByLabelText("Search customers"), "559123-4567");
+    expect(screen.getByRole("link", { name: "Pizzeria Roma" })).toBeInTheDocument();
+  });
+});
+
 describe("phone table styles", () => {
   const css = readFileSync(resolve(__dirname, "../phoneTables.css"), "utf8");
   it("turns tables into cards only at phone width and wraps the chips", () => {
@@ -95,6 +166,18 @@ describe("phone table styles", () => {
     expect(phone).toContain("content: attr(data-label)");
     expect(phone).toContain('[data-glide="track"] { flex-wrap: wrap !important');
     expect(css.indexOf("@media (max-width: 640px) {")).toBeLessThan(css.indexOf(".table.table"));
+  });
+  it("makes Customers rows slim on phones: the name and a small status, nothing else", async () => {
+    renderPage();
+    const card = await cardOf("Pizzeria Roma");
+    expect(card.closest("table")).toHaveClass("table--slim");
+    const slim = css.slice(css.indexOf(".table--slim (the Customers list)"));
+    expect(slim).toContain(".table.table--slim > tbody > tr > td:not(.cell-title):not(.cell-badge):not(.empty) { display: none; }");
+    expect(slim).toContain(".table.table--slim > tbody > tr > td.cell-title > :not(.row-link__name) { display: none; }");
+    expect(slim).toMatch(/min-height: 52px/);
+    // what is left on the phone row: the name link and the badge
+    expect(card.querySelector(".cell-title > .row-link__name")).toHaveTextContent("Pizzeria Roma");
+    expect(card.querySelector(".cell-badge .status")).toHaveTextContent("Active");
   });
   it("stacks long values, keeps the you tag whole and leaves room for the Ask Booqy button", () => {
     const phone = css.slice(css.indexOf("@media (max-width: 640px) {"));

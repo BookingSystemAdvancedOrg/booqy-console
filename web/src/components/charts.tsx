@@ -144,7 +144,8 @@ export function LineChart({ points, label, ariaLabel }: { points: { key: string;
         {points.map((p, i) => (
           <g key={p.key}>
             <circle cx={x(i)} cy={y(p.value)} r={2.6} className={`chart__dot chart__dot--ink chart__dot--in${a === i ? " chart__dot--on" : ""}`} style={{ "--i": i } as CSSProperties} />
-            {i % labelEvery === 0 && <text x={x(i)} y={H - 10} textAnchor="middle" className="chart__tick">{shortDay(p.key)}</text>}
+            {/* the last point sits on the right edge: its label ends there instead of being cut ("7 Oc") */}
+            {i % labelEvery === 0 && <text x={x(i)} y={H - 10} textAnchor={i > 0 && i === points.length - 1 ? "end" : "middle"} className="chart__tick">{shortDay(p.key)}</text>}
           </g>
         ))}
         {a !== null && <line x1={x(a)} x2={x(a)} y1={PAD.top} y2={PAD.top + innerH} className="chart__grid" />}

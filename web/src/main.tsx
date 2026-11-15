@@ -1,7 +1,8 @@
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { currentOperator, onAuthChange, retryUntilReachable, signOut, type Operator } from "./auth";
+import { currentOperator, onAuthChange, refreshOperator, retryUntilReachable, signOut, type Operator } from "./auth";
+import { firstName } from "./avatar";
 import "./connectionNotice.css";
 import LoginPage, { RESET_PATH } from "./pages/LoginPage";
 import { Logo } from "./components/Logo";
@@ -28,6 +29,7 @@ import "./phoneTargets.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";
+import { TabBar } from "./components/TabBar";
 import { helpChatEnabled, openHelpChat } from "./features/help/chatState";
 
 // Each page loads when it is opened, so the first load only fetches the shell
@@ -42,6 +44,7 @@ const pages = {
   website: () => import("./pages/WebsitePage"),
   reports: () => import("./pages/ReportsPage"),
   settings: () => import("./pages/SettingsPage"),
+  profile: () => import("./pages/ProfilePage"),
 };
 const TenantsPage = lazy(pages.tenants);
 const NewTenantPage = lazy(pages.newTenant);
@@ -52,6 +55,7 @@ const FinancePage = lazy(pages.finance);
 const WebsitePage = lazy(pages.website);
 const ReportsPage = lazy(pages.reports);
 const SettingsPage = lazy(pages.settings);
+const ProfilePage = lazy(pages.profile);
 
 let preloaded = false;
 function preloadPages() {
@@ -112,10 +116,13 @@ const SHOW_DOWNLOAD = showDownloadNav();
 const SHOW_INSTALL = showPhoneInstallNav();
 const ALL_NAV: NavItem[] = [
   ...NAV.flatMap((g) => g.items),
+  { to: "/profile", label: "My profile", icon: "badge" },
   { to: "/settings", label: "Settings", icon: "gear" },
   ...(SHOW_DOWNLOAD ? [{ to: "/settings#desktop-app", label: "Download app", icon: "download" as const }] : []),
   ...(SHOW_INSTALL ? [{ to: "/settings#desktop-app", label: "Install app", icon: "download" as const }] : []),
 ];
+// "My profile" in the phones' Workspace sheet (the side menu links it too).
+const PROFILE_PATH = "/profile";
 const navFor = (path: string) => ALL_NAV.find((n) => (n.end ? path === n.to : path === n.to || path.startsWith(`${n.to}/`)));
 
 // Pages visited in this tab (memory only): the palette's "Recent".
@@ -151,10 +158,6 @@ function Shell() {
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [appHint, closeAppHint] = useDesktopHint();
-  // Phones: the links sit behind a Menu button. The menu belongs to the page
-  // it was opened on, so going to another page closes it.
-  const [menuAt, setMenuAt] = useState<string | null>(null);
-  const menuOpen = menuAt === location.pathname;
   // Cognito unreachable (offline, waking from sleep, an outage): still signed
   // in, the current page stays and the check runs again until it answers.
   const [offline, setOffline] = useState(false);
@@ -172,6 +175,13 @@ function Shell() {
     return onAuthChange(refresh);           // sign-out, failed token refresh, 401 from the API
   }, [refresh]);
   useEffect(() => (offline ? retryUntilReachable(refresh) : undefined), [offline, refresh]);
+  // My profile saved: fresh tokens so the menu shows the new name or email at once.
+  const saveProfile = useCallback(async () => {
+    try {
+      const u = await refreshOperator();
+      if (u) setUser(u);
+    } catch { /* the next refresh picks it up */ }
+  }, []);
   const notice = offline ? <div className="connection-notice" role="status" aria-live="polite">Can't reach the server, retrying...</div> : null;
 
   useEffect(() => {
@@ -192,22 +202,13 @@ function Shell() {
   return (
     <div className="app">
       {notice}
-      {/* A dirty form asks before any top bar link takes the operator away. */}
-      <header className={menuOpen ? "topbar is-open" : "topbar"} onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
+      {/* A dirty form asks before any top bar link takes the operator away.
+          Phones show only the logo here; the links are in the bottom bar (TabBar). */}
+      <header className="topbar" onClickCapture={(e) => { if ((e.target as HTMLElement).closest("a[href]") && !confirmLeave()) e.preventDefault(); }}>
         <Link to="/" className="brand" aria-label="Booqy Console - customers"><Logo className="brand__logo" /><span className="brand__app">Console</span></Link>
         {IS_DEV && <span className="env">dev</span>}
         <PaletteTrigger />
-        <button
-          type="button"
-          className="topbar__menu"
-          aria-expanded={menuOpen}
-          aria-controls="topbar-menu"
-          aria-label={menuOpen ? "Close menu" : "Menu"}
-          onClick={() => setMenuAt(menuOpen ? null : location.pathname)}
-        >
-          <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
-        </button>
-        <nav className="topbar__nav" id="topbar-menu">
+        <nav className="topbar__nav">
           {/* The headings only show in the side menu on wide screens. */}
           {NAV.map((group) => (
             <Fragment key={group.label}>
@@ -223,10 +224,12 @@ function Shell() {
         </nav>
         <div className="topbar__user">
           {appHint && <DesktopHint where="side" onClose={closeAppHint} />}
-          <div className="topbar__me">
-            <MyAvatar email={user.email} />
-            <span className="topbar__me-name">{user.email ?? user.username}</span>
-          </div>
+          {/* You: picture and first name, opens My profile. */}
+          <NavLink to="/profile" className="topbar__me" data-help="nav:/profile" aria-label={`My profile, ${user.name || user.email}`}
+                   title={user.name ? `${user.name}, ${user.email}` : user.email}>
+            <MyAvatar name={user.name} email={user.email} />
+            <span className="topbar__me-name">{firstName(user.name, user.email)}</span>
+          </NavLink>
           <NavLink to="/settings" className="btn btn--ghost topbar__settings" data-help="nav:/settings"><Icon name="gear" />Settings</NavLink>
           {/* To the Desktop app card in Settings; a plain Link so only Settings shows as active. */}
           {SHOW_DOWNLOAD && <Link to="/settings#desktop-app" className="btn btn--ghost topbar__settings" data-help="nav:/settings#desktop-app"><Icon name="download" />Download app</Link>}
@@ -234,6 +237,15 @@ function Shell() {
           <button className="btn btn--ghost" title={user.email ? `Signed in as ${user.email}` : undefined} onClick={() => setConfirmSignOut(true)}><Icon name="logout" />Sign out</button>
         </div>
       </header>
+      <TabBar
+        name={user.name}
+        email={user.email}
+        username={user.username}
+        profilePath={PROFILE_PATH}
+        showInstall={SHOW_INSTALL}
+        showDownload={SHOW_DOWNLOAD}
+        onSignOut={() => setConfirmSignOut(true)}
+      />
       <ConsolePalette onSignOut={() => setConfirmSignOut(true)} />
       <HelpChat />
       {confirmSignOut && (
@@ -260,7 +272,8 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage email={user.email} />} />
+          <Route path="/settings" element={<SettingsPage name={user.name} email={user.email} />} />
+          <Route path="/profile" element={<ProfilePage me={user} onSaved={saveProfile} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />
           {/* Unknown address (old bookmark, /index.html from the home-screen app, a link from admin): straight to Customers instead of a dead end. */}

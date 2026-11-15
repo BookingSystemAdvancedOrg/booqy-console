@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
@@ -60,7 +60,18 @@ export default function TenantPage() {
       </div>
     </SkelPage>
   );
-  if (!data) return <ErrorNotice error={error ?? "Not found"} />;
+  // A failed load keeps the way back and a retry: never a page with only the error box.
+  if (!data) return (
+    <>
+      <p className="crumbs"><Link to="/">Customers</Link> / Customer</p>
+      <div className="page-head">
+        <div><h1>Customer</h1></div>
+        <RefreshButton reload={reload} />
+      </div>
+      <ErrorNotice error={error ?? "Not found"} onRetry={() => void reload()} />
+      <p><Link className="btn btn--ghost" to="/">Back to Customers</Link></p>
+    </>
+  );
   const t = data.tenant;
 
   return (
@@ -508,7 +519,9 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       ...(isFree ? { freePreset: savedFree?.preset ?? "", freeThen: savedFree?.thenPlanId ?? "" } : {}) },
   );
 
-  useEffect(() => {
+  // Layout effect: when the plans arrive the price must be in place before the
+  // screen (and Save plan) shows, or the form looks changed for one frame.
+  useLayoutEffect(() => {
     // Back on the current plan: show the tenant's real limits (incl. overrides)
     // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtPct, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
+  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtDay, fmtPct, periodLabel, shortDay, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "./finance";
 import type { FinancePoint, FinanceTenantRow } from "./types";
 
@@ -46,6 +46,13 @@ describe("formatting", () => {
     expect(plain(fmtSek(0))).toBe("0 kr");
     expect(plain(fmtPct(96.5))).toBe("96,5 %");
   });
+  it("writes dates in English, the console's language, never with a trailing dot", () => {
+    expect(fmtDay("2026-10-10")).toBe("10 Oct");
+    expect(fmtDay("2026-07-01T06:35:00Z")).toBe("1 Jul");
+    expect(periodLabel({ from: "2026-07-01", to: "2026-07-31" })).toBe("1 Jul to 31 Jul 2026");
+    expect(shortDay("2026-10-01")).toBe("1 Oct");
+    expect(`past due since ${fmtDay("2026-10-10")}.`).not.toMatch(/\.\.$/);
+  });
 });
 
 describe("series", () => {
@@ -87,7 +94,7 @@ describe("months", () => {
     expect(monthRange("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
     expect(shiftMonth("2026-01", -1)).toBe("2025-12");
     expect(shiftMonth("2026-12", 1)).toBe("2027-01");
-    expect(monthLabel("2026-10")).toBe("Oktober 2026");
+    expect(monthLabel("2026-10")).toBe("October 2026");
     const { addMonths } = await import("./finance");
     expect(addMonths("2026-11-01", 3)).toBe("2027-02-01");
     expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");

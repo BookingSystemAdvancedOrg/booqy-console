@@ -308,7 +308,8 @@ a:hover { text-decoration-thickness: 2px; }
 .input:hover { border-color: var(--field-border-hover); }
 .input:focus { outline: none; border-color: var(--print); background: var(--field-bg-focus); box-shadow: var(--field-inset), 0 0 0 3px var(--field-ring); }
 textarea.input { resize: vertical; }
-.field { display: grid; gap: 5px; align-content: start; }
+.field { display: grid; gap: 5px; align-content: start; min-width: 0; }
+.field > * { min-width: 0; }
 .field--wide { grid-column: 1 / -1; }
 .field__label { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--print-2); }
 .field__req { color: var(--ink-red); }
@@ -320,7 +321,7 @@ textarea.input { resize: vertical; }
 .changed-note__use:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 4px; }
 .field__msg { font-size: 12px; color: var(--danger); margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .field--error .input { border-color: var(--danger); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px 18px; margin: 10px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 14px 18px; margin: 10px 0; }
 .check { display: inline-flex; gap: 8px; align-items: center; margin: 8px 16px 8px 0; font-size: 14px; }
 .checks { display: flex; flex-wrap: wrap; }
 
@@ -563,7 +564,7 @@ textarea.input { resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   .page, .card, .table-wrap, .status, .modal, .modal__panel, .auth__card, .auth__hang, .printing, .printing i { animation: none !important; }
   .printing i { transform: none; }
-  .btn, .chip, .choice, .input, .tab, .topbar__nav a, .topbar__menu span, .theme-toggle, .theme-toggle-icon svg { transition: none; }
+  .btn, .chip, .choice, .input, .tab, .topbar__nav a, .theme-toggle, .theme-toggle-icon svg { transition: none; }
 }
 
 /* --- mail: news to the restaurant owners ----------------------------------- */
@@ -611,7 +612,7 @@ textarea.input { resize: vertical; }
 /* --- finance: the till roll ------------------------------------------------------ */
 .finance-toolbar { align-items: center; row-gap: 14px; }
 .range { display: flex; gap: 10px; align-items: flex-end; }
-.range__field { display: grid; gap: 4px; }
+.range__field { display: grid; gap: 4px; min-width: 0; }
 .range__field > span { font: 500 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ox-2); }
 .range__field .input { width: 150px; }
 .range__field--period .input { width: 250px; }
@@ -702,6 +703,7 @@ textarea.input { resize: vertical; }
   .range { flex-wrap: wrap; }
   .range__field { flex: 1 1 140px; }
   .range__field .input { width: 100%; }
+  .toolbar > .range { flex: 1 1 100%; }
   .kpis { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .kpi__value { font-size: 22px; }
   .charts { grid-template-columns: minmax(0, 1fr); }
@@ -729,7 +731,10 @@ textarea.input { resize: vertical; }
 /* A tile shows only its label and number; a trend is a small chip beside the label. */
 .kpi__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .kpi__head .kpi__label { min-width: 0; }
-.kpi__head .delta { flex: none; }
+.kpi__head .delta, .kpi__head .info-tip { flex: none; }
+/* The chip is a button: a tap, hover or focus shows what it compares with. */
+.delta-tip { display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0; border: 0; background: none; color: inherit; font: inherit; cursor: help; border-radius: var(--r-pill); }
+.delta-tip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus, #a88462); }
 .delta { display: inline-flex; flex-wrap: nowrap; gap: 2px 4px; white-space: nowrap; align-items: center; font: 700 11px/1.3 var(--mono); letter-spacing: 0.04em; padding: 3px 7px 2px; border-radius: var(--r-md); border: 1.5px solid currentColor; max-width: 100%; }
 .delta--good { color: var(--trend-good); }
 .delta--bad { color: var(--trend-bad); }
@@ -1194,27 +1199,11 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .press-ripple { display: none; }
   .btn:hover:not(:disabled), .kpi:hover { translate: none; transform: none; }
 }
-/* Phones: the logo and a Menu button; the button opens the links, Settings
-   and Sign out as a list inside the same glass pill. */
-.topbar__menu { display: none; }
+/* Phones: the logo and the dev badge only; the links, Settings and Sign out
+   are in the bottom bar and its Workspace sheet (components/tabbar.css). */
 @media (max-width: 760px) {
-  .topbar, .topbar.is-open { flex-wrap: wrap; padding: 8px 8px 8px 18px; gap: 6px; border-radius: var(--r-panel); }
-  /* the three stripes; they fold into an X while the menu is open */
-  .topbar__menu { display: inline-grid; place-content: center; gap: 5px; margin-left: auto; width: 44px; height: 44px; padding: 0; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--on-ox); transition: background-color 160ms var(--ease); }
-  .topbar__menu span { display: block; width: 20px; height: 2px; border-radius: var(--r-md); background: currentColor; transition: translate 240ms var(--ease), rotate 240ms var(--ease), opacity 160ms var(--ease); }
-  .topbar__menu:hover { background: rgb(58 36 24 / 0.08); }
-  :root[data-theme="dark"] .topbar__menu:hover { background: rgb(213 196 174 / 0.12); }
-  .topbar.is-open { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
-  .topbar.is-open .topbar__menu { background: #1a120e; color: var(--bq-snow); }
-  :root[data-theme="dark"] .topbar.is-open .topbar__menu { background: #f6f1ea; color: #1a120e; }
-  .topbar.is-open .topbar__menu span:nth-child(1) { translate: 0 7px; rotate: 45deg; }
-  .topbar.is-open .topbar__menu span:nth-child(2) { opacity: 0; }
-  .topbar.is-open .topbar__menu span:nth-child(3) { translate: 0 -7px; rotate: -45deg; }
-  .topbar__nav, .topbar__user { display: none; }
-  .topbar.is-open .topbar__nav { display: flex; flex-direction: column; order: 3; width: 100%; margin: 4px 0 0 -8px; gap: 2px; }
-  .topbar.is-open .topbar__nav a { padding: 12px 14px; font-size: 16px; }
-  .topbar.is-open .topbar__user { display: flex; order: 4; width: 100%; margin: 4px 0 2px -8px; padding-top: 8px; border-top: 1.5px dashed var(--paper-line); gap: 6px; }
-  .topbar.is-open .topbar__user .btn { flex: 1; justify-content: center; }
+  .topbar { flex-wrap: nowrap; padding: 8px 18px; gap: 6px; border-radius: var(--r-panel); min-height: 52px; }
+  .topbar__nav, .topbar__user, .topbar .palette-trigger { display: none; }
 }
 @media (max-width: 600px) {
   .brand__app { display: none; }
@@ -1278,7 +1267,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
 @media (min-width: 1024px) {
   .app { display: grid; grid-template-columns: 252px minmax(0, 1fr); gap: 14px; padding: 12px; align-items: start; }
   .app > :not(.topbar) { grid-column: 2; }
-  .topbar, .topbar.is-open {
+  .topbar {
     grid-column: 1; grid-row: 1 / span 4;
     position: sticky; top: 12px;
     width: auto; height: calc(100svh - 24px); margin: 0;
@@ -1302,13 +1291,13 @@ html.is-busy, html.is-busy * { cursor: progress; }
 /* the chosen link and the main buttons: lacquered espresso pills */
 .topbar__nav a.active, .topbar__nav a.active:hover, .topbar__settings.active,
 .btn--primary, .chip--on, .chip--on:hover, .tab--on, .tab--on:hover,
-.topbar.is-open .topbar__menu, .setting-toggle[aria-pressed="true"], .setting-toggle[aria-pressed="true"]:hover {
+.setting-toggle[aria-pressed="true"], .setting-toggle[aria-pressed="true"]:hover {
   background: var(--lacquer); border-color: transparent; color: var(--bq-snow); box-shadow: var(--lacquer-rim);
 }
 .btn--primary:hover:not(:disabled) { background: var(--lacquer-hi); border-color: transparent; box-shadow: var(--lacquer-rim), 0 18px 30px -16px rgb(26 18 14 / 0.6); }
 :root[data-theme="dark"] .topbar__nav a.active, :root[data-theme="dark"] .topbar__nav a.active:hover, :root[data-theme="dark"] .topbar__settings.active,
 :root[data-theme="dark"] .btn--primary, :root[data-theme="dark"] .chip--on, :root[data-theme="dark"] .chip--on:hover,
-:root[data-theme="dark"] .tab--on, :root[data-theme="dark"] .tab--on:hover, :root[data-theme="dark"] .topbar.is-open .topbar__menu,
+:root[data-theme="dark"] .tab--on, :root[data-theme="dark"] .tab--on:hover,
 :root[data-theme="dark"] .setting-toggle[aria-pressed="true"], :root[data-theme="dark"] .setting-toggle[aria-pressed="true"]:hover,
 :root[data-theme="dark"] .btn--primary:hover:not(:disabled) { color: #1a120e; }
 
@@ -1362,6 +1351,29 @@ html.is-busy, html.is-busy * { cursor: progress; }
   .kpi__value { font-size: clamp(20px, 6.4vw, 26px); }
   .kpis--lead .kpi__value { font-size: clamp(22px, 7vw, 30px); }
 }
+/* a figure never leaves its tile: in a narrow tile (a tablet beside the sidebar, 1024 px)
+   it shrinks with the tile (24 % of its width fits "12 990 kr"); a tile with room keeps the sizes above */
+.kpis > .kpi { container-type: inline-size; }
+.kpis > .kpi > .kpi__value { font-size: min(30px, 24cqi); }
+.kpis--lead > .kpi > .kpi__value { font-size: min(36px, 24cqi); }
+@media (max-width: 760px) {
+  .kpis > .kpi > .kpi__value { font-size: min(clamp(20px, 6.4vw, 26px), 24cqi); }
+  .kpis--lead > .kpi > .kpi__value { font-size: min(clamp(22px, 7vw, 30px), 24cqi); }
+}
+/* a table wider than its ticket: a soft shadow on the side that has more (ScrollEdges) */
+.scroll-edges { position: relative; margin-bottom: 22px; }
+.scroll-edges > .table-wrap { margin-bottom: 0; }
+.scroll-edges::before, .scroll-edges::after {
+  content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 28px; pointer-events: none;
+  opacity: 0; transition: opacity 200ms var(--ease);
+}
+.scroll-edges::before { left: 0; border-radius: var(--r-lg) 0 0 var(--r-lg); background: linear-gradient(to right, rgb(26 18 14 / 0.16), transparent); }
+.scroll-edges::after { right: 0; border-radius: 0 var(--r-lg) var(--r-lg) 0; background: linear-gradient(to left, rgb(26 18 14 / 0.16), transparent); }
+:root[data-theme="dark"] .scroll-edges::before { background: linear-gradient(to right, rgb(0 0 0 / 0.45), transparent); }
+:root[data-theme="dark"] .scroll-edges::after { background: linear-gradient(to left, rgb(0 0 0 / 0.45), transparent); }
+.scroll-edges[data-more~="left"]::before, .scroll-edges[data-more~="right"]::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .scroll-edges::before, .scroll-edges::after { transition: none; } }
+@media (max-width: 640px) { .scroll-edges { margin-bottom: 0; } }   /* phones: the cards keep their own end space */
 .kpi__sub, .ring__legend, .mail-meta, .next-invoice__lines, .kpi__facts, .chart__svg { font-family: var(--sans); font-stretch: 100%; }
 .kpi__sub { font-size: 13px; }
 .table th { font: 600 12.5px/1.3 var(--sans); letter-spacing: 0; text-transform: none; color: var(--print-2); }
@@ -1700,7 +1712,7 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 
 /* The Free plan: its badge and its period fields (Plan tab, New customer). */
 .status--free { color: var(--ok); }
-.free-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px 18px; align-items: start; margin: 12px 0 4px; }
+.free-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 14px 18px; align-items: start; margin: 12px 0 4px; }
 .free-fields__noend { grid-column: 1 / -1; margin: 0; }
 
 /* ErrorNotice: who acts. A link to the place to fix it, or a Booqy fault's details to copy. */
@@ -1709,8 +1721,71 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .error-notice__details { flex-basis: 100%; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r-sm, 8px); background: var(--glass-surface); font: 12px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
 /* Reports (pages/ReportsPage): error reports from Booqy Admin. */
-.reports-filter { gap: 4px; }
+@media (max-width: 640px) {
+  /* phones: Open, Handled and All side by side across the row, Refresh beside them below */
+  .page-head > .reports-actions { flex: 1 1 100%; }
+  .page-head .reports-filter { flex: 1 1 100%; }
+  .page-head .chips.reports-filter[data-glide="track"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .reports-who { display: block; }
 .reports-id { overflow-wrap: anywhere; }
 .reports-row--handled td { color: var(--muted, inherit); }
 .reports-table .btn { white-space: nowrap; }
+
+/* Customers toolbar: the chip bar while it fits; narrower (phones, tablets,
+   a narrow window) one Status filter pill beside the search, which takes
+   the rest of the row. A container query, so it follows the room the page
+   has, not the window. The pill opens the Booqy Select (a sheet on phones). */
+.tenants-toolbar { container: tenants-toolbar / inline-size; }
+.tenants-filter { display: none; }
+@container tenants-toolbar (max-width: 800px) {
+  .toolbar.tenants-toolbar > .input.search { flex: 1 1 0; width: auto; min-width: 120px; max-width: none; min-height: 44px; border-radius: var(--r-pill); padding: 0 14px 0 40px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
+  .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b4a2e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
+  :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg); }
+  :root[data-theme="dark"] .toolbar.tenants-toolbar > .input.search:focus { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d5c4ae' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") 15px 50% / 16px 16px no-repeat, var(--field-bg-focus); }
+  .tenants-toolbar > .chips { display: none !important; }
+  /* the pill never takes the search's room: a long status ends in "...", the count and chevron stay */
+  .tenants-filter { display: block; flex: 0 1 auto; min-width: 0; max-width: min(55%, calc(100% - 132px)); }  /* 132 = the search minimum + the gap: never wraps */
+  .tenants-filter .input.select.status-filter { max-width: 100%; }
+}
+.input.select.status-filter {
+  width: auto; min-height: 44px; height: 44px; padding: 0 12px 0 16px; gap: 6px;
+  border: 0; border-radius: var(--r-pill); background: var(--pearl); box-shadow: var(--pearl-rim);
+  font: 600 14px/1 var(--sans); color: var(--print);
+}
+.input.select.status-filter:hover { background: var(--pearl); }
+.input.select.status-filter:focus-visible,
+.input.select.status-filter[aria-expanded="true"] { background: var(--pearl); box-shadow: var(--pearl-rim), 0 0 0 2px #a88462; }
+.status-filter .select__value { display: inline-flex; align-items: center; gap: 0; min-width: 0; flex: 0 1 auto; overflow: visible; animation: filter-swap 320ms var(--ease) both; }
+.status-filter .select__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-filter .select__meta, .status-filter .select__chevron { flex: none; }
+.select__meta, .select-option__meta {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
+  background: rgb(26 18 14 / 0.1); font: 650 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
+}
+.select-option__meta { flex: none; margin-left: 0; }
+:root[data-theme="dark"] .select__meta, :root[data-theme="dark"] .select-option__meta { background: rgb(213 196 174 / 0.16); }
+.select-option.is-active .select-option__meta { background: color-mix(in srgb, currentColor 12%, transparent); }
+/* a new choice slides into the pill: the same ease as the chip glide */
+@keyframes filter-swap { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .status-filter .select__value { animation: none; }
+}
+
+/* Customers header on phones: Refresh is a 44 px round icon button on the
+   same row as New customer (its text stays as the accessible name). */
+@media (max-width: 640px) {
+  .page-head__actions { flex-wrap: nowrap; }
+  .refresh-compact .save-btn { width: 44px; height: 44px; min-height: 44px; min-width: 44px; padding: 0; border-radius: 50%; font-size: 0; gap: 0; justify-content: center; }
+  .refresh-compact .save-btn::before { content: ""; width: 18px; height: 18px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.6h-4.6'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.6h-4.6'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .refresh-compact .save-btn--busy::before { animation: refresh-turn 900ms linear infinite; }
+  .refresh-compact .save-btn--done::before { display: none; }
+  .refresh-compact .save-hint { display: none; }
+}
+@keyframes refresh-turn { to { transform: rotate(360deg); } }
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .refresh-compact .save-btn--busy::before { animation: none; opacity: 0.5; }
+}

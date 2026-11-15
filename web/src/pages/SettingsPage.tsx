@@ -1,6 +1,8 @@
 import { BackdropSetting } from "../components/BackdropSetting";
 import { isDesktopShell } from "../desktopDownloads";
-import { AvatarSetting } from "../components/AvatarSetting";
+import { Link } from "react-router-dom";
+import { MyAvatar } from "../components/MyAvatar";
+import { firstName } from "../avatar";
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -13,7 +15,7 @@ import { InfoTip } from "../components/StepFlow";
  * browser (localStorage, see src/storageRegistry.ts) under the same keys as
  * booqy.se and admin. Light and sound on are the defaults.
  */
-export default function SettingsPage({ email }: { email?: string }) {
+export default function SettingsPage({ name, email }: { name?: string; email?: string }) {
   return (
     <>
       <div className="page-head">
@@ -25,7 +27,13 @@ export default function SettingsPage({ email }: { email?: string }) {
       <section className="card">
         <div className="card__head"><h2>Your profile</h2></div>
         <div className="card__body">
-          <AvatarSetting email={email} />
+          <div className="setting-row" data-help="settings:profile">
+            <div className="avatar-setting__who">
+              <MyAvatar name={name} email={email} />
+              <p className="strong">{firstName(name, email)}</p>
+            </div>
+            <Link to="/profile" className="setting-toggle">Open my profile</Link>
+          </div>
         </div>
       </section>
       <section className="card">

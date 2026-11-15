@@ -143,7 +143,7 @@
 
 
 /* --- the shell ------------------------------------------------------------ */
-.topbar, .topbar.is-open {
+.topbar {
   background: var(--glass-side);
   box-shadow: var(--glass-edge), var(--elev-2);
   -webkit-backdrop-filter: blur(var(--blur-side)) saturate(1.5);
@@ -178,7 +178,7 @@
 .topbar .palette-trigger { flex: 0 0 auto; }
 
 @media (min-width: 1024px) {
-  .topbar, .topbar.is-open { padding: var(--space-6) var(--space-3) var(--space-4); }
+  .topbar { padding: var(--space-6) var(--space-3) var(--space-4); }
   .topbar .palette-trigger { order: 0; margin: var(--space-5) var(--space-1) 0; width: auto; }
   .topbar .palette-trigger-text { flex: 1 1 auto; }
   .topbar__nav { margin-top: var(--space-4); }
@@ -197,12 +197,6 @@
 @media (max-width: 1023px) {
   .topbar .palette-trigger { margin-left: auto; }
   .topbar__nav a .nav-icon { display: none; }
-}
-@media (max-width: 760px) {
-  .topbar .palette-trigger { margin-left: auto; }
-  .topbar__menu { margin-left: 0; }
-  .topbar.is-open .topbar__nav a .nav-icon { display: inline-block; }
-  .topbar.is-open .topbar__nav a { display: flex; }
 }
 
 /* page head: title left, the one primary action last */
@@ -661,10 +655,10 @@
 
 /* no blur, or less transparency wanted: solid surfaces */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); }
+  .topbar, .main, .modal__panel, .palette { background: var(--paper); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .topbar, .topbar.is-open, .main, .modal__panel, .palette { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .topbar, .main, .modal__panel, .palette { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .palette, .palette-backdrop { animation: none; }
@@ -748,7 +742,6 @@ html.is-desktop-glass[data-desktop-glass='tint'] body::before { display: block; 
 /* The OS already blurs the desktop; the page's own blur would only blur the
    clear window. Modals and the palette keep theirs (they sit over content). */
 html.is-desktop-glass .topbar,
-html.is-desktop-glass .topbar.is-open,
 html.is-desktop-glass .main,
 html.is-desktop-glass .auth__main {
   -webkit-backdrop-filter: none;
@@ -829,6 +822,36 @@ html.is-desktop-glass.glass-refract .auth__main { backdrop-filter: none; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Date and time fields: WebKit (iPhone, iPad, Mac Safari) gives them an
+   intrinsic min-width and its own centred pill, so width: 100% was ignored
+   and the field stuck out of its card. Drop the native look, let them shrink
+   and start the value at the left like every other text field. Chrome and
+   Edge keep their calendar icon (the picker indicator is not affected). */
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-date-and-time-value {
+  text-align: left;
+  min-width: 0;
+  margin: 0;
+}
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit { padding: 0; }
+/* Same height as the text fields beside them: Chrome pads the fields wrapper
+   and Safari each part by 1 px top and bottom, which made date fields 2 px taller. */
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-fields-wrapper { padding-block: 0; }
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-day-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-month-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-year-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-hour-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-minute-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-week-field,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-datetime-edit-text { padding-block: 0; }
 
 /* --- Row actions (components/RowActions.tsx): quiet, the same in every table --- */
 .table-wrap { container-type: inline-size; }
@@ -915,19 +938,6 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
   background: linear-gradient(rgb(26 18 14 / 0.42), rgb(26 18 14 / 0.42)), var(--user-image) center / cover no-repeat, var(--ox-800);
 }
 
-/* Phones: the open menu never grows past the screen; it scrolls inside
-   (dvh follows Safari's toolbar, svh is the fallback), with room for the home
-   indicator, and the page behind does not scroll along. */
-@media (max-width: 1023px) {
-  .topbar.is-open {
-    max-block-size: calc(100svh - 24px);
-    max-block-size: calc(100dvh - 24px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    padding-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
-  }
-}
 
 /* --- Your image: the library (components/BackdropLibrary.tsx) ------------- */
 /* The row takes the full width when the library shows. */
@@ -1238,8 +1248,42 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
 .avatar--lg { inline-size: var(--avatar-lg); block-size: var(--avatar-lg); font-size: 1.125rem; }
 .avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
 .operator-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.topbar__me { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-3); color: var(--print-2); font-size: 0.8125rem; }
-.topbar__me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* You, in the menu: picture and first name, a link to My profile (44 px to tap on every width). */
+.topbar__me {
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto; min-width: 0; min-height: 44px;
+  padding: 0 14px 0 6px; border-radius: var(--r-pill);
+  color: var(--on-ox); font: 500 14.5px/1.2 var(--sans); text-decoration: none;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+.topbar__me:not(.active):hover { background: rgb(58 36 24 / 0.08); color: var(--on-ox); }
+:root[data-theme="dark"] .topbar__me:not(.active):hover { background: rgb(213 196 174 / 0.12); }
+.topbar__me.active, .topbar__me.active:hover { background: var(--lacquer); color: var(--bq-snow); box-shadow: var(--lacquer-rim); }
+:root[data-theme="dark"] .topbar__me.active, :root[data-theme="dark"] .topbar__me.active:hover { color: #1a120e; }
+.topbar__me:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+.topbar__me .avatar { flex: 0 0 auto; }
+/* a first name fits; only an unusually long one is cut */
+.topbar__me-name { min-width: 0; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* tablet: the top bar is one row, so a compact chip */
+@media (min-width: 761px) and (max-width: 1023px) {
+  .topbar__me { padding-right: 12px; font-size: 14px; }
+  .topbar__me-name { max-width: 12ch; }
+}
+/* phone, menu open: its own full-width row above Settings and Sign out */
+@media (max-width: 760px) {
+  .topbar.is-open .topbar__user { flex-wrap: wrap; }
+  .topbar.is-open .topbar__me { flex: 1 0 100%; min-height: 52px; padding: 0 14px 0 8px; font-size: 16px; border-radius: var(--radius-inner, 14px); }
+  .topbar.is-open .topbar__me-name { max-width: none; }
+}
+/* side menu: a row like the links */
+@media (min-width: 1024px) {
+  .topbar__me { min-height: 48px; padding: 0 14px 0 8px; font-size: 15px; border-radius: var(--radius-inner); margin-bottom: 4px; }
+  .topbar__me-name { max-width: none; }
+}
+.profile-form { max-width: 520px; }
+.profile-role { display: flex; align-items: center; gap: 14px; min-height: 44px; }
+.profile-role .field__label { margin: 0; }
+.profile-role .tag { margin-left: 0; }
+.tag--owner { color: var(--accent-ink); }
 .avatar-setting__who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .avatar-setting__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .avatar-setting__choose { position: relative; align-items: center; }

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CountUp, Delta, deltaPct, easeOutExpo } from "./motion";
 import { trendOf } from "../trend";
@@ -35,6 +35,21 @@ describe("deltas and periods", () => {
     expect(stamps).toHaveLength(2);                                                 // nothing to compare with: no chip
     expect(container.querySelector(".delta__label")).toBeNull();                    // a chip: arrow and percent, no words
     expect(screen.getByText("2980 kr")).toBeInTheDocument();
+  });
+
+  it("says what a chip compares with on tap, as a tooltip", async () => {
+    render(<Delta trend={trendOf(100, 100, "revenue", "previous period")} />);
+    const chip = screen.getByRole("button", { name: /unchanged vs previous period/ });
+    chip.click();
+    expect(await screen.findByText("Unchanged vs previous period")).toBeInTheDocument();
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the tip open when a tap brings hover and focus before the click", () => {
+    render(<Delta trend={trendOf(100, 100, "revenue", "previous period")} />);
+    const chip = screen.getByRole("button", { name: /unchanged vs previous period/ });
+    act(() => { fireEvent.mouseEnter(chip.parentElement!); fireEvent.focus(chip); fireEvent.click(chip); });
+    expect(chip).toHaveAttribute("aria-expanded", "true");
   });
 
   it("shows an unchanged figure as 0 % and a new one as the arrow alone", () => {

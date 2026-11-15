@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Tenant, TenantDetail } from "../types";
@@ -135,7 +135,9 @@ describe("Plan tab: Free", () => {
     render(<PlanTab tenant={onFree} onSaved={() => {}} />);
     await screen.findByText("Free");
     expect(screen.getByRole("radio", { name: /Free until changed/ })).toBeChecked();
-    expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled();
+    // The plans load asynchronously; check once the tab has settled (CI is slow).
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save plan" })).toBeDisabled());
+    expect(mocks.plans).toHaveBeenCalled();
   });
 
   it("keeps an own price as the price after Free", async () => {

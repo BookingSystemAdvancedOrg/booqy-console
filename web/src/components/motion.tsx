@@ -4,6 +4,7 @@
  * everything shows its final value at once. */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Trend, TrendTone } from "../trend";
+import { InfoTip } from "./InfoTip";
 
 export function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -183,12 +184,16 @@ export function Delta({ trend }: { trend: Trend }) {
   const text = trend.direction === "flat" ? "0\u00a0%" : fresh ? "" : trend.text;
   const arrow = trend.direction === "down" ? "down" : trend.direction === "up" && (!fresh || trend.tone !== "neutral") ? "up" : null;
   if (!text && !arrow) return null;
+  // A tap, hover or focus says what it compares with ("Unchanged vs previous period"): the title alone never shows on touch.
+  const said = trend.spoken.charAt(0).toUpperCase() + trend.spoken.slice(1);
   return (
-    <span className={`delta delta--${trend.tone}`} title={trend.spoken}>
-      {arrow && <TrendArrow direction={arrow} />}
-      {text && <span aria-hidden="true">{text}</span>}
-      <span className="sr-only">{trend.spoken}</span>
-    </span>
+    <InfoTip label={said} className="delta-tip" trigger={
+      <span className={`delta delta--${trend.tone}`}>
+        {arrow && <TrendArrow direction={arrow} />}
+        {text && <span aria-hidden="true">{text}</span>}
+        <span className="sr-only">{trend.spoken}</span>
+      </span>
+    }>{said}</InfoTip>
   );
 }
 

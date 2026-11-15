@@ -5,7 +5,7 @@ import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
   BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, SupportReport, TransferCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
@@ -218,7 +218,8 @@ export const api = {
     request<{ sync: { tenants: number; subscriptions: number; invoices: number; booked: number; errors: string[] } }>(
       "POST", "/platform/finance/stripe-sync", {}),
 
-  operators: () => request<{ operators: OperatorAccount[] }>("GET", "/platform/operators").then((r) => r.operators),
+  operators: () => request<OperatorList>("GET", "/platform/operators")
+    .then((r) => ({ operators: r.operators, canChangeEmail: r.canChangeEmail === true })),
   // Your profile picture (avatar.ts): only your own can be changed.
   myAvatar: () => request<{ url: string | null }>("GET", "/platform/me/avatar"),
   avatarUpload: (body: { contentType: string; size: number }) =>
@@ -227,7 +228,7 @@ export const api = {
   deleteAvatar: () => request<unknown>("DELETE", "/platform/me/avatar"),
   createOperator: (email: string, name: string) =>
     request<{ operator: OperatorAccount }>("POST", "/platform/operators", { email, name }),
-  updateOperator: (username: string, patch: { name?: string; enabled?: boolean }) =>
+  updateOperator: (username: string, patch: { name?: string; email?: string; enabled?: boolean }) =>
     request<{ operator: OperatorAccount }>("PATCH", `/platform/operators/${encodeURIComponent(username)}`, patch),
   deleteOperator: (username: string) => request("DELETE", `/platform/operators/${encodeURIComponent(username)}`),
   resendInvite: (username: string) =>

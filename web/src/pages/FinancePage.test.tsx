@@ -74,7 +74,7 @@ describe("FinancePage", () => {
               costSplitSek: { baseline: 60, requests: 80, email: 0, sms: 0 } },
     });
     renderPage();
-    expect(await screen.findByText(/AWS cost known up to 20 okt/)).toBeInTheDocument();
+    expect(await screen.findByText(/AWS cost known up to 20 Oct/)).toBeInTheDocument();
     expect(screen.getAllByText("AWS bill").length).toBe(1);                       // the tile: label and number only
     expect(screen.queryByText(/allocated to customers/i)).not.toBeInTheDocument();
   });

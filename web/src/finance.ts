@@ -74,7 +74,7 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((parseDay(to).getTime() - parseDay(from).getTime()) / 86_400_000) + 1;
 }
 
-// --- formatting (sv-SE: space thousands, comma decimals, "kr") ---------------------
+// --- formatting (numbers sv-SE: space thousands, comma decimals, "kr"; dates en-GB, the console's language) ---
 const sek0 = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 const sek2 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const int = new Intl.NumberFormat("sv-SE");
@@ -97,12 +97,12 @@ export function fmtPct(value: number | null | undefined): string {
 
 export function fmtDay(iso: string | undefined | null): string {
   if (!iso) return "-";
-  return parseDay(iso.slice(0, 10)).toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+  return parseDay(iso.slice(0, 10)).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-/** Short axis label: "ma 3 okt" style is too long; day-of-month or week start. */
+/** Short axis label: "3 Oct", the day of the month or the week's start. */
 export function shortDay(iso: string): string {
-  return parseDay(iso).toLocaleDateString("sv-SE", { day: "numeric", month: "short" }).replace(".", "");
+  return parseDay(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 // --- series --------------------------------------------------------------------------
@@ -192,7 +192,7 @@ export function shiftMonth(month: string, by: number): string {
 
 export function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
-  const text = new Date(y, m - 1, 1).toLocaleDateString("sv-SE", { month: "long", year: "numeric" });
+  const text = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

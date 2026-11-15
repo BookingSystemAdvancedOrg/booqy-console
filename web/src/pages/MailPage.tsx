@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InboxSwitch } from "../components/InboxSwitch";
 import { api } from "../api";
 import {
   Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
@@ -62,6 +63,7 @@ export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
   const [sentNotice, setSentNotice] = useState<string | null>(null);
   return (
     <>
+      <InboxSwitch on="mail" />
       <div className="page-head">
         <div>
           <h1>Mail</h1>
@@ -115,13 +117,14 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
   return (
     <div className="mail-grid">
       <Card title="New message">
-        <ErrorNotice error={template.error ?? recipients.error} />
+        <ErrorNotice error={template.error ?? recipients.error}
+                     onRetry={() => { if (template.error) void template.reload(); if (recipients.error) void recipients.reload(); }} />
         {template.data && (
           <dl className="mail-meta">
             <dt>From</dt><dd>{template.data.senderName} &lt;{template.data.from}&gt;</dd>
             <dt>Reply-to</dt><dd>{template.data.replyTo}</dd>
             <dt>To</dt>
-            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"}` : <SkelBlock w={220} h={14} />}</dd>
+            <dd>{recipients.data ? `${count} restaurant owner${count === 1 ? "" : "s"}` : recipients.error ? "-" : <SkelBlock w={220} h={14} />}</dd>
           </dl>
         )}
         <div className="stack">
@@ -139,8 +142,9 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
         <div className="mail-actions">
           <SaveButton kind="ghost" type="button" label="Send me a test" busy={test.busy} busyLabel="Sending test…" done={test.done} doneLabel="Test sent"
                       disabled={!ready} onClick={() => void sendTest()} />
-          <button type="button" className="btn btn--primary" disabled={!ready || count === 0 || send.busy} onClick={() => setConfirm(true)}>
-            Send to {count} owner{count === 1 ? "" : "s"}
+          {/* No count until the recipients load: "Send to 0 owners" would read as no owners at all. */}
+          <button type="button" className="btn btn--primary" disabled={!ready || !recipients.data || count === 0 || send.busy} onClick={() => setConfirm(true)}>
+            {recipients.data ? `Send to ${count} owner${count === 1 ? "" : "s"}` : "Send to owners"}
           </button>
         </div>
       </Card>
@@ -186,8 +190,8 @@ function Sent() {
         </div>
         <div className="row"><RefreshButton reload={reload} /></div>
       </div>
-      <ErrorNotice error={error} />
-      {loading && !data ? <SkelPage label="Loading sent mail"><SkelTable rows={5} cols={4} /></SkelPage> : (
+      <ErrorNotice error={error} onRetry={() => void reload()} />
+      {loading && !data ? <SkelPage label="Loading sent mail"><SkelTable rows={5} cols={4} /></SkelPage> : data && (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Sent</th><th>Subject</th><th>Status</th><th>Recipients</th><th>Delivered</th><th>By</th></tr></thead>
@@ -213,12 +217,12 @@ function Sent() {
 }
 
 function NewsletterModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, error, loading } = useLoad(() => api.newsletter(id), [id]);
+  const { data, error, loading, reload } = useLoad(() => api.newsletter(id), [id]);
   const n = data?.newsletter;
   return (
     <Modal title={n?.subject ?? "Newsletter"} onClose={onClose}>
-      <ErrorNotice error={error} />
-      {loading || !data ? <SkelLines n={6} /> : (
+      <ErrorNotice error={error} onRetry={() => void reload()} />
+      {!data && error ? null : loading || !data ? <SkelLines n={6} /> : (
         <div className="stack">
           <dl className="mail-meta">
             <dt>Status</dt><dd><Status value={n!.status} /></dd>
@@ -324,8 +328,8 @@ function readFile(file: File): Promise<string> {
 }
 
 function TemplateEditor() {
-  const { data, error, loading, setData } = useLoad(() => api.mailTemplate());
-  if (error) return <ErrorNotice error={error} />;
+  const { data, error, loading, setData, reload } = useLoad(() => api.mailTemplate());
+  if (error && !data) return <ErrorNotice error={error} onRetry={() => void reload()} />;
   if (loading || !data) return <SkelPage label="Loading the template"><SkelCard lines={8} /></SkelPage>;
   return <TemplateForm template={data} onSaved={setData} />;
 }

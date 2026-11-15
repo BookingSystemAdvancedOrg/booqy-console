@@ -523,7 +523,7 @@
         "console access",
         "admin access"
       ],
-      "answer": "Operators are the people who can sign in to Booqy Console; everyone has the same rights. A new operator gets an email with a temporary password (valid for 3 days), chooses their own password on first sign-in and sets up an authenticator app.",
+      "answer": "Operators are the people who can sign in to Booqy Console. A new operator joins with the operator role, gets an email with a temporary password (valid for 3 days), chooses their own password on first sign-in and sets up an authenticator app.",
       "steps": [
         "Open Operators in the menu.",
         "Press + Add operator.",
@@ -589,7 +589,7 @@
         "invite expired",
         "edit operator"
       ],
-      "answer": "Each operator's row on Operators has Edit, Resend invite, Disable or Enable, and Delete. You can't disable or delete yourself or the last active operator.",
+      "answer": "Each operator's row on Operators has Edit, Resend invite, Disable or Enable, and Delete. You can't disable or delete yourself or the last active operator, and only an owner can disable or delete an owner or change anyone's email.",
       "steps": [
         "Open Operators in the menu.",
         "Use the buttons on the operator's row."
@@ -604,6 +604,42 @@
           ]
         }
       ]
+    },
+    {
+      "id": "profile-edit",
+      "route": "/profile",
+      "title": "Change your name, picture or email",
+      "audience": "all",
+      "keywords": [
+        "my profile",
+        "profile",
+        "profile picture",
+        "picture",
+        "photo",
+        "avatar",
+        "my name",
+        "change name",
+        "change email",
+        "change my email",
+        "owner",
+        "role"
+      ],
+      "answer": "My profile opens from your picture and first name in the menu. You change your own picture and name there. Only an owner can change an email, their own or any operator's (also under Operators); the email is what you sign in with, and the new one works at once.",
+      "steps": [
+        "Press your picture and name in the menu.",
+        "Change the picture or the name and press Save."
+      ],
+      "actions": [
+        {
+          "id": "profile-edit-open",
+          "label": "Open My profile",
+          "to": "/profile",
+          "highlight": [
+            "help:nav:/profile"
+          ]
+        }
+      ],
+      "suggestion": "How do I change my profile picture?"
     },
     {
       "id": "newsletter-send",

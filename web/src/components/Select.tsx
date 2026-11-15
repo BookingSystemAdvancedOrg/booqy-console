@@ -10,7 +10,8 @@ import "./select.css";
    trigger or above it when there is no room, and as a bottom sheet on phones.
    Never the operating system's menu. */
 
-export type SelectOption = { value: string; label: string; disabled?: boolean };
+/** meta: a short figure after the label (a count), in the list and on the trigger. */
+export type SelectOption = { value: string; label: string; disabled?: boolean; meta?: string };
 export type SelectGroup = { label: string; options: SelectOption[] };
 type Item = SelectOption | SelectGroup;
 
@@ -206,6 +207,7 @@ export function Select(props: SelectProps) {
   useEffect(() => { if (disabled && open) close(false); }, [disabled, open]);
 
   const shown = selected >= 0 ? flat[selected].label : placeholder ?? "";
+  const shownMeta = selected >= 0 ? flat[selected].meta : undefined;
   let n = -1;
   const renderOption = (o: SelectOption) => {
     const i = ++n;
@@ -216,6 +218,7 @@ export function Select(props: SelectProps) {
            onMouseMove={() => { if (!o.disabled && i !== active) setActive(i); }}
            onClick={() => choose(i)}>
         <span className="select-option__label">{o.label}</span>
+        {o.meta && <span className="select-option__meta">{o.meta}</span>}
         {isSel && <Icon name="check" size={16} className="select-option__check" />}
       </div>
     );
@@ -230,7 +233,10 @@ export function Select(props: SelectProps) {
               aria-invalid={props["aria-invalid"] || undefined} aria-required={required || undefined}
               disabled={disabled} data-value={value}
               onClick={() => (open ? close() : show())} onKeyDown={onKeyDown}>
-        <span className={`select__value${selected < 0 ? " select__value--empty" : ""}`}>{shown}</span>
+        {/* keyed by the value: a new choice enters with the swap animation (select.css) */}
+        <span key={value} className={`select__value${selected < 0 ? " select__value--empty" : ""}`}>
+          {shownMeta ? <><span className="select__label">{shown}</span><span className="select__meta">{shownMeta}</span></> : shown}
+        </span>
         <Icon name="chevron-down" size={16} className="select__chevron" />
       </button>
       {name && <input type="hidden" name={name} value={value} />}

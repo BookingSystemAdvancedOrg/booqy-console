@@ -11,6 +11,7 @@ import type { OperatorAccount } from "../types";
 import { RefreshButton, SaveButton, useDirty } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import { InfoTip } from "../components/StepFlow";
+import { EmailField } from "../components/EmailField";
 
 function state(o: OperatorAccount): { label: string; cls: string } {
   if (!o.enabled) return { label: "Disabled", cls: "suspended" };
@@ -28,8 +29,10 @@ export default function OperatorsPage({ me }: { me: string }) {
   const [done, setDone] = useState<string | null>(null);
   const row = useAction();
 
-  const rows = [...(data ?? [])].sort((a, b) => (a.username === me ? -1 : b.username === me ? 1 : a.email.localeCompare(b.email)));
-  const activeCount = (data ?? []).filter((o) => o.enabled).length;
+  const list = data?.operators;
+  const canChangeEmail = data?.canChangeEmail === true;
+  const rows = [...(list ?? [])].sort((a, b) => (a.username === me ? -1 : b.username === me ? 1 : a.email.localeCompare(b.email)));
+  const activeCount = (list ?? []).filter((o) => o.enabled).length;
   const avatarFor = (o: OperatorAccount) => (o.username === me ? (myAvatar.url ?? o.avatarUrl) : o.avatarUrl);
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
@@ -46,7 +49,6 @@ export default function OperatorsPage({ me }: { me: string }) {
       <div className="page-head">
         <div>
           <h1>Operators</h1>
-          <p className="muted">Same rights for everyone</p>
         </div>
         <div className="row">
           <RefreshButton reload={reload} />
@@ -54,11 +56,12 @@ export default function OperatorsPage({ me }: { me: string }) {
         </div>
       </div>
 
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} onRetry={() => void reload()} />
       <ErrorNotice error={row.error} />
       {done && <Notice kind="ok">{done}</Notice>}
 
-      {loading && !data ? <SkelPage label="Loading operators"><SkelTable rows={4} cols={4} /></SkelPage> : (
+      {/* A failed load is not an empty list: no "No operators" under the error. */}
+      {loading && !data ? <SkelPage label="Loading operators"><SkelTable rows={4} cols={4} /></SkelPage> : data && (
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -70,6 +73,8 @@ export default function OperatorsPage({ me }: { me: string }) {
                 const s = state(o);
                 const self = o.username === me;
                 const lastActive = o.enabled && activeCount <= 1;
+                // Only an owner disables or deletes an owner (the API checks it too).
+                const ownerOnly = o.role === "owner" && !canChangeEmail;
                 return (
                   // Every operator may edit every operator: the whole row opens Edit
                   // (click, Enter or Space). The picture opens the lightbox and the
@@ -83,6 +88,7 @@ export default function OperatorsPage({ me }: { me: string }) {
                         <RowButton onClick={() => setEditing(o)} label={`Edit ${o.name || o.email}${self ? " (you)" : ""}`}>
                           {o.name || <span className="operator-name__fallback" title="No name yet">{emailName(o.email)}</span>}
                         </RowButton>
+                        {o.role === "owner" && <span className="tag tag--owner">owner</span>}
                         {self && <span className="tag" aria-hidden="true">you</span>}
                       </span>
                     </td>
@@ -99,8 +105,8 @@ export default function OperatorsPage({ me }: { me: string }) {
                           </button>
                         )}
                         {o.enabled ? (
-                          <button className="row-action" disabled={row.busy || self || lastActive}
-                                  title={self ? "You can't disable yourself" : lastActive ? "The last active operator" : undefined}
+                          <button className="row-action" disabled={row.busy || self || lastActive || ownerOnly}
+                                  title={self ? "You can't disable yourself" : lastActive ? "The last active operator" : ownerOnly ? "Only an owner can disable an owner" : undefined}
                                   onClick={() => act(() => api.updateOperator(o.username, { enabled: false }),
                                                      `${o.email} is disabled and signed out.`)}>
                             Disable
@@ -112,8 +118,8 @@ export default function OperatorsPage({ me }: { me: string }) {
                             Enable
                           </button>
                         )}
-                        <button className="row-action row-action--danger" disabled={row.busy || self || lastActive}
-                                title={self ? "You can't delete yourself" : lastActive ? "The last active operator" : undefined}
+                        <button className="row-action row-action--danger" disabled={row.busy || self || lastActive || ownerOnly}
+                                title={self ? "You can't delete yourself" : lastActive ? "The last active operator" : ownerOnly ? "Only an owner can delete an owner" : undefined}
                                 onClick={() => setDeleting(o)}>
                           Delete
                         </button>
@@ -132,7 +138,7 @@ export default function OperatorsPage({ me }: { me: string }) {
                      onAdded={async (email) => { setAdding(false); setDone(`Invite sent to ${email}. It's valid for 3 days.`); await reload(); }} />
       )}
       {editing && (
-        <EditOperator op={editing} onClose={() => setEditing(null)}
+        <EditOperator op={editing} canChangeEmail={canChangeEmail} onClose={() => setEditing(null)}
                       onSaved={async () => { setEditing(null); setDone("Saved."); await reload(); }} />
       )}
       {viewing && (
@@ -160,10 +166,11 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
     <Modal title="Add operator" onClose={onClose}>
       <form onSubmit={submit} className="stack">
         <p className="muted small" style={{ margin: 0 }}>
-          Invite by email. Same rights as you.{" "}
+          Invite by email.{" "}
           <InfoTip label="About the invite">
             They get an email with a temporary password. On first sign-in they choose their own password and set up an
-            authenticator app. They'll have the same rights as you, including managing operators.
+            authenticator app. They join as an operator: they can manage customers and other operators, but not owners
+            or anyone's email.
           </InfoTip>
         </p>
         <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
@@ -182,13 +189,16 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
   );
 }
 
-function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: () => void; onSaved: () => void }) {
+function EditOperator({ op, canChangeEmail, onClose, onSaved }: { op: OperatorAccount; canChangeEmail: boolean; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(op.name);
+  const [email, setEmail] = useState(op.email);
   const a = useAction();
-  const dirty = useDirty(name.trim(), op.name);
+  const dirty = useDirty(name.trim() || op.name, op.name);
+  const emailDirty = useDirty(email.trim().toLowerCase(), op.email.toLowerCase());
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await a.run(() => api.updateOperator(op.username, { name: name.trim() }))) onSaved();
+    const patch = { name: name.trim(), ...(canChangeEmail && emailDirty.dirty ? { email: email.trim() } : {}) };
+    if (await a.run(() => api.updateOperator(op.username, patch))) onSaved();
   };
   return (
     <Modal title="Edit operator" onClose={onClose}>
@@ -199,11 +209,10 @@ function EditOperator({ op, onClose, onSaved }: { op: OperatorAccount; onClose: 
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100}
                  placeholder={op.name ? undefined : "Add a name"} />
         </Field>
-        <Field label="Email" hint="Can't be changed">
-          <input className="input" value={op.email} disabled />
-        </Field>
+        <EmailField value={email} onChange={setEmail} editable={canChangeEmail}
+                    changed={canChangeEmail && emailDirty.dirty} error={a.fields.email} />
         <div className="row">
-          <SaveButton label="Save" busy={a.busy} dirty={dirty.dirty} />
+          <SaveButton label="Save" busy={a.busy} dirty={dirty.dirty || (canChangeEmail && emailDirty.dirty)} />
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
         </div>
       </form>

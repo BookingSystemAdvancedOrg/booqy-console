@@ -288,6 +288,15 @@ export interface OperatorAccount {
   updatedAt?: string;
   /** Presigned link to the operator's profile picture (1 h), or null. */
   avatarUrl?: string | null;
+  /** owner = may change any operator's e-mail and is the only one who disables or deletes an owner. */
+  role?: "owner" | "operator";
+}
+
+/** GET /platform/operators */
+export interface OperatorList {
+  operators: OperatorAccount[];
+  /** The signed-in operator is an owner (from their token). */
+  canChangeEmail: boolean;
 }
 
 /** Dev mail outbox (GET /platform/outbox) - dev only. */

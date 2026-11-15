@@ -68,7 +68,7 @@ describe("BillingTab", () => {
     mocks.updateSubscription.mockResolvedValue({ billing: running({ terms: "subscription" }).billing });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByText("Active")).toBeInTheDocument();
-    expect(screen.getByText(/Try-out period since 10 sep/)).toBeInTheDocument();
+    expect(screen.getByText(/Try-out period since 10 Sept/)).toBeInTheDocument();
     expect(screen.getByText(/Next invoice:/)).toBeInTheDocument();
     expect(screen.getByText("Booqy Starter, 1 dec till 31 dec 2026")).toBeInTheDocument();
     // SMS are included in the price: no SMS line, no SMS price
@@ -100,7 +100,7 @@ describe("BillingTab", () => {
     mocks.updateSubscription.mockResolvedValue({ billing: running().billing });
     mocks.invoiceNow.mockResolvedValue({ dryRun: false, today, invoices: [{ tenantId: "t1", name: "Pizzeria Roma", totalSek: 990 }], skipped: [], errors: [], migrated: [], totalSek: 990 });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
-    expect(await screen.findByText(/ends on 24 jan/)).toBeInTheDocument();
+    expect(await screen.findByText(/ends on 24 Jan/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel agreement" })).not.toBeInTheDocument();
     expect(screen.getByText(/2 months are/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Invoice now" }));
@@ -164,7 +164,7 @@ describe("BillingTab", () => {
     mocks.remindInvoice.mockResolvedValue({ remindersSent: 2 });
     render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByText("F-0001")).toBeInTheDocument();
-    expect(screen.getByText("25 aug. to 24 sep.")).toBeInTheDocument();
+    expect(screen.getByText("25 Aug to 24 Sept")).toBeInTheDocument();
     expect(screen.getByText(/412 parts, 288,40 kr/)).toBeInTheDocument();
     expect(screen.getByText("12 days")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Send reminder" }));

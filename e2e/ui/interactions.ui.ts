@@ -24,21 +24,21 @@ for (const vp of SIZES) {
     const phone = vp.kind === 'phone'
 
     if (phone) {
-      test(`menu drawer ${vp.name} ${theme}`, async ({ page }, info) => {
+      test(`workspace sheet ${vp.name} ${theme}`, async ({ page }, info) => {
         await open(page, '/', vp, theme)
         const issues: Issue[] = []
-        const burger = page.locator('button[aria-expanded]').first()
-        await burger.click()
+        const you = page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Workspace' })
+        await you.click()
         await page.waitForTimeout(400)
-        const nav = page.locator('nav').filter({ visible: true }).first()
-        const b = await nav.boundingBox()
-        if (!b || b.x < -1 || b.x + b.width > vp.width + 1) issues.push({ kind: 'drawer-bounds', severity: 'high', message: `Menu outside the window: ${JSON.stringify(b)}` })
+        const sheet = page.getByRole('dialog', { name: 'Workspace' })
+        const b = await sheet.boundingBox()
+        if (!b || b.x < -1 || b.x + b.width > vp.width + 1 || b.y + b.height > vp.height + 1) issues.push({ kind: 'sheet-bounds', severity: 'high', message: `Sheet outside the window: ${JSON.stringify(b)}` })
         issues.push(...(await layoutAudit(page, { ...opts(true), atBottom: false })).filter((i) => i.kind !== 'tap-target'))
-        await page.screenshot({ path: info.outputPath('drawer-open.png') })
+        await page.screenshot({ path: info.outputPath('sheet-open.png') })
         await page.keyboard.press('Escape')
-        if ((await burger.getAttribute('aria-expanded')) === 'true') await burger.click()
-        await expect(burger).toHaveAttribute('aria-expanded', 'false')
-        record(info, 'console', 'interaction:drawer', vp.name, theme, issues)
+        await expect(sheet).toHaveCount(0)
+        await expect(you).toHaveAttribute('aria-expanded', 'false')
+        record(info, 'console', 'interaction:workspace-sheet', vp.name, theme, issues)
         assertNoIssues(issues)
       })
     }
@@ -156,4 +156,26 @@ for (const vp of VIEWPORTS.filter((v) => ['390', '820p', '1440'].includes(v.name
       assertNoIssues(issues)
     })
   }
+}
+
+/** Customers at 320: a long status in the pill never crushes the search, and
+ *  Refresh (a round icon) sits on the same row as New customer. */
+for (const theme of ['light', 'dark'] as const) {
+  test(`customers toolbar 320 ${theme}`, async ({ page }, info) => {
+    await open(page, '/', VIEWPORTS.find((v) => v.name === '320')!, theme)
+    const refresh = page.getByRole('button', { name: 'Refresh' })
+    const add = page.getByRole('main').getByRole('link', { name: /New customer/ })
+    const [r, a] = [await refresh.boundingBox(), await add.boundingBox()]
+    expect(r!.width).toBeGreaterThanOrEqual(44)
+    expect(r!.height).toBeGreaterThanOrEqual(44)
+    expect(Math.abs(r!.y + r!.height / 2 - (a!.y + a!.height / 2))).toBeLessThan(2)
+    await page.getByRole('combobox', { name: 'Status filter' }).click()
+    await page.getByRole('option', { name: /^Data deleted/ }).click()
+    const search = await page.getByLabel('Search customers').boundingBox()
+    const pill = await page.getByRole('combobox', { name: 'Status filter' }).boundingBox()
+    expect(search!.width).toBeGreaterThanOrEqual(120)
+    expect(Math.abs(search!.y - pill!.y)).toBeLessThan(2)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
+    await page.screenshot({ path: info.outputPath('toolbar-320.png') })
+  })
 }

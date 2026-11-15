@@ -1,0 +1,159 @@
+/* Phones: the bottom bar (TabBar.tsx) and its Workspace sheet (WorkspaceSheet.tsx).
+   From 761 px the side menu or the top pill nav is used and none of this shows. */
+
+.tabbar, .inbox-switch { display: none; }
+
+@media (max-width: 760px) {
+  :root { --tabbar-h: 64px; --tabbar-gap: 10px; --tabbar-room: calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom, 0px)); }
+
+  .tabbar {
+    position: fixed; z-index: 200;
+    left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom, 0px));
+    display: flex; align-items: center; justify-content: space-around;
+    height: var(--tabbar-h); max-width: 520px; margin: 0 auto; padding: 0 6px;
+    border-radius: var(--r-pill, 999px);
+    background: var(--liquid-sheen), var(--glass-pop);
+    box-shadow: var(--liquid-edge), var(--elev-3);
+    -webkit-backdrop-filter: blur(var(--blur-pop)) saturate(1.7);
+    backdrop-filter: blur(var(--blur-pop)) saturate(1.7);
+    transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out), visibility 0s;
+  }
+  .glass-refract .tabbar { backdrop-filter: url(#booqy-glass) blur(var(--blur-pop)) saturate(1.7); }
+
+  /* steps aside for the on-screen keyboard and for anything that takes over the screen */
+  html.kb-open .tabbar,
+  body:has(.modal, .lightbox-overlay, .palette-backdrop, .help-panel, .select-list--sheet) .tabbar {
+    transform: translateY(calc(100% + 24px + env(safe-area-inset-bottom, 0px))); opacity: 0; visibility: hidden;
+    transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out), visibility 0s var(--dur-slow);
+  }
+
+  .tabbar__item {
+    position: relative; isolation: isolate; flex: none;
+    display: grid; place-items: center;
+    width: 52px; height: 48px; padding: 0; border: 0; border-radius: var(--r-pill, 999px);
+    background: transparent; color: var(--ink); text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 200ms var(--ease-out);
+  }
+  /* the chosen tab: a soft ink pill that springs in behind the icon */
+  .tabbar__item::before {
+    content: ""; position: absolute; inset: 2px 0; z-index: -1; border-radius: inherit;
+    background: var(--lacquer); box-shadow: var(--lacquer-rim);
+    opacity: 0; transform: scale(0.55);
+    transition: opacity 180ms var(--ease-out), transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .tabbar__item.active { color: var(--bq-snow); }
+  :root[data-theme="dark"] .tabbar__item.active { color: #1a120e; }
+  .tabbar__item.active::before { opacity: 1; transform: none; }
+  .tabbar__item:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+  .tabbar__icon { display: grid; place-items: center; line-height: 0; }
+
+  /* the raised centre action: New customer */
+  .tabbar__new { width: 56px; height: 56px; margin-top: -22px; border-radius: 50%; color: var(--bq-snow); }
+  :root[data-theme="dark"] .tabbar__new { color: #1a120e; }
+  .tabbar__new::before {
+    inset: 0; opacity: 1; transform: none;
+    background: var(--lacquer);
+    box-shadow: var(--lacquer-rim), 0 0 0 4px var(--glass-pop), 0 14px 26px -12px rgb(26 18 14 / 0.65);
+  }
+  .tabbar__new .icon { stroke-width: 2.2; }
+  .tabbar__new.active::before { box-shadow: var(--lacquer-rim), 0 0 0 4px var(--glass-pop), 0 0 0 6px var(--focus), 0 14px 26px -12px rgb(26 18 14 / 0.65); }
+
+  /* the avatar: a ring when one of its pages is open */
+  .tabbar__you .avatar { width: 32px; height: 32px; box-shadow: 0 0 0 1.5px rgb(58 36 24 / 0.14); transition: box-shadow 200ms var(--ease-out); }
+  :root[data-theme="dark"] .tabbar__you .avatar { box-shadow: 0 0 0 1.5px rgb(213 196 174 / 0.2); }
+  .tabbar__you .avatar { font-size: 13px; font-weight: 650; text-transform: uppercase; }
+  .ws-row--me .avatar { font-size: 17px; font-weight: 600; text-transform: uppercase; }
+  .tabbar__you.active .avatar { box-shadow: 0 0 0 2px var(--glass-pop); }
+
+  .tabbar__dot {
+    position: absolute; top: 9px; right: 12px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-red, #9e1d26); box-shadow: 0 0 0 2px var(--glass-pop);
+  }
+
+  /* room for the bar: the page ends above it, sticky save bars, Ask Booqy and the update toast sit above it */
+  html.has-tabbar .app { padding-bottom: calc(var(--tabbar-room) + 8px); }
+  html.has-tabbar .submit-bar { bottom: calc(var(--tabbar-room) + 8px); }
+  html.has-tabbar .help-launcher { bottom: calc(var(--tabbar-room) + 12px); right: 16px; }
+  html.has-tabbar .booqy-update, html.has-tabbar .booqy-updated { bottom: calc(var(--tabbar-room) + 12px) !important; }
+  html.has-tabbar.kb-open .app { padding-bottom: 0; }
+  html.has-tabbar.kb-open .submit-bar { bottom: 0; }
+  html.has-tabbar.kb-open .help-launcher { bottom: calc(var(--space-4, 16px) + env(safe-area-inset-bottom, 0px)); }
+
+  /* Mail | Reports on top of both pages (InboxSwitch.tsx) */
+  .inbox-switch { display: flex; margin: -6px 0 18px; }
+  :root .inbox-switch.chips[data-glide="track"] { display: flex; flex-wrap: nowrap !important; width: fit-content; }
+  :root .inbox-switch > a { flex: none; min-width: 104px; justify-content: center; text-decoration: none; }
+
+  /* --- the Workspace sheet ------------------------------------------------ */
+  .ws-layer { position: fixed; inset: 0; z-index: 260; }
+  .ws-scrim { position: absolute; inset: 0; background: var(--dim); animation: ws-fade var(--dur-base) var(--ease-out) both; }
+  .ws-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: 28px 28px 0 0;
+    /* denser than a modal: it covers the page and must read on its own (WebKit draws no blur behind it here) */
+    background: var(--liquid-sheen), rgb(var(--bq-snow-rgb) / 0.985);
+    box-shadow: var(--liquid-edge), var(--elev-3);
+    -webkit-backdrop-filter: blur(var(--blur-pop)) saturate(1.7);
+    backdrop-filter: blur(var(--blur-pop)) saturate(1.7);
+    color: var(--ink);
+    touch-action: none;
+    animation: ws-up var(--dur-slow) var(--ease-out) backwards;
+    transition: transform 260ms var(--ease-out);
+  }
+  :root[data-theme="dark"] .ws-sheet { background: var(--liquid-sheen), rgb(36 25 19 / 0.985); }
+  .glass-refract .ws-sheet { backdrop-filter: url(#booqy-glass) blur(var(--blur-pop)) saturate(1.7); }
+  .ws-sheet.is-dragging { transition: none; }
+  .ws-sheet__head { padding: 4px 0 6px; text-align: center; touch-action: none; }
+  .ws-sheet__grip { display: block; width: 40px; height: 5px; margin: 4px auto 10px; border-radius: 3px; background: var(--print-2, currentColor); opacity: 0.35; }
+  .ws-sheet__title { margin: 0; font: 400 20px/1.2 var(--serif); }
+
+  .ws-group { margin-top: 8px; padding: 4px; border-radius: 20px; background: rgb(var(--bq-snow-rgb) / 0.42); box-shadow: inset 0 0 0 1px rgb(58 36 24 / 0.08); }
+  :root[data-theme="dark"] .ws-group { background: rgb(213 196 174 / 0.06); box-shadow: inset 0 0 0 1px rgb(213 196 174 / 0.1); }
+  .ws-row {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    min-height: 50px; padding: 0 14px; border: 0; border-radius: 16px;
+    background: transparent; color: var(--ink); text-align: left; text-decoration: none;
+    font: 500 16px/1.2 var(--sans);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 160ms var(--ease-out);
+  }
+  @media (hover: hover) {
+    .ws-row:hover { background: rgb(58 36 24 / 0.06); }
+    :root[data-theme="dark"] .ws-row:hover { background: rgb(213 196 174 / 0.08); }
+  }
+  .ws-row.active { background: var(--lacquer); box-shadow: var(--lacquer-rim); color: var(--bq-snow); }
+  :root[data-theme="dark"] .ws-row.active { color: #1a120e; }
+  .ws-row:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+  .ws-row__icon { flex: none; color: var(--accent-ink, currentColor); }
+  .ws-row.active .ws-row__icon { color: inherit; }
+  .ws-row__label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .ws-row--me { min-height: 64px; margin-top: 8px; padding: 0 14px 0 10px; border-radius: 20px; background: rgb(var(--bq-snow-rgb) / 0.42); box-shadow: inset 0 0 0 1px rgb(58 36 24 / 0.08); }
+  :root[data-theme="dark"] .ws-row--me { background: rgb(213 196 174 / 0.06); box-shadow: inset 0 0 0 1px rgb(213 196 174 / 0.1); }
+  .ws-row--me .avatar { flex: none; width: 44px; height: 44px; }
+  .ws-row__name { display: block; font-weight: 600; }
+  .ws-row__sub { display: block; margin-top: 3px; font-size: 13px; color: var(--print-2, inherit); }
+  .ws-row__chev { flex: none; opacity: 0.5; }
+  .ws-row--out, .ws-row--out .ws-row__icon { color: var(--ink-red, #9e1d26); }
+  :root[data-theme="dark"] .ws-row--out, :root[data-theme="dark"] .ws-row--out .ws-row__icon { color: #ee8a90; }
+
+  @keyframes ws-up { from { transform: translateY(100%); } }
+  @keyframes ws-fade { from { opacity: 0; } }
+}
+
+/* a short screen: the list scrolls, the head still drags */
+@media (max-width: 760px) and (max-height: 600px) {
+  .ws-sheet { touch-action: pan-y; }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  .tabbar, .tabbar__item, .tabbar__item::before, .ws-row, .ws-sheet, .tabbar__you .avatar { transition: none !important; }
+  .ws-sheet, .ws-scrim { animation: none; }
+}
+@media (max-width: 760px) and (prefers-reduced-transparency: reduce) {
+  .tabbar, .ws-sheet, .glass-refract .tabbar, .glass-refract .ws-sheet { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--paper); }
+}
+@media print { .tabbar, .ws-layer { display: none; } }

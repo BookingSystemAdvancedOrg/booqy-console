@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, site, stripe_connect, tenants,
                users, website, zones)
-from .core import SAFE_MESSAGES, ApiError, error_body, log, parse_body, respond
+from .core import SAFE_MESSAGES, ApiError, error_body, groups, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
 
 ROUTES = {
@@ -117,12 +117,7 @@ class Request:
     function_arn: str | None = None
 
 
-def _groups(claims: dict) -> set[str]:
-    # HTTP API JWT authorizers pass list claims as a string like "[a b]".
-    raw = claims.get("cognito:groups") or ""
-    if isinstance(raw, list):
-        return set(raw)
-    return {g.strip(" ,\"'") for g in raw.strip("[]").replace(",", " ").split() if g.strip(" ,\"'")}
+_groups = groups
 
 
 def handler(event, context):
