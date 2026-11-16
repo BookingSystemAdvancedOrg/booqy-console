@@ -7,7 +7,7 @@ import { endDateFor, monthOf, isoDay, addDays } from "../finance";
 const mocks = vi.hoisted(() => ({
   billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(), invoiceNow: vi.fn(), creditNotes: vi.fn(),
 }));
-vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
+vi.mock("../api", async (importOriginal) => ({ api: mocks, ApiError: (await importOriginal<typeof import("../api")>()).ApiError }));
 
 import BillingTab from "./BillingTab";
 
@@ -285,14 +285,14 @@ describe("BillingTab refunds and credits", () => {
     const [id, body] = mocks.creditNotes.mock.calls[0];
     expect(id).toBe("t1");
     expect(body).toMatchObject({ method: "refund", reason: "other",
-                                 items: [{ invoiceId: "in_a", amountSek: "12.50" }, { invoiceId: "in_b" }] });
+                                 items: [{ invoiceId: "in_a", amountSek: "12.50" }, { invoiceId: "in_b", amountSek: "1000.00" }] });
     expect(body.requestId).toEqual(expect.any(String));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(mocks.billing).toHaveBeenCalledTimes(2));      // reloaded: the rows show the new status
     expect(screen.queryByRole("button", { name: /Refund or credit/ })).not.toBeInTheDocument();
   });
 
-  it("keeps a failed invoice in the dialog with its reason and retries with the same request id", async () => {
+  it("keeps a failed invoice in the dialog with its reason and retries it as a new attempt of the same request", async () => {
     const user = userEvent.setup();
     mocks.billing.mockResolvedValue({ ...running(), invoices });
     mocks.creditNotes.mockResolvedValueOnce({ results: [
@@ -314,7 +314,9 @@ describe("BillingTab refunds and credits", () => {
     await waitFor(() => expect(mocks.creditNotes).toHaveBeenCalledTimes(2));
     const [[, first], [, second]] = mocks.creditNotes.mock.calls;
     expect(second.requestId).toBe(first.requestId);
-    expect(second.items).toEqual([{ invoiceId: "in_d" }]);
+    expect(first.items).toEqual([{ invoiceId: "in_a", amountSek: "1250.00" }, { invoiceId: "in_d", amountSek: "1150.00" }]);
+    // a new attempt: Stripe answers a key it saw fail with the same failure for 24 h
+    expect(second.items).toEqual([{ invoiceId: "in_d", amountSek: "1150.00", attempt: 1 }]);
     expect(second.method).toBe("credit");
   });
 
@@ -329,5 +331,26 @@ describe("BillingTab refunds and credits", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("radio", { name: "Back to the card" })).toBeDisabled();
     expect(within(dialog).getByRole("radio", { name: "Credit next invoice" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("shows a Booqy fault on one invoice with Copy details, a Stripe refusal without", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({ ...running(), invoices });
+    mocks.creditNotes.mockResolvedValueOnce({ results: [
+      { invoiceId: "in_a", ok: false, error: "internal_error", message: "The refund of this invoice did not finish" },
+      { invoiceId: "in_d", ok: false, error: "stripe_error", message: "Stripe: card_declined" },
+    ], ok: 0, failed: 2, refundedSek: 0, creditedSek: 0 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Pick invoice F-0010" }));
+    await user.click(screen.getByRole("checkbox", { name: "Pick invoice F-0013" }));
+    await user.click(screen.getByRole("button", { name: /Refund or credit \(2\)/ }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^Refund / }));
+    const rows = await within(dialog).findAllByRole("listitem");
+    const booqy = rows.find((r) => within(r).queryByText("F-0010"))!;
+    const stripe = rows.find((r) => within(r).queryByText("F-0013"))!;
+    expect(within(booqy).getByRole("button", { name: "Copy details" })).toBeInTheDocument();
+    expect(within(stripe).getByText("Stripe: card_declined")).toBeInTheDocument();
+    expect(within(stripe).queryByRole("button", { name: "Copy details" })).not.toBeInTheDocument();
   });
 });

@@ -252,7 +252,7 @@ export const api = {
   },
   remindInvoice: (id: string, invoiceId: string) =>
     request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
-  creditNotes: (id: string, body: { items: { invoiceId: string; amountSek?: string }[]; method: "refund" | "credit";
+  creditNotes: (id: string, body: { items: { invoiceId: string; amountSek: string; attempt?: number }[]; method: "refund" | "credit";
                                    reason: string; memo?: string; requestId: string }) =>
     request<CreditNotesResponse>("POST", `${t(id)}/billing/credit-notes`, body),
   website: (params: { from: string; to: string }) =>

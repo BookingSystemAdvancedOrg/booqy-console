@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { fmtDay, fmtSek, parseSek } from "../finance";
 import type { CreditNotesResponse, Invoice } from "../types";
 import { ErrorNotice, Modal, useAction } from "./ui";
@@ -26,9 +26,18 @@ function newRequestId(): string {
   try { return crypto.randomUUID(); } catch { return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }
 }
 
+/** A failed invoice's result as an error the ErrorNotice can tell who acts on (a Booqy fault gets Copy details). */
+function rowError(code: string, message: string): ApiError {
+  const e = new ApiError(code === "internal_error" ? 500 : 409, code, message);
+  e.serverMessage = message;
+  return e;
+}
+
 /** Refund (back to the card) or credit (to the customer's Stripe balance, so the next invoice is lower; on an
  * open invoice it lowers what is owed) one or more invoices. One request id per dialog: a repeated or retried
- * request never refunds twice (the api derives Stripe's idempotency key from it). */
+ * request never refunds twice (the api finds a note this dialog made by it). Always the amount the operator
+ * confirmed, never "whatever is left". A retry of an invoice that failed is a new attempt, so Stripe does not
+ * answer it with the failure it stored for the earlier one. */
 export function RefundModal({ tenantId, invoices, onClose, onDone }: {
   tenantId: string; invoices: Invoice[]; onClose: () => void;
   /** After any success: what went through, and whether the dialog is finished (nothing failed). */
@@ -40,7 +49,8 @@ export function RefundModal({ tenantId, invoices, onClose, onDone }: {
   const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(invoices.map((i) => [i.invoiceId, asText(left(i))])));
   const [reason, setReason] = useState("other");
   const [memo, setMemo] = useState("");
-  const [failed, setFailed] = useState<Record<string, string>>({});
+  const [failed, setFailed] = useState<Record<string, ApiError>>({});
+  const attempts = useRef<Record<string, number>>({});
   const requestId = useRef(newRequestId());
   const a = useAction();
 
@@ -65,16 +75,20 @@ export function RefundModal({ tenantId, invoices, onClose, onDone }: {
   async function submit() {
     if (invalid || a.busy) return;
     const items = rows.map((i) => {
-      const v = parsed[i.invoiceId] as number;
-      // everything left: the api takes it from Stripe, so a rounding here can never ask for more
-      return Math.abs(v - left(i)) < 0.005 ? { invoiceId: i.invoiceId } : { invoiceId: i.invoiceId, amountSek: v.toFixed(2) };
+      const attempt = attempts.current[i.invoiceId] ?? 0;
+      return { invoiceId: i.invoiceId, amountSek: (parsed[i.invoiceId] as number).toFixed(2), ...(attempt ? { attempt } : {}) };
     });
     const res = await a.run(() => api.creditNotes(tenantId, { items, method, reason, memo: memo.trim() || undefined, requestId: requestId.current }));
     if (!res) return;
-    const errors = Object.fromEntries(res.results.filter((r) => !r.ok).map((r) => [r.invoiceId, (r as { message: string }).message]));
+    const errors: Record<string, ApiError> = {};
+    for (const r of res.results) {
+      if (r.ok) continue;
+      errors[r.invoiceId] = rowError(r.error, r.message);
+      attempts.current[r.invoiceId] = (attempts.current[r.invoiceId] ?? 0) + 1;
+    }
     const finished = res.failed === 0;
     if (!finished) {
-      // the ones that went through leave the dialog; the rest stay with their reason, same request id for a retry
+      // the ones that went through leave the dialog; the rest stay with their reason, same request id and a new attempt for a retry
       setRows((rs) => rs.filter((i) => errors[i.invoiceId]));
       setFailed(errors);
     }
@@ -119,7 +133,7 @@ export function RefundModal({ tenantId, invoices, onClose, onDone }: {
                   <span className="field__hint">Max {fmtSek(left(i), { decimals: true })}</span>
                   {err && <span id={`${id}-err`} className="field__hint error-text">{err}</span>}
                 </label>
-                {failed[i.invoiceId] && <p className="refund__failed small error-text" role="alert">{failed[i.invoiceId]}</p>}
+                {failed[i.invoiceId] && <div className="refund__failed small"><ErrorNotice error={failed[i.invoiceId]} /></div>}
               </li>
             );
           })}
