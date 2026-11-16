@@ -2208,6 +2208,10 @@ def record_credit_note(tenant_id: str, note: dict) -> list[str]:
     except ClientError as e:
         if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
             raise
+        # a row the webhook wrote before it carried postPaymentSek gets it now
+        client("dynamodb").update_item(TableName=finance_table(), Key=to_ddb({"PK": row["PK"], "SK": row["SK"]}),
+                                       UpdateExpression="SET postPaymentSek = if_not_exists(postPaymentSek, :p)",
+                                       ExpressionAttributeValues=to_ddb({":p": row["postPaymentSek"]}))
     key = {"PK": row["PK"], "SK": row["SK"]}
     booked = []
     if _book(key, "bookedCredited", tenant_id, day, "creditedSek", row["amountSek"]):
@@ -2300,8 +2304,14 @@ def _parse_credit_request(body: dict) -> dict:
                 f.fail(f"items.{n}.invoiceId", "Listed twice")
                 continue
             seen.add(invoice_id)
-            parsed.append({"invoiceId": invoice_id,
-                           "amount": _amount_minor(item.get("amountSek"), f"items.{n}.amountSek", f)})
+            amount = _amount_minor(item.get("amountSek"), f"items.{n}.amountSek", f)
+            if item.get("amountSek") is None:   # always the figure the operator confirmed, never "whatever is left"
+                f.fail(f"items.{n}.amountSek", "Enter an amount")
+            attempt = item.get("attempt", 0)
+            if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 <= attempt <= 99:
+                f.fail(f"items.{n}.attempt", "0 to 99")
+                attempt = 0
+            parsed.append({"invoiceId": invoice_id, "amount": amount, "attempt": attempt})
     f.done()
     return {"method": method, "reason": reason, "memo": memo, "requestId": request_id, "items": parsed}
 
@@ -2401,11 +2411,36 @@ def _note_params(invoice: dict, lines: list[dict], wanted: int, left: int) -> tu
     return best
 
 
-def _existing_note(invoice_id: str, key: str) -> dict | None:
-    """A credit note this very request already created (a retry after a
-    timeout, or a repeated click): found by its key in the metadata."""
+def _existing_note(invoice_id: str, request_id: str, key: str) -> dict | None:
+    """A credit note this dialog already created on the invoice (a retry after
+    a timeout or a failure past Stripe, or a repeated click): found by the
+    request id in its metadata, whatever amount, method or attempt it had,
+    so one dialog never makes two notes on one invoice."""
     notes = stripe_request("GET", "/credit_notes", {"invoice": invoice_id, "limit": 100}).get("data") or []
-    return next((n for n in notes if (n.get("metadata") or {}).get("booqyKey") == key), None)
+    return next((n for n in notes if (n.get("metadata") or {}).get("booqyRequest") == request_id
+                 or (n.get("metadata") or {}).get("booqyKey") == key), None)
+
+
+def _claim_audit(tenant_id: str, note: dict) -> bool:
+    """True once per credit note: the request that gets it writes the audit
+    row (a retry that finds the note finishes an audit the first one missed)."""
+    row = credit_note_row(tenant_id, note)
+    try:
+        client("dynamodb").update_item(TableName=finance_table(), Key=to_ddb({"PK": row["PK"], "SK": row["SK"]}),
+                                       UpdateExpression="SET auditedAt = :t",
+                                       ConditionExpression="attribute_exists(PK) AND attribute_not_exists(auditedAt)",
+                                       ExpressionAttributeValues={":t": {"S": now_iso()}})
+        return True
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+def _unclaim_audit(tenant_id: str, note: dict) -> None:
+    row = credit_note_row(tenant_id, note)
+    client("dynamodb").update_item(TableName=finance_table(), Key=to_ddb({"PK": row["PK"], "SK": row["SK"]}),
+                                   UpdateExpression="REMOVE auditedAt")
 
 
 def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict, req: dict, actor: str) -> dict:
@@ -2427,11 +2462,16 @@ def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict,
         left = int(invoice.get("amount_paid") or 0) - int(invoice.get("post_payment_credit_notes_amount") or 0)
     else:
         left = int(invoice.get("amount_remaining") or 0)
-    wanted = item["amount"] if item["amount"] is not None else left
+    # The key never depends on Stripe's live state: the confirmed amount, and
+    # an attempt the dialog raises after a definite failure (Stripe keeps a
+    # failed answer under its key for 24 h, so a retry needs a new key; the
+    # lookup by request id still finds any note an earlier attempt made).
+    wanted = item["amount"]
     key = f"cn-{tenant_id}-{invoice_id}-{wanted}-{method}-{req['requestId']}"
-    note = _existing_note(invoice_id, key)
-    created = note is None
-    if created:
+    if item.get("attempt"):
+        key += f"-a{item['attempt']}"
+    note = _existing_note(invoice_id, req["requestId"], key)
+    if note is None:
         if left <= 0:
             raise ApiError(409, "nothing_left", "Nothing left to refund or credit on this invoice")
         if wanted > left:
@@ -2446,7 +2486,7 @@ def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict,
             params["reason"] = req["reason"]
         if req["memo"]:
             params["memo"] = req["memo"]
-        params.update({"metadata[booqyKey]": key, "metadata[booqyMethod]": method,
+        params.update({"metadata[booqyKey]": key, "metadata[booqyRequest]": req["requestId"], "metadata[booqyMethod]": method,
                        "metadata[booqyActor]": actor[:100], "metadata[tenantId]": tenant_id})
         note = stripe_request("POST", "/credit_notes", params, idempotency_key=key)
     record_credit_note(tenant_id, note)
@@ -2456,20 +2496,27 @@ def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict,
         log.warning("invoice %s not refreshed after credit note: %s", invoice_id, e.message)
     refunded = sek(refunded_minor(note))
     total = sek(note.get("total") or 0)
-    if created:   # one audit row per note, by the request that made it
-        write_audit(tenant_id, "invoice_refunded" if refunded else "invoice_credited", actor, {
-            "invoiceId": invoice_id, "number": row.get("number"), "creditNoteId": note.get("id"),
-            "creditNoteNumber": note.get("number"), "method": method, "totalSek": str(total),
-            "refundedSek": str(refunded), "reason": req["reason"], "memo": req["memo"]})
+    if _claim_audit(tenant_id, note):   # one audit row per note, also when a retry finds it
+        note_method = (note.get("metadata") or {}).get("booqyMethod") or method
+        try:
+            write_audit(tenant_id, "invoice_refunded" if refunded else "invoice_credited", actor, {
+                "invoiceId": invoice_id, "number": row.get("number"), "creditNoteId": note.get("id"),
+                "creditNoteNumber": note.get("number"), "method": note_method, "totalSek": str(total),
+                "refundedSek": str(refunded), "reason": note.get("reason") or "other", "memo": note.get("memo")})
+        except Exception:
+            _unclaim_audit(tenant_id, note)
+            raise
     return {"invoiceId": invoice_id, "ok": True, "creditNoteId": note.get("id"), "number": note.get("number"),
             "totalSek": total, "refundedSek": refunded, "creditedSek": total - refunded,
             "pdf": note.get("pdf")}
 
 
 def create_credit_notes(req) -> tuple[int, dict]:
-    """POST .../billing/credit-notes {items: [{invoiceId, amountSek?}], method:
-    refund|credit, reason, memo, requestId}: one credit note per invoice;
-    amountSek incl VAT, left out = everything left. Each invoice succeeds or
+    """POST .../billing/credit-notes {items: [{invoiceId, amountSek, attempt?}],
+    method: refund|credit, reason, memo, requestId}: one credit note per
+    invoice; amountSek incl VAT, the figure the operator confirmed (never
+    more is refunded); attempt goes up when the dialog retries an invoice
+    that failed. Each invoice succeeds or
     fails on its own; the results say which. requestId is the client's, one
     per confirm dialog: a repeat of the same request never refunds twice."""
     tenant_id = req.path["tenantId"]
@@ -2492,7 +2539,7 @@ def create_credit_notes(req) -> tuple[int, dict]:
         except Exception:  # noqa: BLE001 - one invoice's fault must not hide the others' results
             log.exception("credit note for %s failed", item["invoiceId"])
             results.append({"invoiceId": item["invoiceId"], "ok": False, "error": "internal_error",
-                            "message": "Booqy's fault: the refund of this invoice did not finish"})
+                            "message": "The refund of this invoice did not finish"})
         finally:
             _unlock_invoice(tenant_id, item["invoiceId"], parsed["requestId"])
     ok = [r for r in results if r["ok"]]

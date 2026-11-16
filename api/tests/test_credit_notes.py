@@ -63,9 +63,13 @@ def stripe(monkeypatch):
             return {"data": [n for n in state["notes"] if n["invoice"] == params["invoice"]]}
         if method == "POST" and path == "/credit_notes":
             if idempotency_key in state["keys"]:
-                return state["keys"][idempotency_key]
+                stored = state["keys"][idempotency_key]
+                if isinstance(stored, Exception):   # Stripe keeps a failed answer under its key too
+                    raise stored
+                return stored
             if params["invoice"] in state["fail"]:
-                raise billing.ApiError(502, "stripe_error", "Stripe: card_declined")
+                state["keys"][idempotency_key] = billing.ApiError(502, "stripe_error", "Stripe: card_declined")
+                raise state["keys"][idempotency_key]
             inv = state["invoices"][params["invoice"]]
             note = note_of(params)
             state["posts"] += 1
@@ -134,7 +138,7 @@ def _day_total(tenant, field):
 
 
 def test_operators_only(billed):
-    status, _ = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1"}]}, groups="[support]")
+    status, _ = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1}]}, groups="[support]")
     assert status == 403
 
 
@@ -153,9 +157,9 @@ def test_partial_refund_splits_vat_and_books_once(billed, stripe):
     assert _day_total(billed, "creditedSek") == Decimal("10.00")
 
 
-def test_everything_left_by_default_and_never_more(billed, stripe):
+def test_everything_left_and_never_more(billed, stripe):
     _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 250}]})
-    status, body = _post(billed, {"requestId": "req-2", "method": "refund", "items": [{"invoiceId": "in_paid1"}]})
+    status, body = _post(billed, {"requestId": "req-2", "method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1000}]})
     assert body["results"][0]["ok"] and body["results"][0]["totalSek"] == 1000
     assert _invoices(billed)["in_paid1"]["creditableSek"] == 0
     status, body = _post(billed, {"requestId": "req-3", "method": "refund",
@@ -185,9 +189,9 @@ def test_repeated_request_refunds_once(billed, stripe):
 
 def test_idempotency_key_carries_tenant_invoice_amount_and_request(billed, stripe):
     _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 100}]})
-    _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 50}]})
+    _post(billed, {"requestId": "req-2", "method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 50}]})
     keys = sorted(stripe["keys"])
-    assert keys == [f"cn-{billed}-in_paid1-10000-refund-req-1", f"cn-{billed}-in_paid1-5000-refund-req-1"]
+    assert keys == [f"cn-{billed}-in_paid1-10000-refund-req-1", f"cn-{billed}-in_paid1-5000-refund-req-2"]
     assert _invoices(billed)["in_paid1"]["refundedSek"] == 150
 
 
@@ -197,38 +201,43 @@ def test_concurrent_request_on_the_same_invoice_is_refused(billed, stripe):
     billing.client("dynamodb").put_item(TableName=FINANCE_TABLE, Item={
         "PK": {"S": f"TENANT#{billed}"}, "SK": {"S": "CNLOCK#in_paid1"}, "requestId": {"S": "req-other"},
         "expiresAt": {"N": str(int(time.time()) + 60)}})
-    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1"}]})
+    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1}]})
     assert body["results"][0]["error"] == "credit_in_progress" and stripe["posts"] == 0
     assert _fin(f"TENANT#{billed}", "CNLOCK#in_paid1")["requestId"] == "req-other"   # not ours to release
 
 
 def test_ownership(billed, stripe, aws):
-    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_other"}, {"invoiceId": "in_nope"}]})
+    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_other", "amountSek": 1},
+                                                           {"invoiceId": "in_nope", "amountSek": 1}]})
     assert [r["error"] for r in body["results"]] == ["not_found", "not_found"]
     status, other = call("POST /platform/tenants", body={**NEW_TENANT, "name": "Annan", "slug": "annan-krog"})
     assert status == 202, other
-    _, body = _post(other["tenantId"], {"method": "refund", "items": [{"invoiceId": "in_paid1"}]})
+    _, body = _post(other["tenantId"], {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1}]})
     assert body["results"][0]["error"] == "not_found" and stripe["posts"] == 0
 
 
 def test_partial_failure_is_visible(billed, stripe):
     stripe["fail"].add("in_paid2")
     _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 10},
-                                                           {"invoiceId": "in_paid2"},
-                                                           {"invoiceId": "in_open1"}]})
+                                                           {"invoiceId": "in_paid2", "amountSek": 125},
+                                                           {"invoiceId": "in_open1", "amountSek": 1}]})
     assert [r["ok"] for r in body["results"]] == [True, False, False]
     assert body["results"][1]["error"] == "stripe_error"
     assert body["results"][2]["error"] == "not_paid"
     assert body["ok"] == 1 and body["failed"] == 2 and body["refundedSek"] == 10
     assert _fin(f"TENANT#{billed}", "CNLOCK#in_paid2")["expiresAt"] == 0     # released after the failure
     stripe["fail"].clear()
-    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid2"}]})
-    assert body["results"][0]["ok"]
+    # the dialog retries a definite failure as a new attempt: Stripe would answer the same key with the stored error
+    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid2", "amountSek": 125}]})
+    assert body["results"][0]["error"] == "stripe_error"
+    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid2", "amountSek": 125, "attempt": 1}]})
+    assert body["results"][0]["ok"] and len(stripe["notes"]) == 2
+    assert stripe["notes"][1]["metadata"]["booqyKey"] == f"cn-{billed}-in_paid2-12500-refund-req-1-a1"
 
 
 def test_credit_paid_goes_to_balance_and_open_lowers_what_is_owed(billed, stripe):
     _, body = _post(billed, {"method": "credit", "reason": "order_change",
-                             "items": [{"invoiceId": "in_paid2"}, {"invoiceId": "in_open1", "amountSek": 250}]})
+                             "items": [{"invoiceId": "in_paid2", "amountSek": 125}, {"invoiceId": "in_open1", "amountSek": 250}]})
     assert all(r["ok"] for r in body["results"]), body
     assert body["creditedSek"] == 375 and body["refundedSek"] == 0
     paid_note, open_note = stripe["notes"]
@@ -241,16 +250,18 @@ def test_credit_paid_goes_to_balance_and_open_lowers_what_is_owed(billed, stripe
 
 
 def test_paid_outside_stripe_can_only_be_credited(billed, stripe):
-    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_oob1"}]})
+    _, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_oob1", "amountSek": 1}]})
     assert body["results"][0]["error"] == "paid_out_of_band"
     assert _invoices(billed)["in_oob1"]["refundable"] is False
 
 
 def test_validation(billed):
     status, body = _post(billed, {"method": "cash", "reason": "because", "items": [
-        {"invoiceId": "in_paid1", "amountSek": "1.234"}, {"invoiceId": "in_paid1"}, {"invoiceId": "x"}]})
+        {"invoiceId": "in_paid1", "amountSek": "1.234"}, {"invoiceId": "in_paid1"}, {"invoiceId": "x"},
+        {"invoiceId": "in_paid2", "amountSek": 1, "attempt": -1}]})
     assert status == 400
-    assert set(body["fields"]) == {"method", "reason", "items.0.amountSek", "items.1.invoiceId", "items.2.invoiceId"}
+    assert set(body["fields"]) == {"method", "reason", "items.0.amountSek", "items.1.invoiceId", "items.2.invoiceId",
+                                   "items.3.attempt"}
     status, body = _post(billed, {"requestId": None, "method": "refund", "items": []})
     assert status == 400 and set(body["fields"]) == {"requestId", "items"}
 
@@ -277,3 +288,68 @@ def test_finance_collected_is_net_of_refunds(billed, stripe):
     status, body = call("GET /platform/finance/invoices", query={"from": "2027-01-01", "to": "2027-01-31"})
     assert status == 200, body
     assert body["summary"]["collectedSek"] == 2900 and body["summary"]["refundedSek"] == 200
+
+
+def test_amount_is_always_the_confirmed_one(billed, stripe):
+    """No "everything left" without a figure: a ledger that understates
+    what is left (a webhook row without postPaymentSek) must never let the
+    api refund Stripe's larger figure."""
+    status, body = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1"}]})
+    assert status == 400 and set(body["fields"]) == {"items.0.amountSek"} and stripe["posts"] == 0
+
+
+def test_webhook_row_without_post_payment_then_paid_refunds_only_what_was_confirmed(billed, stripe):
+    from app import billing
+    _post(billed, {"method": "credit", "items": [{"invoiceId": "in_open1", "amountSek": 250}]})
+    tbl = boto3.resource("dynamodb", region_name=REGION).Table(FINANCE_TABLE)
+    for r in tbl.query(KeyConditionExpression="PK = :p AND begins_with(SK, :c)",
+                       ExpressionAttributeValues={":p": f"TENANT#{billed}", ":c": "CREDIT#"})["Items"]:
+        tbl.update_item(Key={"PK": r["PK"], "SK": r["SK"]}, UpdateExpression="REMOVE postPaymentSek")
+    inv = stripe["invoices"]["in_open1"]
+    inv.update({"status": "paid", "amount_paid": inv["amount_remaining"], "amount_remaining": 0,
+                "status_transitions": {**inv["status_transitions"], "paid_at": 1_800_400_000}})
+    billing.record_invoice(billed, inv)
+    shown = _invoices(billed)["in_open1"]["creditableSek"]
+    assert shown == 750                      # an old row: the conservative figure
+    _, body = _post(billed, {"requestId": "req-2", "method": "refund",
+                             "items": [{"invoiceId": "in_open1", "amountSek": shown}]})
+    assert body["results"][0]["ok"] and body["results"][0]["refundedSek"] == 750
+    # the console met the row again and filled in what the note took from the payment
+    assert billing.record_credit_note(billed, stripe["notes"][0]) == []
+    assert _invoices(billed)["in_open1"]["creditableSek"] == 250
+
+
+def _audits(tenant):
+    rows = boto3.resource("dynamodb", region_name=REGION).Table("dev-tenant").query(
+        KeyConditionExpression="PK = :p", ExpressionAttributeValues={":p": f"TENANT#{tenant}"})["Items"]
+    return [a for a in rows if a.get("action") in ("invoice_refunded", "invoice_credited")]
+
+
+def test_retry_after_a_failure_past_stripe_finds_the_note_and_audits_it(billed, stripe, monkeypatch):
+    from app import billing
+    real = billing.record_credit_note
+
+    def boom(*a, **k):
+        raise RuntimeError("ddb throttled")
+    monkeypatch.setattr(billing, "record_credit_note", boom)
+    _, first = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1250}]})
+    assert first["results"][0]["error"] == "internal_error" and stripe["posts"] == 1
+    monkeypatch.setattr(billing, "record_credit_note", real)
+    # the dialog retries a failed invoice with a new attempt (and the operator may even change the amount)
+    _, again = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 1250, "attempt": 1}]})
+    assert again["results"][0]["ok"] and again["results"][0]["creditNoteId"] == stripe["notes"][0]["id"]
+    _, third = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 5, "attempt": 2}]})
+    assert third["results"][0]["creditNoteId"] == stripe["notes"][0]["id"]
+    assert stripe["posts"] == 1 and len(_audits(billed)) == 1
+    assert _invoices(billed)["in_paid1"]["refundedSek"] == 1250
+
+
+def test_audit_written_by_a_retry_when_the_first_audit_failed(billed, stripe, monkeypatch):
+    from app import billing
+    real = billing.write_audit
+    monkeypatch.setattr(billing, "write_audit", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    _, first = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 100}]})
+    assert first["results"][0]["error"] == "internal_error"
+    monkeypatch.setattr(billing, "write_audit", real)
+    _, again = _post(billed, {"method": "refund", "items": [{"invoiceId": "in_paid1", "amountSek": 100, "attempt": 1}]})
+    assert again["results"][0]["ok"] and stripe["posts"] == 1 and len(_audits(billed)) == 1
