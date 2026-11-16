@@ -1,3 +1,4 @@
+import { BRANCHES, BRANCH_LABEL, LEAVES, branchVisible, treeOf } from "./settingsTree";
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -142,6 +143,15 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
       ...(helpChatEnabled() ? [{ id: "a-help", group: "Actions" as const, label: "Ask the help assistant", icon: "search" as const, keywords: "help assistant question how ask booqy", run: openHelpChat }] : []),
       { id: "a-signout", group: "Actions", label: "Sign out", icon: "logout", run: onSignOut },
       ...ALL_NAV.map((n): PaletteItem => ({ id: `n-${n.to}`, group: "Go to", label: n.label, icon: n.icon, run: () => go(n.to) })),
+      // Settings, branch by branch and leaf by leaf: found by typing, opened in place.
+      ...BRANCHES.filter(branchVisible).flatMap((b): PaletteItem[] => [
+        { id: `s-${b}`, group: "Settings", label: BRANCH_LABEL[b], hint: treeOf(b).label, icon: "gear", searchOnly: true,
+          keywords: LEAVES.filter((l) => l.branch === b).map((l) => `${l.label} ${l.keywords ?? ""}`).join(" "), run: () => go(`/settings#${b}`) },
+        ...LEAVES.filter((l) => l.branch === b && l.label !== BRANCH_LABEL[b]).map((l): PaletteItem => ({
+          id: `s-${b}-${l.label}`, group: "Settings", label: l.label, hint: BRANCH_LABEL[b], icon: "gear", searchOnly: true, keywords: l.keywords,
+          run: () => { if (confirmLeave()) navigate(`/settings#${b}`, { state: { leaf: l.label } }); },
+        })),
+      ]),
       ...recent
         .filter((p) => p !== here)
         .map(navFor)
@@ -149,7 +159,7 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
         .slice(0, 4)
         .map((n): PaletteItem => ({ id: `r-${n.to}`, group: "Recent", label: n.label, icon: n.icon, run: () => go(n.to) })),
     ];
-  }, [go, onSignOut]);
+  }, [go, navigate, onSignOut]);
   return <CommandPalette items={items} />;
 }
 

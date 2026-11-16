@@ -180,9 +180,14 @@ function placeFiles(fileRoute) {
     const file = resolveImport(join(SRC, 'slots.tsx'), `./${m[2]}`)
     if (at && file) place.set(file, { route: at[1], section: at[2] })
   }
-  // Settings > Desktop app has its own address (/settings#desktop-app).
+  // Settings is a tree: every branch has its own address (/settings#branch).
   const desktop = join(SRC, 'components/DesktopAppCard.tsx')
   if (place.get(desktop)?.route === '/settings') place.set(desktop, { route: '/settings', section: null, hash: 'desktop-app' })
+  for (const [slot, hash] of Object.entries(SETTINGS_SLOT_BRANCH)) {
+    const m = slots.match(new RegExp(`"${slot.replace('.', '\\.')}": \\(\\) => import\\("\\./([^"]+)"\\)`))
+    const file = m && resolveImport(join(SRC, 'slots.tsx'), `./${m[1]}`)
+    if (file) place.set(file, { route: '/settings', section: null, hash })
+  }
   return place
 }
 
@@ -224,8 +229,27 @@ function tabsOf(text) {
   return m ? [...m[1].matchAll(/"([^"]+)"/g)].map((t) => t[1]) : []
 }
 // data-help ids of the tab buttons (TenantPage, MailPage, FinancePage).
-// Cards with their own address on a page.
-const HASH_LABEL = { 'desktop-app': 'Desktop app' }
+// Settings slots and the branch they sit on (src/pages/SettingsPage.tsx).
+const SETTINGS_SLOT_BRANCH = { 'settings.metaAds': 'meta-ads', 'settings.phoneAgent': 'phone-agent' }
+
+/**
+ * Settings' branches from src/settingsTree.ts: label (BRANCH_LABEL) and the
+ * tree it sits on (TREES), as the page shows them: Settings, You, Appearance and sound.
+ */
+export function settingsSections() {
+  const text = readFileSync(join(SRC, 'settingsTree.ts'), 'utf8')
+  const start = text.indexOf('const BRANCH_LABEL')
+  const labels = text.slice(start, text.indexOf('\n}', start))
+  const branchLabel = Object.fromEntries([...labels.matchAll(/^\s{2}"?([\w-]+)"?: "([^"]+)",$/gm)].map((m) => [m[1], m[2]]))
+  const trees = text.slice(text.indexOf('const TREES'), text.indexOf('\n]', text.indexOf('const TREES')))
+  const treeOf = {}
+  for (const m of trees.matchAll(/label: "([^"]+)"[^\n]*?branches: \[([^\]]*)\]/g)) for (const b of m[2].matchAll(/"([\w-]+)"/g)) treeOf[b[1]] = m[1]
+  for (const b of Object.keys(branchLabel)) if (!treeOf[b]) throw new Error(`settingsTree.ts: branch ${b} is on no tree (TREES)`)
+  return { branchLabel, treeOf }
+}
+const SETTINGS = settingsSections()
+// Cards with their own address on a page: the Settings branches.
+const HASH_LABEL = Object.fromEntries(Object.entries(SETTINGS.branchLabel).map(([b, label]) => [b, `${SETTINGS.treeOf[b]}, ${label}`]))
 const TAB_HELP = { [TENANT_ROUTE]: 'tenant-tab', '/mail': 'mail-tab', '/finance': 'finance-tab' }
 
 export function buildCorpus() {
@@ -277,6 +301,16 @@ export function buildCorpus() {
     }
   }
 
+  // The Settings branches.
+  for (const [b, label] of Object.entries(SETTINGS.branchLabel)) {
+    push({
+      id: `settings-branch:${b}`, kind: 'page', route: '/settings', hash: b, title: label,
+      where: `Settings, ${SETTINGS.treeOf[b]}`,
+      text: `${label} is under Settings, ${SETTINGS.treeOf[b]}.`,
+      highlight: [`help:settings-branch:${b}`],
+    })
+  }
+
   // Everything the code shows, per file and place.
   for (const file of files.filter((f) => f.endsWith('.tsx'))) {
     const at = place.get(file)
@@ -293,7 +327,9 @@ export function buildCorpus() {
       const anchor = it.help ?? [...items].reverse().find((a) => a.kind === 'anchor' && a.at < it.at && it.at - a.at < 300)?.help
       const route = at.route
       const section = at.section ?? sectionAt(it.at) ?? null
-      const hash = at.hash
+      // On the Settings page: the branch of the nearest pane("branch") before it.
+      const pane = at.route === '/settings' && !at.hash ? [...text.slice(0, it.at).matchAll(/pane\("([\w-]+)"\)/g)].pop()?.[1] : undefined
+      const hash = at.hash ?? pane
       push({
         id: `${rel.replace(/\.tsx$/, '').replace(/[^a-zA-Z0-9]+/g, '-')}:${section ? `${helpSlug(section)}:` : ''}${helpSlug(it.text)}:${it.kind}`,
         kind: it.kind === 'page' ? 'page' : 'element',

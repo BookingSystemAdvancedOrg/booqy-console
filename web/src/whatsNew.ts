@@ -55,6 +55,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 43, text: "Finance ring legends" },
   { n: 44, text: "Date pickers" },
   { n: 45, text: "Invoice refunds" },
+  { n: 46, text: "Settings, new overview" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

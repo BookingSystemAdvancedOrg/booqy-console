@@ -91,7 +91,7 @@ describe("HelpChat", () => {
     expect(question()).toHaveFocus();
     await user.type(question(), "How do I change the background behind the glass?{Enter}");
     await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Your image"));
-    const go = screen.getByRole("button", { name: "Open Settings" });
+    const go = screen.getByRole("button", { name: "Open Appearance and sound" });
     expect(go).toHaveClass("btn--primary");
     await user.click(go);
     expect(screen.getByTestId("where")).toHaveTextContent("/settings");

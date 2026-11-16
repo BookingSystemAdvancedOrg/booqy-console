@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { InboxSwitch } from "../components/InboxSwitch";
 import { api } from "../api";
 import {
@@ -61,7 +62,13 @@ function Preview({ html, title, error }: { html: string | null; title: string; e
 }
 
 export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
-  const [tab, setTab] = useState<Tab>(initial === "outbox" ? "Outbox" : "Compose");
+  // ?tab=brand-template opens that tab (Settings, Platform, Email brand template links here).
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    if (initial === "outbox") return "Outbox";
+    const asked = TABS.find((name) => helpSlug(name) === params.get("tab") && (name !== "Outbox" || IS_DEV));
+    return asked ?? "Compose";
+  });
   const [sentNotice, setSentNotice] = useState<string | null>(null);
   return (
     <>

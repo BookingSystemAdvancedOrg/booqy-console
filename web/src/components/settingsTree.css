@@ -1,0 +1,107 @@
+/* Settings as a field, trees and branches (SettingsTree.tsx), as in admin.
+   From 1100 px the tree sits on the left, sticky. Smaller screens drill down
+   with a back button. Calm motion, once; none with reduced motion. */
+
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+.settings-body { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.settings-branch { display: flex; flex-direction: column; min-width: 0; }
+.settings-branch:not([hidden]) { animation: stree-in 260ms var(--ease) both; }
+.settings-branch > .card:last-child { margin-bottom: 0; }
+
+.stree-nav { display: none; min-width: 0; }
+.stree, .stree-group, .stree-apples, .stree-card-branches, .stree-rows, .stree-crumbs ol { margin: 0; padding: 0; list-style: none; }
+.stree { display: flex; flex-direction: column; gap: 2px; }
+.stree [role="treeitem"] { outline: none; cursor: default; }
+.stree-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 10px; border-radius: var(--r-md); font: 650 15px/1.25 var(--sans); color: var(--fg); transition: background-color 200ms var(--ease); }
+.stree-label { flex: 1; min-width: 0; }
+.stree-icon { display: inline-grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--glass-fill); color: var(--fg); }
+.stree-chev { transition: rotate 240ms var(--ease), translate 200ms var(--ease); }
+.stree-chev--right { rotate: -90deg; }
+.stree-chev--left { rotate: 90deg; }
+.stree-toggle { display: inline-flex; color: var(--fg-2); }
+.stree-row[aria-expanded="false"] .stree-chev { rotate: -90deg; }
+.stree-row:focus-visible, .stree-branch:focus-visible { box-shadow: 0 0 0 2px var(--focus, #a88462); }
+.stree-group { display: flex; flex-direction: column; gap: 2px; padding-left: 44px; }
+.stree-group:not(:empty) { padding-bottom: 8px; animation: stree-unfold 260ms var(--ease) both; }
+.stree-branch { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border-radius: var(--r-md); font: 550 14.5px/1.25 var(--sans); color: var(--fg); transition: background-color 200ms var(--ease); }
+.stree-branch.active { background: var(--lacquer); color: var(--bq-snow); box-shadow: var(--lacquer-rim); }
+:root[data-theme="dark"] .stree-branch.active { color: #1a120e; }
+.stree-link { color: var(--fg-2); }
+
+/* the field */
+.stree-field { display: flex; flex-direction: column; gap: 20px; }
+.stree-search { position: relative; max-width: 560px; }
+.stree-search-box { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 16px; border-radius: var(--r-pill); background: var(--field-bg, var(--glass-fill)); box-shadow: inset 0 0 0 1px var(--fg-line); color: var(--fg-2); transition: box-shadow 200ms var(--ease); }
+.stree-search-box:focus-within { background: var(--field-bg-focus, var(--field-bg)); box-shadow: inset 0 0 0 1.5px var(--fg); }
+.stree-search-box input, .stree-search-box input:focus, .stree-search-box input:focus-visible { flex: 1; min-width: 0; height: 46px; padding: 0; border: 0; background: transparent; box-shadow: none; outline: none; font: 400 16px/1 var(--sans); color: var(--fg); }
+.stree-results { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: var(--r-lg); background: var(--paper); box-shadow: var(--card-shadow-hi); animation: stree-pop 180ms var(--ease) both; }
+.stree-result { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 48px; padding: 6px 12px; border-radius: var(--r-md); color: var(--print); cursor: default; }
+.stree-result[aria-selected="true"] { background: var(--lacquer); color: var(--bq-snow); }
+:root[data-theme="dark"] .stree-result[aria-selected="true"] { color: #1a120e; }
+.stree-result-label { font: 600 15px/1.25 var(--sans); }
+.stree-result-path { font: 400 13px/1.3 var(--sans); opacity: 0.72; }
+.stree-empty { margin: 0; padding: 12px; font: 400 14px/1.4 var(--sans); color: var(--print-2); }
+
+.stree-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 22px; align-items: start; }
+.stree-card.card { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin: 0; padding: 18px 22px 12px; animation-delay: calc(var(--i, 0) * 60ms); }
+.stree-card .stree-icon { width: 38px; height: 38px; border-radius: 12px; background: var(--paper-2, var(--glass-fill)); color: var(--print); }
+.stree-card-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--print); text-align: left; cursor: default; }
+.stree-card-title { flex: 1; margin: 0; font: 400 22px/1.2 var(--serif); color: var(--print); }
+.stree-card-go { display: inline-flex; color: var(--print-2); transition: translate 200ms var(--ease); }
+.stree-apples { display: flex; flex-wrap: wrap; gap: 6px; }
+.stree-apple { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; margin: 0; padding: 0 12px; border: 0; border-radius: var(--r-pill); background: var(--pearl); box-shadow: var(--pearl-rim); font: 600 13px/1.2 var(--sans); color: var(--print); cursor: default; transition: filter 200ms var(--ease); }
+.stree-apple::after { content: ""; position: absolute; inset: -7px -2px; }
+.stree-apple-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ok); }
+.stree-apple.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
+.stree-apple.warn .stree-apple-dot { background: var(--warn); }
+.stree-card-branches { display: flex; flex-direction: column; }
+.stree-card-branch { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; margin: 0; padding: 0 2px; border: 0; border-top: 1.5px dashed var(--paper-line); background: transparent; font: 500 15px/1.25 var(--sans); color: var(--print); text-align: left; cursor: default; transition: padding 200ms var(--ease); }
+.stree-card-branch:focus-visible, .stree-card-head:focus-visible, .stree-apple:focus-visible, .stree-pager-link:focus-visible, .stree-crumbs button:focus-visible, .stree-back:focus-visible, .stree-rowbtn:focus-visible { outline: 2px solid var(--focus, #a88462); outline-offset: 2px; border-radius: var(--r-md); }
+
+/* a tree, a branch */
+.stree-view { display: flex; flex-direction: column; gap: 16px; animation: stree-in 260ms var(--ease) both; }
+.stree-rows { display: flex; flex-direction: column; gap: 6px; }
+.stree-rowbtn { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 0 16px; border: 0; border-radius: var(--r-md); background: var(--pearl); box-shadow: var(--pearl-rim); font: 600 15px/1.25 var(--sans); color: var(--fg); text-align: left; cursor: default; }
+.stree-rowbtn .stree-chev, .stree-rowbtn .icon { color: var(--fg-2); }
+.stree-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; animation: stree-in 260ms var(--ease) both; }
+.stree-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0 0 4px -8px; padding: 0 12px 0 8px; border: 0; border-radius: var(--r-pill); background: transparent; font: 600 14px/1 var(--sans); color: var(--fg); cursor: default; transition: background-color 200ms var(--ease); }
+.stree-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font: 400 13px/1.3 var(--sans); color: var(--fg-2); }
+.stree-crumbs li + li::before { content: "\203A"; margin-right: 6px; }
+.stree-crumbs button { min-height: 28px; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: default; transition: color 200ms var(--ease); }
+.stree-crumbs [aria-current="page"] { color: var(--fg); }
+.stree-title { margin: 2px 0 6px; font: 400 30px/1.15 var(--serif); color: var(--fg); }
+.stree-pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1.5px dashed var(--fg-line); }
+.stree-pager-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: transparent; font: 600 14px/1.2 var(--sans); color: var(--fg); cursor: default; transition: background-color 200ms var(--ease); }
+.stree-pager-link.next { margin-left: auto; }
+.stree-leaf-flash { border-radius: 12px; animation: stree-flash 2400ms var(--ease) both; }
+
+@media (hover: hover) {
+  .stree-row:hover, .stree-branch:not(.active):hover, .stree-back:hover, .stree-pager-link:hover { background: var(--glass-fill); }
+  .stree-card-head:hover .stree-card-go { translate: 3px 0; }
+  .stree-card-branch:hover { padding-left: 6px; }
+  .stree-apple:hover { filter: brightness(0.97); }
+  .stree-crumbs button:hover { color: var(--fg); }
+  .stree-rowbtn:hover .stree-chev { translate: 3px 0; }
+}
+
+@media (min-width: 1100px) {
+  .settings-layout { grid-template-columns: 240px minmax(0, 1fr); gap: 32px; }
+  .stree-nav { display: block; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow: auto; padding-right: 18px; border-right: 1.5px dashed var(--fg-line); }
+  .stree-back { display: none; }
+}
+@media (max-width: 640px) {
+  .stree-card.card { padding: 16px 16px 10px; }
+  .stree-title { font-size: 26px; }
+  .stree-search { max-width: none; }
+}
+
+@keyframes stree-in { from { opacity: 0; translate: 0 6px; } }
+@keyframes stree-unfold { from { opacity: 0; translate: 0 -4px; } }
+@keyframes stree-pop { from { opacity: 0; translate: 0 -4px; } }
+@keyframes stree-flash { 0%, 60% { box-shadow: 0 0 0 3px var(--focus, #a88462); } 100% { box-shadow: 0 0 0 3px transparent; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-branch:not([hidden]), .stree-group:not(:empty), .stree-results, .stree-view, .stree-head { animation: none; }
+  .stree-chev, .stree-card-go, .stree-card-branch { transition: none; }
+  .stree-leaf-flash { animation: none; box-shadow: 0 0 0 3px var(--focus, #a88462); }
+}

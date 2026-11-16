@@ -1,4 +1,4 @@
-/* Settings > Desktop app (DesktopAppCard.tsx). */
+/* Settings, You, App (DesktopAppCard.tsx). */
 .desktop-app > p { margin: 0 0 12px; }
 .desktop-app__list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
 .desktop-app__list a { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 16px;

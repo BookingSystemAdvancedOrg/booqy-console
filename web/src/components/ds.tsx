@@ -108,9 +108,10 @@ export function Disclosure({ title, meta, defaultOpen = false, className = "", c
 /* --- Command palette -----------------------------------------------------
    Cmd+K (Ctrl+K on Windows and Linux) or the search widget opens a centred
    glass dialog over a dimmed page: a focused input, grouped results
-   (Actions, Go to, Recent), arrows to move, Enter to run, Esc to close. */
-export type PaletteItem = { id: string; group: "Actions" | "Go to" | "Recent"; label: string; hint?: string; icon: IconName; keywords?: string; run: () => void };
-const GROUPS: PaletteItem["group"][] = ["Actions", "Go to", "Recent"];
+   (Actions, Go to, Settings when typing, Recent), arrows to move, Enter to run, Esc to close. */
+/** `searchOnly`: shown only once something is typed (single settings). */
+export type PaletteItem = { id: string; group: "Actions" | "Go to" | "Settings" | "Recent"; label: string; hint?: string; icon: IconName; keywords?: string; searchOnly?: boolean; run: () => void };
+const GROUPS: PaletteItem["group"][] = ["Actions", "Go to", "Settings", "Recent"];
 const OPEN_EVENT = "booqy:palette";
 
 export function openPalette() { window.dispatchEvent(new Event(OPEN_EVENT)); }
@@ -154,7 +155,7 @@ export function CommandPalette({ items }: { items: () => PaletteItem[] }) {
   const all = useMemo(() => (open ? items() : []), [open]);
   const results = useMemo(() => {
     const q = fold(query.trim());
-    const hit = q ? all.filter((i) => fold(`${i.label} ${i.hint ?? ""} ${i.keywords ?? ""}`).includes(q)) : all;
+    const hit = q ? all.filter((i) => fold(`${i.label} ${i.hint ?? ""} ${i.keywords ?? ""}`).includes(q)) : all.filter((i) => !i.searchOnly);
     return GROUPS.flatMap((g) => hit.filter((i) => i.group === g));
   }, [all, query]);
   const current = Math.min(active, Math.max(results.length - 1, 0));

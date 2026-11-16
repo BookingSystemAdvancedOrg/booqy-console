@@ -1132,16 +1132,17 @@
         "appearance",
         "colours"
       ],
-      "answer": "Light or dark is under Settings, Appearance and sound. Press to switch; light is the default. It is kept in this browser.",
+      "answer": "Light or dark is under Settings, You, Appearance and sound. Press to switch; light is the default. It is kept in this browser.",
       "steps": [
-        "Open Settings.",
-        "Under Appearance and sound, press Light or dark."
+        "Open Settings and press Appearance and sound under You.",
+        "Press Light or dark."
       ],
       "actions": [
         {
           "id": "theme-open",
-          "label": "Open Settings",
+          "label": "Open Appearance and sound",
           "to": "/settings",
+          "hash": "appearance",
           "highlight": [
             "help:settings:theme"
           ]
@@ -1166,17 +1167,18 @@
         "background colour",
         "picture behind the glass"
       ],
-      "answer": "Background under Settings sets what sits behind the glass: Colour (the Booqy backdrop, the swatches Wine, Walnut, Sand, Sage, Slate and Plum, or your own colour with +) or Your image, a picture you upload. In the desktop app there is also See-through, the default, with your desktop showing through.",
+      "answer": "Background under Settings, You, Appearance and sound sets what sits behind the glass: Colour (the Booqy backdrop, the swatches Wine, Walnut, Sand, Sage, Slate and Plum, or your own colour with +) or Your image, a picture you upload. In the desktop app there is also See-through, the default, with your desktop showing through.",
       "steps": [
-        "Open Settings.",
+        "Open Settings and press Appearance and sound under You.",
         "Under Background, press Colour, Your image (or See-through in the desktop app).",
         "Pick a swatch or + for your own colour, or press Choose picture and pick a JPG, PNG, WebP or HEIC image."
       ],
       "actions": [
         {
           "id": "background-open",
-          "label": "Open Settings",
+          "label": "Open Appearance and sound",
           "to": "/settings",
+          "hash": "appearance",
           "highlight": [
             "help:settings:background"
           ]
@@ -1198,16 +1200,17 @@
         "noise",
         "turn off sound"
       ],
-      "answer": "Click sound and Volume are under Settings, Appearance and sound. The click is on by default; 40 % is the standard volume and 0 % is silent.",
+      "answer": "Click sound and Volume are under Settings, You, Appearance and sound. The click is on by default; 40 % is the standard volume and 0 % is silent.",
       "steps": [
-        "Open Settings.",
+        "Open Settings and press Appearance and sound under You.",
         "Press Click sound to turn it off or on, or move Volume."
       ],
       "actions": [
         {
           "id": "sound-open",
-          "label": "Open Settings",
+          "label": "Open Appearance and sound",
           "to": "/settings",
+          "hash": "appearance",
           "highlight": [
             "help:settings:sound",
             "help:settings:volume"
@@ -1233,9 +1236,9 @@
         "appimage",
         "app"
       ],
-      "answer": "Booqy Console is also an app in its own window, with the same sign-in and features. Settings, Desktop app (Download app in the menu) suggests the file for your computer and lists the rest for Mac, Windows and Linux. It isn't signed yet, so the computer warns once: Opening it the first time explains what to press.",
+      "answer": "Booqy Console is also an app in its own window, with the same sign-in and features. Settings, You, App (Download app in the menu) suggests the file for your computer and lists the rest for Mac, Windows and Linux. It isn't signed yet, so the computer warns once: Opening it the first time explains what to press.",
       "steps": [
-        "Press Download app in the menu, or open Settings and go to Desktop app.",
+        "Press Download app in the menu, or open Settings and press App under You.",
         "Press the recommended download, or pick the file for your computer from the list.",
         "Open it; on a Mac, use Open Anyway in System Settings, Privacy & Security the first time."
       ],
@@ -1245,14 +1248,6 @@
           "label": "Open Desktop app",
           "to": "/settings",
           "hash": "desktop-app",
-          "highlight": [
-            "help:settings:desktop-app"
-          ]
-        },
-        {
-          "id": "desktop-app-settings",
-          "label": "Open Settings",
-          "to": "/settings",
           "highlight": [
             "help:settings:desktop-app"
           ]

@@ -36,25 +36,25 @@ export const STORAGE_REGISTRY: readonly StorageEntry[] = [
   {
     name: THEME_KEY,
     kind: "localStorage",
-    purpose: "Your choice of light or dark mode (Settings). Set only when you press it; otherwise the console is light.",
+    purpose: "Your choice of light or dark mode (Settings, You, Appearance and sound). Set only when you press it; otherwise the console is light.",
     lifetime: "Until you clear the browser",
   },
   {
     name: SOUND_KEY,
     kind: "localStorage",
-    purpose: "Your choice of click sound on or off (Settings). Sound is on until you switch it off; set only when you press it.",
+    purpose: "Your choice of click sound on or off (Settings, You, Appearance and sound). Sound is on until you switch it off; set only when you press it.",
     lifetime: "Until you clear the browser",
   },
   {
     name: SOUND_VOLUME_KEY,
     kind: "localStorage",
-    purpose: "How loud the click sound is, 0-100 (Settings). Set only when you change it.",
+    purpose: "How loud the click sound is, 0-100 (Settings, You, Appearance and sound). Set only when you change it.",
     lifetime: "Until you clear the browser",
   },
   {
     name: GLASS_BACKDROP_KEY,
     kind: "localStorage",
-    purpose: "Which background you chose behind the glass on this device: a colour or \"your image\" (Settings, Appearance and sound). The picture itself is stored on the server under your operator account and is deleted when you remove it or your account. Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
+    purpose: "Which background you chose behind the glass on this device: a colour or \"your image\" (Settings, You, Appearance and sound). The picture itself is stored on the server under your operator account and is deleted when you remove it or your account. Without a choice the desktop app is see-through and a browser shows Booqy's backdrop.",
     lifetime: "Until you switch back or clear the browser",
   },
   {

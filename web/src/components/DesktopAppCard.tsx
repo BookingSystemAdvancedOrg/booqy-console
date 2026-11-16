@@ -14,7 +14,7 @@ const LABELS: Record<DesktopOs, { title: string; detail: string; button: string 
 };
 
 /**
- * Settings > Desktop app: Booqy Console as an app (booqy-console/desktop).
+ * Settings, You, App: Booqy Console as an app (booqy-console/desktop).
  * Suggests the file for this computer and lists the rest. Unsigned for now,
  * so it explains Gatekeeper and SmartScreen.
  */
