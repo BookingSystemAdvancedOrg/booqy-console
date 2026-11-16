@@ -11,6 +11,7 @@
 //           BOOQY_AZURE_SIGN_ENDPOINT, BOOQY_AZURE_SIGN_ACCOUNT,
 //           BOOQY_AZURE_SIGN_PROFILE (+ AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET)
 import { build } from 'electron-builder'
+import devIcon from './dev-icon.cjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 
@@ -44,6 +45,11 @@ const fileBase = (isProd ? config.fileName : `${config.fileName}-dev`) + (testSu
 
 // Adressen bakas in i appen; main.cjs läser den här filen.
 writeFileSync(new URL('./env.json', import.meta.url), JSON.stringify({ env, url }, null, 2) + '\n')
+
+// Ikonen: produktion får logotypen som den är. Utvecklingsbygget får samma
+// ikon med en DEV-bricka uppe till höger (ritas nu, till build/dev/), så att
+// de två apparna går att skilja åt i Dock och aktivitetsfält. Se dev-icon.cjs.
+const icons = devIcon.iconsFor(env)
 
 const env_ = process.env
 const macIdentity = env_.BOOQY_MAC_IDENTITY || null
@@ -94,7 +100,7 @@ const builderConfig = {
       { target: 'dmg', arch: ['arm64', 'x64'] },
       { target: 'zip', arch: ['arm64', 'x64'] },
     ],
-    icon: 'build/icon.png',
+    icon: icons.app,
     // Utan certifikat: ad hoc-signerad ("-"), kör lokalt men Gatekeeper
     // varnar på andra datorer. Se README.md, "Signering".
     identity: macIdentity ?? '-',
@@ -110,7 +116,7 @@ const builderConfig = {
   dmg: { title: productName, writeUpdateInfo: false },
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
-    icon: 'build/icon.png',
+    icon: icons.win,
     ...(azureSign ? { azureSignOptions: azureSign } : {}),
   },
   nsis: {
@@ -127,8 +133,9 @@ const builderConfig = {
       { target: 'deb', arch: ['x64'] },
     ],
     // Linux vill ha en hel uppsättning (hicolor 16 till 1024), annars visar
-    // vissa skrivbord ingen ikon. Skapad ur build/icon.png, se README.md.
-    icon: 'build/icons',
+    // vissa skrivbord ingen ikon. Skapad ur build/icon.png, se README.md
+    // (utvecklingsbygget: samma storlekar med DEV-brickan, i build/dev/icons).
+    icon: icons.set,
     category: 'Office',
     maintainer: 'Booqy <ops@booqy.se>',
     synopsis: config.description,
