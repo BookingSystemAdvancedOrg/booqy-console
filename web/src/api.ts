@@ -4,7 +4,7 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
+  BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -252,6 +252,9 @@ export const api = {
   },
   remindInvoice: (id: string, invoiceId: string) =>
     request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
+  creditNotes: (id: string, body: { items: { invoiceId: string; amountSek?: string }[]; method: "refund" | "credit";
+                                   reason: string; memo?: string; requestId: string }) =>
+    request<CreditNotesResponse>("POST", `${t(id)}/billing/credit-notes`, body),
   website: (params: { from: string; to: string }) =>
     request<WebsiteOverview>("GET", `/platform/website?${new URLSearchParams(params)}`),
   financeStripeSync: () =>

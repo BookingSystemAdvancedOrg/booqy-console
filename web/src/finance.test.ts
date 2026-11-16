@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bucketKey, bucketSeries, customerInvoices, daysBetween, fmtDay, fmtPct, periodLabel, shortDay, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
+  bucketKey, bucketSeries, canCredit, customerInvoices, daysBetween, fmtDay, fmtPct, periodLabel, shortDay, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, parseSek, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "./finance";
 import type { FinancePoint, FinanceTenantRow } from "./types";
 
@@ -174,6 +174,23 @@ describe("invoice status for the operator", () => {
     expect(isOverdue({ status: "open", daysLate: 0 })).toBe(false);
     expect(isOverdue({ status: "paid", daysLate: 5 })).toBe(false);
     expect(invoiceStatus({ status: "paid", daysLate: 3 })).toBe("paid");
+  });
+
+  it("calls a paid invoice with credit notes refunded, partly refunded or credited", () => {
+    const paid = { status: "paid" as const, daysLate: 0, amountPaidSek: 1250 };
+    expect(invoiceStatus({ ...paid, refundedSek: 1250, creditedSek: 0 })).toBe("refunded");
+    expect(invoiceStatus({ ...paid, refundedSek: 250, creditedSek: 1000 })).toBe("refunded");
+    expect(invoiceStatus({ ...paid, refundedSek: 250, creditedSek: 0 })).toBe("partly_refunded");
+    expect(invoiceStatus({ ...paid, refundedSek: 0, creditedSek: 100 })).toBe("credited");
+    // a credit on an open invoice only lowers what is owed: still open (or overdue)
+    expect(invoiceStatus({ status: "open", daysLate: 2, creditedSek: 100 })).toBe("overdue");
+    expect(canCredit({ status: "paid", creditableSek: 1 })).toBe(true);
+    expect(canCredit({ status: "paid", creditableSek: 0 })).toBe(false);
+    expect(canCredit({ status: "void", creditableSek: 10 })).toBe(false);
+    expect(parseSek("12,50")).toBe(12.5);
+    expect(parseSek("1 250 kr")).toBe(1250);
+    expect(parseSek("1.234")).toBeNull();
+    expect(parseSek("-5")).toBeNull();
   });
 
   it("sums a customer's invoices: overdue before open before paid", () => {

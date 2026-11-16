@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../api";
-import { INVOICE_STATUS_TEXT, addDays, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay } from "../finance";
+import { INVOICE_STATUS_TEXT, addDays, canCredit, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
 import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from "./ui";
 import { SaveButton, useFlash } from "./save";
@@ -10,6 +11,7 @@ import { Select } from "./Select";
 import { DateInput } from "./DateInput";
 import { CopyButton } from "./CopyButton";
 import { billingPhaseText } from "../billingPhase";
+import { RefundModal } from "./RefundModal";
 
 /** The customer's agreement, invoiced in advance on the 1st for each calendar
  * month (the first month pro rata from the start day): the monthly price (SMS
@@ -304,30 +306,52 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
 
 function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tenantId: string; onChanged: () => void }) {
   const remind = useAction();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirm, setConfirm] = useState(false);
+  const [credited, flashCredited] = useFlash();
+  const [creditLabel, setCreditLabel] = useState("Refunded");
   // Invoices from before SMS were included in the price carry an SMS line: shown only then.
   const smsColumn = invoices.some((i) => Number(i.smsSek) > 0);
+  const pickable = invoices.filter(canCredit);
+  // a reload can take an invoice out of reach (refunded elsewhere): it leaves the selection
+  const chosen = pickable.filter((i) => picked.has(i.invoiceId));
+  const chosenTotal = chosen.reduce((s, i) => s + (Number(i.creditableSek) || 0), 0);
+  const allPicked = pickable.length > 0 && chosen.length === pickable.length;
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
-    <Card title="Invoices" saved={remind.done} savedLabel="Reminder sent">
+    <Card title="Invoices" saved={remind.done || credited} savedLabel={credited ? creditLabel : "Reminder sent"}>
       {invoices.length === 0 ? (
         <p className="muted small">No invoices yet.</p>
       ) : (
         <div className="table-wrap table-wrap--inner">
           <ErrorNotice error={remind.error} />
-          <table className="table">
-            <thead><tr><th>Number</th><th>Status</th><th>Period</th><th>Fee</th>{smsColumn && <th>SMS</th>}<th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
+          <table className="table invoice-table">
+            <thead><tr>
+              <th className="cell-pick">{pickable.length > 0 && (
+                <label className="pick"><input type="checkbox" checked={allPicked} aria-label="Pick every invoice that can be refunded"
+                       onChange={() => setPicked(allPicked ? new Set() : new Set(pickable.map((i) => i.invoiceId)))} /></label>
+              )}</th>
+              <th>Number</th><th>Status</th><th>Period</th><th>Fee</th>{smsColumn && <th>SMS</th>}<th>Ex VAT</th><th>Total</th><th>Due</th><th>Paid</th><th>Late</th><th></th></tr></thead>
             <tbody>
               {invoices.map((i) => {
                 const overdue = isOverdue(i);
                 const fees = (Number(i.lateFeeSek) || 0) + (Number(i.interestSek) || 0);
+                const shown = invoiceStatus(i);
+                const back = (Number(i.refundedSek) || 0) + (Number(i.creditedSek) || 0);
+                const on = picked.has(i.invoiceId);
                 return (
-                  <tr key={i.invoiceId}>
+                  <tr key={i.invoiceId} className={on ? "is-picked" : undefined}>
+                    <td className="cell-pick">{canCredit(i) && (
+                      <label className="pick"><input type="checkbox" checked={on} onChange={() => toggle(i.invoiceId)}
+                             aria-label={`Pick invoice ${i.number ?? i.invoiceId}`} /></label>
+                    )}</td>
                     <td className="mono cell-title">{i.number ?? i.invoiceId}{i.kind === "fees" ? <div className="muted small">Fees</div> : i.kind === "closing" ? <div className="muted small">Closing</div> : null}</td>
-                    <td className="cell-badge"><span className={`status status--invoice-${invoiceStatus(i)}`}>{INVOICE_STATUS_TEXT[invoiceStatus(i)] ?? i.status}</span></td>
+                    <td className="cell-badge"><span className={`status status--invoice-${shown}`}>{INVOICE_STATUS_TEXT[shown] ?? i.status}</span></td>
                     <td className="small" data-label="Period">{i.periodStart ? `${fmtDay(i.periodStart)} to ${fmtDay(i.periodEnd)}` : "-"}</td>
                     <td className="num" data-label="Fee">{i.feeSek != null ? fmtSek(i.feeSek, { decimals: true }) : "-"}</td>
                     {smsColumn && <td className="num" data-label="SMS">{Number(i.smsSek) > 0 ? `${fmtInt(i.smsParts ?? 0)} parts, ${fmtSek(i.smsSek, { decimals: true })}` : "-"}</td>}
                     <td className="num" data-label="Ex VAT">{fmtSek(i.subtotalSek)}</td>
-                    <td className="num" data-label="Total">{fmtSek(i.totalSek)}</td>
+                    <td className="num" data-label="Total">{fmtSek(i.totalSek)}{back > 0 && <div className="muted">{fmtSek(back, { decimals: true })} back</div>}</td>
                     <td className="small cell-fact" data-label="Due">{fmtDay(i.dueDate)}</td>
                     <td className="small cell-fact" data-label="Paid">{i.paidAt ? fmtDay(i.paidAt) + (i.paidOutOfBand ? " (bankgiro)" : "") : "-"}</td>
                     <td className={`small cell-fact${overdue ? " bad" : ""}`} data-label="Late">
@@ -351,6 +375,27 @@ function Invoices({ invoices, tenantId, onChanged }: { invoices: Invoice[]; tena
             </tbody>
           </table>
         </div>
+      )}
+      {/* On <body>: the glass card's backdrop-filter would trap position: fixed, and the bar must stay in view on a long list */}
+      {chosen.length > 0 && !confirm && createPortal(
+        <div className="pick-bar" role="region" aria-label="Picked invoices">
+          <button type="button" className="btn btn--danger" onClick={() => setConfirm(true)}>
+            Refund or credit ({chosen.length}) · {fmtSek(chosenTotal, { decimals: true })}
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set())}>Clear</button>
+        </div>,
+        document.body,
+      )}
+      {confirm && chosen.length > 0 && (
+        <RefundModal tenantId={tenantId} invoices={chosen} onClose={() => setConfirm(false)}
+                     onDone={(res, finished) => {
+                       setCreditLabel(res.refundedSek > 0 ? "Refunded" : "Credited");
+                       flashCredited();
+                       const done = new Set(res.results.filter((r) => r.ok).map((r) => r.invoiceId));
+                       setPicked((p) => new Set([...p].filter((id) => !done.has(id))));
+                       if (finished) setConfirm(false);
+                       onChanged();
+                     }} />
       )}
     </Card>
   );

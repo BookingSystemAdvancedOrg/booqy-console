@@ -227,7 +227,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} trend={trends.mrr} />
             <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
                  trend={trends.customers} />
-            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />} />
+            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
+                 info={(k.refundedSek ?? 0) > 0 ? <>After {fmtSek(k.refundedSek)} refunded to cards (ex VAT).</> : undefined} />
             <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
                  tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
           </section>
@@ -361,14 +362,14 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
 
 /** A key figure: only its label and number. With a `trend` the figure turns
  * green or red by how it is doing (src/trend.ts) and the change is a chip by the label. */
-function Kpi({ label, value, tone, trend }: {
-  label: string; value: ReactNode; tone?: "warn"; trend?: Trend;
+function Kpi({ label, value, tone, trend, info }: {
+  label: string; value: ReactNode; tone?: "warn"; trend?: Trend; info?: ReactNode;
 }) {
   const shade: TrendTone = trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
-      <span className="kpi__head"><span className="kpi__label">{label}</span>{trend && <Delta trend={trend} />}</span>
+      <span className="kpi__head"><span className="kpi__label">{label}{info && <> <InfoTip label={`About ${label}`}>{info}</InfoTip></>}</span>{trend && <Delta trend={trend} />}</span>
       <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
     </div>
   );
