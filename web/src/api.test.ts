@@ -112,6 +112,30 @@ describe("api: the help assistant's question is quiet", () => {
     await expect(call).rejects.toMatchObject({ status: 0, code: "timeout" });
   });
 
+  it("an abort while the body is still arriving is the same timeout", async () => {
+    const ctrl = new AbortController();
+    // The headers are in; the body rejects once the signal aborts, like a real stream.
+    const res = {
+      status: 200,
+      ok: true,
+      headers: new Headers(),
+      text: () => new Promise<string>((_, reject) => {
+        ctrl.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      }),
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+    const call = api.helpAnswer({ question: "q", history: [] }, ctrl.signal);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    ctrl.abort();
+    await expect(call).rejects.toMatchObject({ status: 0, code: "timeout" });
+  });
+
+  it("a connection lost while the body arrives is offline", async () => {
+    const res = { status: 200, ok: true, headers: new Headers(), text: () => Promise.reject(new TypeError("network")) } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+    await expect(api.helpAnswer({ question: "q", history: [] })).rejects.toMatchObject({ status: 0, code: "network" });
+  });
+
   it("keeps the server's request id on an error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(503, { error: "service_unavailable", requestId: "req-123" })));
     await expect(api.helpAnswer({ question: "q", history: [] })).rejects.toMatchObject({ status: 503, extra: { requestId: "req-123" } });

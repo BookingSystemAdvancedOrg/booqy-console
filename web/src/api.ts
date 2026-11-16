@@ -101,7 +101,15 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
       throw new ApiError(401, "unauthorized", "Signed out");
     }
   }
-  const text = await res.text();
+  // The timeout can also fire while the body is still arriving: the same timeout then;
+  // a connection lost mid-body is offline, like one lost before.
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+    throw offline();
+  }
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
