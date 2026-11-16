@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildCorpus } from "../../../scripts/help-corpus.mjs";
 import { setCorpus } from "./corpus";
-import { openHelpChat } from "./chatState";
+import { helpChatEnabled, openHelpChat } from "./chatState";
 import { HelpChat, LIMITED_TEXT } from "./HelpChat";
 import { REFUSE_TEXT } from "./retrieve";
 
@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../api", () => ({
   api: mocks,
   ApiError: class ApiError extends Error {
-    constructor(public status: number, public code = "error", message = "") {
+    constructor(public status: number, public code = "error", message = "", public fields: Record<string, string> = {}, public extra: Record<string, unknown> = {}) {
       super(message);
     }
   },
@@ -136,7 +136,7 @@ describe("HelpChat", () => {
     await openPanel(user);
     await user.type(question(), "How do I add a new customer?{Enter}");
     await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent(LIMITED_TEXT));
-    expect(mocks.helpAnswer).toHaveBeenCalledWith({ question: "How do I add a new customer?", history: [] });
+    expect(mocks.helpAnswer).toHaveBeenCalledWith({ question: "How do I add a new customer?", history: [] }, expect.any(AbortSignal));
   });
 
   it("falls back to the corpus when the server fails", async () => {
@@ -148,6 +148,52 @@ describe("HelpChat", () => {
     await openPanel(user);
     await user.type(question(), "How do I add a new customer?{Enter}");
     await screen.findByRole("button", { name: "Open New customer" });
+  });
+
+  it("closes and disappears when it is switched off while open, with no local answer", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.example");
+    const { ApiError } = await import("../../api");
+    mocks.helpStatus.mockResolvedValue({ enabled: true, mode: "kb" });
+    mocks.helpAnswer.mockRejectedValue(new (ApiError as unknown as new (s: number, c: string) => Error)(403, "help_assistant_off"));
+    const user = userEvent.setup();
+    renderChat();
+    await openPanel(user);
+    await user.type(question(), "How do I add a new customer?{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Ask Booqy" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open New customer" })).toBeNull();
+    expect(helpChatEnabled()).toBe(false);
+    act(() => openHelpChat());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("says it is Booqy's fault, with the request id to copy, when not even the corpus can answer", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.example");
+    const { ApiError } = await import("../../api");
+    mocks.helpStatus.mockResolvedValue({ enabled: true, mode: "kb" });
+    mocks.helpAnswer.mockRejectedValue(
+      new (ApiError as unknown as new (s: number, c: string, m: string, f: object, e: object) => Error)(503, "service_unavailable", "", {}, { requestId: "req-42" }),
+    );
+    setCorpus(null);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    try {
+      const user = userEvent.setup();
+      renderChat();
+      await openPanel(user);
+      await user.type(question(), "How do I add a new customer?{Enter}");
+      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy fault"));
+      await user.click(screen.getByRole("button", { name: "Details" }));
+      expect(screen.getByRole("log")).toHaveTextContent("Request id: req-42");
+      // Try again asks once more, without a second copy of the question.
+      setCorpus(buildCorpus());
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await screen.findByRole("button", { name: "Open New customer" });
+      expect(screen.getAllByText("How do I add a new customer?")).toHaveLength(1);
+      expect(screen.queryByText(/Booqy fault/)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      setCorpus(buildCorpus());
+    }
   });
 
   it("is not shown when the server has it off", async () => {

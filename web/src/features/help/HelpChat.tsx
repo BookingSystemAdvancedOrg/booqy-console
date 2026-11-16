@@ -2,9 +2,9 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../../components/ds";
-import { Printing } from "../../components/ui";
+import { ErrorNotice, Printing } from "../../components/ui";
 import { confirmLeave } from "../../components/save";
-import { HelpLimited, askHelp, getHelpStatus } from "./helpApi";
+import { HelpLimited, HelpOff, askHelp, getHelpStatus } from "./helpApi";
 import type { HelpTurn } from "./helpApi";
 import { resolveLive } from "./live";
 import { spotlight } from "./spotlight";
@@ -24,17 +24,20 @@ import "./helpChat.css";
  * The conversation lives only in this tab's memory.
  *
  * Opens from the launcher or from Cmd/Ctrl+K ("Ask the help assistant").
+ * Switched off while open (403 help_assistant_off): the panel, the launcher
+ * and the palette action go away, with no answer from the local corpus.
  */
 
 type Message =
   | { id: number; role: "user"; text: string }
   | { id: number; role: "assistant"; answer: HelpAnswer }
-  | { id: number; role: "notice"; text: string };
+  | { id: number; role: "notice"; text: string }
+  /** Not even the corpus could answer: who acts, with the details to copy for a Booqy fault. */
+  | { id: number; role: "error"; error: unknown; question: string };
 
 let nextId = 1;
 
 export const LIMITED_TEXT = "You've asked a lot in a short time. Wait a moment and try again.";
-const FAILED_TEXT = "I couldn't get an answer right now. Try again in a moment.";
 const LIVE_FAILED_TEXT = "I couldn't fetch that number right now. The button below opens the page that shows it.";
 
 export function HelpChat() {
@@ -80,6 +83,17 @@ export function HelpChat() {
     });
   }, []);
 
+  /** Switched off on the server: gone from this tab, focus back where the operator was. */
+  const switchOff = useCallback(() => {
+    setHelpChatEnabled(false);
+    setEnabled(false);
+    setOpen(false);
+    setMessages([]);
+    requestAnimationFrame(() => {
+      if (returnTo.current?.isConnected) returnTo.current.focus?.();
+    });
+  }, []);
+
   useEffect(() => {
     window.addEventListener(OPEN_EVENT, show);
     return () => window.removeEventListener(OPEN_EVENT, show);
@@ -94,14 +108,20 @@ export function HelpChat() {
     if (log) log.scrollTop = log.scrollHeight;
   }, [messages, waiting]);
 
-  const ask = async (question: string) => {
+  /** retry: the error message to replace; the question is already in the log. */
+  const ask = async (question: string, retry?: number) => {
     const text = question.trim();
     if (!text || waiting) return;
-    const history: HelpTurn[] = messages.flatMap((m): HelpTurn[] =>
+    const earlier = retry === undefined ? messages : messages.slice(0, Math.max(0, messages.findIndex((m) => m.id === retry) - 1));
+    const history: HelpTurn[] = earlier.flatMap((m): HelpTurn[] =>
       m.role === "user" ? [{ role: "user", text: m.text }] : m.role === "assistant" ? [{ role: "assistant", text: m.answer.text }] : [],
     );
-    setMessages((ms) => [...ms, { id: nextId++, role: "user", text }]);
-    setDraft("");
+    if (retry === undefined) {
+      setMessages((ms) => [...ms, { id: nextId++, role: "user", text }]);
+      setDraft("");
+    } else {
+      setMessages((ms) => ms.filter((m) => m.id !== retry));
+    }
     setWaiting(true);
     try {
       let answer = await askHelp(text, history);
@@ -110,7 +130,14 @@ export function HelpChat() {
       // A live number is also shown where it lives, lit up, with the panel still open.
       if (answer.live && answer.actions[0] && actionAllowed(answer.actions[0])) go(answer.actions[0], { keepOpen: true });
     } catch (err) {
-      setMessages((ms) => [...ms, { id: nextId++, role: "notice", text: err instanceof HelpLimited ? LIMITED_TEXT : FAILED_TEXT }]);
+      if (err instanceof HelpOff) {
+        switchOff();
+        return;
+      }
+      setMessages((ms) => [
+        ...ms,
+        err instanceof HelpLimited ? { id: nextId++, role: "notice", text: LIMITED_TEXT } : { id: nextId++, role: "error", error: err, question: text },
+      ]);
     } finally {
       setWaiting(false);
       inputRef.current?.focus();
@@ -222,6 +249,10 @@ export function HelpChat() {
                 </li>
               ) : m.role === "notice" ? (
                 <li key={m.id} className="help-msg help-msg--notice" role="status">{m.text}</li>
+              ) : m.role === "error" ? (
+                <li key={m.id} className="help-msg help-msg--error">
+                  <ErrorNotice error={m.error} onRetry={waiting ? undefined : () => void ask(m.question, m.id)} />
+                </li>
               ) : (
                 <li key={m.id} className="help-msg help-msg--bot">
                   <span className="sr-only">Assistant: </span>

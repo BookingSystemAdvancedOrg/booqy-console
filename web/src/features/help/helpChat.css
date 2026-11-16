@@ -201,6 +201,16 @@
   font-size: var(--fs-sm);
 }
 
+.help-msg--error {
+  align-self: stretch;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+}
+
+.help-msg--error .notice {
+  margin: 0;
+}
+
 .help-answer {
   margin: 0;
 }

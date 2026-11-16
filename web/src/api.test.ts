@@ -80,3 +80,40 @@ describe("api: live refetches", () => {
     expect(seen).toEqual([{ path: "/platform/tenants/t1" }, { path: "/platform/tenants/t1", conflict: true }]);
   });
 });
+
+describe("api: the help assistant's question is quiet", () => {
+  it("shows no busy bar and makes no page refetch", async () => {
+    const { getBusyState } = await import("./test/busyProbe");
+    const { LIVE_SAVED_EVENT } = await import("./live");
+    const seen: unknown[] = [];
+    const on = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener(LIVE_SAVED_EVENT, on);
+    let during = true;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      during = getBusyState();
+      return json(200, { answer: { text: "x", steps: [], actions: [] }, mode: "kb" });
+    }));
+    await api.helpAnswer({ question: "q", history: [] });
+    window.removeEventListener(LIVE_SAVED_EVENT, on);
+    expect(during).toBe(false);
+    expect(seen).toEqual([]);
+  });
+
+  it("an aborted question is a timeout, not a lost connection", async () => {
+    // Like fetch: rejects when the signal is (or becomes) aborted.
+    vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise((_, reject) => {
+      const abort = () => reject(new DOMException("Aborted", "AbortError"));
+      if (init.signal?.aborted) abort();
+      init.signal?.addEventListener("abort", abort);
+    })));
+    const ctrl = new AbortController();
+    const call = api.helpAnswer({ question: "q", history: [] }, ctrl.signal);
+    ctrl.abort();
+    await expect(call).rejects.toMatchObject({ status: 0, code: "timeout" });
+  });
+
+  it("keeps the server's request id on an error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(503, { error: "service_unavailable", requestId: "req-123" })));
+    await expect(api.helpAnswer({ question: "q", history: [] })).rejects.toMatchObject({ status: 503, extra: { requestId: "req-123" } });
+  });
+});
