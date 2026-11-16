@@ -875,7 +875,9 @@ input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], 
   border-radius: var(--r-md); background: var(--glass-surface); box-shadow: var(--liquid-edge);
 }
 .row-menu__list .row-action { justify-content: flex-start; width: 100%; }
-@container (max-width: 560px) {
+/* Four actions (Operators) need about 1180 px of table beside the other
+   columns; narrower tables fold them into the menu instead of clipping them. */
+@container (max-width: 1180px) {
   .row-actions--inline { display: none; }
   .row-menu { display: inline-grid; justify-items: end; }
 }

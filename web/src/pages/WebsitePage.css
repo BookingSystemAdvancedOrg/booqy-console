@@ -6,6 +6,10 @@
 .web-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--trend-good); box-shadow: 0 0 0 0 var(--trend-good); animation: web-pulse 2s ease-out infinite; }
 @keyframes web-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--trend-good) 60%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
 
+/* Visits per day and Traffic sources side by side only where the six-column
+   table fits its half; laptops stack them. */
+@media (max-width: 1440px) { .charts.web-traffic { grid-template-columns: minmax(0, 1fr); } }
+
 .web-scroll { overflow-x: auto; margin: 0 -4px; border-radius: var(--r-md); }
 .web-scroll:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .web-table th, .web-table td { padding: 9px 8px; }
