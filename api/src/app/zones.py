@@ -254,6 +254,7 @@ def public_zone(row: dict) -> dict:
     out.update(own_domains.public_extra(row))
     out["registrar"] = "route53" if out["registered"] or row.get("mode") in ("register", "transfer_in") else "external"
     out["transferable"] = (row.get("mode") == "connect" and row.get("status") == "live" and not row.get("simulated")
+                           and not out["registered"]
                            and _tld(row["domain"]) in TLDS
                            and row.get("transferStatus") not in ("transferring", "awaiting_verification", "transferred"))
     return out
@@ -521,15 +522,20 @@ def register(req) -> tuple[int, dict]:
             PrivacyProtectAdminContact=privacy, PrivacyProtectRegistrantContact=privacy,
             PrivacyProtectTechContact=privacy)
     except ClientError as e:
+        from . import domain_mail
         message = e.response["Error"].get("Message") or str(e)
-        _update_zone(tenant_id, domain, status="failed", lastError=f"Route 53 refused the registration: {message}"[:1000])
+        _update_zone(tenant_id, domain, status="failed", **{
+            **domain_mail.error("booqy", domain), "lastError": f"Route 53 refused the registration: {message}"[:1000]})
         _release_claim(tenant_id, domain)
         write_audit(tenant_id, "domain_registration_refused", req.actor, {"domain": domain, "error": message[:300]})
         raise ApiError(502, "registration_refused", f"Route 53 refused the registration: {message}") from e
 
     status = "awaiting_verification" if tld in VERIFY_TLDS else "registering"
     _update_zone(tenant_id, domain, operationId=op["OperationId"], status=status)
-    _start_provision(tenant_id, domain, "register", True, req.actor)
+    try:
+        _start_provision(tenant_id, domain, "register", True, req.actor)
+    except Exception as e:  # noqa: BLE001 - paid for: the order stays (operationId kept) and Retry resumes it
+        own_domains.start_failed(tenant_id, domain, e)
     write_audit(tenant_id, "domain_registration_started", req.actor,
                 {"domain": domain, "price": f"{current['amount']} {current['currency']}",
                  "verificationRequired": tld in VERIFY_TLDS})
@@ -878,13 +884,17 @@ def connect(req) -> tuple[int, dict]:
         "requestedBy": req.actor, "requestedAt": now_iso(), "lastError": None, "simulated": sim or None,
         "attempt": int(previous.get("attempt") or 0) + 1,
         **dict(zip(("canonicalHost", "aliasHosts", "devHost"), own_domains.hosts_for("connect", domain))),
+        **own_domains.kept_registration(previous),
     })
     # Recorded before anything else can fail, so a retry reuses the zone.
     zone_id, name_servers = own_domains._ensure_zone(tenant_id, domain, previous, records, sim)
     dnssec = domain.startswith("dnssec") if sim else own_domains.ds_present(domain)
 
     _update_zone(tenant_id, domain, status="awaiting_nameservers", importedRecords=len(records), dnssec=dnssec)
-    _start_provision(tenant_id, domain, "connect", True, req.actor)
+    try:
+        _start_provision(tenant_id, domain, "connect", True, req.actor)
+    except Exception as e:  # noqa: BLE001 - the zone and records stay; Retry starts the workflow
+        own_domains.start_failed(tenant_id, domain, e)
     domain_mail.send(profile, "nameserver_steps", domain=domain, name_servers=name_servers, dnssec=dnssec)
     write_audit(tenant_id, "domain_connect_started", req.actor,
                 {"domain": domain, "importedRecords": len(records), "hostedZoneId": zone_id})
@@ -909,7 +919,7 @@ def _task_registration_status(tenant_id: str, domain: str) -> dict:
     if row.get("status") in ("removing", "removed"):
         return {"status": "cancelled"}
     if not row.get("operationId"):
-        _update_zone(tenant_id, domain, status="failed", lastError="No registration operation recorded")
+        own_domains._fail(tenant_id, domain, "booqy", lastError="No registration operation recorded")
         return {"status": "failed"}
     if row.get("simulated"):
         op = own_domains.sim_operation(row)
@@ -1057,7 +1067,7 @@ def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> d
         raise ValueError(f"bad status {status}")
     row = _zone_row(tenant_id, domain) or {}
     if row.get("status") in ("removing", "removed"):
-        return {"status": row["status"]}
+        return {"status": "cancelled"}           # removed while it ran: the workflow ends Cancelled, no alert
     mode = row.get("mode") or "connect"
     if status == "live":
         # domain-attach also ends successfully when the certificate never got
@@ -1075,10 +1085,15 @@ def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> d
     if status == "live":
         fields.update(lastError=None, lastErrorSv=None, who=None, errorCode=None, liveAt=now_iso(),
                       devStatus=row.get("devStatus") if row.get("devStatus") == "live" else "waiting_for_prod")
+    elif status == "timed_out" and mode == "transfer_in" and row.get("status") == "awaiting_verification":
+        # The .se identity check (AWS Support case) is Booqy's to finish, not
+        # the restaurant's; the Route 53 operation is still pending, so Retry
+        # watches the same move again.
+        fields.update(domain_mail.error("verification_timeout", domain))
     elif status == "timed_out" and mode in TIMED_OUT_AS:
         code, new_status = TIMED_OUT_AS[mode]
         fields.update(domain_mail.error(code, domain), status=new_status)
-        if error:
+        if error and new_status not in own_domains.RESUBMIT:   # an expired move is sent again, never retried
             fields["lastError"] = error[:1000]
         status = new_status
     elif row.get("status") in CLASSIFIED and status == "failed":

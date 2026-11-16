@@ -37,6 +37,11 @@ ERRORS = {
                          "Ingen godkände flytten av {domain} inom 14 dagar, så den stoppades. Domänen är kvar hos er "
                          "nuvarande leverantör och allt fungerar som förut. Svara på det här mejlet så startar vi "
                          "flytten igen."),
+    "verification_timeout": ("booqy",
+                             "The .se registry's identity check of {domain} (AWS Support case) did not finish within "
+                             "14 days. Booqy follows up the support case, then press Retry.",
+                             "Vi väntar fortfarande på att .se-registret ska kontrollera ägaren av {domain}. Det "
+                             "sköter vi på Booqy. Ni behöver inte göra något."),
     "records_timeout": ("restaurant",
                         "There is still no www record pointing at Booqy for {domain}. Send the restaurant the steps "
                         "again, then press Retry.",

@@ -146,6 +146,32 @@ def start(tenant_id: str, apex: str, mode: str, actor: str, attempt: int, **extr
             raise
 
 
+def start_failed(tenant_id: str, apex: str, e: Exception) -> None:
+    """The order is placed (a bought domain is paid for) but its workflow
+    didn't start: failed, Booqy acts, and the operation ids stay on the row
+    so Retry resumes the same order."""
+    log.error("domain-provision for %s didn't start: %s", apex, e)
+    topic = env("ALERT_TOPIC_ARN", "")
+    if topic:
+        try:
+            client("sns").publish(
+                TopicArn=topic, Subject=f"[{env('ENVIRONMENT', 'dev')}] domain workflow didn't start: {apex}"[:100],
+                Message=f"Tenant {tenant_id}, domain {apex}: the domain-provision workflow didn't start ({e}). "
+                        "The order is failed and waits for Retry in the console.")
+        except Exception:  # noqa: BLE001 - the alert never fails the order
+            log.warning("domain workflow alert not published", exc_info=True)
+    _fail(tenant_id, apex, "booqy", lastError=f"The setup workflow didn't start: {e}"[:1000])
+
+
+def start_or_fail(tenant_id: str, apex: str, mode: str, actor: str, attempt: int, **extra) -> bool:
+    try:
+        start(tenant_id, apex, mode, actor, attempt, **extra)
+    except Exception as e:  # noqa: BLE001 - the order stays, Retry starts it
+        start_failed(tenant_id, apex, e)
+        return False
+    return True
+
+
 # ---------------------------------------------------------- redirects (KVS)
 def _kvs():
     return regional_client("cloudfront-keyvaluestore", "us-east-1")
@@ -325,8 +351,8 @@ def _order(tenant_id: str, apex: str) -> dict:
 
 
 def _fail(tenant_id: str, apex: str, code: str, status: str = "failed", **extra) -> None:
-    fields = domain_mail.error(code, apex)
-    zones._update_zone(tenant_id, apex, status=status, statusDetail=None, **fields, **extra)
+    fields = {**domain_mail.error(code, apex), **extra}         # extra (a precise lastError) wins
+    zones._update_zone(tenant_id, apex, status=status, statusDetail=None, **fields)
 
 
 def _notify_action_needed(tenant_id: str, apex: str, code: str) -> None:
@@ -352,7 +378,7 @@ def classify_transfer(message: str | None) -> str:
 def _remind(tenant_id: str, apex: str, row: dict, kind: str, **context) -> None:
     """Reminder e-mails at 24 h, 72 h and 6 days after the order, once each."""
     sent = set(row.get("remindersSent") or [])
-    age = _hours_since(row.get("requestedAt"))
+    age = _hours_since(row.get("retriedAt") or row.get("requestedAt"))          # a Retry starts the count again
     due = [h for h in REMINDER_HOURS if age >= h and str(h) not in sent]
     if not due:
         return
@@ -496,7 +522,7 @@ def transfer_in(req) -> tuple[int, dict]:
     waiting = "awaiting_verification" if tld in zones.VERIFY_TLDS else "awaiting_owner_approval"
     zones._update_zone(tenant_id, apex, transferInOperationId=op["OperationId"], status=waiting,
                        importedRecords=len(records))
-    start(tenant_id, apex, "transfer_in", req.actor, attempt)
+    start_or_fail(tenant_id, apex, "transfer_in", req.actor, attempt)
     if tld not in zones.VERIFY_TLDS:
         domain_mail.send(profile, "transfer_approve", domain=apex)
     write_audit(tenant_id, "domain_transfer_in_started", req.actor,
@@ -542,9 +568,15 @@ def _ensure_zone(tenant_id: str, apex: str, previous: dict, records: list[dict],
             r53.change_resource_record_sets(HostedZoneId=zone_id, ChangeBatch={
                 "Comment": "Records copied from the previous DNS host", "Changes": [zones._change(r) for r in records]})
     except ClientError as e:
+        # recordsImported False: Retry would go live without the restaurant's
+        # e-mail records, so it is refused (Connect again with the records).
         message = e.response["Error"].get("Message") or str(e)
-        _fail(tenant_id, apex, "booqy", lastError=f"Couldn't set up DNS: {message}"[:1000])
+        _fail(tenant_id, apex, "booqy", lastError=f"Couldn't set up DNS: {message}"[:1000], recordsImported=False)
+        if e.response["Error"].get("Code") == "InvalidChangeBatch":
+            raise ApiError(400, "validation_failed", f"Route 53 refused a record: {message}",
+                           fields={"records": f"Route 53 refused a record: {message}"[:500]}) from e
         raise ApiError(502, "dns_setup_failed", f"Couldn't set up DNS: {message}") from e
+    zones._update_zone(tenant_id, apex, recordsImported=True)
     return zone_id, name_servers
 
 
@@ -587,9 +619,12 @@ def records(req) -> tuple[int, dict]:
         "mode": "records", "status": "awaiting_records", "makePrimary": True, "simulated": sim or None,
         "simState": None, "attempt": attempt, "requestedBy": req.actor, "requestedAt": now_iso(),
         "lastError": None, "lastErrorSv": None, "who": None, "errorCode": None, "remindersSent": None,
+        # a zone an earlier order made (a rejected move) stays referenced, so it is never orphaned
+        "hostedZoneId": previous.get("hostedZoneId"), "nameServers": previous.get("nameServers"),
         "devTarget": dev_target, **dict(zip(("canonicalHost", "aliasHosts", "devHost"), hosts_for("records", apex))),
+        **kept_registration(previous),
     })
-    start(tenant_id, apex, "records", req.actor, attempt)
+    start_or_fail(tenant_id, apex, "records", req.actor, attempt)
     target = env("TENANT_DOMAIN_CNAME_TARGET", "") or "booqy-sites.example"
     domain_mail.send(profile, "records_steps", domain=apex, target=target, dev_target=dev_target)
     write_audit(tenant_id, "domain_records_started", req.actor, {"domain": apex, "simulated": sim})
@@ -642,9 +677,11 @@ def public_extra(row: dict) -> dict:
                                      "autoRenew", "liveAt", "registrantEmail") if row.get(k) is not None}
     out["remindersSent"] = len(row.get("remindersSent") or [])
     status = row.get("status")
-    out["canRetry"] = status in RETRY_FROM or (status == "live" and row.get("devStatus") == "failed")
+    out["canRetry"] = (status in RETRY_FROM and not retry_block(row)) or (
+        status == "live" and row.get("devStatus") == "failed")
     out["canResubmit"] = status in RESUBMIT
-    out["canRemove"] = status not in TRANSFER_WAITING + ("removing", "removed", "registering")
+    # removing: an earlier Remove stopped half way; it runs again
+    out["canRemove"] = status not in TRANSFER_WAITING + ("removed", "registering")
     out["registered"] = registered_here(row)
     if row.get("mode") == "records":
         out["records"] = required_records(row)
@@ -658,6 +695,32 @@ def registered_here(row: dict) -> bool:
     """Is the registration in Booqy's Route 53 account (bought, or moved in)?"""
     return bool(row.get("registeredAt")) or row.get("transferStatus") == "transferred" or (
         row.get("mode") == "register" and row.get("status") in ("registered", "attaching", "live", "removing", "removed"))
+
+
+def kept_registration(previous: dict) -> dict:
+    """A domain Booqy bought or moved in stays in our Route 53 account after
+    a removal: a new order for it (Connect) keeps that, so the transfer-out
+    code still works and no paid transfer is offered."""
+    if not previous or not (previous.get("registeredAt") or previous.get("transferStatus") == "transferred"):
+        return {}   # a refused or failed registration never held the domain
+    return {"registeredAt": previous.get("registeredAt") or previous.get("transferCompletedAt"),
+            "expiresAt": previous.get("expiresAt"), "autoRenew": previous.get("autoRenew")}
+
+
+def retry_block(row: dict) -> str | None:
+    """Why Retry can't resume this order (None: it can). Retry only resumes:
+    a Route 53 call that never happened, or records that were never
+    imported, need the order placed again."""
+    mode = row.get("mode")
+    if mode == "register" and not row.get("operationId"):
+        return "Route 53 never took the registration: place the order again"
+    if mode == "transfer_in" and not row.get("transferInOperationId"):
+        return "Route 53 never took the move: start the move again"
+    if mode in ("connect", "transfer_in") and row.get("recordsImported") is False:
+        return "The records weren't imported: connect the domain again with the records"
+    if mode == "connect" and not row.get("hostedZoneId"):
+        return "Connect the domain again (no zone yet)"
+    return None
 
 
 def _check_status(tenant_id: str, apex: str, row: dict) -> dict:
@@ -704,6 +767,9 @@ def retry(req) -> tuple[int, dict]:
         raise ApiError(409, "not_retryable", f"Nothing to retry ({status})")
     if mode == "transfer":
         raise ApiError(409, "not_retryable", "Start the transfer again from the Domains tab")
+    block = None if dev_only else retry_block(row)
+    if block:
+        raise ApiError(409, "not_retryable", block)
     attempt = int(row.get("attempt") or 1) + 1
     fields = {"attempt": attempt}
     if row.get("simulated"):
@@ -711,12 +777,20 @@ def retry(req) -> tuple[int, dict]:
     if dev_only:
         fields.update(devStatus="waiting_for_prod", devError=None, devMountAttempts=0)
     else:
+        # the reminders start again from now (24 h, 72 h, 6 days)
         fields.update(status=WAITING.get(mode, "attaching"), lastError=None, lastErrorSv=None, who=None,
-                      errorCode=None, statusDetail="Retrying")
-        if mode == "connect" and not row.get("hostedZoneId"):
-            raise ApiError(409, "not_retryable", "Connect the domain again (no zone yet)")
+                      errorCode=None, statusDetail="Retrying", remindersSent=None, retriedAt=now_iso())
     zones._update_zone(tenant_id, apex, **fields)
-    start(tenant_id, apex, mode, req.actor, attempt, **({"devOnly": True} if dev_only else {}))
+    try:
+        start(tenant_id, apex, mode, req.actor, attempt, **({"devOnly": True} if dev_only else {}))
+    except Exception as e:  # noqa: BLE001 - never left waiting with no workflow
+        if dev_only:
+            zones._update_zone(tenant_id, apex, devStatus="failed",
+                               devError=f"The setup workflow didn't start: {e}"[:1000])
+        else:
+            start_failed(tenant_id, apex, e)
+        raise ApiError(502, "workflow_not_started",
+                       "Booqy's fault: the setup workflow didn't start. Booqy is notified; press Retry again") from e
     write_audit(tenant_id, "domain_retried", req.actor, {"domain": apex, "attempt": attempt, "devOnly": dev_only})
     return 202, {"zone": zones.public_zone(zones._zone_row(tenant_id, apex) or {})}
 
@@ -809,8 +883,8 @@ def remove(req) -> tuple[int, dict]:
     status = row.get("status")
     if status in TRANSFER_WAITING or status == "registering":
         raise ApiError(409, "in_progress", "The registry is still working on it: wait until it's done or has expired")
-    if status in ("removing", "removed"):
-        raise ApiError(409, "already_removed", f"Already {status}")
+    if status == "removed":                    # removing: an earlier Remove stopped half way; every step runs again
+        raise ApiError(409, "already_removed", "Already removed")
     zones._update_zone(tenant_id, apex, status="removing", statusDetail="Removing")
     notes = release(tenant_id, row, req.actor)
     detached = []
