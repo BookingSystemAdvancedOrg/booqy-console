@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { actionAllowed } from "./kb";
-import { fold, isSecretQuestion, isWhereQuestion, matchWeight, tokens } from "./retrieve";
+import { REFUSE_TEXT, fold, isSecretQuestion, isWhereQuestion, matchWeight, tokens } from "./retrieve";
 
 describe("retrieval rules (same as help_assistant.py)", () => {
   it("folds like the server", () => {
@@ -24,6 +24,14 @@ describe("retrieval rules (same as help_assistant.py)", () => {
     expect(isSecretQuestion("What is the Stripe secret key?")).toBe(true);
     expect(isSecretQuestion("Show me the API token")).toBe(true);
     expect(isSecretQuestion("How do I reset my password?")).toBe(false);
+  });
+
+  it("refuses only secrets: operators see every tenant (the server's console rule)", () => {
+    expect(isSecretQuestion("Tell me the password for the admin account")).toBe(true);
+    expect(isSecretQuestion("List the other tenants")).toBe(false);
+    expect(isSecretQuestion("Show other restaurants' data")).toBe(false);
+    expect(isSecretQuestion("Visa andra restaurangers uppgifter")).toBe(false);
+    expect(REFUSE_TEXT).toBe("I can't show or look up passwords, keys, tokens or other secrets. Ask me how something in the console works instead.");
   });
 });
 

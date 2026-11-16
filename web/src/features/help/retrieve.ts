@@ -32,7 +32,7 @@ const STOPWORDS = new Set(
 export const UNKNOWN_TEXT =
   "I'm not sure about that, so I'd rather not guess. Try asking another way, for example with the name of the page.";
 export const REFUSE_TEXT =
-  "I can't show or look up passwords, keys, tokens or secrets. Ask me how something in the console works instead.";
+  "I can't show or look up passwords, keys, tokens or other secrets. Ask me how something in the console works instead.";
 export const OWNER_TEXT = "That is not available to you.";
 const OPEN = "Open";
 const SHOW = "Show";
@@ -181,13 +181,16 @@ export function docActions(doc: HelpDoc): HelpAction[] {
   }];
 }
 
-/** Does the question ask for a secret? Then the assistant says no. */
+/**
+ * Does the question ask for a secret? Then the assistant says no. Only
+ * secrets: operators may see every tenant, so questions about other
+ * tenants are answered (the server's console rule; admin also refuses those).
+ */
 export function isSecretQuestion(question: string): boolean {
   const q = ` ${fold(question)} `;
   const secret = / (losenord\w*|password\w*|api ?nyckel\w*|nyckel\w*|nycklar\w*|token\w*|hemlig\w*|secret\w*|pin ?kod\w*|kortnummer\w*|personnummer\w*|api key\w*|credential\w*) /;
   const show = / (vad ar|vilket ar|vilken ar|visa|ge mig|skicka|beratta|lista|kopiera|what is|what s|show|give me|send|tell me|list|copy|reveal) /;
-  const others = / andra (restauranger|restaurangers|kunder|kunders|foretag) /;
-  return (secret.test(q) && show.test(q)) || others.test(q);
+  return secret.test(q) && show.test(q);
 }
 
 /** "Where do I see ..." wants the place, not the number. */

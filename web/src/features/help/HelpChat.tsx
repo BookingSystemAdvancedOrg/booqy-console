@@ -2,9 +2,9 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../../components/ds";
-import { Printing } from "../../components/ui";
+import { ErrorNotice, Printing } from "../../components/ui";
 import { confirmLeave } from "../../components/save";
-import { HelpLimited, askHelp, getHelpStatus } from "./helpApi";
+import { HelpLimited, HelpOff, askHelp, getHelpStatus } from "./helpApi";
 import type { HelpTurn } from "./helpApi";
 import { resolveLive } from "./live";
 import { spotlight } from "./spotlight";
@@ -24,17 +24,20 @@ import "./helpChat.css";
  * The conversation lives only in this tab's memory.
  *
  * Opens from the launcher or from Cmd/Ctrl+K ("Ask the help assistant").
+ * Switched off while open (403 help_assistant_off): the panel, the launcher
+ * and the palette action go away, with no answer from the local corpus.
  */
 
 type Message =
   | { id: number; role: "user"; text: string }
   | { id: number; role: "assistant"; answer: HelpAnswer }
-  | { id: number; role: "notice"; text: string };
+  | { id: number; role: "notice"; text: string }
+  /** Not even the corpus could answer: who acts, with the details to copy for a Booqy fault. */
+  | { id: number; role: "error"; error: unknown; question: string; questionId: number };
 
 let nextId = 1;
 
 export const LIMITED_TEXT = "You've asked a lot in a short time. Wait a moment and try again.";
-const FAILED_TEXT = "I couldn't get an answer right now. Try again in a moment.";
 const LIVE_FAILED_TEXT = "I couldn't fetch that number right now. The button below opens the page that shows it.";
 
 export function HelpChat() {
@@ -45,6 +48,8 @@ export function HelpChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [waiting, setWaiting] = useState(false);
+  /** The error message being retried: the loader is drawn in its place. */
+  const [retrying, setRetrying] = useState<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   useDodge(launcherRef, enabled && !open);
@@ -80,6 +85,17 @@ export function HelpChat() {
     });
   }, []);
 
+  /** Switched off on the server: gone from this tab, focus back where the operator was. */
+  const switchOff = useCallback(() => {
+    setHelpChatEnabled(false);
+    setEnabled(false);
+    setOpen(false);
+    setMessages([]);
+    requestAnimationFrame(() => {
+      if (returnTo.current?.isConnected) returnTo.current.focus?.();
+    });
+  }, []);
+
   useEffect(() => {
     window.addEventListener(OPEN_EVENT, show);
     return () => window.removeEventListener(OPEN_EVENT, show);
@@ -94,25 +110,46 @@ export function HelpChat() {
     if (log) log.scrollTop = log.scrollHeight;
   }, [messages, waiting]);
 
-  const ask = async (question: string) => {
+  /**
+   * retry: the error message to replace, in the same place; the question is
+   * already in the log, and the history is what came before that question.
+   */
+  const ask = async (question: string, retry?: { errorId: number; questionId: number }) => {
     const text = question.trim();
     if (!text || waiting) return;
-    const history: HelpTurn[] = messages.flatMap((m): HelpTurn[] =>
+    let earlier = messages;
+    if (retry) {
+      const at = messages.findIndex((m) => m.id === retry.questionId);
+      earlier = messages.slice(0, at >= 0 ? at : Math.max(0, messages.findIndex((m) => m.id === retry.errorId)));
+    }
+    const history: HelpTurn[] = earlier.flatMap((m): HelpTurn[] =>
       m.role === "user" ? [{ role: "user", text: m.text }] : m.role === "assistant" ? [{ role: "assistant", text: m.answer.text }] : [],
     );
-    setMessages((ms) => [...ms, { id: nextId++, role: "user", text }]);
-    setDraft("");
+    const questionId = retry ? retry.questionId : nextId++;
+    if (!retry) {
+      setMessages((ms) => [...ms, { id: questionId, role: "user", text }]);
+      setDraft("");
+    }
+    /** A new reply goes last; a retried one takes the error's place. */
+    const put = (msg: Message) =>
+      setMessages((ms) => (retry ? ms.map((m) => (m.id === retry.errorId ? msg : m)) : [...ms, msg]));
     setWaiting(true);
+    setRetrying(retry ? retry.errorId : null);
     try {
       let answer = await askHelp(text, history);
       if (answer.live) answer = await withLive(answer);
-      setMessages((ms) => [...ms, { id: nextId++, role: "assistant", answer }]);
+      put({ id: nextId++, role: "assistant", answer });
       // A live number is also shown where it lives, lit up, with the panel still open.
       if (answer.live && answer.actions[0] && actionAllowed(answer.actions[0])) go(answer.actions[0], { keepOpen: true });
     } catch (err) {
-      setMessages((ms) => [...ms, { id: nextId++, role: "notice", text: err instanceof HelpLimited ? LIMITED_TEXT : FAILED_TEXT }]);
+      if (err instanceof HelpOff) {
+        switchOff();
+        return;
+      }
+      put(err instanceof HelpLimited ? { id: nextId++, role: "notice", text: LIMITED_TEXT } : { id: nextId++, role: "error", error: err, question: text, questionId });
     } finally {
       setWaiting(false);
+      setRetrying(null);
       inputRef.current?.focus();
     }
   };
@@ -222,6 +259,16 @@ export function HelpChat() {
                 </li>
               ) : m.role === "notice" ? (
                 <li key={m.id} className="help-msg help-msg--notice" role="status">{m.text}</li>
+              ) : m.role === "error" ? (
+                m.id === retrying ? (
+                  <li key={m.id} className="help-msg help-msg--bot help-msg--waiting">
+                    <Printing inline label="Looking it up" />
+                  </li>
+                ) : (
+                  <li key={m.id} className="help-msg help-msg--error">
+                    <ErrorNotice error={m.error} onRetry={waiting ? undefined : () => void ask(m.question, { errorId: m.id, questionId: m.questionId })} />
+                  </li>
+                )
               ) : (
                 <li key={m.id} className="help-msg help-msg--bot">
                   <span className="sr-only">Assistant: </span>
@@ -235,7 +282,7 @@ export function HelpChat() {
                 </li>
               ),
             )}
-            {waiting && (
+            {waiting && retrying === null && (
               <li className="help-msg help-msg--bot help-msg--waiting">
                 <Printing inline label="Looking it up" />
               </li>

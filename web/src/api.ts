@@ -43,12 +43,16 @@ function requestIdOf(res: Response, extra: Record<string, unknown>): string | un
   return raw && /^[A-Za-z0-9=_.:-]{1,100}$/.test(raw) ? raw : undefined;
 }
 
+/** quiet: no busy bar and no "data changed" signal (a read-only POST with its own animation, as the help assistant's). signal: abort the call. */
+type RequestOptions = { quiet?: boolean; signal?: AbortSignal };
+
 // Every call shows the busy bar (busy.ts), so no load is ever silent; only
-// the quiet live refetches (live.ts quietly) skip it. After a write, every
-// live page refetches at once (also after a 409: someone saved in between).
-function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (isQuiet() && method === "GET") return send<T>(method, path, body);
-  const call = withBusy(() => send<T>(method, path, body));
+// the quiet live refetches (live.ts quietly) and opts.quiet skip it. After a
+// write, every live page refetches at once (also after a 409: someone saved
+// in between).
+function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<T> {
+  if (opts.quiet || (isQuiet() && method === "GET")) return send<T>(method, path, body, opts.signal);
+  const call = withBusy(() => send<T>(method, path, body, opts.signal));
   if (method === "GET") return call;
   return call.then(
     (value) => {
@@ -62,7 +66,7 @@ function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   );
 }
 
-async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
   const call = async (token: string) => {
     try {
@@ -70,8 +74,10 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
         method,
         headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
       });
     } catch {
+      if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
       throw offline();
     }
   };
@@ -95,7 +101,15 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
       throw new ApiError(401, "unauthorized", "Signed out");
     }
   }
-  const text = await res.text();
+  // The timeout can also fire while the body is still arriving: the same timeout then;
+  // a connection lost mid-body is offline, like one lost before.
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+    throw offline();
+  }
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
@@ -283,8 +297,9 @@ export const api = {
     request<{ test?: boolean; sentTo?: string; newsletter?: Newsletter }>("POST", "/platform/mail/newsletters", body),
   // The help assistant (features/help): status, and an answer grounded in the console's corpus.
   helpStatus: () => request<{ enabled: boolean; mode: "ai" | "kb" | "off" }>("GET", "/platform/help-assistant"),
-  helpAnswer: (body: { question: string; history: { role: "user" | "assistant"; text: string }[] }) =>
-    request<{ answer: HelpAnswer; mode: "ai" | "kb" }>("POST", "/platform/help-assistant/answers", body),
+  // Quiet: a question changes nothing, so no busy bar (the panel prints) and no refetch of open pages.
+  helpAnswer: (body: { question: string; history: { role: "user" | "assistant"; text: string }[] }, signal?: AbortSignal) =>
+    request<{ answer: HelpAnswer; mode: "ai" | "kb" }>("POST", "/platform/help-assistant/answers", body, { quiet: true, signal }),
   // Your own pictures behind the glass: a library per operator (backdropStore.ts).
   backdrops: () => request<{ items: BackdropItem[]; selectedId: string | null; max?: number }>("GET", "/platform/me/backdrops"),
   backdropUpload: (body: { contentType: string; size: number; width: number; height: number }) =>
