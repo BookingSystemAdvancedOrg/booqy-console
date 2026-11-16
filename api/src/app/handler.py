@@ -132,7 +132,29 @@ class Request:
 _groups = groups
 
 
+def _unqualified(context) -> bool:
+    """True for an invoke without an alias or version: the plain function ARN
+    (six colons) or $LATEST. Every real entry point (API Gateway, the
+    schedules, the domain-provision workflow, the newsletter hand-over) uses
+    the live alias; only prod's site link role (booqy-sites-prod-link)
+    invokes the function unqualified, and it may only hand over site tasks."""
+    arn = getattr(context, "invoked_function_arn", "") or ""
+    return arn.count(":") == 6 or arn.endswith(":$LATEST")
+
+
+def _site_task(event: dict) -> dict:
+    result = site.site_task(event)
+    log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
+                         "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
+    return result
+
+
 def handler(event, context):
+    if _unqualified(context):
+        if isinstance(event, dict) and set(event) == {"siteTask"}:
+            return _site_task(event)
+        log.warning("refused a non-site-task unqualified invoke")
+        return {"error": "forbidden", "message": "Site tasks only"}
     # The domain-provision workflow invokes the function directly (no
     # routeKey, no JWT). API Gateway events always carry a routeKey, and only
     # API Gateway and that workflow's role may invoke this function.
@@ -165,10 +187,7 @@ def handler(event, context):
     # (dev only): create or adopt the restaurant's dev tenant, or archive its
     # dev site. That role may invoke this function and nothing else.
     if "siteTask" in event and "routeKey" not in event:
-        result = site.site_task(event)
-        log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
-                             "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
-        return result
+        return _site_task(event)
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
