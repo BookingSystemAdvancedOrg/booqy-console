@@ -72,7 +72,7 @@ const builderConfig = {
   copyright: 'Booqy',
   artifactName: `${fileBase}-\${version}-\${os}-\${arch}.\${ext}`,
   directories: { output: `release/${env}`, buildResources: 'build' },
-  files: ['main.cjs', 'updates.cjs', 'update-core.cjs', 'desktop.config.json', 'env.json', 'package.json'],
+  files: ['main.cjs', 'shell-core.cjs', 'updates.cjs', 'update-core.cjs', 'desktop.config.json', 'env.json', 'package.json'],
   extraMetadata: { name: fileBase, productName, ...(process.env.BOOQY_TEST_VERSION ? { version: process.env.BOOQY_TEST_VERSION } : {}) },
   asar: true,
   // Härdning av själva Electron-binären.

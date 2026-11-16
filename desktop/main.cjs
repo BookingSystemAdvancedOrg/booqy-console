@@ -12,6 +12,7 @@ const path = require('node:path')
 
 const config = require('./desktop.config.json')
 const { setUpUpdates } = require('./updates.cjs')
+const { offlineHtml, forgetOnClose } = require('./shell-core.cjs')
 const target = readTarget()
 const START_URL = new URL(target.url)
 const ORIGIN = START_URL.origin
@@ -177,19 +178,7 @@ function saveBounds(win) {
 // Ingen fil på disk och inget skript: en data-adress med egen strikt CSP och
 // en vanlig länk tillbaka till appen. Skalet försöker också själv igen.
 function offlinePage() {
-  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
-  const html = `<!doctype html><html lang="sv"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>${esc(APP_NAME)}</title><style>
-:root{color-scheme:light dark}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:${config.background};color:#f6ece9;
-font:17px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:26rem;padding:2rem;text-align:center}
-h1{font-size:1.4rem;margin:0 0 .5rem}p{margin:0 0 1.5rem;opacity:.85}
-a{display:inline-block;padding:.7rem 1.4rem;border-radius:3px;background:#fbfaf6;color:#1c1918;font-weight:700;text-decoration:none}
-</style></head><body><main><h1>Ingen anslutning</h1>
-<p>${esc(APP_NAME)} behöver internet. Vi försöker igen automatiskt så fort anslutningen är tillbaka.</p>
-<a href="${esc(START_URL.href)}">Försök igen</a></main></body></html>`
+  const html = offlineHtml({ appName: APP_NAME, background: config.background, startUrl: START_URL.href })
   return 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
 }
 
@@ -280,7 +269,7 @@ function createWindow() {
   })
 
   void win.loadURL(START_URL.href)
-  return win
+  return forgetOnClose(win, () => mainWindow, (next) => (mainWindow = next))
 }
 
 // ---- Spärrar för allt innehåll i alla fönster ---------------------------
@@ -448,7 +437,6 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow = createWindow()
     // Nya versioner av skalet (latest.json bredvid installationsfilerna).
     updates = setUpUpdates({ baseUrl: config.downloads?.[target.env], getWindow: () => mainWindow, flush: flushCookies })
-    mainWindow.on('closed', () => (mainWindow = null))
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
     })
