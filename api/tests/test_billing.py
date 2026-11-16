@@ -419,6 +419,9 @@ def test_collection_preference_and_card(finance, stripe, aws, tenant):
     assert status == 200 and body["url"].startswith("https://checkout.stripe.com/")
     session = next(c for c in stripe["calls"] if c[1] == "/checkout/sessions")
     assert session[2]["mode"] == "setup" and session[3].startswith(f"card-link-{tenant}-")
+    # The restaurant opens the link: back to Booqy Admin's Abonnemang, not the console (audit 168).
+    assert session[2]["success_url"] == "https://app.example.se/installningar?kort=klart"
+    assert session[2]["cancel_url"] == "https://app.example.se/installningar?kort=avbrutet"
     _start(tenant)
     status, body = call(patch, {"tenantId": tenant}, body={"action": "use_card"})
     assert status == 409 and body["error"] == "no_card"
@@ -859,7 +862,7 @@ def test_reminders_at_3_7_14_and_a_final_notice_at_30(finance, stripe, aws, tena
     assert "påminnelseavgift på 60 kr" in by["F-b"][2] and "förseningsersättning" not in by["F-b"][2]
     assert "förseningsersättning på 390 kr" in by["F-c"][2]
     assert "försökt dra beloppet från ert kort" in by["F-d"][2] and "sista påminnelse" in by["F-d"][2]
-    assert "–" not in "".join(m[2] for m in mails) and "—" not in "".join(m[2] for m in mails)
+    assert "\u2013" not in "".join(m[2] for m in mails) and "\u2014" not in "".join(m[2] for m in mails)
     assert _row(finance, tenant, "in_b")["customerReminder3At"]
     c = _row(finance, tenant, "in_c")
     assert c["customerReminder3At"] and c["customerReminder7At"] and c["customerReminder14At"] and c["remindersSent"] == 1
@@ -1195,3 +1198,13 @@ def test_a_catalog_price_change_also_applies_from_the_next_month(finance, stripe
     assert [h["monthlySek"] for h in _billing(profile)["priceHistory"]] == [990, 1290]
     assert invoice_plan(profile, start, end)["monthlySek"] == 990
     assert invoice_plan(profile, *next_period(end))["monthlySek"] == 1290
+
+
+def test_card_link_falls_back_to_the_console_without_admin_app_url(finance, stripe, aws, tenant, monkeypatch):
+    """Until infrastructure sets ADMIN_APP_URL the card link keeps its old return pages (audit 168)."""
+    monkeypatch.delenv("ADMIN_APP_URL", raising=False)
+    status, body = call("POST /platform/tenants/{tenantId}/billing/card-link", {"tenantId": tenant}, body={})
+    assert status == 200, body
+    session = next(c for c in stripe["calls"] if c[1] == "/checkout/sessions")
+    assert session[2]["success_url"] == f"https://ops.example.se/tenants/{tenant}?tab=billing&card=added"
+    assert session[2]["cancel_url"] == f"https://ops.example.se/tenants/{tenant}?tab=billing"

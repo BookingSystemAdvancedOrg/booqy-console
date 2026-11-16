@@ -303,7 +303,7 @@ def _billing_input(f: v.Fields) -> dict:
     if terms not in ("trial", "subscription"):
         sub.fail("terms", "trial (try-out period) or subscription")
     out = {"terms": terms, "priceSek": price_field(sub), "startInvoicing": sub.boolean("startInvoicing") or False,
-           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": sub.text("startDate", max_len=10),
+           "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": _start_date_input(sub),
            "collectionPreference": sub.text("collectionPreference", max_len=20)}
     if out["collectionMethod"] not in (None, "send_invoice", "charge_automatically"):
         sub.fail("collectionMethod", "send_invoice or charge_automatically")
@@ -312,6 +312,14 @@ def _billing_input(f: v.Fields) -> dict:
     for k, msg in sub.errors.items():
         f.fail(f"billing.{k}", msg)
     return out
+
+
+def _start_date_input(f: v.Fields) -> str | None:
+    """billing.startDate: yyyy-mm-dd, at most a year ahead (the Billing tab's
+    rule, billing._start_day), checked before anything is written."""
+    from .billing import _start_day                  # billing imports this module
+    day = _start_day(f)
+    return day.isoformat() if day else None
 
 
 # -------------------------------------------------------------------- tenants

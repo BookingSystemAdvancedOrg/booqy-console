@@ -14,12 +14,16 @@ email_verified=true in the same call, so sign-in, password reset and MFA
 move to the new address at once and nobody is locked out.
 
 Two guards keep the console reachable: you can't delete or disable yourself,
-and the last active operator can't be deleted or disabled by anyone."""
+and the last active operator can't be deleted or disabled by anyone.
 
-import json
+Every change is a permanent AUDIT# row under TENANT#PLATFORM (write_audit),
+not only a log line: the log group keeps 30 days and gets no e-mails."""
 
 from . import avatar, backdrop, validation as v
-from .core import ApiError, client, env, groups, log, not_found
+from .core import ApiError, client, env, groups, log, not_found, write_audit
+
+# Platform-wide audit rows (the same partition as features/_forward.py).
+AUDIT_TENANT = "PLATFORM"
 
 FIELDS = ("username", "email", "name", "status", "enabled", "createdAt", "updatedAt")
 
@@ -148,6 +152,7 @@ def create_operator(req) -> tuple[int, dict]:
         raise ApiError(409, "user_exists", "This email already has an operator account",
                        fields={"email": "Already an operator"}) from e
     idp.admin_add_user_to_group(UserPoolId=pool, Username=user["Username"], GroupName=_group())
+    write_audit(AUDIT_TENANT, "operator_created", req.actor, {"target": user["Username"], "email": email})
     log.info("operator %s created by %s", user["Username"], req.actor)
     return 201, {"operator": _view(user)}
 
@@ -181,21 +186,23 @@ def update_operator(req) -> tuple[int, dict]:
             raise ApiError(409, "user_exists", "This email already has an account",
                            fields={"email": "Already an operator"}) from e
     if new_email:
-        log.info(json.dumps({"audit": "operator_email_changed", "target": username, "by": req.actor,
-                             "from": current["email"], "to": new_email}))
+        write_audit(AUDIT_TENANT, "operator_email_changed", req.actor,
+                    {"target": username, "from": current["email"], "to": new_email})
     if enabled is False and current["enabled"]:
         _guard_lockout(req, username, "disable")
         idp.admin_disable_user(UserPoolId=pool, Username=username)
         idp.admin_user_global_sign_out(UserPoolId=pool, Username=username)   # end open sessions now
+        write_audit(AUDIT_TENANT, "operator_disabled", req.actor, {"target": username})
     elif enabled is True and not current["enabled"]:
         idp.admin_enable_user(UserPoolId=pool, Username=username)
+        write_audit(AUDIT_TENANT, "operator_enabled", req.actor, {"target": username})
     log.info("operator %s updated by %s", username, req.actor)
     return 200, {"operator": _get(username)}
 
 
 def delete_operator(req) -> tuple[int, dict]:
     username = req.path["username"]
-    _get(username)
+    current = _get(username)
     _guard_lockout(req, username, "delete")
     idp, pool = client("cognito-idp"), _pool()
     # Their background image library first: a failure leaves the account for a retry.
@@ -203,6 +210,7 @@ def delete_operator(req) -> tuple[int, dict]:
     backdrop.delete_all(sub)
     idp.admin_user_global_sign_out(UserPoolId=pool, Username=username)
     idp.admin_delete_user(UserPoolId=pool, Username=username)
+    write_audit(AUDIT_TENANT, "operator_deleted", req.actor, {"target": username, "email": current["email"]})
     log.info("operator %s deleted by %s", username, req.actor)
     return 200, {"deleted": username}
 
@@ -215,4 +223,6 @@ def resend_invite(req) -> tuple[int, dict]:
                        "This operator has already signed in - they can use 'Forgot password' instead")
     client("cognito-idp").admin_create_user(UserPoolId=_pool(), Username=current["email"],
                                             MessageAction="RESEND", DesiredDeliveryMediums=["EMAIL"])
+    write_audit(AUDIT_TENANT, "operator_invite_resent", req.actor, {"target": username})
+    log.info("operator %s invite resent by %s", username, req.actor)
     return 200, {"operator": current}

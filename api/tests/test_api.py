@@ -326,7 +326,9 @@ def test_stripe_link_and_sync(aws, tenant, monkeypatch):
     assert status == 200 and body["url"].startswith("https://connect.stripe.com")
     onboarding = seen[0][2]["use_case"]["account_onboarding"]
     assert seen[0][2]["account"] == "acct_123456" and onboarding["configurations"] == ["merchant"]
-    assert onboarding["return_url"] == f"https://ops.example.se/tenants/{tenant}?stripe=return"
+    # The restaurant fills in the form: back to Booqy Admin, not the console (audit 168).
+    assert onboarding["return_url"] == "https://app.example.se/settings/payments?stripe=return"
+    assert onboarding["refresh_url"] == "https://app.example.se/settings/payments?stripe=refresh"
     status, body = call("POST /platform/tenants/{tenantId}/stripe/sync", p)
     assert status == 200 and body["stripe"]["chargesEnabled"] is True
     t = call("GET /platform/tenants/{tenantId}", p)[1]["tenant"]

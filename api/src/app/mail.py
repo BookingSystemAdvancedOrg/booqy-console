@@ -468,56 +468,78 @@ def _invoke_self(function_arn: str, payload: dict) -> None:
 
 def _send_task(event: dict, context) -> dict:
     """The asynchronous send: one recipient at a time from the stored
-    cursor, counts written back every message, hand-over before timeout."""
+    cursor, the cursor, counts and that recipient's status written back
+    after every message (conditional on the cursor it started from), so a
+    retried or duplicate invocation resumes after the last one sent instead
+    of mailing everyone again; hand-over before timeout."""
     newsletter_id = event.get("newsletterId") or ""
     created_at = event.get("createdAt") or ""
     key = _newsletter_key(newsletter_id, created_at)
     ddb = client("dynamodb")
-    row = from_ddb(ddb.get_item(TableName=tenant_table(), Key=key).get("Item"))
+    row = from_ddb(ddb.get_item(TableName=tenant_table(), Key=key, ConsistentRead=True).get("Item"))
     if not row or row.get("status") != "sending":
         return {"status": "skipped"}
     template = _load_template()
     recipients = row.get("recipients") or []
     cursor = int(row.get("cursor") or 0)
     sent, failed = int(row.get("sentCount") or 0), int(row.get("failedCount") or 0)
-    last_error = None
     while cursor < len(recipients):
         if context is not None and context.get_remaining_time_in_millis() < HANDOVER_MS:
-            ddb.update_item(TableName=tenant_table(), Key=key,
-                            UpdateExpression="SET #c = :c, sentCount = :s, failedCount = :f, recipients = :r",
-                            ExpressionAttributeNames={"#c": "cursor"},
-                            ExpressionAttributeValues={":c": {"N": str(cursor)}, ":s": {"N": str(sent)},
-                                                       ":f": {"N": str(failed)}, ":r": to_ddb({"r": recipients})["r"]})
             _invoke_self(context.invoked_function_arn, {"mailTask": "send", "newsletterId": newsletter_id,
                                                         "createdAt": created_at})
             return {"status": "handed_over", "cursor": cursor}
         recipient = recipients[cursor]
+        error = None
         try:
             _send_one(recipient["email"], row["subject"], row["body"], template)
-            recipient["status"] = "sent"
             sent += 1
         except (ClientError, BotoCoreError) as exc:
             err = getattr(exc, "response", {}).get("Error", {}) if hasattr(exc, "response") else {}
-            last_error = f"{err.get('Code') or type(exc).__name__}: {err.get('Message') or exc}"[:300]
-            log.warning("newsletter %s: %s failed: %s", newsletter_id, recipient["email"], last_error)
-            recipient["status"] = "failed"
-            recipient["error"] = last_error
+            error = f"{err.get('Code') or type(exc).__name__}: {err.get('Message') or exc}"[:300]
+            # No address in the log: it is on the newsletter row (recipients[i].error).
+            log.warning("newsletter %s: recipient %d failed: %s", newsletter_id, cursor, err.get("Code") or type(exc).__name__)
             failed += 1
+        if not _save_progress(ddb, key, cursor, sent, failed, error):
+            return {"status": "superseded", "cursor": cursor}
         cursor += 1
         if cursor < len(recipients):
             time.sleep(SEND_PAUSE_S)
-    update = {"cursor": cursor, "sentCount": sent, "failedCount": failed, "recipients": recipients,
-              "status": "sent" if failed == 0 else ("failed" if sent == 0 else "partly_sent"),
-              "finishedAt": now_iso(), "lastError": last_error}
-    names = {f"#{k}": k for k in update}
-    values = {f":{k}": to_ddb({k: val})[k] for k, val in update.items() if val is not None}
-    sets = ", ".join(f"#{k} = :{k}" for k in update if update[k] is not None)
-    removes = [f"#{k}" for k in update if update[k] is None]
-    expression = f"SET {sets}" + (f" REMOVE {', '.join(removes)}" if removes else "")
-    ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression=expression,
-                    ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    status = "sent" if failed == 0 else ("failed" if sent == 0 else "partly_sent")
+    try:
+        ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression="SET #st = :st, finishedAt = :at",
+                        ConditionExpression="#st = :sending AND #c = :c",
+                        ExpressionAttributeNames={"#st": "status", "#c": "cursor"},
+                        ExpressionAttributeValues={":st": {"S": status}, ":at": {"S": now_iso()},
+                                                   ":sending": {"S": "sending"}, ":c": {"N": str(cursor)}})
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return {"status": "superseded", "cursor": cursor}
     log.info(json.dumps({"newsletter": newsletter_id, "sent": sent, "failed": failed}))
-    return {"status": update["status"], "sent": sent, "failed": failed}
+    return {"status": status, "sent": sent, "failed": failed}
+
+
+def _save_progress(ddb, key: dict, index: int, sent: int, failed: int, error: str | None) -> bool:
+    """Moves the cursor past recipient `index` with its result and the new
+    counts, only while the row is still sending at that cursor. False when
+    another invocation already moved on (nothing more to do here)."""
+    sets = ["#c = :next", "sentCount = :s", "failedCount = :f", f"recipients[{index}].#st = :rs"]
+    values = {":next": {"N": str(index + 1)}, ":s": {"N": str(sent)}, ":f": {"N": str(failed)},
+              ":rs": {"S": "failed" if error else "sent"}, ":cur": {"N": str(index)}, ":sending": {"S": "sending"}}
+    names = {"#c": "cursor", "#st": "status"}
+    if error:
+        sets += [f"recipients[{index}].#re = :re", "lastError = :re"]
+        names["#re"] = "error"
+        values[":re"] = {"S": error}
+    try:
+        ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression="SET " + ", ".join(sets),
+                        ConditionExpression="#st = :sending AND #c = :cur",
+                        ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
 
 
 def mail_task(event: dict, context) -> dict:

@@ -1137,11 +1137,19 @@ def card_link(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
     customer_id = ensure_customer(tenant_id, profile, req.actor)
-    base = env("PLATFORM_ADMIN_APP_URL").rstrip("/")
+    # Back to the restaurant's Booqy Admin (Inställningar, Abonnemang), the same
+    # page and flags as its own card session; the console only while
+    # ADMIN_APP_URL is not set.
+    admin = (env("ADMIN_APP_URL", "") or "").rstrip("/")
+    if admin:
+        success_url, cancel_url = f"{admin}/installningar?kort=klart", f"{admin}/installningar?kort=avbrutet"
+    else:
+        base = env("PLATFORM_ADMIN_APP_URL").rstrip("/")
+        success_url, cancel_url = f"{base}/tenants/{tenant_id}?tab=billing&card=added", f"{base}/tenants/{tenant_id}?tab=billing"
     session = stripe_request("POST", "/checkout/sessions", {
         "mode": "setup", "customer": customer_id, "currency": "sek", "payment_method_types[0]": "card",
-        "locale": "sv", "success_url": f"{base}/tenants/{tenant_id}?tab=billing&card=added",
-        "cancel_url": f"{base}/tenants/{tenant_id}?tab=billing", "metadata[tenantId]": tenant_id,
+        "locale": "sv", "success_url": success_url,
+        "cancel_url": cancel_url, "metadata[tenantId]": tenant_id,
         "setup_intent_data[metadata][tenantId]": tenant_id},
         idempotency_key=f"card-link-{tenant_id}-{int(time.time() // 60)}")
     write_audit(tenant_id, "card_link_created", req.actor, {"customerId": customer_id})
