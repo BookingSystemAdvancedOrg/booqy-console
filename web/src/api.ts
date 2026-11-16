@@ -4,7 +4,7 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SiteStatus, SupportCase, SupportReport, TransferCheck, Zone,
+  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
@@ -118,6 +118,7 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 const t = (id: string) => `/platform/tenants/${encodeURIComponent(id)}`;
+const z = (id: string, domain: string) => `${t(id)}/zones/${encodeURIComponent(domain)}`;
 
 export const api = {
   plans: () => request<{ plans: Plan[] }>("GET", "/platform/plans").then((r) => r.plans),
@@ -182,6 +183,26 @@ export const api = {
     request<{ zone: Zone; supportCase: SupportCase | null }>("POST", `${t(id)}/zones/${encodeURIComponent(domain)}/transfer`, body),
   domainDocument: (id: string, domain: string) =>
     request<{ url: string }>("GET", `${t(id)}/zones/${encodeURIComponent(domain)}/document`),
+  // Own domains: move to Booqy, keep the registrar (DNS records), the order's actions
+  transferInCheck: (domain: string) =>
+    request<TransferInCheck>("GET", `/platform/domains/transfer-check?domain=${encodeURIComponent(domain)}`),
+  transferIn: (id: string, body: { domain: string; authCode: string; records: DnsRecord[]; contact: RegistrantContact;
+                                   acceptedPrice: Money; documentKey?: string }) =>
+    request<{ zone: Zone; supportCase: SupportCase | null; nameServers: string[] }>("POST", `${t(id)}/domains/transfers`, body),
+  recordsDomain: (id: string, domain: string) =>
+    request<{ zone: Zone }>("POST", `${t(id)}/domains/records`, { domain }),
+  checkZone: (id: string, domain: string) =>
+    request<{ result: string; zone: Zone }>("POST", `${z(id, domain)}/check`, {}),
+  retryZone: (id: string, domain: string) =>
+    request<{ zone: Zone }>("POST", `${z(id, domain)}/retry`, {}),
+  notifyZone: (id: string, domain: string) =>
+    request<{ sentTo: string }>("POST", `${z(id, domain)}/notify`, {}),
+  removeZone: (id: string, domain: string) =>
+    request<{ zone: Zone; detached: string[] }>("DELETE", `${z(id, domain)}`),
+  zoneAuthCode: (id: string, domain: string, send: boolean) =>
+    request<{ authCode?: string; sentTo?: string }>("POST", `${z(id, domain)}/auth-code`, { send }),
+  simulateZone: (id: string, domain: string, event: SimulateEvent) =>
+    request<{ result: string; zone: Zone }>("POST", `${z(id, domain)}/simulate`, { event }),
   stripeLink: (id: string) => request<{ url: string; expiresAt?: string }>("POST", `${t(id)}/stripe/account-link`, {}),
   stripeSync: (id: string) => request("POST", `${t(id)}/stripe/sync`, {}),
 

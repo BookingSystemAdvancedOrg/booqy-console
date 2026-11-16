@@ -152,13 +152,18 @@ def _rows(tenant_id: str, prefix: str) -> list[dict]:
 
 def _own_domain(tenant_id: str, profile: dict) -> tuple[str | None, str | None, dict | None]:
     """(host in this environment, the dev host, the zone when Booqy runs its
-    DNS). Booqy's zones put the site on www.<domain>; a bare CNAME is the
-    host the operator added (the primary one first)."""
-    zone = next((z for z in _rows(tenant_id, "ZONE#") if z.get("status") in ("attaching", "live")), None)
+    DNS). An own-domain order's canonical host: the domain itself when
+    Booqy runs its DNS (bought, moved in, name servers), www.<domain> in DNS
+    records mode; otherwise a bare CNAME the operator added (the primary
+    one first)."""
+    zone = next((z for z in _rows(tenant_id, "ZONE#") if z.get("status") in ("attaching", "live")
+                 and z.get("mode") != "transfer"), None)
     custom = [r["domain"] for r in _rows(tenant_id, "DOMAIN#")
               if r.get("kind") == "custom" and r.get("status") != "removing"]
     if zone:
-        return f"www.{zone['domain']}", f"dev.{zone['domain']}", zone
+        from .own_domains import hosts_for
+        canonical, _, dev_host = hosts_for(zone.get("mode") or "connect", zone["domain"])
+        return canonical, dev_host, (zone if zone.get("mode") != "records" else None)
     if not custom:
         return None, None, None
     host = profile.get("primaryDomain") if profile.get("primaryDomain") in custom else \
@@ -209,6 +214,9 @@ def hosting(tenant_id: str, profile: dict) -> dict:
     prod = _entry(tenant_id, host)
     prod["canMount"] = prod["state"] in ("not_mounted", "failed")
     prod["dnsByBooqy"] = bool(zone)
+    order = next((z for z in _rows(tenant_id, "ZONE#") if z.get("status") in ("attaching", "live")), None)
+    if order:
+        prod["devStatus"] = order.get("devStatus")       # dev.<domain> follows prod by itself (domain-provision)
     try:
         dev = invoke({"action": "devDomain", "op": "status", "tenantId": tenant_id,
                        **({"host": dev_host} if prod["state"] == "live" else {})})
@@ -250,19 +258,46 @@ def mount(req) -> tuple[int, dict]:
 
 
 def _domain_task(tenant_id: str | None, task: dict) -> dict:
-    """Dev side of the prod Website tab's dev row: status, or mount (dev's
-    own domain-attach for dev.<domain>)."""
+    """Dev side of a prod own domain (domain-provision's dev step and the
+    prod Website tab's dev row), through the link: status; mount (dev's own
+    domain-attach for dev.<domain>, primary once active); setCanonical
+    (dev's primary domain and dev's 301 <slug>.dev.booqy.se -> dev.<domain>,
+    once live); unmount (the 301 and the primary go, then the host is
+    detached)."""
     if not tenant_id:
         return {"error": "not_found", "message": f"No dev customer {task.get('slug')} yet"}
     host = task.get("host")
     if host is not None:
         host = v.hostname(host)
         domains.check_custom_host(host)
-    if task.get("op") == "mount":
-        if not host:
-            return {"error": "validation_failed", "message": "host missing"}
-        domains.start_attach(tenant_id, host, LINK_ACTOR)
-    elif task.get("op") != "status":
+    op = task.get("op")
+    if op in ("mount", "setCanonical", "unmount") and not host:
+        return {"error": "validation_failed", "message": "host missing"}
+    if op == "mount":
+        domains.start_attach(tenant_id, host, LINK_ACTOR, make_primary=True)
+    elif op == "setCanonical":
+        entry = _entry(tenant_id, host)
+        if entry["state"] != "live":
+            return {"error": "not_live", "message": f"{host} is {entry['state']} on the dev site"}
+        from . import own_domains
+        own_domains._set_primary(tenant_id, host)
+        slug_host = own_domains._slug_host(tenant_id)
+        own_domains.redirect([slug_host] if slug_host else [], host)
+        write_audit(tenant_id, "site_domain_canonical", LINK_ACTOR, {"domain": host})
+    elif op == "unmount":
+        from . import own_domains
+        slug_host = own_domains._slug_host(tenant_id)
+        own_domains.unredirect([slug_host], host)
+        if (get_profile(tenant_id).get("primaryDomain") or "") == host:
+            own_domains._set_primary(tenant_id, slug_host)
+        row = own_domains._domain_row(tenant_id, host)
+        if row and row.get("status") != "removing":
+            client("stepfunctions").start_execution(
+                stateMachineArn=env("DOMAIN_DETACH_STATE_MACHINE_ARN"), name=domains._execution_name("detach", host),
+                input=json.dumps({"tenantId": tenant_id, "domain": host}))
+        write_audit(tenant_id, "site_domain_unmounted", LINK_ACTOR, {"domain": host})
+        return {"state": "removed", "host": host}
+    elif op != "status":
         return {"error": "validation_failed", "message": "unknown domain op"}
     return _entry(tenant_id, host)
 

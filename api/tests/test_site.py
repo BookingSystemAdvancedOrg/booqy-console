@@ -197,14 +197,15 @@ def test_dev_mount_waits_for_the_own_domain_in_prod_then_writes_its_cname(site_r
     import boto3
     monkeypatch.setenv("ENVIRONMENT", "prod")
     zone_id = boto3.client("route53").create_hosted_zone(Name="roma.se", CallerReference="r")["HostedZone"]["Id"].split("/")[-1]
-    _put(aws, tenant, "ZONE#roma.se", domain="roma.se", status="live", hostedZoneId=zone_id)
-    _put(aws, tenant, "DOMAIN#www.roma.se", domain="www.roma.se", kind="custom", status="pending_validation")
+    # Booqy runs the DNS: the domain itself is the canonical host (own domains, 2026-11-15)
+    _put(aws, tenant, "ZONE#roma.se", domain="roma.se", mode="connect", status="live", hostedZoneId=zone_id)
+    _put(aws, tenant, "DOMAIN#roma.se", domain="roma.se", kind="custom", status="pending_validation")
     site_repo.answer = {"state": "not_mounted", "host": "dev.roma.se", "cnameTarget": "ddev.cloudfront.net"}
     p = {"tenantId": tenant}
     hosting = call("GET /platform/tenants/{tenantId}/site", p)[1]["hosting"]
-    assert hosting["prod"]["state"] == "attaching" and hosting["dev"]["waitsFor"] == "www.roma.se"
+    assert hosting["prod"]["state"] == "attaching" and hosting["dev"]["waitsFor"] == "roma.se"
     assert call("POST /platform/tenants/{tenantId}/site/mount", p, {"environment": "dev"})[1]["error"] == "own_domain_not_live"
-    _put(aws, tenant, "DOMAIN#www.roma.se", domain="www.roma.se", kind="custom", status="active")
+    _put(aws, tenant, "DOMAIN#roma.se", domain="roma.se", kind="custom", status="active")
     status, body = call("POST /platform/tenants/{tenantId}/site/mount", p, {"environment": "dev"})
     assert status == 202 and body["hosting"]["prod"]["state"] == "live" and body["hosting"]["dev"]["canMount"]
     assert ("RequestResponse", {"action": "devDomain", "op": "mount", "tenantId": tenant, "host": "dev.roma.se"}) in site_repo.calls
@@ -341,6 +342,9 @@ def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aw
     # No workflow and no distribution tenant: the label goes into the sandbox's host map.
     assert aws["sfn"].list_executions(stateMachineArn=os.environ["DOMAIN_ATTACH_STATE_MACHINE_ARN"])["executions"] == []
     assert site_repo.calls == [("RequestResponse", {"action": "testHost", "op": "put", "tenantId": tenant,
+                                                    "label": "example-se"}),
+                               # guests only see it: the slug's test hosts answer with a 301 to it
+                               ("RequestResponse", {"action": "testHost", "op": "redirect", "tenantId": tenant,
                                                     "label": "example-se"})]
     from app.domains import _domain_row
     for stage, host in (("main", "example-se.test.booqy.se"), ("dev", "example-se.test-dev.booqy.se")):
@@ -356,8 +360,10 @@ def test_a_test_customers_own_domain_is_mapped_onto_the_test_zones(site_repo, aw
     site_repo.answer = {"label": "example-se", "op": "delete", "result": "done"}
     status, body = call("DELETE /platform/tenants/{tenantId}/domains/{domain}", {**p, "domain": "example-se.test-dev.booqy.se"})
     assert status == 202 and body["hosts"] == ["example-se.test.booqy.se", "example-se.test-dev.booqy.se"]
-    assert site_repo.calls[-1] == ("RequestResponse", {"action": "testHost", "op": "delete", "tenantId": tenant,
-                                                       "label": "example-se"})
+    assert site_repo.calls[-2:] == [("RequestResponse", {"action": "testHost", "op": "redirect", "tenantId": tenant,
+                                                         "label": ""}),
+                                    ("RequestResponse", {"action": "testHost", "op": "delete", "tenantId": tenant,
+                                                         "label": "example-se"})]
     assert _domain_row(tenant, "example-se.test.booqy.se") is None and _domain_row(tenant, "example-se.test-dev.booqy.se") is None
     assert "Item" not in aws["ddb"].get_item(TableName="dev-tenant", Key={"PK": {"S": "DOMAIN#example-se.test.booqy.se"},
                                                                           "SK": {"S": "TENANT"}})

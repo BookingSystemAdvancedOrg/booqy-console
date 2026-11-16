@@ -8,7 +8,9 @@ example-se.test-dev.booqy.se (dev): both hosts are claimed and live at once
 (the sandbox distribution's wildcard certificate covers them), and the
 label example-se goes into the sandbox's host map through site-repo
 (testHost). No workflow, no distribution tenant, no certificate. Real
-customers' domains are managed from prod."""
+customers' domains are managed from prod. Once mapped (the site's primary),
+the slug's own test hosts answer with a 301 to it, as <slug>.booqy.se does
+in prod (testHost redirect); unmapping the primary sets them back."""
 
 import hashlib
 import json
@@ -116,6 +118,12 @@ def _site_repo(payload: dict) -> dict:
     return site.invoke(payload)
 
 
+def slug_redirect(tenant_id: str, label: str) -> None:
+    """<slug>.test(-dev).booqy.se -> 301 to <label>.test(-dev).booqy.se;
+    an empty label sets the slug's hosts back to serving the site."""
+    _site_repo({"action": "testHost", "op": "redirect", "tenantId": tenant_id, "label": label})
+
+
 def _test_items(tenant_id: str, hosts: dict, mapped_from: str, actor: str) -> list[dict]:
     items = []
     for stage, host in hosts.items():
@@ -126,13 +134,14 @@ def _test_items(tenant_id: str, hosts: dict, mapped_from: str, actor: str) -> li
     return items
 
 
-def _add_test_domain(req, tenant_id: str, host: str, profile: dict) -> tuple[int, dict]:
-    if profile.get("siteKind") != "test":
-        raise ApiError(409, "managed_from_prod", "This customer's domains are managed from the production console")
+def map_test_domain(tenant_id: str, host: str, actor: str) -> dict:
+    """example.se (or www.example.se) onto the test sites, both stages:
+    claims, rows, the sandbox host map and the primary domain. Also the end
+    of a simulated own-domain order (own_domains)."""
     mapped_from = host.removeprefix("www.")
     hosts = test_hosts(host)
     label = hosts["main"].split(".")[0]
-    items = _test_items(tenant_id, hosts, mapped_from, req.actor)
+    items = _test_items(tenant_id, hosts, mapped_from, actor)
     try:
         client("dynamodb").transact_write_items(TransactItems=[
             {"Put": {"TableName": tenant_table(), "Item": to_ddb(item),
@@ -151,8 +160,16 @@ def _add_test_domain(req, tenant_id: str, host: str, profile: dict) -> tuple[int
         _delete_test_items(tenant_id, hosts)
         raise
     _set_primary(tenant_id, hosts["main"])            # the site's own domain section (site-repo booqy.json "test")
-    write_audit(tenant_id, "domain_test_mapped", req.actor, {"domain": mapped_from, **hosts})
-    return 202, {"domain": mapped_from, "status": "active", "test": True,
+    write_audit(tenant_id, "domain_test_mapped", actor, {"domain": mapped_from, **hosts})
+    return hosts
+
+
+def _add_test_domain(req, tenant_id: str, host: str, profile: dict) -> tuple[int, dict]:
+    if profile.get("siteKind") != "test":
+        raise ApiError(409, "managed_from_prod", "This customer's domains are managed from the production console")
+    hosts = map_test_domain(tenant_id, host, req.actor)
+    slug_redirect(tenant_id, hosts["main"].split(".")[0])
+    return 202, {"domain": host.removeprefix("www."), "status": "active", "test": True,
                  "hosts": [{"stage": stage, "host": hosts[stage]} for stage in ("main", "dev")]}
 
 
@@ -175,16 +192,24 @@ def _delete_test_items(tenant_id: str, hosts: dict) -> None:
     client("dynamodb").transact_write_items(TransactItems=deletes)
 
 
-def _remove_test_domain(req, tenant_id: str, row: dict) -> tuple[int, dict]:
+def unmap_test_domain(tenant_id: str, mapped_from: str, actor: str) -> dict:
     """Host map first (the claim is still ours), then the pair's rows; a
     primary mapped host falls back to the slug's main host."""
-    hosts = test_hosts(row["mappedFrom"])
+    hosts = test_hosts(mapped_from)
+    profile = get_profile(tenant_id)
+    primary = profile.get("primaryDomain") in hosts.values()
+    if primary and profile.get("status") in ("active", "provisioning", "suspended", "offboarding"):
+        slug_redirect(tenant_id, "")                 # the slug address serves again before the label goes
     _site_repo({"action": "testHost", "op": "delete", "tenantId": tenant_id, "label": hosts["main"].split(".")[0]})
     _delete_test_items(tenant_id, hosts)
-    profile = get_profile(tenant_id)
-    if profile.get("primaryDomain") in hosts.values() and profile.get("slug"):
+    if primary and profile.get("slug"):
         _set_primary(tenant_id, f"{profile['slug']}.{_test_zones()[0]}")
-    write_audit(tenant_id, "domain_test_unmapped", req.actor, {"domain": row["mappedFrom"], **hosts})
+    write_audit(tenant_id, "domain_test_unmapped", actor, {"domain": mapped_from, **hosts})
+    return hosts
+
+
+def _remove_test_domain(req, tenant_id: str, row: dict) -> tuple[int, dict]:
+    hosts = unmap_test_domain(tenant_id, row["mappedFrom"], req.actor)
     return 202, {"domain": row["mappedFrom"], "status": "removed", "hosts": list(hosts.values())}
 
 
@@ -217,6 +242,13 @@ def remove_domain(req) -> tuple[int, dict]:
         raise ApiError(409, "platform_domain", "The platform subdomain is removed only by offboarding")
     if row.get("sandbox") and row.get("mappedFrom"):
         return _remove_test_domain(req, tenant_id, row)        # a test mapping goes as a pair
+    apex = host.removeprefix("www.")
+    order = from_ddb(client("dynamodb").get_item(
+        TableName=tenant_table(), ConsistentRead=True,
+        Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": f"ZONE#{apex}"}}).get("Item")) or {}
+    if order.get("status") in ("attaching", "live") and order.get("mode") != "transfer":
+        raise ApiError(409, "own_domain_order", f"{host} belongs to the own domain {apex}: remove {apex} on the "
+                                                "Domains card (its 301s and the dev site go with it)")
     client("stepfunctions").start_execution(
         stateMachineArn=env("DOMAIN_DETACH_STATE_MACHINE_ARN"), name=_execution_name("detach", host),
         input=json.dumps({"tenantId": tenant_id, "domain": host}))

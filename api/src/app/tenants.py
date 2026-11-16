@@ -931,6 +931,10 @@ def offboard_tenant(tenant_id: str, profile: dict, actor: str, reason: str | Non
     # keeps its Cancel button until the webhook or a retry says canceled).
     from .billing import cancel_for_offboarding       # billing imports this module
     subscription = cancel_for_offboarding(tenant_id, profile, actor)
+    # Own domains: the 301s, dev.<domain> and the primary domain go first
+    # (the workflow detaches the hosts); a registered domain stays theirs.
+    from .own_domains import release_for_offboarding   # own_domains imports this module
+    domain_notes = release_for_offboarding(tenant_id, actor)
     sfn = client("stepfunctions")
     restores = int(profile.get("restoreCount", 0))     # one execution name per offboarding
     try:
@@ -940,7 +944,8 @@ def offboard_tenant(tenant_id: str, profile: dict, actor: str, reason: str | Non
             input=json.dumps({"tenantId": tenant_id, "requestedBy": actor}))
     except sfn.exceptions.ExecutionAlreadyExists:
         pass                                    # already running / ran - nothing to do
-    write_audit(tenant_id, "offboarding_started", actor, {"reason": reason} if reason else None)
+    details = {k: val for k, val in (("reason", reason), ("domains", domain_notes[:5] or None)) if val}
+    write_audit(tenant_id, "offboarding_started", actor, details or None)
     return {"status": "offboarding", "subscription": subscription}
 
 

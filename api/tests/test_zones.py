@@ -64,6 +64,10 @@ def domains(aws, monkeypatch):
     zones._PRICES.clear()
     fake = FakeDomains()
     monkeypatch.setattr(zones, "_domains", lambda: fake)
+    from app import own_domains
+    # No real DNS or HTTP in tests: DNSSEC off, no forwarding seen.
+    monkeypatch.setattr(own_domains, "ds_present", lambda domain: False)
+    monkeypatch.setattr(own_domains, "forwarding_ok", lambda apex: None)
     monkeypatch.setattr(zones, "_s3", lambda: boto3.client("s3", region_name=REGION))
     s3 = boto3.client("s3", region_name=REGION)
     s3.create_bucket(Bucket="dev-domain-documents", CreateBucketConfiguration={"LocationConstraint": REGION})
@@ -141,7 +145,7 @@ def test_register_se_requires_registreringsbevis_and_price(domains, aws, tenant)
     assert c["ExtraParams"] == [{"Name": "SE_ID_NUMBER", "Value": "556677-8899"}]
     assert reg["AutoRenew"] is True and reg["PrivacyProtectRegistrantContact"] is False
     assert _executions(aws) == [{"tenantId": tenant, "domain": "roma.se", "mode": "register",
-                                 "makePrimary": True, "requestedBy": "op-1"}]
+                                 "makePrimary": True, "requestedBy": "op-1", "attempt": 1}]
     # shown on the tenant page; the document key itself is never returned
     _, detail = call("GET /platform/tenants/{tenantId}", p)
     assert detail["zones"][0]["domain"] == "roma.se" and "documentKey" not in detail["zones"][0]
@@ -261,7 +265,7 @@ def test_connect_imports_records_and_waits_for_name_servers(domains, aws, tenant
 
     # prepare_dns: apex alias + www CNAME + ownership TXT, both hosts reserved
     assert handler({**task, "workflowTask": "prepare_dns", "requestedBy": "op-1"}, None) == {
-        "status": "done", "hosts": ["roma.se", "www.roma.se"]}
+        "status": "done", "hosts": ["roma.se", "www.roma.se"], "attach": True}
     sets = {(r["Name"], r["Type"]): r for r in r53.list_resource_record_sets(HostedZoneId=zone["hostedZoneId"])["ResourceRecordSets"]}
     assert sets[("roma.se.", "A")]["AliasTarget"]["DNSName"].startswith("d111.cloudfront.net")
     assert sets[("www.roma.se.", "CNAME")]["ResourceRecords"] == [{"Value": "d111.cloudfront.net"}]

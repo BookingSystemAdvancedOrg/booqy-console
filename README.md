@@ -73,13 +73,24 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `POST .../domains/connections` | connect a domain the restaurant has: Route 53 zone with the reviewed records, then they switch name servers - starts domain-provision |
 | `GET .../zones/{domain}/document` | 5-minute download link to the registreringsbevis (for the AWS Support case) |
 | `GET/POST .../zones/{domain}/transfer` | move a connected, live domain's registration into Route 53: check (transferability + price) / start `{authCode, contact, documentKey (.se), acceptedPrice}` - name servers kept |
+| `GET /platform/domains/tlds` | every TLD Route 53 Domains sells or takes in, with buy / transfer / renewal prices (a TLD missing, like .nu, can only stay at its registrar) |
+| `GET /platform/domains/transfer-check?domain=` | before moving a domain to Booqy: TLD supported, transferable (lock, 60 days), price, DNSSEC on; `errorCode`, `who` and Swedish `lastErrorSv` when something blocks it |
+| `POST .../domains/transfers` | move a domain to Booqy: `{domain, authCode, records, contact, documentKey (.se), acceptedPrice}`; the reviewed records go into a new zone first, then TransferDomain names our name servers; the owner approves by e-mail (reminders 24 h, 72 h, 6 days) - starts domain-provision (`transfer_in`) |
+| `POST .../domains/records` | keep the registrar and its DNS: `{domain}`; the restaurant adds www (and dev) CNAMEs and forwards the apex to www (steps e-mailed in Swedish) - starts domain-provision (`records`) |
+| `POST .../zones/{domain}/check`, `.../retry`, `.../notify` | run the current check now / start the order's workflow again (finished steps are found done; a failed dev side alone retries only dev) / e-mail the restaurant its steps again |
+| `DELETE .../zones/{domain}` | remove the own domain: 301s and the primary domain go first, dev.<domain> leaves the dev site, the site records leave our zone, the hosts are detached; a registered domain stays the restaurant's |
+| `POST .../zones/{domain}/auth-code` | the transfer-out code of a domain registered here: shown once, or `{send: true}` e-mailed to the restaurant; never logged |
+| `POST .../zones/{domain}/simulate` | dev console only, a test customer's simulated order: `{event: approve \| reject \| expire \| records_added \| ns_switched}` |
 | `GET /platform/me/backdrops`, `POST .../upload`, `POST .../{id}/complete`, `PUT .../selected`, `DELETE .../{id}` | the signed-in operator's background image library (max 20): list `{items: [{id, url, thumbUrl, uploadedAt, width, height}], selectedId, max}` (one-hour presigned links, newest first) / presigned POST `{id, url, fields}` for `{contentType: image/jpeg\|png\|webp, size <= 10 MB, width, height}` (409 `limit_reached`) / check the upload and write a 400 px WebP thumbnail / choose one (`{id\|null}`) / delete (204). Objects under `console/<sub>/backdrops/` in the user-backdrops bucket, items `OPERATOR#<sub>` in the user-backdrops table; all deleted with the operator |
 | `GET/DELETE /platform/me/avatar`, `POST .../upload`, `POST .../complete` | the signed-in operator's profile picture: `{url\|null}` (one-hour presigned GET) / presigned POST `{url, fields}` to `console/<sub>/avatar.upload` for `{contentType: image/jpeg\|png\|webp, size <= 5 MB}` / decode, centre square, 256x256 WebP at `console/<sub>/avatar.webp`, staging deleted, `{url}` (400 `upload_missing`, `not_an_image`) / delete (204). Each operator changes only their own; `GET /platform/operators` gives every operator's `avatarUrl` (HeadObject per operator, no pointer row); deleted with the operator |
 | `GET /platform/operators`, `PATCH /platform/operators/{username}` | operators with `role` (`owner` = in `platform_owner`, else `operator`) and `canChangeEmail` (the caller's token has `platform_owner`). PATCH `{name?, email?, enabled?}`: `email` only for an owner, any operator's including their own (403 `owner_only`), set with `email_verified=true` in the same call so sign-in and password reset move to the new address at once (409 `user_exists` with `fields.email`); logged as `{"audit": "operator_email_changed"}`. Only an owner disables or deletes an owner (403 `owner_only`) |
 
 The domain-provision workflow also invokes this Lambda directly
 (`{"workflowTask": ...}`, no `routeKey`) for its waiting and DNS steps -
-see `api/src/app/zones.py`. EventBridge Scheduler invokes it daily with
+see `api/src/app/own_domains.py` and `zones.py`. In prod EventBridge
+Scheduler runs `{"domainTask": "health"}` daily: expiry, auto-renew,
+failed Route 53 Domains operations and unconfirmed registrant e-mails as
+`Booqy/Domains` metrics (alarms in the infrastructure repo). EventBridge Scheduler invokes it daily with
 `{"financeTask": "dunning"}`: unpaid invoices get weekly reminders (Stripe
 re-sends the email), the statutory late fee after the grace period and
 interest for the days late when paid, all as Stripe invoice items;
