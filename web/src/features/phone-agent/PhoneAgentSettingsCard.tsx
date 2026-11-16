@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Card, ErrorNotice, Field, Notice, useAction, useLoad } from "../../components/ui";
 import { ApiError } from "../../api";
-import { phoneAgentApi } from "./api";
+import { SkelCard, SkelPage } from "../../components/Skeleton";
+import { CAP_RANGE, phoneAgentApi } from "./api";
 
 /** Settings page: the platform-wide kill switch and the ceiling for every restaurant's monthly minutes cap. */
 export default function PhoneAgentSettingsCard() {
@@ -18,28 +19,32 @@ export default function PhoneAgentSettingsCard() {
     );
   }
   if (error) return <Card title="Phone agent"><ErrorNotice error={error} /></Card>;
-  if (!data) return null;
+  if (!data) return <SkelPage label="Loading the phone agent"><SkelCard lines={3} /></SkelPage>;
   const capValue = cap ?? String(data.maxMinutesCap);
 
-  async function save(killSwitch: boolean) {
-    const saved = await action.run(() => phoneAgentApi.saveSettings({ killSwitch, maxMinutesCap: Number(capValue) }));
-    if (saved) { setData(saved); setCap(null); }
+  // The kill switch is an emergency stop: it sends the saved ceiling, so an unsaved or invalid cap in the field never blocks
+  // it (and the field keeps what was typed). Only Save ceiling sends the field.
+  async function save(killSwitch: boolean, ceiling: number, fromField = false) {
+    const saved = await action.run(() => phoneAgentApi.saveSettings({ killSwitch, maxMinutesCap: ceiling }));
+    if (saved) { setData(saved); if (fromField) setCap(null); }
   }
+  const capError = action.fields.maxMinutesCap === "invalid_cap" ? CAP_RANGE : action.fields.maxMinutesCap;
 
   return (
-    <Card title="Phone agent" saved={action.done}>
+    <Card title="Phone agent" saved={action.done} info={<>Owners can set their own cap up to this ceiling (0-100000).</>}>
       {data.killSwitch && (
         <Notice kind="warn">The kill switch is ON: the phone agent answers no restaurant's calls; callers hear that bookings by phone are not possible right now.</Notice>
       )}
-      <Field label="Max minutes per restaurant per month" hint="Owners can set their own cap up to this ceiling (0-100000)."
-             error={action.fields.maxMinutesCap}>
-        <input type="number" min={0} max={100000} value={capValue} onChange={(e) => setCap(e.target.value)} />
+      <Field label="Max minutes per restaurant per month"
+             error={capError}>
+        <input className="input mono" style={{ width: 160 }} type="number" inputMode="numeric" min={0} max={100000} step={1}
+               value={capValue} onChange={(e) => setCap(e.target.value)} />
       </Field>
-      <ErrorNotice error={action.error} />
+      <ErrorNotice error={action.error && !Object.keys(action.fields).length ? action.error : null} />
       <div className="row">
-        <button className="btn" disabled={action.busy || cap === null} onClick={() => void save(data.killSwitch)}>Save ceiling</button>
+        <button className="btn" disabled={action.busy || cap === null} onClick={() => void save(data.killSwitch, Number(capValue), true)}>Save ceiling</button>
         <button className={`btn ${data.killSwitch ? "" : "btn--danger"}`} disabled={action.busy}
-                onClick={() => void save(!data.killSwitch)}>
+                onClick={() => void save(!data.killSwitch, data.maxMinutesCap)}>
           {data.killSwitch ? "Turn kill switch off" : "Turn kill switch on (stop all calls)"}
         </button>
       </div>

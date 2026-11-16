@@ -1,3 +1,4 @@
+import { SkelCard, SkelPage } from "../../components/Skeleton";
 import { Card, ErrorNotice, useLoad } from "../../components/ui";
 import { ApiError } from "../../api";
 import { googleBusinessApi } from "./api";
@@ -13,7 +14,7 @@ export default function GoogleBusinessTenantSection({ tenantId }: { tenantId: st
     return <Card title="Google Business Profile"><p className="muted">Google Business Profile is not set up in this environment yet.</p></Card>;
   }
   if (error) return <Card title="Google Business Profile"><ErrorNotice error={error} /></Card>;
-  if (!data) return null;
+  if (!data) return <SkelPage label="Loading Google Business Profile"><SkelCard lines={3} /></SkelPage>;
 
   return (
     <Card title="Google Business Profile">

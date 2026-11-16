@@ -46,13 +46,15 @@ function useDebounced<T>(fn: () => Promise<T>, deps: unknown[], wait = 400) {
 /** The email as it will arrive, in a sandbox: nothing in it can run. Keep sandbox="" (no
  *  allow-scripts): the server-rendered HTML has no script, and a "Blocked script execution
  *  in 'about:srcdoc'" log only comes from test tools that inject scripts into every frame. */
-function Preview({ html, title }: { html: string | null; title: string }) {
+function Preview({ html, title, error }: { html: string | null; title: string; error?: unknown }) {
   return (
     <div className="card mail-preview">
       <div className="card__head"><h2>{title}</h2></div>
       <div className="card__body">
         <p className="mail-preview__hint">As the owner sees it</p>
-        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <SkelLines n={8} />}
+        {/* A failed preview says so (the frame would otherwise keep the last render, or a skeleton, without a word). */}
+        <ErrorNotice error={error} />
+        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : !error && <SkelLines n={8} />}
       </div>
     </div>
   );
@@ -148,7 +150,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
           </button>
         </div>
       </Card>
-      <Preview html={preview.value?.html ?? null} title="Preview" />
+      <Preview html={preview.value?.html ?? null} error={preview.error} title="Preview" />
       {confirm && (
         <Modal title="Send to every owner?" onClose={() => setConfirm(false)}>
           <div className="stack">
@@ -453,7 +455,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
           </div>
         </Card>
       </form>
-      <Preview html={preview.value?.html ?? null} title="Preview with sample text" />
+      <Preview html={preview.value?.html ?? null} error={preview.error} title="Preview with sample text" />
     </div>
   );
 }

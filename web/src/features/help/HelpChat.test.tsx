@@ -77,6 +77,13 @@ describe("HelpChat", () => {
     expect(launcher).toHaveAttribute("aria-label", "Ask Booqy");
   });
 
+  it("shows a question mark on the launcher, as admin does, not a second search magnifier", async () => {
+    renderChat();
+    const launcher = await screen.findByRole("button", { name: "Ask Booqy" });
+    expect(launcher.querySelector('svg[data-icon="help"]')).not.toBeNull();
+    expect(launcher.querySelector('circle[r="6"]')).toBeNull();
+  });
+
   it("answers today's Background question and lights the setting up in Settings", async () => {
     const user = userEvent.setup();
     renderChat();

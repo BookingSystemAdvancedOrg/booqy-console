@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../../components/ds";
+import { HelpIcon } from "./HelpIcon";
 import { ErrorNotice, Printing } from "../../components/ui";
 import { confirmLeave } from "../../components/save";
 import { HelpLimited, HelpOff, askHelp, getHelpStatus } from "./helpApi";
@@ -201,7 +202,7 @@ export function HelpChat() {
     <>
       {!open && (
         <button ref={launcherRef} type="button" className="help-launcher" aria-label="Ask Booqy" title="Ask Booqy" aria-expanded={false} aria-controls={panelId} onClick={show}>
-          <Icon name="search" size={18} />
+          <HelpIcon size={18} />
           <span className="help-launcher-text">Ask Booqy</span>
         </button>
       )}

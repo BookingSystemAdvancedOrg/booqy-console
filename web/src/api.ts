@@ -43,16 +43,18 @@ function requestIdOf(res: Response, extra: Record<string, unknown>): string | un
   return raw && /^[A-Za-z0-9=_.:-]{1,100}$/.test(raw) ? raw : undefined;
 }
 
-/** quiet: no busy bar and no "data changed" signal (a read-only POST with its own animation, as the help assistant's). signal: abort the call. */
-type RequestOptions = { quiet?: boolean; signal?: AbortSignal };
+/** quiet: no busy bar and no "data changed" signal (a read-only POST with its own animation, as the help assistant's). signal: abort the call.
+ * messages: a feature's own text for an error status (features/*: "not deployed here" for a 404), used in place of the API's. */
+export type RequestOptions = { quiet?: boolean; signal?: AbortSignal; messages?: ErrorMessages };
+export type ErrorMessages = (status: number, code: string) => string | undefined;
 
 // Every call shows the busy bar (busy.ts), so no load is ever silent; only
 // the quiet live refetches (live.ts quietly) and opts.quiet skip it. After a
 // write, every live page refetches at once (also after a 409: someone saved
 // in between).
-function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<T> {
-  if (opts.quiet || (isQuiet() && method === "GET")) return send<T>(method, path, body, opts.signal);
-  const call = withBusy(() => send<T>(method, path, body, opts.signal));
+export function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<T> {
+  if (opts.quiet || (isQuiet() && method === "GET")) return send<T>(method, path, body, opts.signal, opts.messages);
+  const call = withBusy(() => send<T>(method, path, body, opts.signal, opts.messages));
   if (method === "GET") return call;
   return call.then(
     (value) => {
@@ -66,7 +68,7 @@ function request<T>(method: string, path: string, body?: unknown, opts: RequestO
   );
 }
 
-async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, messages?: ErrorMessages): Promise<T> {
   const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
   const call = async (token: string) => {
     try {
@@ -121,11 +123,12 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
     const requestId = requestIdOf(res, extra);
     if (requestId) extra.requestId = requestId;
     // The generic 500 text says nothing useful - give what to do instead.
-    const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
-    const err = new ApiError(res.status, typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error",
-                             useful ? (message as string) : fallbackMessage(res.status, requestId),
+    const code = typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error";
+    const own = messages?.(res.status, code);
+    const useful = own || (typeof message === "string" && message && !(res.status >= 500 && error === "internal_error") ? message as string : undefined);
+    const err = new ApiError(res.status, code, useful ?? fallbackMessage(res.status, requestId),
                              (fields as Record<string, string>) ?? {}, extra);
-    if (useful) err.serverMessage = message as string;
+    if (useful) err.serverMessage = useful;
     throw err;
   }
   return data as T;
@@ -287,8 +290,9 @@ export const api = {
   mailTemplate: () => request<{ template: MailTemplate }>("GET", "/platform/mail/template").then((r) => r.template),
   saveMailTemplate: (body: MailTemplateInput) =>
     request<{ template: MailTemplate }>("PUT", "/platform/mail/template", body).then((r) => r.template),
+  // Quiet: a preview saves nothing, so no busy bar and no refetch of open pages on every typing pause.
   mailPreview: (body: { subject: string; body: string; template?: Partial<MailTemplateInput> }) =>
-    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body),
+    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body, { quiet: true }),
   mailRecipients: () => request<{ count: number; recipients: MailRecipient[] }>("GET", "/platform/mail/recipients"),
   newsletters: () => request<{ newsletters: Newsletter[] }>("GET", "/platform/mail/newsletters").then((r) => r.newsletters),
   newsletter: (id: string) =>

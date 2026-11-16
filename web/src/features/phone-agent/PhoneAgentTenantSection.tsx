@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { SkelCard, SkelPage } from "../../components/Skeleton";
 import { Card, ErrorNotice, Notice, useAction, useLoad } from "../../components/ui";
 import { ApiError } from "../../api";
 import { phoneAgentApi } from "./api";
@@ -12,7 +13,7 @@ export default function PhoneAgentTenantSection({ tenantId }: { tenantId: string
     return <Card title="Phone agent"><p className="muted">The phone agent is not set up in this environment, or it has never been on for this tenant.</p></Card>;
   }
   if (error) return <Card title="Phone agent"><ErrorNotice error={error} /></Card>;
-  if (!data) return null;
+  if (!data) return <SkelPage label="Loading the phone agent"><SkelCard lines={4} /></SkelPage>;
   if (!data.paused && data.locations.length === 0 && data.usage.length === 0) {
     return (
       <Card title="Phone agent">

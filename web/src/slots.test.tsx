@@ -30,10 +30,10 @@ describe("console slots", () => {
     expect(await screen.findByText("ledger export")).toBeInTheDocument();
   });
 
-  it("the Run 0 placeholders render nothing", async () => {
+  it("the Meta ads slot shows a loading state until its data arrives", async () => {
     const { default: C } = await SLOT_LOADERS["tenant.integrations.metaAds"]();
-    const { container } = render(<C tenantId="t1" />);
-    expect(container).toBeEmptyDOMElement();
+    render(<C tenantId="t1" />);
+    expect(screen.getByRole("status", { name: "Loading Meta ads" })).toBeInTheDocument();
   });
 
   it("gates the phone agent slots on phoneAgent", () => {
@@ -46,10 +46,10 @@ describe("console slots", () => {
     expect(slotOn("settings.phoneAgent")).toBe(true);
   });
 
-  it("the addendum placeholders render nothing", async () => {
+  it("the phone agent slots show a loading state until their data arrives", async () => {
     const { default: Section } = await SLOT_LOADERS["tenant.integrations.phoneAgent"]();
     const { default: Card } = await SLOT_LOADERS["settings.phoneAgent"]();
-    expect(render(<Section tenantId="t1" />).container).toBeEmptyDOMElement();
-    expect(render(<Card />).container).toBeEmptyDOMElement();
+    render(<><Section tenantId="t1" /><Card /></>);
+    expect(screen.getAllByRole("status", { name: "Loading the phone agent" })).toHaveLength(2);
   });
 });

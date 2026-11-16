@@ -292,7 +292,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
         <p className="auth__foot">Restricted to platform operators. Every action is logged.</p>
         <details className="auth__storage">
           <summary>Cookies and storage</summary>
-          <p>No cookies, no analytics. The Console keeps only your sign-in, for this tab:</p>
+          <p>No cookies, no analytics. The Console keeps only what it needs to sign you in and remember your settings:</p>
           <ul>
             {STORAGE_REGISTRY.map((e) => (
               <li key={e.name}>
