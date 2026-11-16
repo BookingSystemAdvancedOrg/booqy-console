@@ -37,7 +37,7 @@ MAX_RANGE_DAYS = 400
 ACTIVE_DEFAULT = ("active",)
 SUM_FIELDS = ("requests", "bookings", "orders", "emails", "sms", "marketingEmails",
               "smsParts", "smsBooking", "smsReminder", "smsOrder", "smsCatering",
-              "costSek", "invoicedSek", "paidSek", "creditedSek")
+              "costSek", "invoicedSek", "paidSek", "creditedSek", "refundedSek")
 CENTS = Decimal("0.01")
 
 
@@ -192,7 +192,8 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
             # revenue, credits and MRR are the restaurant's, not the location's
             tenant_row = revenue_rows.get(day) or {}
             row = {**row, "invoicedSek": tenant_row.get("invoicedSek"), "paidSek": tenant_row.get("paidSek"),
-                   "creditedSek": tenant_row.get("creditedSek"), "mrrSek": tenant_row.get("mrrSek"),
+                   "creditedSek": tenant_row.get("creditedSek"), "refundedSek": tenant_row.get("refundedSek"),
+                   "mrrSek": tenant_row.get("mrrSek"),
                    "active": tenant_row.get("active"), "marketingEmails": 0}
         for k in SUM_FIELDS:
             sums[k] += Decimal(row.get(k) or 0)
@@ -204,7 +205,7 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
                                         "costSek": Decimal(0), "mrrSek": Decimal(0), "bookings": 0, "orders": 0,
                                         "requests": 0, "activeTenants": 0})
         point["invoicedSek"] += Decimal(row.get("invoicedSek") or 0) - Decimal(row.get("creditedSek") or 0)
-        point["paidSek"] += Decimal(row.get("paidSek") or 0)
+        point["paidSek"] += Decimal(row.get("paidSek") or 0) - Decimal(row.get("refundedSek") or 0)
         point["costSek"] += Decimal(row.get("costSek") or 0)
         point["mrrSek"] += Decimal(row.get("mrrSek") or 0)
         point["bookings"] += int(row.get("bookings") or 0)
@@ -227,8 +228,8 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "billingStatus": _billing_status(profile, invoices),
         "pastDueSince": ((profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None)
         or overdue_since,
-        "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"]),
-        "creditedSek": _q(sums["creditedSek"]), "outstandingSek": _outstanding(invoices),
+        "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"] - sums["refundedSek"]),
+        "creditedSek": _q(sums["creditedSek"]), "refundedSek": _q(sums["refundedSek"]), "outstandingSek": _outstanding(invoices),
         "costSek": cost, "costSplitSek": {k: _q(val) for k, val in split.items()},
         "marginSek": margin, "marginPct": _pct(margin, revenue),
         "bookings": int(sums["bookings"]), "orders": int(sums["orders"]), "requests": int(sums["requests"]),
@@ -263,7 +264,9 @@ def overview(req) -> tuple[int, dict]:
     tenants.sort(key=lambda t: (t["marginSek"], t["name"] or ""), reverse=True)
 
     revenue = _q(sum((t["revenueSek"] for t in tenants), Decimal(0)))
+    # Collected is net of refunds (paid back to the card); shown on its own too
     collected = _q(sum((t["collectedSek"] for t in tenants), Decimal(0)))
+    refunded = _q(sum((t["refundedSek"] for t in tenants), Decimal(0)))
     outstanding = _q(sum((t["outstandingSek"] for t in tenants), Decimal(0)))
     allocated = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
     cost, cost_split, cost_scope = allocated, None, "allocated"
@@ -313,7 +316,8 @@ def overview(req) -> tuple[int, dict]:
                    "revenueScope": "tenant" if location_id else None},
         "locations": _locations(only) if only else [],
         "kpis": {
-            "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "outstandingSek": outstanding,
+            "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "refundedSek": refunded,
+            "outstandingSek": outstanding,
             "costSek": cost, "marginSek": margin, "marginPct": _pct(margin, revenue),
             "costScope": cost_scope, "allocatedCostSek": allocated,
             "unallocatedSek": max(_q(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
@@ -351,6 +355,15 @@ def tenant_detail(req) -> tuple[int, dict]:
     from .billing import list_invoices           # billing imports tenants, not this module
     return 200, {"period": {"from": first, "to": last}, "tenant": totals, "series": [series[d] for d in sorted(series)],
                  "days": days, "invoices": list_invoices(tenant_id), "locations": _locations(tenant_id)}
+
+
+def _refunded_ex(inv: dict) -> Decimal:
+    """The part of an invoice paid back to the card, ex VAT (its credit
+    notes' refunds are incl VAT)."""
+    refunded, total = Decimal(inv.get("refundedSek") or 0), Decimal(inv.get("totalSek") or 0)
+    if not refunded or not total:
+        return Decimal(0)
+    return refunded * Decimal(inv.get("subtotalSek") or 0) / total
 
 
 def invoices(req) -> tuple[int, dict]:
@@ -396,7 +409,9 @@ def invoices(req) -> tuple[int, dict]:
         "summary": {"invoices": len(rows), "paid": paid, "open": sum(1 for r in rows if r["status"] == "open"),
                     "overdue": len(overdue),
                     "invoicedSek": _q(sum((Decimal(r.get("subtotalSek") or 0) for r in rows if r["status"] != "void"), Decimal(0))),
-                    "collectedSek": _q(sum((Decimal(r.get("subtotalSek") or 0) for r in rows if r["status"] == "paid"), Decimal(0))),
+                    "collectedSek": _q(sum((Decimal(r.get("subtotalSek") or 0) - _refunded_ex(r) for r in rows if r["status"] == "paid"),
+                                           Decimal(0))),
+                    "refundedSek": _q(sum((_refunded_ex(r) for r in rows), Decimal(0))),
                     "outstandingSek": _q(sum((Decimal(r.get("outstandingSek") or 0) for r in rows), Decimal(0))),
                     "overdueSek": _q(sum((Decimal(r.get("outstandingSek") or 0) for r in overdue), Decimal(0))),
                     "lateFeesSek": _q(sum((Decimal(r.get("lateFeeSek") or 0) for r in rows), Decimal(0))),

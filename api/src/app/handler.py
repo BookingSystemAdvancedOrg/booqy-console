@@ -90,6 +90,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
     "POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind": billing.remind_invoice,
     "POST /platform/tenants/{tenantId}/billing/invoice": billing.invoice_now,
+    "POST /platform/tenants/{tenantId}/billing/credit-notes": billing.create_credit_notes,
     "GET /platform/finance/invoices": finance.invoices,
     "POST /platform/finance/invoicing": billing.invoicing,
     # Website page: booqy.se's cookieless statistics

@@ -416,9 +416,11 @@ def list_invoices(tenant_id: str, limit: int = 60) -> list[dict]:
     rows = query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :i)",
                      ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}},
                      ScanIndexForward=False)
+    credits = credits_by_invoice(tenant_id) if rows else {}
     out = []
     for r in rows[:limit]:
         total = r.get("totalSek") or Decimal(0)
+        cn = credits.get(r.get("invoiceId")) or {}
         remaining = r.get("amountRemainingSek") or Decimal(0)
         out.append({
             "invoiceId": r.get("invoiceId"), "number": r.get("number"), "status": r.get("status"),
@@ -435,6 +437,11 @@ def list_invoices(tenant_id: str, limit: int = 60) -> list[dict]:
             "periodStart": r.get("periodStart"), "periodEnd": r.get("periodEnd"),
             "hostedInvoiceUrl": r.get("hostedInvoiceUrl"), "invoicePdf": r.get("invoicePdf"),
             "paidOutOfBand": r.get("paidOutOfBand", False),
+            # credit notes on it, incl VAT: back to the card, and the rest
+            "refundedSek": cn.get("refundedSek", Decimal("0.00")), "creditedSek": cn.get("creditedSek", Decimal("0.00")),
+            "creditableSek": creditable_sek(r, cn),
+            "refundable": r.get("status") == "paid" and not r.get("paidOutOfBand")
+            and Decimal(r.get("amountPaidSek") or 0) > 0,
             "reminderStep": max([st for st in reminder_steps() if r.get(f"customerReminder{st}At")], default=None),
         })
     return out
@@ -2129,6 +2136,369 @@ def remind_invoice(req) -> tuple[int, dict]:
     if not rows:
         raise ApiError(404, "not_found", "No such invoice")
     return 200, send_reminder(tenant_id, rows[0], req.actor)
+
+
+# ------------------------------------------------------------- credit notes: refunds and credits
+# An operator refunds (back to the card) or credits (to the customer's
+# Stripe balance, which reduces the next invoice) part or all of an invoice
+# with a Stripe credit note on the platform account. The CREDIT# ledger row
+# is the one platform-stripe-webhook writes on credit_note.created
+# (application shared/billing.py, record_credit_note): same key, same
+# booking flags, so whichever of the two comes first books and the other
+# finds it booked.
+CREDIT_METHODS = ("refund", "credit")
+CREDIT_REASONS = ("duplicate", "fraudulent", "order_change", "product_unsatisfactory", "other")
+CREDIT_LOCK_SECONDS = 120
+MAX_CREDIT_ITEMS = 24
+REQUEST_ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+
+
+def refunded_minor(note: dict) -> int:
+    """The part of a credit note paid back to the card (öre, incl VAT); the
+    rest was credited. Read like the webhook reads it."""
+    total = int(note.get("total") or 0)
+    refunds = note.get("refunds")
+    if isinstance(refunds, list) and refunds:
+        amount = sum(int(r.get("amount_refunded") or 0) for r in refunds if isinstance(r, dict))
+    elif note.get("refund"):
+        amount = total - int(note.get("out_of_band_amount") or 0)
+    else:
+        amount = 0
+    return max(0, min(amount, total))
+
+
+def _post_payment_minor(note: dict) -> int:
+    """What the note took back from money already paid (the rest only
+    lowered what was still owed)."""
+    if isinstance(note.get("post_payment_amount"), int):
+        return note["post_payment_amount"]
+    if note.get("type") == "pre_payment":
+        return 0
+    return int(note.get("total") or 0)
+
+
+def credit_note_row(tenant_id: str, note: dict) -> dict:
+    day = (_iso(note.get("created")) or now_iso())[:10]
+    ex = note.get("total_excluding_tax")
+    if ex is None:
+        ex = note.get("subtotal")
+    total = int(note.get("total") or 0)
+    refunded = refunded_minor(note)
+    refunded_ex = (Decimal(refunded) * Decimal(int(ex or 0)) / Decimal(total) / Decimal(100)).quantize(
+        CENTS, rounding=ROUND_HALF_UP) if total > 0 else Decimal("0.00")
+    metadata = note.get("metadata") or {}
+    return {"PK": f"TENANT#{tenant_id}", "SK": f"CREDIT#{day}#{note['id']}", "day": day,
+            "creditNoteId": note["id"], "invoiceId": _id(note.get("invoice")), "number": note.get("number"),
+            "reason": note.get("reason"), "amountSek": sek(ex or 0), "totalSek": sek(total),
+            "refundedSek": sek(refunded), "refundedExSek": refunded_ex,
+            "postPaymentSek": sek(_post_payment_minor(note)),
+            "method": metadata.get("booqyMethod"), "memo": note.get("memo"),
+            "createdAt": _iso(note.get("created")), "eventCreated": int(time.time()), "updatedAt": now_iso()}
+
+
+def record_credit_note(tenant_id: str, note: dict) -> list[str]:
+    """Writes the CREDIT# row once and books it: the ex-VAT total reduces
+    revenue (creditedSek), the part refunded to the card reduces what was
+    collected (refundedSek). Returns what was booked."""
+    row = credit_note_row(tenant_id, note)
+    day = row.pop("day")
+    try:
+        client("dynamodb").put_item(TableName=finance_table(), Item=to_ddb(row),
+                                    ConditionExpression="attribute_not_exists(PK)")
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+    key = {"PK": row["PK"], "SK": row["SK"]}
+    booked = []
+    if _book(key, "bookedCredited", tenant_id, day, "creditedSek", row["amountSek"]):
+        booked.append("credited")
+    if _book(key, "bookedRefunded", tenant_id, day, "refundedSek", row["refundedExSek"]):
+        booked.append("refunded")
+    return booked
+
+
+def credits_by_invoice(tenant_id: str) -> dict[str, dict]:
+    """Per invoice: refundedSek (back to the card) and creditedSek (the rest
+    of its credit notes), incl VAT, and postPaymentSek (taken back from
+    what was paid). One CREDIT# row per credit note, so nothing counts
+    twice."""
+    rows = query_all(TableName=finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :c)",
+                     ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":c": {"S": "CREDIT#"}})
+    out: dict[str, dict] = {}
+    for r in rows:
+        if not r.get("invoiceId"):
+            continue
+        total, refunded = Decimal(r.get("totalSek") or 0), Decimal(r.get("refundedSek") or 0)
+        post = r.get("postPaymentSek")
+        sums = out.setdefault(r["invoiceId"], {"refundedSek": Decimal("0.00"), "creditedSek": Decimal("0.00"),
+                                               "postPaymentSek": Decimal("0.00")})
+        sums["refundedSek"] += refunded
+        sums["creditedSek"] += total - refunded
+        sums["postPaymentSek"] += Decimal(post) if post is not None else total
+    return out
+
+
+def creditable_sek(row: dict, credits: dict | None) -> Decimal:
+    """What can still be refunded or credited on an invoice (incl VAT):
+    a paid invoice, what was paid less the notes on it; an open one, what is
+    still owed (a credit note lowers it)."""
+    status = row.get("status")
+    if status == "paid":
+        left = Decimal(row.get("amountPaidSek") or 0) - Decimal((credits or {}).get("postPaymentSek") or 0)
+    elif status in OWED:
+        left = Decimal(row.get("amountRemainingSek") or 0)
+    else:
+        left = Decimal(0)
+    return max(left, Decimal(0)).quantize(CENTS)
+
+
+def _amount_minor(value, field: str, f: v.Fields) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
+        f.fail(field, "Must be an amount")
+        return None
+    try:
+        amount = Decimal(str(value))
+    except Exception:  # noqa: BLE001 - any unparsable value
+        f.fail(field, "Must be an amount")
+        return None
+    if not amount.is_finite() or amount <= 0:
+        f.fail(field, "More than 0")
+        return None
+    if amount != amount.quantize(CENTS):
+        f.fail(field, "At most 2 decimals")
+        return None
+    return int(amount * 100)
+
+
+def _parse_credit_request(body: dict) -> dict:
+    f = v.Fields(body)
+    method = f.text("method", required=True, max_len=10)
+    if method and method not in CREDIT_METHODS:
+        f.fail("method", "refund or credit")
+    reason = f.text("reason", max_len=40) or "other"
+    if reason not in CREDIT_REASONS:
+        f.fail("reason", "Unknown reason")
+    memo = f.text("memo", max_len=500)
+    request_id = f.text("requestId", required=True, max_len=64)
+    if request_id and not set(request_id) <= REQUEST_ID_CHARS:
+        f.fail("requestId", "Letters, digits and hyphens")
+    items = (body or {}).get("items")
+    parsed, seen = [], set()
+    if not isinstance(items, list) or not items:
+        f.fail("items", "Pick at least one invoice")
+    elif len(items) > MAX_CREDIT_ITEMS:
+        f.fail("items", f"At most {MAX_CREDIT_ITEMS} invoices at a time")
+    else:
+        for n, item in enumerate(items):
+            invoice_id = item.get("invoiceId") if isinstance(item, dict) else None
+            if not isinstance(invoice_id, str) or not invoice_id.startswith("in_") or len(invoice_id) > 80:
+                f.fail(f"items.{n}.invoiceId", "Not an invoice")
+                continue
+            if invoice_id in seen:
+                f.fail(f"items.{n}.invoiceId", "Listed twice")
+                continue
+            seen.add(invoice_id)
+            parsed.append({"invoiceId": invoice_id,
+                           "amount": _amount_minor(item.get("amountSek"), f"items.{n}.amountSek", f)})
+    f.done()
+    return {"method": method, "reason": reason, "memo": memo, "requestId": request_id, "items": parsed}
+
+
+def _lock_invoice(tenant_id: str, invoice_id: str, request_id: str) -> None:
+    """One credit note at a time per invoice: a second operator (or a second
+    tab) gets 409 instead of racing the first one to Stripe."""
+    now = int(time.time())
+    try:
+        client("dynamodb").put_item(
+            TableName=finance_table(),
+            Item=to_ddb({"PK": f"TENANT#{tenant_id}", "SK": f"CNLOCK#{invoice_id}", "requestId": request_id,
+                         "expiresAt": now + CREDIT_LOCK_SECONDS, "lockedAt": now_iso()}),
+            ConditionExpression="attribute_not_exists(PK) OR expiresAt < :now",
+            ExpressionAttributeValues={":now": {"N": str(now)}})
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise ApiError(409, "credit_in_progress", "Another refund of this invoice is running; reload in a minute") from e
+        raise
+
+
+def _unlock_invoice(tenant_id: str, invoice_id: str, request_id: str) -> None:
+    """Expires our own lock (an update, not a delete: the role has no
+    DeleteItem on the finance table, and one small row per invoice ever
+    credited is nothing)."""
+    try:
+        client("dynamodb").update_item(TableName=finance_table(),
+                                       Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": f"CNLOCK#{invoice_id}"}},
+                                       UpdateExpression="SET expiresAt = :z",
+                                       ConditionExpression="requestId = :r",
+                                       ExpressionAttributeValues={":r": {"S": request_id}, ":z": {"N": "0"}})
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            log.warning("credit note lock not released: %s", e)
+
+
+def _invoice_lines(invoice: dict) -> list[dict]:
+    lines = invoice.get("lines") or {}
+    data = list(lines.get("data") or [])
+    if lines.get("has_more"):
+        data = stripe_request("GET", f"/invoices/{invoice['id']}/lines", {"limit": 100}).get("data") or data
+    return [ln for ln in data if isinstance(ln.get("id"), str) and int(ln.get("amount") or 0) > 0]
+
+
+def _split_lines(lines: list[dict], ex_minor: int) -> dict:
+    """Credit note lines: `ex_minor` (excl VAT) spread over the invoice's
+    lines in proportion to their amounts, so each line's own tax rate (25 %
+    VAT) applies to its share. Never more than a line's amount."""
+    whole = sum(int(ln["amount"]) for ln in lines)
+    ex_minor = max(0, min(ex_minor, whole))
+    shares = [(ln, ex_minor * int(ln["amount"]) // whole, ex_minor * int(ln["amount"]) % whole) for ln in lines]
+    rest = ex_minor - sum(s for _, s, _ in shares)
+    order = sorted(range(len(shares)), key=lambda i: -shares[i][2])
+    amounts = [s for _, s, _ in shares]
+    for i in order:
+        if rest <= 0:
+            break
+        if amounts[i] < int(shares[i][0]["amount"]):
+            amounts[i] += 1
+            rest -= 1
+    params, n = {}, 0
+    for (ln, _, _), amount in zip(shares, amounts):
+        if amount <= 0:
+            continue
+        params.update({f"lines[{n}][type]": "invoice_line_item", f"lines[{n}][invoice_line_item]": ln["id"],
+                       f"lines[{n}][amount]": amount})
+        n += 1
+    return params
+
+
+def _note_params(invoice: dict, lines: list[dict], wanted: int, left: int) -> tuple[dict, int]:
+    """The lines whose total incl VAT is `wanted` öre (or the nearest below,
+    never above what is left), checked with Stripe's preview: the VAT is
+    rounded per line by Stripe, so the preview is the truth."""
+    total, ex = int(invoice.get("total") or 0), invoice.get("total_excluding_tax")
+    if ex is None:
+        ex = total - int(invoice.get("tax") or 0)
+    ratio = Decimal(int(ex)) / Decimal(total) if total > 0 else Decimal(1)
+    cap = min(wanted, left)
+    guess = int((Decimal(wanted) * ratio).to_integral_value(rounding=ROUND_HALF_UP))
+    best, tried = None, set()
+    for _ in range(4):
+        if guess in tried or guess <= 0:
+            break
+        tried.add(guess)
+        params = {"invoice": invoice["id"], **_split_lines(lines, guess)}
+        preview = stripe_request("GET", "/credit_notes/preview", params)
+        got = int(preview.get("total") or 0)
+        if got <= cap and (best is None or got > best[1]):
+            best = (params, got)
+        if got == wanted:
+            break
+        step = int((Decimal(wanted - got) * ratio).to_integral_value(rounding=ROUND_HALF_UP)) or (1 if got < wanted else -1)
+        guess += step
+    if best is None:
+        raise ApiError(409, "amount_not_possible", "Stripe cannot credit that amount on this invoice; try a slightly smaller one")
+    return best
+
+
+def _existing_note(invoice_id: str, key: str) -> dict | None:
+    """A credit note this very request already created (a retry after a
+    timeout, or a repeated click): found by its key in the metadata."""
+    notes = stripe_request("GET", "/credit_notes", {"invoice": invoice_id, "limit": 100}).get("data") or []
+    return next((n for n in notes if (n.get("metadata") or {}).get("booqyKey") == key), None)
+
+
+def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict, req: dict, actor: str) -> dict:
+    invoice_id, method = item["invoiceId"], req["method"]
+    row = rows.get(invoice_id)
+    if not row:
+        raise ApiError(404, "not_found", "No such invoice for this customer")
+    invoice = stripe_request("GET", f"/invoices/{invoice_id}", {})
+    if not customer_id or _id(invoice.get("customer")) != customer_id:
+        raise ApiError(404, "not_found", "No such invoice for this customer")
+    status = invoice.get("status")
+    if method == "refund" and status != "paid":
+        raise ApiError(409, "not_paid", "Only a paid invoice can be refunded; credit it instead")
+    if method == "credit" and status not in ("paid", *OWED):
+        raise ApiError(409, "not_creditable", "Only a paid or open invoice can be credited")
+    if method == "refund" and (invoice.get("paid_out_of_band") or row.get("paidOutOfBand")):
+        raise ApiError(409, "paid_out_of_band", "Paid outside Stripe, so there is no card payment to refund; credit it instead")
+    if status == "paid":
+        left = int(invoice.get("amount_paid") or 0) - int(invoice.get("post_payment_credit_notes_amount") or 0)
+    else:
+        left = int(invoice.get("amount_remaining") or 0)
+    wanted = item["amount"] if item["amount"] is not None else left
+    key = f"cn-{tenant_id}-{invoice_id}-{wanted}-{method}-{req['requestId']}"
+    note = _existing_note(invoice_id, key)
+    created = note is None
+    if created:
+        if left <= 0:
+            raise ApiError(409, "nothing_left", "Nothing left to refund or credit on this invoice")
+        if wanted > left:
+            raise ApiError(409, "more_than_left", f"At most {sek(left)} kr is left on this invoice", leftSek=sek(left))
+        lines = _invoice_lines(invoice)
+        if not lines:
+            raise ApiError(409, "no_lines", "This invoice has no lines to credit")
+        params, amount = _note_params(invoice, lines, wanted, left)
+        if status == "paid":
+            params["refund_amount" if method == "refund" else "credit_amount"] = amount
+        if req["reason"] != "other":
+            params["reason"] = req["reason"]
+        if req["memo"]:
+            params["memo"] = req["memo"]
+        params.update({"metadata[booqyKey]": key, "metadata[booqyMethod]": method,
+                       "metadata[booqyActor]": actor[:100], "metadata[tenantId]": tenant_id})
+        note = stripe_request("POST", "/credit_notes", params, idempotency_key=key)
+    record_credit_note(tenant_id, note)
+    try:   # the row's amounts as Stripe has them now (a credit lowers what is owed)
+        record_invoice(tenant_id, stripe_request("GET", f"/invoices/{invoice_id}", {}))
+    except ApiError as e:
+        log.warning("invoice %s not refreshed after credit note: %s", invoice_id, e.message)
+    refunded = sek(refunded_minor(note))
+    total = sek(note.get("total") or 0)
+    if created:   # one audit row per note, by the request that made it
+        write_audit(tenant_id, "invoice_refunded" if refunded else "invoice_credited", actor, {
+            "invoiceId": invoice_id, "number": row.get("number"), "creditNoteId": note.get("id"),
+            "creditNoteNumber": note.get("number"), "method": method, "totalSek": str(total),
+            "refundedSek": str(refunded), "reason": req["reason"], "memo": req["memo"]})
+    return {"invoiceId": invoice_id, "ok": True, "creditNoteId": note.get("id"), "number": note.get("number"),
+            "totalSek": total, "refundedSek": refunded, "creditedSek": total - refunded,
+            "pdf": note.get("pdf")}
+
+
+def create_credit_notes(req) -> tuple[int, dict]:
+    """POST .../billing/credit-notes {items: [{invoiceId, amountSek?}], method:
+    refund|credit, reason, memo, requestId}: one credit note per invoice;
+    amountSek incl VAT, left out = everything left. Each invoice succeeds or
+    fails on its own; the results say which. requestId is the client's, one
+    per confirm dialog: a repeat of the same request never refunds twice."""
+    tenant_id = req.path["tenantId"]
+    profile = get_profile(tenant_id)
+    parsed = _parse_credit_request(req.body)
+    customer_id = (profile.get("billing") or {}).get("customerId") if isinstance(profile.get("billing"), dict) else None
+    rows = {r.get("invoiceId"): r for r in _ledger(tenant_id)}
+    results = []
+    for item in parsed["items"]:
+        try:
+            _lock_invoice(tenant_id, item["invoiceId"], parsed["requestId"])
+        except ApiError as e:
+            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": e.message})
+            continue
+        try:
+            results.append(_credit_one(tenant_id, customer_id, rows, item, parsed, req.actor))
+        except ApiError as e:
+            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": e.message,
+                            **{k: val for k, val in e.extra.items() if k in ("leftSek", "stripeStatus")}})
+        except Exception:  # noqa: BLE001 - one invoice's fault must not hide the others' results
+            log.exception("credit note for %s failed", item["invoiceId"])
+            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": "internal_error",
+                            "message": "Booqy's fault: the refund of this invoice did not finish"})
+        finally:
+            _unlock_invoice(tenant_id, item["invoiceId"], parsed["requestId"])
+    ok = [r for r in results if r["ok"]]
+    return 200, {"results": results, "ok": len(ok), "failed": len(results) - len(ok),
+                 "refundedSek": sum((r["refundedSek"] for r in ok), Decimal("0.00")),
+                 "creditedSek": sum((r["creditedSek"] for r in ok), Decimal("0.00"))}
 
 
 # ------------------------------------------------------------- dunning
