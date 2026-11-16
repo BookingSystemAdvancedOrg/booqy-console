@@ -32,7 +32,7 @@ const STOPWORDS = new Set(
 export const UNKNOWN_TEXT =
   "I'm not sure about that, so I'd rather not guess. Try asking another way, for example with the name of the page.";
 export const REFUSE_TEXT =
-  "I can't show or look up passwords, keys, tokens or secrets. Ask me how something in the console works instead.";
+  "I can't show or look up passwords, keys, tokens or other secrets. Ask me how something in the console works instead.";
 export const OWNER_TEXT = "That is not available to you.";
 const OPEN = "Open";
 const SHOW = "Show";
