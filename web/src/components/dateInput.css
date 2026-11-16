@@ -1,0 +1,137 @@
+/* Date field and calendars (DateInput.tsx), ported from admin with the
+   console tokens. The text field is a normal .input; the calendar floats in
+   a portal on body with the same liquid glass as the Select list. */
+
+.date-input {
+  --dcal-hover: rgb(58 36 24 / 0.08);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+}
+:root[data-theme="dark"] .date-input { --dcal-hover: rgb(213 196 174 / 0.12); }
+
+.date-input > input.input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 42px;
+  font-variant-numeric: tabular-nums;
+}
+.date-input > input.input[aria-invalid="true"] { border-color: var(--danger); }
+
+/* The range rows (Finance, Website) size the field, not the input. */
+.range__field .date-input { width: 150px; }
+@media (max-width: 860px) {
+  .range__field .date-input { width: 100%; }
+}
+
+.date-input__btn {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--r-md, 12px) - 4px);
+  background: transparent;
+  color: var(--print-2);
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+.date-input__btn:hover:not(:disabled),
+.date-input__btn[aria-expanded="true"] { background: var(--dcal-hover); color: var(--print); }
+.date-input__btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+.date-input__btn:disabled { opacity: 0.4; }
+
+/* --- The calendar --------------------------------------------------------- */
+
+.date-cal {
+  --dcal-hover: rgb(58 36 24 / 0.08);
+  position: fixed;
+  z-index: 950;
+  box-sizing: border-box;
+  width: 284px;
+  max-width: calc(100vw - 16px);
+  padding: 12px;
+  border-radius: var(--r-md, 12px);
+  background: var(--liquid-sheen), rgb(var(--bq-snow-rgb) / 0.97);
+  color: var(--print);
+  box-shadow: var(--liquid-edge), var(--liquid-depth);
+  -webkit-backdrop-filter: blur(var(--blur-pop, 24px)) saturate(1.6);
+  backdrop-filter: blur(var(--blur-pop, 24px)) saturate(1.6);
+  font: 400 14px/1.3 var(--sans, inherit);
+  animation: date-cal-in var(--dur-base, 200ms) var(--ease-out, ease) both;
+}
+:root[data-theme="dark"] .date-cal {
+  --dcal-hover: rgb(213 196 174 / 0.12);
+  background: var(--liquid-sheen), rgb(36 25 19 / 0.96);
+}
+@keyframes date-cal-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+
+.date-cal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.date-cal__title { font: 600 15px/1.2 var(--sans, inherit); }
+
+.date-cal__nav,
+.date-cal__day,
+.date-cal__today {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  font: 500 14px/1 var(--sans, inherit);
+  -webkit-tap-highlight-color: transparent;
+}
+.date-cal__nav { width: 36px; height: 36px; border-radius: calc(var(--r-md, 12px) - 4px); font-size: 20px; }
+
+.date-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.date-cal__months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+
+.date-cal__wd {
+  padding: 4px 0;
+  text-align: center;
+  color: var(--print-2);
+  font: 500 11px/1 var(--mono, inherit);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.date-cal__day { height: 36px; border-radius: calc(var(--r-md, 12px) - 4px); font-variant-numeric: tabular-nums; }
+.date-cal__month { height: 44px; }
+
+.date-cal__nav:hover,
+.date-cal__day:hover:not(:disabled),
+.date-cal__today:hover:not(:disabled) { background: var(--dcal-hover); }
+
+.date-cal__day.is-today { box-shadow: inset 0 0 0 1.5px var(--field-border); }
+.date-cal__day.is-selected,
+.date-cal__day.is-selected:hover { background: var(--slip); color: var(--on-slip); font-weight: 600; }
+
+.date-cal__day:disabled,
+.date-cal__today:disabled { opacity: 0.35; }
+
+.date-cal__nav:focus-visible,
+.date-cal__day:focus-visible,
+.date-cal__today:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
+
+.date-cal__today { width: 100%; min-height: 36px; margin-top: 8px; padding: 8px; border-radius: calc(var(--r-md, 12px) - 4px); font-weight: 600; }
+
+/* Phones: finger-sized cells. */
+@media (max-width: 640px) {
+  .date-cal__day { height: 40px; }
+  .date-cal__month { height: 48px; }
+  .date-cal__nav, .date-cal__today { min-height: 44px; }
+  .date-cal__nav { width: 44px; height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) { .date-cal { animation: none; } }
+@media (prefers-reduced-transparency: reduce) {
+  .date-cal { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--paper); }
+}
+
+/* Payments: the month pill's words are the MonthPicker button. */
+button.month-pick__label { border: 0; background: transparent; cursor: default; -webkit-tap-highlight-color: transparent; }
+button.month-pick__label:focus-visible { outline: 2px solid var(--print); outline-offset: 1px; }

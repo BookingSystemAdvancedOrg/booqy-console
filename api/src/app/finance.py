@@ -376,18 +376,21 @@ def invoices(req) -> tuple[int, dict]:
                     or inv.get("createdAt") or "")[:10]
             if not (first <= when <= last):
                 continue
-            late = inv["daysLate"]
-            if wanted == "overdue" and not (inv["status"] in _OWED and late > 0):
-                continue
-            if wanted not in ("all", "overdue") and inv["status"] != wanted:
-                continue
             rows.append({**inv, "tenantId": p["tenantId"], "name": p.get("name"), "slug": p.get("slug"),
                          "orgNumber": p.get("orgNumber"), "tenantStatus": p.get("status")})
     # Overdue first (the most days late on top), then by month, newest first.
     rows.sort(key=lambda r: ((r.get("month") or ""), (r.get("name") or "").lower()), reverse=True)
     rows.sort(key=lambda r: -(r["daysLate"] if r["status"] in _OWED else 0))
+    # The summary covers every invoice of the month, whatever the status
+    # filter, so the chip counts and the KPIs stay put when a chip is picked.
     paid = sum(1 for r in rows if r["status"] == "paid")
     overdue = [r for r in rows if r["status"] in _OWED and r["daysLate"] > 0]
+    if wanted == "overdue":
+        shown = overdue
+    elif wanted == "all":
+        shown = rows
+    else:
+        shown = [r for r in rows if r["status"] == wanted]
     return 200, {
         "period": {"from": first, "to": last, "status": wanted},
         "summary": {"invoices": len(rows), "paid": paid, "open": sum(1 for r in rows if r["status"] == "open"),
@@ -398,7 +401,7 @@ def invoices(req) -> tuple[int, dict]:
                     "overdueSek": _q(sum((Decimal(r.get("outstandingSek") or 0) for r in overdue), Decimal(0))),
                     "lateFeesSek": _q(sum((Decimal(r.get("lateFeeSek") or 0) for r in rows), Decimal(0))),
                     "interestSek": _q(sum((Decimal(r.get("interestSek") or 0) for r in rows), Decimal(0)))},
-        "invoices": rows,
+        "invoices": shown,
     }
 
 

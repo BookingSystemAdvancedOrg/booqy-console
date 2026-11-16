@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, addDays, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
@@ -7,15 +7,15 @@ import { SaveButton, useFlash } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { fmtFreeDay } from "../free";
 import { Select } from "./Select";
-
-const STATUS_TEXT: Record<string, string> = {
-  none: "No agreement", scheduled: "Starts later", active: "Active", ending: "Ending", ended: "Ended", past_due: "Past due",
-};
+import { DateInput } from "./DateInput";
+import { CopyButton } from "./CopyButton";
+import { billingPhaseText } from "../billingPhase";
 
 /** The customer's agreement, invoiced in advance on the 1st for each calendar
  * month (the first month pro rata from the start day): the monthly price (SMS
  * included; nothing on Free), charged to the restaurant's card or emailed. */
-export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: Tenant; cardParam: string | null; onChanged: () => void }) {
+/** `refreshed`: counts the page's Refresh presses; a tab that failed to load loads again. */
+export default function BillingTab({ tenant, cardParam, onChanged, refreshed = 0 }: { tenant: Tenant; cardParam: string | null; onChanged: () => void; refreshed?: number }) {
   const { data, error, loading, reload } = useLoad(() => api.billing(tenant.tenantId), [tenant.tenantId]);
   const act = useAction();
   const link = useAction();
@@ -26,14 +26,22 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
   const [url, setUrl] = useState<string | null>(null);
   const [run, setRun] = useState<InvoicingRun | null>(null);
   const [started, flashStarted] = useFlash();
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => { setRetrying(true); await reload(); setRetrying(false); };
+  const seenRefresh = useRef(refreshed);
+  useEffect(() => {
+    if (refreshed === seenRefresh.current) return;
+    seenRefresh.current = refreshed;
+    if (!data && error) void retry();
+  }, [refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading && !data) return (
+  if ((loading || retrying) && !data) return (
     <SkelPage label="Loading billing">
       <SkelCard lines={5} />
       <SkelCard rows={3} cols={3} />
     </SkelPage>
   );
-  if (!data) return <ErrorNotice error={error ?? "Not found"} />;
+  if (!data) return <ErrorNotice error={error ?? "Not found"} onRetry={() => void retry()} />;
   const b = data.billing;
   const running = b.subscribed;
   // Ended (its last day has passed) but still waiting for its last invoice: a new agreement can start.
@@ -58,7 +66,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
     <div className="stack">
       <Card title="Agreement" saved={act.done || started} savedLabel={started ? "Started" : "Saved"} actions={<span className="row">
               {overdue.length > 0 && <span className="status status--invoice-overdue" data-testid="overdue-badge">{overdue.length} overdue</span>}
-              <span className={`status status--billing-${stamp}`}>{STATUS_TEXT[stamp] ?? stamp}</span></span>}
+              <span className={`status status--billing-${stamp}`}>{billingPhaseText(stamp)}</span></span>}
             info={<>Invoiced in advance: on the 1st, Stripe makes one invoice for that month with the monthly price plus 25 % VAT;
           the first month is invoiced on the start day, pro rata. SMS are included in the price. The Free plan has no charge;
           when it ends the customer rolls over to the price after Free. Card: charged automatically (Stripe retries a failed
@@ -161,7 +169,7 @@ export default function BillingTab({ tenant, cardParam, onChanged }: { tenant: T
           <Notice kind="ok">
             Card link for the restaurant (Stripe Checkout, valid 24 hours):
             <div className="copy"><input className="input mono" readOnly value={url} onFocus={(e) => e.target.select()} />
-              <button className="btn btn--small" onClick={() => navigator.clipboard.writeText(url)}>Copy</button>
+              <CopyButton text={url} />
               <a className="btn btn--small" href={url} target="_blank" rel="noreferrer">Open</a></div>
           </Notice>
         )}
@@ -253,7 +261,7 @@ function StartModal({ tenant, billing, onClose, onDone }: { tenant: Tenant; bill
           )}
           <label className="field">
             <span className="field__label">Runs from</span>
-            <input className="input" type="date" value={startDate} min={earliest} onChange={(e) => setStartDate(e.target.value)} />
+            <DateInput value={startDate} min={earliest} onChange={(e) => setStartDate(e.target.value)} />
             <span className="field__hint">
               {startDate ? firstInvoiceText(startDate) : "Today by default."}
               {comingBack && billing.endsAt ? ` Days of the earlier agreement (to ${fmtDay(billing.endsAt)}) that are already paid are not charged again.` : ""}

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ tenants: vi.fn(), financeInvoices: vi.fn() }));
+const mocks = vi.hoisted(() => ({ tenants: vi.fn(), financeInvoices: vi.fn(), plans: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import TenantsPage, { matchesSearch } from "./TenantsPage";
@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.tenants.mockResolvedValue(tenants);
   mocks.financeInvoices.mockResolvedValue({ invoices: [] });
+  mocks.plans.mockResolvedValue([{ planId: "starter", name: "Starter", maxLocations: 3, features: {} }]);
 });
 
 const cardOf = async (name: string) => (await screen.findByText(name)).closest("tr") as HTMLTableRowElement;
@@ -57,7 +58,7 @@ describe("Customers list as phone cards", () => {
     expect(card.querySelector(".cell-title")).toHaveTextContent("roma@example.test");
     expect(card.querySelector(".cell-badge .status")).toBeInTheDocument();
     const facts = Object.fromEntries([...card.querySelectorAll("td.cell-fact")].map((td) => [td.getAttribute("data-label"), td.textContent]));
-    expect(facts).toEqual({ Plan: "starter", Invoices: "-", Locations: "1 / 3" });
+    expect(facts).toEqual({ Plan: "Starter", Invoices: "-", Locations: "1 / 3" });
   });
 
   it("labels every other cell and leaves the details for the customer page on phones", async () => {
@@ -185,5 +186,29 @@ describe("phone table styles", () => {
     expect(phone).toContain(".operator-name .tag { flex: none; white-space: nowrap; }");
     expect(phone).toContain("margin-bottom: 72px");
     expect(css.slice(0, css.indexOf("@media (max-width: 640px) {"))).toContain(".web-sub { display: none; }");
+  });
+});
+
+describe("Customers when the invoices fail (finding 191)", () => {
+  it("shows the error with Try again and '?' instead of '-' in Invoices", async () => {
+    mocks.financeInvoices.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    const card = await cardOf("Pizzeria Roma");
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(card.querySelector('td[data-label="Invoices"]')).toHaveTextContent("?");
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Pizzeria Roma")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect((await cardOf("Pizzeria Roma")).querySelector('td[data-label="Invoices"]')).toHaveTextContent("-");
+  });
+});
+
+describe("Plan column (finding 211)", () => {
+  it("shows the plan's name, and the id capitalised for a plan not in the list", async () => {
+    mocks.plans.mockResolvedValue([{ planId: "starter", name: "Starter Plus", maxLocations: 3, features: {} }]);
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "All" }));
+    expect((await cardOf("Pizzeria Roma")).querySelector('td[data-label="Plan"]')).toHaveTextContent(/^Starter Plus$/);
+    expect((await cardOf("Krogen Norr")).querySelector('td[data-label="Plan"]')).toHaveTextContent(/^Growth$/);
   });
 });

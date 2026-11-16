@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CtaButton, Disclosure } from "../components/ds";
@@ -18,12 +18,10 @@ import { helpSlug } from "../features/help/helpId";
 import { FreeBadge } from "../components/FreeFields";
 import { InfoTip } from "../components/StepFlow";
 import { Select } from "../components/Select";
+import { DateInput } from "../components/DateInput";
 import { ScrollEdges } from "../components/ScrollEdges";
-
-const BILLING_TEXT: Record<string, string> = {
-  none: "No subscription", active: "Subscribed", trialing: "Trial", past_due: "Past due", unpaid: "Unpaid",
-  paused: "Paused", canceled: "Cancelled", incomplete: "Incomplete", incomplete_expired: "Expired", unknown: "Unknown",
-};
+import { billingPhaseText } from "../billingPhase";
+import "./finance.css";
 
 const VIEWS = ["Overview", "Payments"] as const;
 
@@ -55,6 +53,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   const data: FinanceOverview | null = loaded?.now ?? null;
   const before = loaded?.before?.kpis ?? null;
   const sync = useAction();
+  // The header Refresh reloads the view on screen: the Payments list registers its own reload here.
+  const paymentsReload = useRef<(() => Promise<boolean>) | null>(null);
 
   const days = daysBetween(range.from, range.to);
   const grain = grainFor(days);
@@ -115,7 +115,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                   onClick={() => data && downloadCsv(csvName("daily", data.period), dailyCsv(data.series))}>
             Export daily (CSV)
           </button>
-          <RefreshButton reload={reload} />
+          <RefreshButton reload={() => (view === "Payments" && paymentsReload.current ? paymentsReload.current() : reload())} />
           <SaveButton kind="ghost" type="button" label="Import from Stripe" busy={sync.busy} busyLabel="Reading Stripe…" done={sync.done} doneLabel="Imported"
                       onClick={async () => { if (await sync.run(() => api.financeStripeSync())) void reload(); }} />
           <CtaButton label="Rebuild" win="Kör!" onClick={() => setRebuild(true)} />
@@ -128,7 +128,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         ))}
       </nav>
 
-      {view === "Payments" && <PaymentsView />}
+      {view === "Payments" && <PaymentsView reloadRef={paymentsReload} />}
       {view === "Overview" && <>
       <div className="toolbar finance-toolbar">
         <div className="range">
@@ -172,7 +172,11 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                       </button>
                     </li>
                   ))}
-                  {suggestions.length === 0 && <li className="muted small suggestions__none">No customer matches.</li>}
+                  {suggestions.length === 0 && (tenants.error
+                    ? <li className="suggestions__none"><ErrorNotice error={tenants.error} onRetry={() => void tenants.reload()} /></li>
+                    : tenants.loading && !tenants.data
+                      ? <li className="muted small suggestions__none" role="status">Loading customers…</li>
+                      : <li className="muted small suggestions__none">No customer matches.</li>)}
                 </ul>
               )}
             </>
@@ -390,10 +394,10 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
     <tr className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}?tab=billing`)}>
       <td className="cell-title">
         <Link to={`/tenants/${t.tenantId}?tab=billing`} className="strong row-link__name">{t.name}</Link>
-        <div className="muted small mono">{t.orgNumber ?? t.slug}{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
+        <div className="muted small mono"><span className="finance-org">{t.orgNumber ?? t.slug}</span>{t.status !== "active" ? " · " : ""}{t.status !== "active" && <Status value={t.status} />}</div>
       </td>
       <td className="cell-badge">
-        <span className={`status status--billing-${t.billingStatus}`}>{BILLING_TEXT[t.billingStatus] ?? t.billingStatus}</span>
+        <span className={`status status--billing-${t.billingStatus}`}>{billingPhaseText(t.billingStatus)}</span>
         {t.free && <div><FreeBadge until={t.freeUntil ?? null} /></div>}
       </td>
       <td className="num" data-label="MRR">{fmtSek(t.mrrSek)}</td>
@@ -435,8 +439,8 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
           </InfoTip>
         </p>
         <div className="range">
-          <label className="range__field"><span>From</span><input className="input" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="range__field"><span>To</span><input className="input" type="date" value={to} min={from} max={yesterday} onChange={(e) => setTo(e.target.value)} /></label>
+          <label className="range__field"><span>From</span><DateInput value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label className="range__field"><span>To</span><DateInput value={to} min={from} max={yesterday} onChange={(e) => setTo(e.target.value)} /></label>
         </div>
         <ErrorNotice error={a.error} />
         {done && <Notice kind="ok">Rebuild started for {done}.</Notice>}

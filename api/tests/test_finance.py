@@ -170,6 +170,23 @@ def test_payments_view_lists_invoices_by_month_and_status(two_tenants, finance):
     assert status == 400
 
 
+def test_payments_summary_covers_the_whole_month_whatever_the_status_filter(two_tenants, finance):  # noqa: F811
+    from test_billing import _ledger, _ago
+    tenant, other = two_tenants
+    _ledger(finance, tenant, "in_x", status="open", dueDate=_ago(3), lateFeeSek=Decimal("450"))
+    _ledger(finance, other, "in_y", status="paid", dueDate=_ago(10), paidAt=_ago(2), amountPaidSek=Decimal("1237.50"),
+            amountRemainingSek=Decimal(0))
+    for wanted in ("all", "paid", "open", "overdue"):
+        status, body = call("GET /platform/finance/invoices",
+                            query={"from": "2026-10-01", "to": "2026-10-31", "status": wanted})
+        assert status == 200, body
+        s = body["summary"]
+        assert (s["invoices"], s["paid"], s["open"], s["overdue"]) == (2, 1, 1, 1), wanted
+        assert s["outstandingSek"] == 990 and s["overdueSek"] == 990 and s["lateFeesSek"] == 450, wanted
+    status, body = call("GET /platform/finance/invoices", query={"from": "2026-10-01", "to": "2026-10-31", "status": "open"})
+    assert [r["invoiceId"] for r in body["invoices"]] == ["in_x"]
+
+
 def test_overview_scoped_to_one_location(two_tenants, finance, aws):  # noqa: F811
     tenant, other = two_tenants
     status, body = call("GET /platform/tenants/{tenantId}", {"tenantId": other})

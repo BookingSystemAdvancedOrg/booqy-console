@@ -213,3 +213,21 @@ describe("BillingTab", () => {
     expect(screen.getByText(/has no price yet/)).toBeInTheDocument();
   });
 });
+
+describe("BillingTab when the first load fails (finding 180)", () => {
+  it("offers Try again, which loads it", async () => {
+    mocks.billing.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(billing());
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("No agreement")).toBeInTheDocument();
+    expect(mocks.billing).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads again when the page's Refresh is pressed", async () => {
+    mocks.billing.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(billing());
+    const { rerender } = render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} refreshed={0} />);
+    await screen.findByRole("button", { name: "Try again" });
+    rerender(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} refreshed={1} />);
+    expect(await screen.findByText("No agreement")).toBeInTheDocument();
+  });
+});

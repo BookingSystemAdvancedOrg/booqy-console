@@ -6,6 +6,7 @@ import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
+import { DateInput } from "../components/DateInput";
 import type { Features, Limits, LocationInput } from "../types";
 import { FEATURE_KEYS, FEATURE_LABELS, LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { SaveButton, useDirty } from "../components/save";
@@ -588,7 +589,7 @@ export default function NewTenantPage() {
               <div className="grid">
                 <Field label="Agreement starts (optional)" error={errs["billing.startDate"]}
                        hint="Empty = today">
-                  <input id="f-billing.startDate" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <DateInput id="f-billing.startDate" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </Field>
               </div>
             )}

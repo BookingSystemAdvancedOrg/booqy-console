@@ -1,0 +1,11 @@
+/* Finance and Payments tables. Tokens only: the light and dark themes come from styles.css. */
+
+/* An org number (556677-8899) never breaks at its hyphen. */
+.finance-table .finance-org { white-space: nowrap; }
+
+/* The customer column keeps room for a name and an org number on laptops; the
+   other columns scroll inside the table-wrap (ScrollEdges shows the fade).
+   Phones show cards (phoneTables.css), so no minimum there. */
+@media (min-width: 641px) {
+  .finance-table td.cell-title { min-width: 11rem; }
+}

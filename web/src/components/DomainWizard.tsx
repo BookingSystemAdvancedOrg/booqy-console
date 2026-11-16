@@ -9,6 +9,7 @@ import { PhoneInput } from "./PhoneInput";
 import { Select } from "./Select";
 import { isProd, testMapping } from "../testSites";
 import { InfoTip } from "./StepFlow";
+import { CopyButton } from "./CopyButton";
 
 type Path = "choose" | "buy" | "move" | "keep" | "map";
 
@@ -75,7 +76,7 @@ export function RestaurantText({ text, title = "Restaurant's steps (Swedish)" }:
     <div className="restaurant-text">
       <div className="row restaurant-text__head">
         <span className="small strong">{title}</span>
-        <button type="button" className="btn btn--small" onClick={() => void navigator.clipboard.writeText(text)}>Copy</button>
+        <CopyButton text={text} />
       </div>
       <pre className="restaurant-text__body" lang="sv">{text}</pre>
     </div>
@@ -94,8 +95,7 @@ export function RecordsTable({ records }: { records: RequiredRecord[] }) {
               <td data-label="Type" className="mono">{r.type}</td>
               <td data-label="Name" className="mono cell-title">{r.name}</td>
               <td data-label="Value" className="mono">{r.value}</td>
-              <td className="right"><button type="button" className="btn btn--small" aria-label={`Copy ${r.name} value`}
-                                            onClick={() => void navigator.clipboard.writeText(r.value)}>Copy</button></td>
+              <td className="right"><CopyButton text={r.value} label={`Copy ${r.name} value`} /></td>
             </tr>
           ))}
         </tbody>
@@ -233,9 +233,9 @@ export function SupportCaseBox({ domain, tenantId, supportCase }: { domain: stri
           service <strong>{supportCase.service}</strong>, category <strong>{supportCase.category}</strong>.</li>
         <li>Subject and text:
           <div className="copy"><input className="input mono" readOnly value={supportCase.subject} onFocus={(e) => e.target.select()} />
-            <button type="button" className="btn btn--small" onClick={() => navigator.clipboard.writeText(supportCase.subject)}>Copy</button></div>
+            <CopyButton text={supportCase.subject} /></div>
           <textarea className="input mono" rows={7} readOnly value={supportCase.body} />
-          <button type="button" className="btn btn--small" onClick={() => navigator.clipboard.writeText(supportCase.body)}>Copy text</button>
+          <CopyButton text={supportCase.body}>Copy text</CopyButton>
         </li>
         <li>Attach the registreringsbevis:{" "}
           <button type="button" className="btn btn--small" disabled={dl.busy}
@@ -287,9 +287,9 @@ export function RegistreringsbevisUpload({ tenantId, error, onKey, onBusy }: {
     if (!f) return;
     onBusy(true);
     const key = await upload.run(async () => {
-      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF");
+      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF.");
       const up = await api.documentUpload(tenantId);
-      if (f.size > up.maxBytes) throw new Error("At most 10 MB");
+      if (f.size > up.maxBytes) throw new Error("At most 10 MB.");
       await uploadToS3(up.upload, f);
       return up.documentKey;
     });
@@ -670,7 +670,7 @@ export function NameServerBox({ domain, nameServers }: { domain: string; nameSer
     <Notice kind="info">
       <span className="row restaurant-text__head">
         <span>Name servers for <strong>{domain}</strong> <InfoTip label="Name servers">At their registrar (one.com: Domain, DNS settings, Name servers, use custom) the restaurant replaces the name servers with these four. We check every 10 minutes (it can take a few hours to be seen); then the certificates are issued and the site goes live on {domain} and www.{domain} by itself.</InfoTip></span>
-        <button type="button" className="btn btn--small" onClick={() => navigator.clipboard.writeText(text)}>Copy</button>
+        <CopyButton text={text} />
       </span>
       <pre className="code">{text}</pre>
     </Notice>

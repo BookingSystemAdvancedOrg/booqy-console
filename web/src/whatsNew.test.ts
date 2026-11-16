@@ -15,7 +15,7 @@ describe("whatsNew.ts", () => {
       expect(e.text).toBe(e.text.trim());
       expect(e.text.length).toBeGreaterThanOrEqual(2);
       expect(e.text.length).toBeLessThanOrEqual(40);
-      expect(e.text).not.toMatch(/[–—]|&[mn]dash;/);
+      expect(e.text).not.toMatch(/[\u2013\u2014]|&[mn]dash;/);
     }
   });
 

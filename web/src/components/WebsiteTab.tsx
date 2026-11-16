@@ -1,8 +1,9 @@
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
 import { Card, ErrorNotice, Field, Notice, Status, fmtDate, useAction, useLoad } from "./ui";
-import { CheckMark, SaveButton, useDirty } from "./save";
+import { SaveButton, useDirty } from "./save";
+import { CopyButton } from "./CopyButton";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { Slot } from "../slots";
 import { InfoTip } from "./InfoTip";
@@ -17,7 +18,7 @@ const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production", main
  * account's test sites, main to <slug>.test.booqy.se and dev to
  * <slug>.test-dev.booqy.se. Everything goes through the site-repo function;
  * no token is ever shown or stored here. */
-export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
+export default function WebsiteTab({ tenant, refreshed = 0 }: { tenant: Tenant; refreshed?: number }) {
   const { data, error, loading, reload } = useLoad(() => api.site(tenant.tenantId), [tenant.tenantId]);
   const creating = data?.enabled && data.status === "creating";
   useEffect(() => {
@@ -25,14 +26,23 @@ export default function WebsiteTab({ tenant }: { tenant: Tenant }) {
     const id = window.setInterval(() => void reload(), 4000);
     return () => window.clearInterval(id);
   }, [creating, reload]);
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => { setRetrying(true); await reload(); setRetrying(false); };
+  // The page's Refresh loads a tab that failed to load again.
+  const seenRefresh = useRef(refreshed);
+  useEffect(() => {
+    if (refreshed === seenRefresh.current) return;
+    seenRefresh.current = refreshed;
+    if (!data && error) void retry();
+  }, [refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading && !data) return (
+  if ((loading || retrying) && !data) return (
     <SkelPage label="Loading the website">
       <SkelCard lines={5} />
       <SkelCard rows={3} cols={3} />
     </SkelPage>
   );
-  if (!data) return <ErrorNotice error={error ?? "Not found"} />;
+  if (!data) return <ErrorNotice error={error ?? "Not found"} onRetry={() => void retry()} />;
   const builder = <Slot id="tenant.website.siteBuilder" features={tenant.entitlements?.features} props={{ tenantId: tenant.tenantId }} />;
   if (!data.enabled) {
     return (
@@ -262,16 +272,6 @@ function DeployRow({ env, run, target }: { env: "dev" | "prod" | "main"; run: Si
       <td className="mono" data-label="Version">{run.sha}</td>
       <td data-label="By">{run.by ?? <span className="muted">-</span>}</td>
     </tr>
-  );
-}
-
-function CopyButton({ text, children = "Copy" }: { text: string; children?: ReactNode }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button type="button" className="btn btn--small"
-            onClick={async () => { await navigator.clipboard.writeText(text); setDone(true); window.setTimeout(() => setDone(false), 1500); }}>
-      {done ? <><CheckMark />Copied</> : children}
-    </button>
   );
 }
 

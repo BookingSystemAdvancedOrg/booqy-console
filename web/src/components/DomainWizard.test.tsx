@@ -128,3 +128,28 @@ describe("DomainWizard", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 });
+
+describe("Registreringsbevis upload (finding 181)", () => {
+  it("tells the operator a non-PDF is the wrong file, not a Booqy fault", async () => {
+    const { RegistreringsbevisUpload } = await import("./DomainWizard");
+    const { fireEvent } = await import("@testing-library/react");
+    render(<RegistreringsbevisUpload tenantId="t1" onKey={() => {}} onBusy={() => {}} />);
+    const input = document.querySelector("input[type=file]") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "bevis.png", { type: "image/png" })] } });
+    expect(await screen.findByText("The registreringsbevis must be a PDF.")).toBeInTheDocument();
+    expect(screen.queryByText(/Booqy's side/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy details" })).toBeNull();
+  });
+
+  it("says At most 10 MB for a PDF that is too big", async () => {
+    const { RegistreringsbevisUpload } = await import("./DomainWizard");
+    const { fireEvent } = await import("@testing-library/react");
+    const { api } = await import("../api");
+    (api as unknown as Record<string, unknown>).documentUpload = vi.fn().mockResolvedValue({ maxBytes: 1, upload: {}, documentKey: "k" });
+    render(<RegistreringsbevisUpload tenantId="t1" onKey={() => {}} onBusy={() => {}} />);
+    const input = document.querySelector("input[type=file]") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["xx"], "bevis.pdf", { type: "application/pdf" })] } });
+    expect(await screen.findByText("At most 10 MB.")).toBeInTheDocument();
+    expect(screen.queryByText(/Booqy's side/)).toBeNull();
+  });
+});
