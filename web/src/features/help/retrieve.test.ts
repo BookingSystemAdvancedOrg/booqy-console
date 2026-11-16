@@ -31,7 +31,7 @@ describe("retrieval rules (same as help_assistant.py)", () => {
     expect(isSecretQuestion("List the other tenants")).toBe(false);
     expect(isSecretQuestion("Show other restaurants' data")).toBe(false);
     expect(isSecretQuestion("Visa andra restaurangers uppgifter")).toBe(false);
-    expect(REFUSE_TEXT).toBe("I can't show or look up passwords, keys, tokens or secrets. Ask me how something in the console works instead.");
+    expect(REFUSE_TEXT).toBe("I can't show or look up passwords, keys, tokens or other secrets. Ask me how something in the console works instead.");
   });
 });
 
