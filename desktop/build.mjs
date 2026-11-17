@@ -83,9 +83,11 @@ const builderConfig = {
   copyright: 'Booqy',
   artifactName: `${fileBase}-\${version}-\${os}-\${arch}.\${ext}`,
   directories: { output: `release/${env}`, buildResources: 'build' },
-  files: ['main.cjs', 'shell-core.cjs', 'updates.cjs', 'update-core.cjs', 'desktop.config.json', 'env.json', 'app-icon.png', 'package.json'],
-  // desktopName: Electrons app_id/WM_CLASS på Linux, så att fönstret hör till
-  // .desktop-filen (och dess ikon) också under Wayland. Se linux.syncDesktopName.
+  files: ['main.cjs', 'shell-core.cjs', 'updates.cjs', 'update-core.cjs', 'linux-menu.cjs', 'desktop.config.json', 'env.json', 'app-icon.png', 'package.json'],
+  // desktopName: Electron gör app_id (Wayland) och WM_CLASS (X11) av den, utan
+  // ".desktop". Då heter fönstret som .desktop-filen (fileBase, både från
+  // deb/AppImage och install.sh) och StartupWMClass blir samma namn, så att
+  // skrivbordet visar menypostens ikon på fönstret. Se linux.syncDesktopName.
   extraMetadata: { name: fileBase, productName, desktopName: `${fileBase}.desktop`, ...(process.env.BOOQY_TEST_VERSION ? { version: process.env.BOOQY_TEST_VERSION } : {}) },
   asar: true,
   // Härdning av själva Electron-binären.
@@ -107,7 +109,8 @@ const builderConfig = {
       { target: 'dmg', arch: ['arm64', 'x64'] },
       { target: 'zip', arch: ['arm64', 'x64'] },
     ],
-    icon: icons.app,
+    // Dev: en färdig .icns med pixelbrickan i 16 och 32 (dev-icon.cjs).
+    icon: icons.mac,
     // Utan certifikat: ad hoc-signerad ("-"), kör lokalt men Gatekeeper
     // varnar på andra datorer. Se README.md, "Signering".
     identity: macIdentity ?? '-',
