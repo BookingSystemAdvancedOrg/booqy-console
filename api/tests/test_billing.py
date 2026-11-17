@@ -505,7 +505,7 @@ def test_prod_refuses_to_invoice_without_the_seller_details(finance, stripe, aws
         out = run_invoicing("invoicing", today=date(2026, 12, 1))
     finally:
         monkeypatch.setenv("ENVIRONMENT", "dev")
-    assert out["invoices"] == [] and "BILLING_SELLER_JSON" in out["errors"][0]["error"]
+    assert out["invoices"] == [] and "company details are missing" in out["errors"][0]["error"]
     assert _profile(aws, tenant)["billing"].get("paidThrough") is None                # tried again tomorrow
 
 
@@ -610,7 +610,7 @@ def test_no_invoice_without_the_vat_rate(finance, stripe, aws, tenant, monkeypat
     _start(tenant, startDate="2026-12-01")
     monkeypatch.setenv("BILLING_TAX_RATE_ID", "")
     out = run_invoicing("invoicing", today=date(2026, 12, 1))
-    assert out["invoices"] == [] and "BILLING_TAX_RATE_ID" in out["errors"][0]["error"] and stripe["oneoff"] == []
+    assert out["invoices"] == [] and "VAT rate isn't set up" in out["errors"][0]["error"] and stripe["oneoff"] == []
 
 
 def test_a_run_out_of_time_leaves_the_rest_to_the_next_daily_run(finance, stripe, aws, tenant):

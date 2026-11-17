@@ -40,15 +40,15 @@ def forward(feature_id: str, op: str):
             result = json.loads(response["Payload"].read() or b"null")
         except ClientError as e:
             if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
-                raise ApiError(404, "not_found", "This feature is not deployed in this environment") from None
+                raise ApiError(404, "not_found", "This feature isn't switched on here yet.") from None
             log.exception("platform hook %s failed", op)
-            raise ApiError(503, "feature_unavailable", "The feature did not answer; try again") from None
+            raise ApiError(503, "feature_unavailable", "This feature didn't answer.") from None
         except Exception:  # noqa: BLE001 - timeout or non-JSON: the feature is unavailable
             log.exception("platform hook %s failed", op)
-            raise ApiError(503, "feature_unavailable", "The feature did not answer; try again") from None
+            raise ApiError(503, "feature_unavailable", "This feature didn't answer.") from None
         if response.get("FunctionError") or not isinstance(result, dict):
             log.info(json.dumps({"platformHookError": op, "feature": feature_id}))
-            raise ApiError(503, "feature_unavailable", "The feature did not answer; try again")
+            raise ApiError(503, "feature_unavailable", "This feature didn't answer.")
         if result.get("ok") is False:
             extra = {"fields": {result["field"]: result["code"]}} if result.get("field") else {}
             raise ApiError(int(result.get("status") or 400), str(result.get("code") or "rejected"), **extra)

@@ -116,7 +116,7 @@ def groups(claims: dict) -> set[str]:
     return {g.strip(" ,\"'") for g in raw.strip("[]").replace(",", " ").split() if g.strip(" ,\"'")}
 
 
-def not_found(what: str = "Not found") -> ApiError:
+def not_found(what: str = "We can't find this. It may have been removed. Reload the page.") -> ApiError:
     return ApiError(404, "not_found", what)
 
 
@@ -142,18 +142,31 @@ def respond(status: int, body) -> dict:
 # Route 53, Step Functions, json): the caller gets this instead, the
 # original goes to the log (handler.py logs it with the request id).
 SAFE_MESSAGES = {
-    "invalid_json": "The request body isn't valid JSON. Reload the page and try again.",
-    "stripe_error": "Stripe refused the request. Check the customer's Stripe account and try again; "
-                    "the reason is in the platform-tenants logs.",
+    "invalid_json": "Booqy couldn't read what the page sent. Reload the page and try again.",
+    "stripe_error": "Stripe said no. Check the customer's Stripe account, then try again.",
     "stripe_unreachable": "Stripe didn't answer. Try again in a minute.",
-    "registration_refused": "Route 53 refused the registration. Check the contact details and that the domain "
-                            "is still free, then try again; the reason is in the platform-tenants logs.",
-    "transfer_refused": "Route 53 refused the transfer. Check the authorization code and that the domain is "
-                        "unlocked at the current registrar; the reason is in the platform-tenants logs.",
-    "dns_setup_failed": "Couldn't set up DNS for the domain. Try again; the reason is in the platform-tenants logs.",
-    "workflow_start_failed": "Couldn't start onboarding. Try again in a minute; the reason is in the "
-                             "platform-tenants logs.",
+    "registration_refused": "The domain couldn't be bought. Check the contact details and that the domain is "
+                            "still free.",
+    "transfer_refused": "The domain couldn't be moved. Check the transfer code and that the domain is unlocked "
+                        "where it is now.",
+    "dns_setup_failed": "Booqy couldn't set up the domain.",
+    "workflow_start_failed": "Setting up the customer didn't start.",
+    "site_repo_failed": "The website job didn't go through.",
 }
+
+# Customer statuses in words an operator reads in a sentence.
+STATUS_WORDS = {
+    "provisioning": "still being set up",
+    "failed": "stuck in setup",
+    "active": "active",
+    "suspended": "paused",
+    "offboarded": "offboarded",
+    "purged": "deleted",
+}
+
+
+def status_words(status) -> str:
+    return STATUS_WORDS.get(status or "", "in a state that doesn't allow it")
 
 
 def error_body(err: ApiError) -> dict:

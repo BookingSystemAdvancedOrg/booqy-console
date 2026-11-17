@@ -67,11 +67,13 @@ def _range(query: dict) -> tuple[str, str]:
         last = date.fromisoformat((query.get("to") or today.isoformat())[:10])
         first = date.fromisoformat((query.get("from") or (last - timedelta(days=29)).isoformat())[:10])
     except ValueError as e:
-        raise ApiError(400, "validation_failed", "Dates must be yyyy-mm-dd", fields={"from": "yyyy-mm-dd"}) from e
+        raise ApiError(400, "validation_failed", "The dates look wrong. Write them like 2026-11-01.",
+                       fields={"from": "Write a date like 2026-11-01."}) from e
     if first > last:
         first, last = last, first
     if (last - first).days >= MAX_RANGE_DAYS:
-        raise ApiError(400, "validation_failed", f"At most {MAX_RANGE_DAYS} days at a time", fields={"to": "Too far"})
+        raise ApiError(400, "validation_failed", f"Pick at most {MAX_RANGE_DAYS} days at a time.",
+                       fields={"to": f"Pick an end date at most {MAX_RANGE_DAYS} days after the start."})
     return first.isoformat(), last.isoformat()
 
 
@@ -252,10 +254,10 @@ def overview(req) -> tuple[int, dict]:
     only = ((req.query or {}).get("tenantId") or "").strip() or None
     location_id = ((req.query or {}).get("locationId") or "").strip() or None
     if location_id and not only:
-        raise ApiError(400, "validation_failed", "A location filter needs a customer", fields={"locationId": "Pick a customer"})
+        raise ApiError(400, "validation_failed", "Pick a customer first, then a location.", fields={"locationId": "Pick a customer first."})
     profiles = _all_profiles()
     if only and not any(p["tenantId"] == only for p in profiles):
-        raise ApiError(404, "not_found", "No such customer")
+        raise ApiError(404, "not_found", "We can't find this customer. Reload the page.")
     counted = [p for p in profiles if (only and p["tenantId"] == only)
                or (not only and (include_inactive or p.get("status") in ACTIVE_DEFAULT))]
     series: dict = {}
@@ -374,8 +376,8 @@ def invoices(req) -> tuple[int, dict]:
     first, last = _range(q)
     wanted = (q.get("status") or "all").strip()
     if wanted not in ("all", "open", "paid", "overdue", "void", "uncollectible"):
-        raise ApiError(400, "validation_failed", "status: all, open, paid, overdue, void or uncollectible",
-                       fields={"status": "Unknown"})
+        raise ApiError(400, "validation_failed", "Pick one of the listed invoice filters.",
+                       fields={"status": "Pick one of the listed filters."})
     from .billing import list_invoices           # billing imports tenants, not this module
     rows = []
     for p in _all_profiles():
@@ -429,9 +431,11 @@ def rebuild(req) -> tuple[int, dict]:
     if last > yesterday:
         last = yesterday
     if first > last:
-        raise ApiError(400, "validation_failed", "Figures exist from yesterday backwards", fields={"from": "Too new"})
+        raise ApiError(400, "validation_failed", "There are only figures up to yesterday. Pick an earlier start.",
+                       fields={"from": "Pick yesterday or earlier."})
     if (date.fromisoformat(last) - date.fromisoformat(first)).days >= 92:
-        raise ApiError(400, "validation_failed", "At most 92 days per rebuild", fields={"to": "Too far"})
+        raise ApiError(400, "validation_failed", "Pick at most 92 days at a time.",
+                       fields={"to": "Pick an end date at most 92 days after the start."})
     arn = env("FINANCE_ROLLUP_FUNCTION_ARN")
     client("lambda").invoke(FunctionName=arn, InvocationType="Event",
                             Payload=json.dumps({"from": first, "to": last, "requestedBy": req.actor}).encode("utf-8"))

@@ -51,11 +51,13 @@ def _range(query: dict, today: date) -> tuple[date, date]:
         last = date.fromisoformat((query.get("to") or today.isoformat())[:10])
         first = date.fromisoformat((query.get("from") or (last - timedelta(days=29)).isoformat())[:10])
     except ValueError as e:
-        raise ApiError(400, "validation_failed", "Dates must be yyyy-mm-dd", fields={"from": "yyyy-mm-dd"}) from e
+        raise ApiError(400, "validation_failed", "The dates look wrong. Write them like 2026-11-01.",
+                       fields={"from": "Write a date like 2026-11-01."}) from e
     if first > last:
         first, last = last, first
     if (last - first).days >= MAX_RANGE_DAYS:
-        raise ApiError(400, "validation_failed", f"At most {MAX_RANGE_DAYS} days at a time", fields={"to": "Too far"})
+        raise ApiError(400, "validation_failed", f"Pick at most {MAX_RANGE_DAYS} days at a time.",
+                       fields={"to": f"Pick an end date at most {MAX_RANGE_DAYS} days after the start."})
     return first, last
 
 

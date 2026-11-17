@@ -767,7 +767,8 @@ def test_a_failed_record_import_is_never_retried_without_the_records(od, aws, te
     p = {"tenantId": tenant}
     r53 = _refusing_r53(monkeypatch, "InvalidChangeBatch", "Invalid MX record value")
     status, body = call("POST /platform/tenants/{tenantId}/domains/connections", p, CONNECT)
-    assert status == 400 and body["error"] == "validation_failed" and "Invalid MX" in body["fields"]["records"]
+    assert status == 400 and body["error"] == "validation_failed" and "One of the records was refused" in body["fields"]["records"]
+    assert "Invalid MX" not in body["message"] + body["fields"]["records"]   # Route 53's own words stay in the log
     z = _zone(aws, tenant, "roma.se")
     assert z["status"] == "failed" and z["hostedZoneId"] and z["recordsImported"] is False and z["who"] == "booqy"
     assert _detail_zone(tenant, "roma.se")["canRetry"] is False
@@ -795,7 +796,7 @@ def test_retry_needs_the_route53_call_to_have_happened(od, aws, tenant, monkeypa
     assert "Invalid contact" in z["lastError"]
     assert _detail_zone(tenant, "roma.eu")["canRetry"] is False
     status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.eu"})
-    assert status == 409 and body["error"] == "not_retryable" and "place the order again" in body["message"]
+    assert status == 409 and body["error"] == "not_retryable" and "Place the order again" in body["message"]
     assert _zone(aws, tenant, "roma.eu")["status"] == "failed"
     # (b) a move to Booqy that failed before TransferDomain: start the move again
     _refusing_r53(monkeypatch, "Throttling", "Rate exceeded")

@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 
 from . import validation as v
 from .core import ApiError, client, env, now_iso, to_ddb, user_table, write_audit
+from .core import status_words
 from .tenants import get_profile, tenant_users
 
 LOCKED_STATUSES = ("offboarding", "offboarded")
@@ -31,7 +32,7 @@ def invite_owner(req) -> tuple[int, dict]:
     f.done()
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"The tenant is {profile['status']}", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
 
     idp, pool = client("cognito-idp"), env("TENANT_USER_POOL_ID")
     try:
@@ -43,8 +44,8 @@ def invite_owner(req) -> tuple[int, dict]:
     except idp.exceptions.UsernameExistsException as e:
         # custom:tenant_id is immutable - an existing account can't be moved
         # to another restaurant, so this needs a different email.
-        raise ApiError(409, "user_exists", "This email already has an account",
-                       fields={"email": "Already has an account - use another email"}) from e
+        raise ApiError(409, "user_exists", "This email is already used. Use another email.",
+                       fields={"email": "Already used. Use another email."}) from e
     sub = next(a["Value"] for a in user["Attributes"] if a["Name"] == "sub")
     idp.admin_add_user_to_group(UserPoolId=pool, Username=sub, GroupName=env("OWNER_GROUP_NAME"))
     if profile.get("status") == "suspended":

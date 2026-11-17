@@ -51,6 +51,7 @@ from types import SimpleNamespace
 from . import domains
 from . import validation as v
 from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table, write_audit
+from .core import status_words
 from .tenants import create_tenant, get_plan, get_profile, restore_tenant
 
 _SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
@@ -75,7 +76,8 @@ def invoke(payload: dict, *, wait: bool = True) -> dict:
         message = str(body.get("errorMessage") or "The site repo function failed")[:500]
         log.info(json.dumps({"siteRepoError": message, "action": payload.get("action")}))
         if message == "not a GitHub username":
-            raise ApiError(400, "validation_failed", "Not a GitHub username", fields={"username": "Not a GitHub username"})
+            raise ApiError(400, "validation_failed", "GitHub doesn't know this username. Check it for typos.",
+                                 fields={"username": "GitHub doesn't know this username. Check it, e.g. anna-dev."})
         raise ApiError(502, "site_repo_failed", message)
     return body
 
@@ -83,7 +85,7 @@ def invoke(payload: dict, *, wait: bool = True) -> dict:
 def _require(tenant_id: str) -> dict:
     profile = get_profile(tenant_id)
     if not enabled():
-        raise ApiError(409, "site_repos_off", "Site repos are not switched on in this environment yet")
+        raise ApiError(409, "site_repos_off", "Restaurant websites aren't switched on here yet. Booqy has to set this up.")
     return profile
 
 
@@ -100,7 +102,7 @@ def retry(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = _require(tenant_id)
     if profile.get("status") not in ("active", "suspended"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.",
                        currentStatus=profile.get("status"))
     invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
     write_audit(tenant_id, "site_setup_rerun", req.actor)
@@ -112,7 +114,7 @@ def invite(req) -> tuple[int, dict]:
     _require(tenant_id)
     username = req.body.get("username")
     if not isinstance(username, str) or not username.strip():
-        raise ApiError(400, "validation_failed", "Enter a GitHub username", fields={"username": "Required"})
+        raise ApiError(400, "validation_failed", "Type a GitHub username.", fields={"username": "Fill this in, e.g. anna-dev."})
     result = invoke({"action": "invite", "tenantId": tenant_id, "username": username.strip()})
     write_audit(tenant_id, "site_access_granted", req.actor, {"username": result.get("username")})
     return 200, result
@@ -123,8 +125,8 @@ def redeploy(req) -> tuple[int, dict]:
     profile = _require(tenant_id)
     branch = (req.body or {}).get("branch")
     if branch is not None and (profile.get("siteKind") != "test" or branch not in ("dev", "main")):
-        raise ApiError(400, "validation_failed", "branch is only for a test customer: dev or main",
-                       fields={"branch": "dev or main"})
+        raise ApiError(400, "validation_failed", "Only a test customer can pick a branch: dev or main.",
+                       fields={"branch": "Pick dev or main."})
     result = invoke({"action": "redeploy", "tenantId": tenant_id, **({"branch": branch} if branch else {})})
     write_audit(tenant_id, "site_redeployed", req.actor, {"branch": result.get("branch")})
     return 202, result
@@ -134,8 +136,8 @@ def archive(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = _require(tenant_id)
     if req.body.get("confirmSlug") != profile.get("slug"):
-        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
-                       fields={"confirmSlug": "Does not match"})
+        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm, e.g. pizzeria-roma.",
+                       fields={"confirmSlug": "This doesn't match the slug. Type it exactly."})
     result = invoke({"action": "archive", "tenantId": tenant_id})
     write_audit(tenant_id, "site_archived", req.actor, {"repoArchived": result.get("repoArchived")})
     return 200, result
@@ -234,18 +236,18 @@ def mount(req) -> tuple[int, dict]:
     profile = _require(tenant_id)
     target = req.body.get("environment")
     if env("ENVIRONMENT") != "prod":
-        raise ApiError(409, "managed_from_prod", "Domains are mounted from the production console")
+        raise ApiError(409, "managed_from_prod", "Connect domains in the production console.")
     if target not in ("prod", "dev"):
-        raise ApiError(400, "validation_failed", "environment must be prod or dev",
-                       fields={"environment": "prod or dev"})
+        raise ApiError(400, "validation_failed", "Pick prod or dev.",
+                       fields={"environment": "Pick prod or dev."})
     host, dev_host, zone = _own_domain(tenant_id, profile)
     if not host:
-        raise ApiError(409, "no_own_domain", "Add the restaurant's own domain on the Domains tab first")
+        raise ApiError(409, "no_own_domain", "Add the restaurant's own domain on the Domains tab first.")
     if target == "prod":
         domains.start_attach(tenant_id, host, req.actor)
     else:
         if _entry(tenant_id, host)["state"] != "live":
-            raise ApiError(409, "own_domain_not_live", f"{host} is not live in production yet")
+            raise ApiError(409, "own_domain_not_live", f"{host} isn't live yet. Wait until it shows Live, then try again.")
         dev = invoke({"action": "devDomain", "op": "mount", "tenantId": tenant_id, "host": dev_host})
         if zone and dev.get("cnameTarget"):
             # Booqy runs this domain's DNS: the restaurant has nothing to add.
@@ -314,7 +316,7 @@ def _dev_plan(plan_id: str | None) -> str:
     plans = query_all(TableName=tenant_table(), IndexName="GSI1", KeyConditionExpression="GSI1PK = :p",
                       ExpressionAttributeValues={":p": {"S": "PLAN"}})
     if not plans:
-        raise ApiError(409, "no_plans", "No plans in dev")
+        raise ApiError(409, "no_plans", "There are no plans here yet. Booqy has to add them.")
     return sorted(p["planId"] for p in plans)[-1]
 
 

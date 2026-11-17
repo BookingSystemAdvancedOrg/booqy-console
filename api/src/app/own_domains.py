@@ -51,6 +51,10 @@ from .core import ApiError, client, env, from_ddb, log, not_found, now_iso, quer
     write_audit
 from .tenants import get_profile
 
+# A record Route 53 refused (its own words go to the log).
+RECORD_REFUSED = ("One of the records was refused. Check each value. An MX value looks "
+                  "like: 10 mx1.one.com.")
+
 REMINDER_HOURS = (24, 72, 144)
 ZONE_MODES = ("register", "transfer_in", "connect")
 WAITING = {"register": "registering", "transfer_in": "transferring", "connect": "awaiting_nameservers",
@@ -85,9 +89,9 @@ def order_guard(profile: dict) -> bool:
     if not sim_guard():
         return False
     if profile.get("siteKind") != "test":
-        raise ApiError(409, "managed_from_prod", "This customer's domains are managed from the production console")
+        raise ApiError(409, "managed_from_prod", "Change this customer's domains in the production console.")
     if env("TEST_SITES_ENABLED", "false") != "true":
-        raise ApiError(409, "test_sites_off", "Test sites aren't switched on in this environment")
+        raise ApiError(409, "test_sites_off", "Test sites aren't switched on here yet. Booqy has to set this up.")
     return True
 
 
@@ -346,7 +350,7 @@ def sim_map(tenant_id: str, apex: str, actor: str) -> dict:
 def _order(tenant_id: str, apex: str) -> dict:
     row = zones._zone_row(tenant_id, apex)
     if not row:
-        raise not_found("No such domain order for this customer")
+        raise not_found("We can't find this domain for the customer. Reload the page.")
     return row
 
 
@@ -477,16 +481,17 @@ def transfer_in(req) -> tuple[int, dict]:
     f.done()
     price = zones._price(tld) or {}
     if not price.get("transfer"):
-        raise ApiError(409, "unsupported_tld", f".{tld} can't be moved to Booqy - keep it at its registrar instead",
+        raise ApiError(409, "unsupported_tld", f".{tld} domains can't move to Booqy. Choose Keep current registrar instead.",
                        **domain_mail.error("unsupported_tld", apex))
     zones._check_document(document_key)
     if (apex.startswith("dnssec") if sim else ds_present(apex)):
-        raise ApiError(409, "blocked_dnssec", f"DNSSEC is on for {apex}: it must be switched off first",
+        raise ApiError(409, "blocked_dnssec", f"DNSSEC is on for {apex}. The restaurant turns it off where the domain is now, then start again.",
                        **domain_mail.error("dnssec", apex))
     status, message = zones._transferability(apex, auth_code)
     if status != "TRANSFERABLE":
         code = "locked" if status == "UNTRANSFERABLE" else "booqy"
-        raise ApiError(409, "not_transferable", zones.TRANSFERABILITY_TEXT.get(status) or message or status,
+        log.info(json.dumps({"notTransferable": apex, "status": status, "detail": str(message or "")[:500]}))
+        raise ApiError(409, "not_transferable", zones.TRANSFERABILITY_TEXT.get(status) or zones.NOT_TRANSFERABLE,
                        transferability=status, **domain_mail.error(code, apex))
     zones._check_price(accepted, price["transfer"], price.get("renewal"))
 
@@ -573,8 +578,8 @@ def _ensure_zone(tenant_id: str, apex: str, previous: dict, records: list[dict],
         message = e.response["Error"].get("Message") or str(e)
         _fail(tenant_id, apex, "booqy", lastError=f"Couldn't set up DNS: {message}"[:1000], recordsImported=False)
         if e.response["Error"].get("Code") == "InvalidChangeBatch":
-            raise ApiError(400, "validation_failed", f"Route 53 refused a record: {message}",
-                           fields={"records": f"Route 53 refused a record: {message}"[:500]}) from e
+            log.info(json.dumps({"recordRefused": apex, "detail": message[:500]}))
+            raise ApiError(400, "validation_failed", RECORD_REFUSED, fields={"records": RECORD_REFUSED}) from e
         raise ApiError(502, "dns_setup_failed", f"Couldn't set up DNS: {message}") from e
     zones._update_zone(tenant_id, apex, recordsImported=True)
     return zone_id, name_servers
@@ -713,13 +718,13 @@ def retry_block(row: dict) -> str | None:
     imported, need the order placed again."""
     mode = row.get("mode")
     if mode == "register" and not row.get("operationId"):
-        return "Route 53 never took the registration: place the order again"
+        return "The purchase never started, so it can't be retried. Place the order again."
     if mode == "transfer_in" and not row.get("transferInOperationId"):
-        return "Route 53 never took the move: start the move again"
+        return "The move never started, so it can't be retried. Start the move again."
     if mode in ("connect", "transfer_in") and row.get("recordsImported") is False:
-        return "The records weren't imported: connect the domain again with the records"
+        return "The domain's records weren't saved. Connect the domain again with the records."
     if mode == "connect" and not row.get("hostedZoneId"):
-        return "Connect the domain again (no zone yet)"
+        return "The domain was never set up here. Connect it again."
     return None
 
 
@@ -761,12 +766,12 @@ def retry(req) -> tuple[int, dict]:
     row = _order(tenant_id, apex)
     status, mode = row.get("status"), row.get("mode")
     if status in RESUBMIT:
-        raise ApiError(409, "resubmit", "Start the move again with a new transfer code")
+        raise ApiError(409, "resubmit", "This move can't be retried. Start it again with a new transfer code.")
     dev_only = status == "live" and row.get("devStatus") == "failed"
     if status not in RETRY_FROM and not dev_only:
-        raise ApiError(409, "not_retryable", f"Nothing to retry ({status})")
+        raise ApiError(409, "not_retryable", "Nothing has failed here, so there is nothing to retry.")
     if mode == "transfer":
-        raise ApiError(409, "not_retryable", "Start the transfer again from the Domains tab")
+        raise ApiError(409, "not_retryable", "This move can't be retried. Start it again on the Domains tab.")
     block = None if dev_only else retry_block(row)
     if block:
         raise ApiError(409, "not_retryable", block)
@@ -790,7 +795,7 @@ def retry(req) -> tuple[int, dict]:
         else:
             start_failed(tenant_id, apex, e)
         raise ApiError(502, "workflow_not_started",
-                       "Booqy's fault: the setup workflow didn't start. Booqy is notified; press Retry again") from e
+                       "Setting up the domain didn't start.") from e
     write_audit(tenant_id, "domain_retried", req.actor, {"domain": apex, "attempt": attempt, "devOnly": dev_only})
     return 202, {"zone": zones.public_zone(zones._zone_row(tenant_id, apex) or {})}
 
@@ -814,9 +819,9 @@ def notify(req) -> tuple[int, dict]:
     elif status == "awaiting_owner_approval":
         sent = domain_mail.send(profile, "transfer_approve", domain=apex)
     else:
-        raise ApiError(409, "nothing_to_send", "The restaurant has nothing to do for this domain right now")
+        raise ApiError(409, "nothing_to_send", "The restaurant has nothing to do for this domain right now, so no email was sent.")
     if not sent:
-        raise ApiError(502, "mail_failed", "The e-mail couldn't be sent (no contact address, or the send failed)")
+        raise ApiError(502, "mail_failed", "The email to the restaurant wasn't sent.")
     write_audit(tenant_id, "domain_steps_sent", req.actor, {"domain": apex, "to": domain_mail.recipient(profile)})
     return 200, {"sentTo": domain_mail.recipient(profile)}
 
@@ -826,15 +831,15 @@ def simulate(req) -> tuple[int, dict]:
     (dev console only): moves a simulated order as the registry, the owner
     or the restaurant would, then runs the check at once."""
     if env("ENVIRONMENT") == "prod" or not simulated():
-        raise ApiError(409, "not_simulated", "Simulation is only in the dev console")
+        raise ApiError(409, "not_simulated", "Test events only work in the dev console.")
     tenant_id = req.path["tenantId"]
     apex = zones._apex(req.path.get("domain"))
     row = _order(tenant_id, apex)
     if not row.get("simulated"):
-        raise ApiError(409, "not_simulated", "This order is real")
+        raise ApiError(409, "not_simulated", "This is a real domain order, so test events can't be used.")
     event = (req.body or {}).get("event")
     if event not in SIM_EVENTS or row.get("mode") not in SIM_EVENTS[event]:
-        raise ApiError(400, "validation_failed", "Not an event for this order",
+        raise ApiError(400, "validation_failed", "This test event doesn't fit this order. Pick one of the listed events.",
                        fields={"event": ", ".join(k for k, modes in SIM_EVENTS.items() if row.get("mode") in modes)})
     zones._update_zone(tenant_id, apex, simState=event)
     result = _check_status(tenant_id, apex, {**row, "simState": event})
@@ -851,7 +856,7 @@ def auth_code(req) -> tuple[int, dict]:
     apex = zones._apex(req.path.get("domain"))
     row = _order(tenant_id, apex)
     if not registered_here(row):
-        raise ApiError(409, "not_registered_here", "This domain is registered elsewhere: its registrar has the code")
+        raise ApiError(409, "not_registered_here", "This domain isn't bought through Booqy. The restaurant gets the code where the domain is now.")
     if row.get("simulated"):
         code = "SIM-" + hashlib.sha256(apex.encode()).hexdigest()[:10].upper()
     else:
@@ -862,7 +867,7 @@ def auth_code(req) -> tuple[int, dict]:
     profile = get_profile(tenant_id, required=False) or {}
     if send:
         if not domain_mail.send(profile, "auth_code", domain=apex, code=code):
-            raise ApiError(502, "mail_failed", "The e-mail couldn't be sent - show the code instead")
+            raise ApiError(502, "mail_failed", "The email wasn't sent. Show the code instead.")
         write_audit(tenant_id, "domain_auth_code_sent", req.actor, {"domain": apex, "to": domain_mail.recipient(profile)})
         return 200, {"sentTo": domain_mail.recipient(profile)}
     write_audit(tenant_id, "domain_auth_code_shown", req.actor, {"domain": apex})
@@ -882,9 +887,9 @@ def remove(req) -> tuple[int, dict]:
     row = _order(tenant_id, apex)
     status = row.get("status")
     if status in TRANSFER_WAITING or status == "registering":
-        raise ApiError(409, "in_progress", "The registry is still working on it: wait until it's done or has expired")
+        raise ApiError(409, "in_progress", "The domain registry is still working on this. Wait until it's done, then try again.")
     if status == "removed":                    # removing: an earlier Remove stopped half way; every step runs again
-        raise ApiError(409, "already_removed", "Already removed")
+        raise ApiError(409, "already_removed", "This domain is already removed. Reload the page.")
     zones._update_zone(tenant_id, apex, status="removing", statusDetail="Removing")
     notes = release(tenant_id, row, req.actor)
     detached = []

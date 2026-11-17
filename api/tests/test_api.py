@@ -94,7 +94,7 @@ def test_create_reports_every_problem_at_once(aws):
     status, res = call("POST /platform/tenants", body=body)
     assert status == 400
     assert {"ownerEmail", "planId", "locations.0.address", "locations.1.name"} <= set(res["fields"])
-    assert res["message"] == f"{len(res['fields'])} fields need fixing"
+    assert res["message"] == f"{len(res['fields'])} fields need a change. Fix the marked fields and save again."
 
 
 @pytest.mark.parametrize("org,vat,field,expected", [
@@ -398,7 +398,7 @@ def _owner_of(aws, email, tenant_id):
 def test_a_taken_owner_email_is_a_field_error_at_create(aws, tenant):
     _owner_of(aws, "owner@roma.se", tenant)
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two"})
-    assert status == 400 and body["fields"]["ownerEmail"].startswith("Already signs in to Pizzeria Roma")
+    assert status == 400 and body["fields"]["ownerEmail"].startswith("Already used to sign in to Pizzeria Roma")
     assert "owner+roma2@roma.se" in body["fields"]["ownerEmail"]
     # Nothing was written: the slug is still free.
     assert call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two", "ownerEmail": "new@roma.se"})[0] == 202
@@ -407,7 +407,7 @@ def test_a_taken_owner_email_is_a_field_error_at_create(aws, tenant):
 def test_owner_fields_are_editable_only_after_a_failed_setup(aws, tenant):
     p = {"tenantId": tenant}
     status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "other@roma.se"})
-    assert status == 409 and body["fields"] == {"ownerEmail": "Change it on the Users tab"}
+    assert status == 409 and body["fields"] == {"ownerEmail": "Change it on the Users tab."}
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
                            UpdateExpression="SET #s = :f", ExpressionAttributeNames={"#s": "status"},
                            ExpressionAttributeValues={":f": {"S": "provisioning_failed"}})

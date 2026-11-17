@@ -13,6 +13,8 @@ from botocore.exceptions import ClientError
 from . import validation as v
 from .core import (ApiError, audit_put, cancellation_codes, client, from_ddb, location_table, new_id,
                    not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value, write_audit)
+from .core import status_words
+from .validation import REQUIRED, fields_message
 from .tenants import HIDDEN, get_profile, tkey
 
 LOCKED_STATUSES = ("offboarding", "offboarded")
@@ -41,7 +43,7 @@ def create_location(req) -> tuple[int, dict]:
         fields.pop("stripeAccountId")
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"The tenant is {profile['status']}", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
     location_id, now = new_id(), now_iso()
     item = {"PK": f"TENANT#{tenant_id}", "SK": f"LOCATION#{location_id}", "tenantId": tenant_id,
             "locationId": location_id, "createdAt": now, "createdBy": req.actor,
@@ -65,8 +67,8 @@ def create_location(req) -> tuple[int, dict]:
                 cancellation_codes(e)[0] == "ConditionalCheckFailed":
             ent = profile.get("entitlements") or {}
             raise ApiError(409, "plan_limit_reached",
-                           f"The plan allows {ent.get('maxLocations', '?')} locations. Raise the limit "
-                           "(Plan) first, then add the location.",
+                           f"The plan allows {ent.get('maxLocations', '?')} locations. Raise the limit on the "
+                           "Plan tab first, then add the location.",
                            maxLocations=ent.get("maxLocations"),
                            locationCount=profile.get("locationCount", 0)) from e
         raise
@@ -77,18 +79,18 @@ def update_location(req) -> tuple[int, dict]:
     tenant_id, location_id = req.path["tenantId"], req.path["locationId"]
     unknown = sorted(set(req.body) - {"name", "address", "phone", "email", "stripeAccountId"})
     if unknown:
-        raise ApiError(400, "validation_failed", "These fields can't be changed here",
-                       fields={k: "Not editable" for k in unknown})
+        raise ApiError(400, "validation_failed", "Some of this can't be changed here. Reload the page and try again.",
+                       fields={k: "Can't be changed here." for k in unknown})
     fields = v.location_fields(req.body, partial=True)
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"The tenant is {profile['status']}", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
     sets, removes, names, values = [], [], {}, {}
     for i, key in enumerate(k for k in ("name", "address", "phone", "email", "stripeAccountId") if k in req.body):
         names[f"#f{i}"] = key
         if fields.get(key) in (None, ""):
             if key in ("name", "address"):
-                raise ApiError(400, "validation_failed", "Required", fields={key: "Required"})
+                raise ApiError(400, "validation_failed", fields_message(1), fields={key: REQUIRED})
             removes.append(f"#f{i}")
         else:
             sets.append(f"#f{i} = :v{i}")
@@ -102,7 +104,7 @@ def update_location(req) -> tuple[int, dict]:
         else:
             removes.append("#pn")
     if not sets and not removes:
-        raise ApiError(400, "validation_failed", "Nothing to update")
+        raise ApiError(400, "validation_failed", "Nothing was changed. Change a field, then save.")
     sets += ["updatedAt = :n", "updatedBy = :b"]
     values.update({":n": {"S": now_iso()}, ":b": {"S": req.actor}})
     expr = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
@@ -112,7 +114,7 @@ def update_location(req) -> tuple[int, dict]:
             ConditionExpression="attribute_exists(PK)", ExpressionAttributeNames=names,
             ExpressionAttributeValues=values, ReturnValues="ALL_NEW")
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
-        raise not_found("No such location for this tenant") from e
+        raise not_found("We can't find this location. It may have been removed. Reload the page.") from e
     write_audit(tenant_id, "location_updated", req.actor,
                 {"locationId": location_id, "fields": sorted(names.values())})
     return 200, {"location": _public(from_ddb(out["Attributes"]))}
@@ -141,8 +143,8 @@ def delete_location(req) -> tuple[int, dict]:
             raise
         codes = cancellation_codes(e)
         if codes[0] == "ConditionalCheckFailed":
-            raise not_found("No such location for this tenant") from e
+            raise not_found("We can't find this location. It may have been removed. Reload the page.") from e
         if "ConditionalCheckFailed" in codes[1:]:
-            raise ApiError(409, "count_changed", "The location count changed meanwhile - try again") from e
+            raise ApiError(409, "count_changed", "Someone changed the locations at the same time. Try again.") from e
         raise
     return 200, {"deleted": location_id}

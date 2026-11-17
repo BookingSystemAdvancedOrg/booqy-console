@@ -48,8 +48,8 @@ from zoneinfo import ZoneInfo
 from botocore.exceptions import BotoCoreError, ClientError
 
 from . import validation as v
-from .core import (ApiError, client, env, log, now_iso, query_all, tenant_table, to_ddb,
-                   to_ddb_value, write_audit)
+from .core import (SAFE_MESSAGES, ApiError, client, env, error_body, log, now_iso, query_all, status_words,
+                   tenant_table, to_ddb, to_ddb_value, write_audit)
 from .stripe_connect import stripe_request
 from .tenants import (FREE_NOTICE_DAYS, FREE_PLAN_ID, add_months, apply_plan, ensure_billing_map, get_plan, get_profile, offboard_tenant,
                       resume_tenant, suspend_tenant, tkey)
@@ -948,10 +948,10 @@ def _start_day(f: v.Fields, field: str = "startDate") -> date | None:
     try:
         day = date.fromisoformat(raw)
     except ValueError:
-        f.fail(field, "Use yyyy-mm-dd")
+        f.fail(field, "Write a date like 2026-12-01.")
         return None
     if day > _today() + timedelta(days=365):
-        f.fail(field, "At most a year ahead")
+        f.fail(field, "Pick a date at most a year ahead.")
     return day
 
 
@@ -961,9 +961,9 @@ def _preference_input(f: v.Fields) -> str | None:
     pref = f.text("collectionPreference", max_len=20)
     method = f.text("collectionMethod", max_len=30)
     if pref is not None and pref not in COLLECTION_PREFERENCES:
-        f.fail("collectionPreference", "card (charged automatically) or invoice (pay within 30 days)")
+        f.fail("collectionPreference", "Pick card or invoice.")
     if method is not None and method not in COLLECTION_METHODS:
-        f.fail("collectionMethod", "send_invoice (emailed invoice) or charge_automatically (card on file)")
+        f.fail("collectionMethod", "Pick emailed invoice or card.")
     if pref is None and method is not None:
         pref = "card" if method == "charge_automatically" else "invoice"
     return pref
@@ -980,7 +980,7 @@ def start_subscription(req) -> tuple[int, dict]:
     start_day = _start_day(f)
     terms = f.text("terms", max_len=20)
     if terms is not None and terms not in TERMS:
-        f.fail("terms", "trial (try-out period) or subscription")
+        f.fail("terms", "Pick trial or subscription.")
     price_sek = f.integer("priceSek", minimum=0, maximum=1_000_000)
     f.done()
     profile = get_profile(tenant_id)
@@ -998,7 +998,7 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str | None =
     Booqy Admin. Days already invoiced (a restart inside a paid month) are
     never invoiced again."""
     if profile.get("status") not in ("provisioning", "active"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {profile.get('status')}",
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.",
                        currentStatus=profile.get("status"))
     billing = _billing(profile)
     today = _today()
@@ -1009,19 +1009,19 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str | None =
     old_start, old_end = _date(billing.get("startsAt")), _date(billing.get("endsAt"))
     if agreement_running(billing, today):
         if not (old_end and old_end < today and old_end < first_day):
-            hint = (f" until {old_end.isoformat()}: undo the cancellation with Keep the agreement, or start a new one "
-                    f"once it has ended" if old_end else "")
-            raise ApiError(409, "already_subscribed", f"The customer already has a running agreement{hint}")
+            hint = (f" until {old_end.isoformat()}. Press Keep the agreement to undo the cancellation, or start a new "
+                    f"one after it ends." if old_end else ". Change it instead of starting a new one.")
+            raise ApiError(409, "already_subscribed", f"The customer already has an agreement{hint}")
     if old_start and old_end and (not done or old_end > done) and billing.get("status") in ("active", "ended"):
         previous.append({"startsAt": max(old_start, done + timedelta(days=1)).isoformat() if done else old_start.isoformat(),
                          "endsAt": old_end.isoformat()})
     if not advance and done and first_day <= done:
         nxt = (done + timedelta(days=1)).isoformat()
-        raise ApiError(409, "already_invoiced", f"The period to {done.isoformat()} is already invoiced: start on {nxt} or later",
+        raise ApiError(409, "already_invoiced", f"Everything up to {done.isoformat()} is already invoiced. Start on {nxt} or later.",
                        earliestStart=nxt)
     plan = plan_of(profile)
     if not plan:
-        raise ApiError(409, "no_plan", "The customer has no plan - set one on the Plan tab first")
+        raise ApiError(409, "no_plan", "The customer has no plan. Pick one on the Plan tab first.")
     if plan.get("free"):
         # Free: the own price stays as the price after it.
         price_sek = int(billing["priceSek"]) if billing.get("priceSek") is not None else None
@@ -1084,7 +1084,7 @@ def update_subscription(req) -> tuple[int, dict]:
     offboard_at_end = f.boolean("offboardAtEnd")
     pref = f.text("collectionPreference", max_len=20) if action == "collection" else None
     if action == "collection" and pref not in COLLECTION_PREFERENCES:
-        f.fail("collectionPreference", "card (charged automatically) or invoice (pay within 30 days)")
+        f.fail("collectionPreference", "Pick card or invoice.")
     f.done()
     profile = get_profile(tenant_id)
     billing = _billing(profile)
@@ -1096,7 +1096,7 @@ def update_subscription(req) -> tuple[int, dict]:
                     {"from": collection_preference(billing), "to": pref})
         return 200, {"billing": _view(get_profile(tenant_id))}
     if not agreement_running(billing, today):
-        raise ApiError(409, "not_subscribed", "The customer has no running agreement")
+        raise ApiError(409, "not_subscribed", "The customer has no agreement. Start one first.")
     details: dict = {}
     if action == "cancel":
         ends = end_date_for(billing, today)
@@ -1112,16 +1112,16 @@ def update_subscription(req) -> tuple[int, dict]:
         _write_billing(tenant_id, {"endsAt": None, "offboardAtEnd": None, "cancelRequestedAt": None, "cancelRequestedBy": None})
     elif action == "convert":
         if (billing.get("terms") or "subscription") != "trial":
-            raise ApiError(409, "not_trial", "The customer is already on a subscription")
+            raise ApiError(409, "not_trial", "The customer already has a subscription. Nothing to change.")
         _write_billing(tenant_id, {"terms": "subscription", "termsSince": now_iso(), "convertedBy": req.actor})
         details = {"from": "trial", "to": "subscription"}
     elif action == "use_card":
         if not customer_id:
-            raise ApiError(409, "no_card", "The restaurant has not added a card yet - send them the card link")
+            raise ApiError(409, "no_card", "The restaurant hasn't added a card yet. Send them the card link.")
         methods = stripe_request("GET", "/payment_methods", {"customer": customer_id, "type": "card", "limit": 1})
         cards = methods.get("data") or []
         if not cards:
-            raise ApiError(409, "no_card", "The restaurant has not added a card yet - send them the card link")
+            raise ApiError(409, "no_card", "The restaurant hasn't added a card yet. Send them the card link.")
         card = cards[0]["id"]
         stripe_request("POST", f"/customers/{customer_id}", {"invoice_settings[default_payment_method]": card},
                        idempotency_key=f"default-pm-{card}")
@@ -1131,8 +1131,8 @@ def update_subscription(req) -> tuple[int, dict]:
                                    "cardAddedAt": billing.get("cardAddedAt") or now_iso()})
         details = {"paymentMethod": card}
     else:
-        raise ApiError(400, "validation_failed", "Unknown action",
-                       fields={"action": "cancel, cancel_now, keep, convert, use_card or collection"})
+        raise ApiError(400, "validation_failed", "Booqy doesn't know this choice. Reload the page and try again.",
+                       fields={"action": "Pick one of the listed choices."})
     write_audit(tenant_id, f"subscription_{action}", req.actor, details)
     return 200, {"billing": _view(get_profile(tenant_id))}
 
@@ -1306,10 +1306,10 @@ def build_invoice(tenant_id: str, profile: dict, start: date, end: date, plan: d
         return result
     tax = env("BILLING_TAX_RATE_ID", "")
     if not tax:
-        raise ApiError(500, "no_vat_rate", "BILLING_TAX_RATE_ID is not set: no invoice is sent without VAT")
+        raise ApiError(500, "no_vat_rate", "Invoices are on hold: Booqy's VAT rate isn't set up, and no invoice goes out without VAT.")
     if env("ENVIRONMENT", "dev") == "prod" and seller_missing():
-        raise ApiError(500, "no_seller_details", "BILLING_SELLER_JSON lacks " + ", ".join(seller_missing())
-                       + ": no invoice is sent without Booqy's details (mervärdesskattelagen 17 kap 24 §)")
+        raise ApiError(500, "no_seller_details", "Invoices are on hold: Booqy's own company details are missing ("
+                       + ", ".join(seller_missing()) + "), and the law requires them on every invoice.")
     method, due, _card = collection_for(customer_id, billing)
     key = f"{kind}-{tenant_id}-{start.isoformat()}"
     invoice = _stripe_invoice_for(customer_id, tenant_id, kind, start)
@@ -1673,7 +1673,7 @@ def free_step(profile: dict, today: date, actor: str) -> dict:
         to = profile.get("billingEmail") or profile.get("ownerEmail")
         try:
             if not to:
-                raise ApiError(409, "no_email", "no owner or billing email")
+                raise ApiError(409, "no_email", "The customer has no owner or billing email. Add one on the Profile tab.")
             from . import mail                       # mail imports nothing from billing
             subject, body = _free_notice_mail(profile, new_until, then, price)
             mail._send_one(to, subject, body, mail._load_template())
@@ -1767,10 +1767,10 @@ def open_invoices(tenant_id: str) -> list[dict]:
 def send_reminder(tenant_id: str, row: dict, actor: str) -> dict:
     """Stripe re-sends the invoice email (emailed invoices only)."""
     if row.get("status") != "open":
-        raise ApiError(409, "not_open", "Only an open invoice can be reminded about")
+        raise ApiError(409, "not_open", "Only an unpaid invoice gets a reminder. This one is already paid or closed.")
     invoice = stripe_request("POST", f"/invoices/{row['invoiceId']}/send", {})
     if invoice.get("collection_method") == "charge_automatically":
-        raise ApiError(409, "charged_automatically", "This invoice is charged to a card; Stripe retries it by itself")
+        raise ApiError(409, "charged_automatically", "This invoice is paid by card. Stripe tries the card again by itself.")
     n = int(row.get("remindersSent") or 0) + 1
     _mark(row, remindersSent=n, lastReminderAt=now_iso(), lastReminderBy=actor)
     write_audit(tenant_id, "invoice_reminder_sent", actor, {"invoiceId": row["invoiceId"], "number": row.get("number"),
@@ -2134,7 +2134,7 @@ def remind_invoice(req) -> tuple[int, dict]:
                                  ExpressionAttributeValues={":pk": {"S": f"TENANT#{tenant_id}"}, ":i": {"S": "INVOICE#"}})
             if r.get("invoiceId") == invoice_id]
     if not rows:
-        raise ApiError(404, "not_found", "No such invoice")
+        raise ApiError(404, "not_found", "We can't find this invoice. Reload the page.")
     return 200, send_reminder(tenant_id, rows[0], req.actor)
 
 
@@ -2260,18 +2260,18 @@ def _amount_minor(value, field: str, f: v.Fields) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
-        f.fail(field, "Must be an amount")
+        f.fail(field, "Write an amount in kronor, e.g. 499.")
         return None
     try:
         amount = Decimal(str(value))
     except Exception:  # noqa: BLE001 - any unparsable value
-        f.fail(field, "Must be an amount")
+        f.fail(field, "Write an amount in kronor, e.g. 499.")
         return None
     if not amount.is_finite() or amount <= 0:
-        f.fail(field, "More than 0")
+        f.fail(field, "Write an amount above 0, e.g. 499.")
         return None
     if amount != amount.quantize(CENTS):
-        f.fail(field, "At most 2 decimals")
+        f.fail(field, "Use at most 2 decimals, e.g. 499.50.")
         return None
     return int(amount * 100)
 
@@ -2280,36 +2280,36 @@ def _parse_credit_request(body: dict) -> dict:
     f = v.Fields(body)
     method = f.text("method", required=True, max_len=10)
     if method and method not in CREDIT_METHODS:
-        f.fail("method", "refund or credit")
+        f.fail("method", "Pick refund or credit.")
     reason = f.text("reason", max_len=40) or "other"
     if reason not in CREDIT_REASONS:
-        f.fail("reason", "Unknown reason")
+        f.fail("reason", "Pick one of the listed reasons.")
     memo = f.text("memo", max_len=500)
     request_id = f.text("requestId", required=True, max_len=64)
     if request_id and not set(request_id) <= REQUEST_ID_CHARS:
-        f.fail("requestId", "Letters, digits and hyphens")
+        f.fail("requestId", "Booqy couldn't read this. Reload the page and try again.")
     items = (body or {}).get("items")
     parsed, seen = [], set()
     if not isinstance(items, list) or not items:
-        f.fail("items", "Pick at least one invoice")
+        f.fail("items", "Pick at least one invoice.")
     elif len(items) > MAX_CREDIT_ITEMS:
-        f.fail("items", f"At most {MAX_CREDIT_ITEMS} invoices at a time")
+        f.fail("items", f"Pick at most {MAX_CREDIT_ITEMS} invoices at a time.")
     else:
         for n, item in enumerate(items):
             invoice_id = item.get("invoiceId") if isinstance(item, dict) else None
             if not isinstance(invoice_id, str) or not invoice_id.startswith("in_") or len(invoice_id) > 80:
-                f.fail(f"items.{n}.invoiceId", "Not an invoice")
+                f.fail(f"items.{n}.invoiceId", "We can't find this invoice. Reload the page.")
                 continue
             if invoice_id in seen:
-                f.fail(f"items.{n}.invoiceId", "Listed twice")
+                f.fail(f"items.{n}.invoiceId", "This invoice is picked twice. Pick it once.")
                 continue
             seen.add(invoice_id)
             amount = _amount_minor(item.get("amountSek"), f"items.{n}.amountSek", f)
             if item.get("amountSek") is None:   # always the figure the operator confirmed, never "whatever is left"
-                f.fail(f"items.{n}.amountSek", "Enter an amount")
+                f.fail(f"items.{n}.amountSek", "Write an amount, e.g. 499.")
             attempt = item.get("attempt", 0)
             if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 <= attempt <= 99:
-                f.fail(f"items.{n}.attempt", "0 to 99")
+                f.fail(f"items.{n}.attempt", "Booqy couldn't read this. Reload the page and try again.")
                 attempt = 0
             parsed.append({"invoiceId": invoice_id, "amount": amount, "attempt": attempt})
     f.done()
@@ -2329,7 +2329,7 @@ def _lock_invoice(tenant_id: str, invoice_id: str, request_id: str) -> None:
             ExpressionAttributeValues={":now": {"N": str(now)}})
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            raise ApiError(409, "credit_in_progress", "Another refund of this invoice is running; reload in a minute") from e
+            raise ApiError(409, "credit_in_progress", "This invoice is already being refunded. Reload the page in a minute.") from e
         raise
 
 
@@ -2407,7 +2407,7 @@ def _note_params(invoice: dict, lines: list[dict], wanted: int, left: int) -> tu
         step = int((Decimal(wanted - got) * ratio).to_integral_value(rounding=ROUND_HALF_UP)) or (1 if got < wanted else -1)
         guess += step
     if best is None:
-        raise ApiError(409, "amount_not_possible", "Stripe cannot credit that amount on this invoice; try a slightly smaller one")
+        raise ApiError(409, "amount_not_possible", "Stripe can't credit that amount on this invoice. Try a slightly smaller amount.")
     return best
 
 
@@ -2447,17 +2447,17 @@ def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict,
     invoice_id, method = item["invoiceId"], req["method"]
     row = rows.get(invoice_id)
     if not row:
-        raise ApiError(404, "not_found", "No such invoice for this customer")
+        raise ApiError(404, "not_found", "We can't find this invoice for the customer. Reload the page.")
     invoice = stripe_request("GET", f"/invoices/{invoice_id}", {})
     if not customer_id or _id(invoice.get("customer")) != customer_id:
-        raise ApiError(404, "not_found", "No such invoice for this customer")
+        raise ApiError(404, "not_found", "We can't find this invoice for the customer. Reload the page.")
     status = invoice.get("status")
     if method == "refund" and status != "paid":
-        raise ApiError(409, "not_paid", "Only a paid invoice can be refunded; credit it instead")
+        raise ApiError(409, "not_paid", "Only a paid invoice can be refunded. Credit it instead.")
     if method == "credit" and status not in ("paid", *OWED):
-        raise ApiError(409, "not_creditable", "Only a paid or open invoice can be credited")
+        raise ApiError(409, "not_creditable", "Only a paid or unpaid invoice can be credited. This one is closed.")
     if method == "refund" and (invoice.get("paid_out_of_band") or row.get("paidOutOfBand")):
-        raise ApiError(409, "paid_out_of_band", "Paid outside Stripe, so there is no card payment to refund; credit it instead")
+        raise ApiError(409, "paid_out_of_band", "This was paid outside Stripe, so there is no card payment to refund. Credit it instead.")
     if status == "paid":
         left = int(invoice.get("amount_paid") or 0) - int(invoice.get("post_payment_credit_notes_amount") or 0)
     else:
@@ -2473,12 +2473,12 @@ def _credit_one(tenant_id: str, customer_id: str | None, rows: dict, item: dict,
     note = _existing_note(invoice_id, req["requestId"], key)
     if note is None:
         if left <= 0:
-            raise ApiError(409, "nothing_left", "Nothing left to refund or credit on this invoice")
+            raise ApiError(409, "nothing_left", "Nothing is left to refund or credit on this invoice.")
         if wanted > left:
-            raise ApiError(409, "more_than_left", f"At most {sek(left)} kr is left on this invoice", leftSek=sek(left))
+            raise ApiError(409, "more_than_left", f"Only {sek(left)} kr is left on this invoice. Use that amount or less.", leftSek=sek(left))
         lines = _invoice_lines(invoice)
         if not lines:
-            raise ApiError(409, "no_lines", "This invoice has no lines to credit")
+            raise ApiError(409, "no_lines", "This invoice has nothing on it to credit.")
         params, amount = _note_params(invoice, lines, wanted, left)
         if status == "paid":
             params["refund_amount" if method == "refund" else "credit_amount"] = amount
@@ -2529,17 +2529,19 @@ def create_credit_notes(req) -> tuple[int, dict]:
         try:
             _lock_invoice(tenant_id, item["invoiceId"], parsed["requestId"])
         except ApiError as e:
-            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": e.message})
+            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": error_body(e)["message"]})
             continue
         try:
             results.append(_credit_one(tenant_id, customer_id, rows, item, parsed, req.actor))
         except ApiError as e:
-            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": e.message,
+            if e.code in SAFE_MESSAGES:
+                log.info(json.dumps({"creditFailed": item["invoiceId"], "error": e.code, "detail": e.message[:500]}))
+            results.append({"invoiceId": item["invoiceId"], "ok": False, "error": e.code, "message": error_body(e)["message"],
                             **{k: val for k, val in e.extra.items() if k in ("leftSek", "stripeStatus")}})
         except Exception:  # noqa: BLE001 - one invoice's fault must not hide the others' results
             log.exception("credit note for %s failed", item["invoiceId"])
             results.append({"invoiceId": item["invoiceId"], "ok": False, "error": "internal_error",
-                            "message": "The refund of this invoice did not finish"})
+                            "message": "The refund of this invoice didn't finish."})
         finally:
             _unlock_invoice(tenant_id, item["invoiceId"], parsed["requestId"])
     ok = [r for r in results if r["ok"]]

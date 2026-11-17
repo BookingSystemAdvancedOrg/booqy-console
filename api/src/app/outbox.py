@@ -50,13 +50,13 @@ def list_messages(req):
     try:
         limit = int(req.query.get("limit") or DEFAULT_LIMIT)
     except ValueError:
-        raise ApiError(400, "invalid_limit", "limit must be a number") from None
+        raise ApiError(400, "invalid_limit", "Booqy couldn't read the page size. Reload the page.") from None
     limit = max(1, min(limit, MAX_LIMIT))
     kwargs = {"Bucket": bucket, "Prefix": PREFIX, "MaxKeys": limit}
     after = req.query.get("after")
     if after:
         if not MESSAGE_ID.fullmatch(after):
-            raise ApiError(400, "invalid_cursor", "after must be a message id")
+            raise ApiError(400, "invalid_cursor", "Booqy couldn't read where the list left off. Reload the page.")
         kwargs["StartAfter"] = f"{PREFIX}{after}.json"
     page = client("s3").list_objects_v2(**kwargs)
     keys = [o["Key"] for o in page.get("Contents", [])]
@@ -70,13 +70,13 @@ def list_messages(req):
 def get_message(req):
     bucket = _bucket()
     if not bucket:
-        raise not_found("The mail outbox is off")
+        raise not_found("The mail outbox is switched off here.")
     message_id = req.path.get("messageId") or ""
     if not MESSAGE_ID.fullmatch(message_id):
-        raise not_found("No such message")
+        raise not_found("We can't find this email. It may have been cleared. Reload the page.")
     try:
         return 200, {"message": _read(bucket, f"{PREFIX}{message_id}.json")}
     except ClientError as err:
         if err.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
-            raise not_found("No such message") from None
+            raise not_found("We can't find this email. It may have been cleared. Reload the page.") from None
         raise

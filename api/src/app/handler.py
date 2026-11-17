@@ -193,11 +193,12 @@ def handler(event, context):
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
     if fn is None:
-        return respond(404, {"error": "not_found", "message": "This page doesn't exist in the API. Reload the console; "
-                                                              "it may be newer than the API."})
+        return respond(404, {"error": "not_found", "message": "This needs a newer Booqy than the one running. "
+                                                              "Reload the page."})
     claims = (((event.get("requestContext") or {}).get("authorizer") or {}).get("jwt") or {}).get("claims") or {}
     if OPERATOR_GROUP not in _groups(claims):
-        return respond(403, {"error": "forbidden", "message": "Platform operators only"})
+        return respond(403, {"error": "forbidden", "message": "Only Booqy operators can do this. Sign in with your "
+                                                              "operator account."})
     actor = claims.get("username") or claims.get("sub") or "unknown"
     try:
         req = Request(path=event.get("pathParameters") or {}, query=event.get("queryStringParameters") or {},
@@ -214,6 +215,5 @@ def handler(event, context):
         return respond(e.status, error_body(e))
     except Exception:  # noqa: BLE001 - last line of defence, details only in the logs
         log.exception("unhandled error on %s (request %s)", route, request_id)
-        return respond(500, {"error": "internal_error", "message": "Something went wrong on our side. Try again; if it keeps failing, "
-                                                                     "check the platform-tenants logs for this reference.",
+        return respond(500, {"error": "internal_error", "message": "Something broke on Booqy's side.",
                              "requestId": request_id})

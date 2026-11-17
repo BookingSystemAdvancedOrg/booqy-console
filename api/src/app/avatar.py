@@ -46,7 +46,7 @@ def staging_key(sub: str) -> str:
 def _bucket() -> str:
     bucket = env("USER_BACKDROPS_BUCKET", "")
     if not bucket:
-        raise ApiError(409, "avatars_not_configured", "Profile pictures aren't set up in this environment")
+        raise ApiError(409, "avatars_not_configured", "Profile pictures aren't switched on here yet. Booqy has to set this up.")
     return bucket
 
 
@@ -54,7 +54,7 @@ def _own_sub(req) -> str:
     _bucket()
     sub = (req.claims or {}).get("sub")
     if not isinstance(sub, str) or not _SAFE_SUB.match(sub):
-        raise ApiError(403, "forbidden", "Platform operators only")
+        raise ApiError(403, "forbidden", "Only Booqy operators can do this. Sign in with your operator account.")
     return sub
 
 
@@ -103,16 +103,16 @@ def get_avatar(req):
 def create_upload(req):
     sub = _own_sub(req)
     body = req.body or {}
-    errors = {k: "Unknown field" for k in sorted(set(body) - {"contentType", "size"})}
+    errors = {k: "Not expected here." for k in sorted(set(body) - {"contentType", "size"})}
     content_type = body.get("contentType")
     content_type = content_type.strip().lower() if isinstance(content_type, str) else ""
     if content_type not in CONTENT_TYPES:
-        errors["contentType"] = "image/jpeg, image/png or image/webp"
+        errors["contentType"] = "Use a JPEG, PNG or WebP picture."
     size = body.get("size")
     if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= MAX_BYTES:
-        errors["size"] = f"Whole bytes, 1 to {MAX_BYTES} (5 MB)"
+        errors["size"] = "The picture is too big. Use one under 5 MB."
     if errors:
-        raise ApiError(400, "validation_failed", "Some fields are invalid", fields=errors)
+        raise ApiError(400, "validation_failed", "This picture can't be used. Pick another picture.", fields=errors)
     post = _s3().generate_presigned_post(
         Bucket=_bucket(), Key=staging_key(sub), Fields={"Content-Type": content_type},
         Conditions=[{"Content-Type": content_type}, ["content-length-range", 1, MAX_BYTES]],

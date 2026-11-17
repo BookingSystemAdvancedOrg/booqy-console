@@ -73,7 +73,7 @@ def _account_id(tenant_id: str) -> str:
     account_id = (profile.get("stripe") or {}).get("accountId")
     if not account_id:
         raise ApiError(409, "no_stripe_account",
-                       "The connected account is created by onboarding - wait for it, or retry onboarding")
+                       "The customer's Stripe account isn't ready yet. Wait for setup to finish, or press Retry setup.")
     return account_id
 
 

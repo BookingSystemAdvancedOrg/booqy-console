@@ -165,7 +165,7 @@ def test_everything_left_and_never_more(billed, stripe):
     status, body = _post(billed, {"requestId": "req-3", "method": "refund",
                                   "items": [{"invoiceId": "in_paid1", "amountSek": 1}]})
     assert body["results"][0] == {"invoiceId": "in_paid1", "ok": False, "error": "nothing_left",
-                                  "message": "Nothing left to refund or credit on this invoice"}
+                                  "message": "Nothing is left to refund or credit on this invoice."}
 
 
 def test_more_than_left_is_refused_before_stripe(billed, stripe):

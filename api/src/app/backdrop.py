@@ -60,7 +60,7 @@ def _s3():
 def _bucket() -> str:
     bucket = env("USER_BACKDROPS_BUCKET", "")
     if not bucket or not env("USER_BACKDROPS_TABLE_NAME", ""):
-        raise ApiError(409, "backdrops_not_configured", "Background images aren't set up in this environment")
+        raise ApiError(409, "backdrops_not_configured", "Background images aren't switched on here yet. Booqy has to set this up.")
     return bucket
 
 
@@ -89,7 +89,7 @@ def _owner(req) -> _Owner:
     _bucket()
     sub = (req.claims or {}).get("sub")
     if not isinstance(sub, str) or not _SAFE_SUB.match(sub):
-        raise ApiError(403, "forbidden", "Platform operators only")
+        raise ApiError(403, "forbidden", "Only Booqy operators can do this. Sign in with your operator account.")
     return _Owner(sub)
 
 
@@ -223,19 +223,19 @@ def list_backdrops(req):
 def create_upload(req):
     owner = _owner(req)
     body = req.body or {}
-    errors = {k: "Unknown field" for k in sorted(set(body) - {"contentType", "size", "width", "height"})}
+    errors = {k: "Not expected here." for k in sorted(set(body) - {"contentType", "size", "width", "height"})}
     content_type = body.get("contentType")
     content_type = content_type.strip().lower() if isinstance(content_type, str) else ""
     if content_type not in CONTENT_TYPES:
-        errors["contentType"] = "image/jpeg, image/png or image/webp"
-    for name, high, msg in (("size", MAX_BYTES, f"Whole bytes, 1 to {MAX_BYTES} (10 MB)"),
-                            ("width", MAX_SIDE, f"Whole pixels, 1 to {MAX_SIDE}"),
-                            ("height", MAX_SIDE, f"Whole pixels, 1 to {MAX_SIDE}")):
+        errors["contentType"] = "Use a JPEG, PNG or WebP picture."
+    for name, high, msg in (("size", MAX_BYTES, "The picture is too big. Use one under 10 MB."),
+                            ("width", MAX_SIDE, f"The picture is too big. Use one at most {MAX_SIDE} pixels wide and high."),
+                            ("height", MAX_SIDE, f"The picture is too big. Use one at most {MAX_SIDE} pixels wide and high.")):
         value = body.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= high:
             errors[name] = msg
     if errors:
-        raise ApiError(400, "validation_failed", "Some fields are invalid", fields=errors)
+        raise ApiError(400, "validation_failed", "This picture can't be used. Pick another picture.", fields=errors)
     images, _ = _load(owner)
     if len(images) >= MAX_ITEMS:
         return 409, {"error": "limit_reached", "max": MAX_ITEMS}
@@ -280,7 +280,7 @@ def select_backdrop(req):
     owner = _owner(req)
     body = req.body or {}
     if "id" not in body or set(body) - {"id"}:
-        raise ApiError(400, "validation_failed", "Some fields are invalid", fields={"id": "Required, and only id"})
+        raise ApiError(400, "validation_failed", "Pick a picture first.", fields={"id": "Pick a picture."})
     image_id = body["id"]
     if image_id is not None:
         if not isinstance(image_id, str) or not _IMAGE_ID.match(image_id):

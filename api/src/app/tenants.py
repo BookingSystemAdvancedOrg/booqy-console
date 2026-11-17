@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from botocore.exceptions import ClientError
 
 from . import validation as v
+from .core import status_words
 from .contracts import FEATURE_KEYS, LIMITS
 from .core import (ApiError, audit_put, cancellation_codes, client, env, from_ddb, location_table,
                    new_id, not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
@@ -32,7 +33,7 @@ def get_profile(tenant_id: str, *, required: bool = True) -> dict | None:
     item = from_ddb(client("dynamodb").get_item(
         TableName=tenant_table(), Key=tkey(tenant_id), ConsistentRead=True).get("Item"))
     if item is None and required:
-        raise not_found("No such tenant")
+        raise not_found("We can't find this customer. Reload the page.")
     return item
 
 
@@ -56,7 +57,7 @@ def owner_email_problem(email: str | None, tenant_id: str | None = None) -> str 
         return None
     other = (get_profile(owner, required=False) or {}).get("name") or owner
     local, _, domain = email.partition("@")
-    return f"Already signs in to {other} - use another address, e.g. {local}+{domain.split('.')[0]}2@{domain}"
+    return f"Already used to sign in to {other}. Use another email, e.g. {local}+{domain.split('.')[0]}2@{domain}."
 
 
 # Free: no monthly charge, Growth's features and limits. Not a row in the
@@ -140,13 +141,13 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
     if raw is None:
         return {"until": default_free_until(today).isoformat(), "thenPlanId": "starter"}
     if not isinstance(raw, dict):
-        f.fail(field, "Must be an object")
+        f.fail(field, "Pick how long Free lasts.")
         return None
     out = {"until": None, "thenPlanId": "starter"}
     preset = raw.get("preset")
     if preset is not None:
         if not isinstance(preset, str) or preset not in FREE_PRESETS:
-            f.fail(f"{field}.preset", "Pick until_changed, 3m or 6m")
+            f.fail(f"{field}.preset", "Pick Free until changed, 3 months or 6 months.")
             return None
         out["preset"] = preset
         if preset == current_preset and current_until is not None:
@@ -154,11 +155,11 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
         else:
             day = free_until_for(preset, start or today)
             if day is not None and day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
-                f.fail(f"{field}.preset", f"Less than {FREE_NOTICE_DAYS} days of that period are left: "
-                                          "pick a longer one or Free until changed")
+                f.fail(f"{field}.preset", f"Less than {FREE_NOTICE_DAYS} days of that period are left. "
+                                          "Pick a longer one, or Free until changed.")
             out["until"] = day.isoformat() if day else None
         if preset != "until_changed" and not raw.get("thenPlanId"):
-            f.fail(f"{field}.thenPlanId", "Pick the plan after Free")
+            f.fail(f"{field}.thenPlanId", "Pick the plan that starts after Free.")
             return out
     else:
         until = raw.get("until")
@@ -168,17 +169,17 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
             except ValueError:
                 day = None
             if day is None:
-                f.fail(f"{field}.until", "Use yyyy-mm-dd, or null for no end date")
+                f.fail(f"{field}.until", "Write a date like 2027-03-01, or leave it empty.")
             elif day < today + timedelta(days=FREE_NOTICE_DAYS) and day.isoformat() != current_until:
-                f.fail(f"{field}.until", f"At least {FREE_NOTICE_DAYS} days ahead, so the owner is told "
-                                         f"{FREE_NOTICE_DAYS} days before the first paid day")
+                f.fail(f"{field}.until", f"Pick a date at least {FREE_NOTICE_DAYS} days ahead. The owner is told "
+                                         f"{FREE_NOTICE_DAYS} days before the first paid day.")
             elif day > today + timedelta(days=3 * 366):
-                f.fail(f"{field}.until", "At most three years ahead")
+                f.fail(f"{field}.until", "Pick a date at most three years ahead.")
             else:
                 out["until"] = day.isoformat()
     then = raw.get("thenPlanId") or "starter"
     if not isinstance(then, str) or then == FREE_PLAN_ID or _plan_row(then) is None:
-        f.fail(f"{field}.thenPlanId", "Pick Starter or Growth")
+        f.fail(f"{field}.thenPlanId", "Pick Starter or Growth.")
     else:
         out["thenPlanId"] = then
     return out
@@ -187,7 +188,7 @@ def free_input(f: v.Fields, plan_id: str | None, field: str = "free", current_un
 def free_price_problem(free: dict | None, price_sek: int | None) -> str | None:
     """A timed preset (3m, 6m) needs the monthly price after Free, above 0."""
     if free and free.get("preset") in ("3m", "6m") and not price_sek:
-        return "Set the monthly price after Free"
+        return "Write the monthly price after Free, e.g. 499."
     return None
 
 
@@ -201,14 +202,14 @@ def _profile_fields(f: v.Fields) -> dict:
         "contactPhone": f.phone("contactPhone"),
         "billingEmail": f.email("billingEmail"),
         "senderName": f.text("senderName", max_len=11, pattern=v.SENDER_RE,
-                             msg="Max 11 characters, letters, digits and spaces (SMS sender)"),
+                             msg="Use at most 11 letters, digits or spaces, e.g. PizzaRoma."),
         "replyToEmail": f.email("replyToEmail"),
         "address": v.address(f),
         "notes": f.text("notes", max_len=2000),
     }
     if "branding" in f.data:
         if not isinstance(f.data["branding"], dict):
-            f.fail("branding", "Must be an object")
+            f.fail("branding", "Booqy couldn't read the branding. Reload the page and try again.")
         else:
             out["branding"] = f.data["branding"]
     return out
@@ -252,14 +253,14 @@ def _overrides(f: v.Fields) -> dict | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        f.fail("overrides", "Must be an object")
+        f.fail("overrides", "Booqy couldn't read the changes. Reload the page and try again.")
         return None
     sub = v.Fields(raw)
     out = {"maxLocations": sub.integer("maxLocations", minimum=1, maximum=100)}
     feats = raw.get("features")
     if feats is not None:
         if not isinstance(feats, dict) or not all(isinstance(x, bool) for x in feats.values()):
-            sub.fail("features", "Map of feature -> true/false")
+            sub.fail("features", "Turn each feature on or off.")
         else:
             # Keys no longer in the contract (a retired feature, e.g. "terminal", still on
             # stored entitlements and sent back) are dropped, not rejected.
@@ -267,12 +268,12 @@ def _overrides(f: v.Fields) -> dict | None:
     lims = raw.get("limits")
     if lims is not None:
         if not isinstance(lims, dict):
-            sub.fail("limits", "Map of limit -> whole number")
+            sub.fail("limits", "Write each limit as a whole number, e.g. 3.")
         else:
             ls = v.Fields(lims)
             for k in lims:
                 if k not in LIMITS:
-                    ls.fail(k, "Unknown limit")
+                    ls.fail(k, "Booqy doesn't know this limit. Reload the page.")
                 else:
                     ls.integer(k, minimum=LIMITS[k]["min"], maximum=LIMITS[k]["max"])
             for k, msg in ls.errors.items():
@@ -296,19 +297,19 @@ def _billing_input(f: v.Fields) -> dict:
     if raw is None:
         return {"terms": "subscription", "startInvoicing": False}
     if not isinstance(raw, dict):
-        f.fail("billing", "Must be an object")
+        f.fail("billing", "Booqy couldn't read the billing details. Reload the page and try again.")
         return {"terms": "subscription", "startInvoicing": False}
     sub = v.Fields(raw)
     terms = sub.text("terms", max_len=20) or "subscription"
     if terms not in ("trial", "subscription"):
-        sub.fail("terms", "trial (try-out period) or subscription")
+        sub.fail("terms", "Pick trial or subscription.")
     out = {"terms": terms, "priceSek": price_field(sub), "startInvoicing": sub.boolean("startInvoicing") or False,
            "collectionMethod": sub.text("collectionMethod", max_len=30), "startDate": _start_date_input(sub),
            "collectionPreference": sub.text("collectionPreference", max_len=20)}
     if out["collectionMethod"] not in (None, "send_invoice", "charge_automatically"):
-        sub.fail("collectionMethod", "send_invoice or charge_automatically")
+        sub.fail("collectionMethod", "Pick emailed invoice or card.")
     if out["collectionPreference"] not in (None, "card", "invoice"):
-        sub.fail("collectionPreference", "card (charged automatically) or invoice (pay within 30 days)")
+        sub.fail("collectionPreference", "Pick card or invoice.")
     for k, msg in sub.errors.items():
         f.fail(f"billing.{k}", msg)
     return out
@@ -378,7 +379,7 @@ def create_tenant(req) -> tuple[int, dict]:
         f.fail("billing.priceSek", price_problem)
     raw_locations = req.body.get("locations") or []
     if not isinstance(raw_locations, list):
-        f.fail("locations", "Must be a list")
+        f.fail("locations", "Booqy couldn't read the locations. Reload the page and try again.")
         raw_locations = []
 
     # Every problem in one response - the form shows them all at once instead
@@ -396,13 +397,13 @@ def create_tenant(req) -> tuple[int, dict]:
         f.fail("ownerEmail", taken)
     plan = get_plan(plan_id) if plan_id else None
     if plan_id and plan is None:
-        f.fail("planId", "Unknown plan - pick one of the plans listed")
+        f.fail("planId", "Unknown plan. Pick one of the listed plans.")
     entitlements = _entitlements(plan, overrides) if plan else None
     if entitlements and _turned_on(entitlements):
         entitlements["featuresEver"] = _turned_on(entitlements)   # a DynamoDB string set
     if entitlements and len(raw_locations) > entitlements["maxLocations"]:
-        f.fail("locations", f"The plan allows {entitlements['maxLocations']} - remove a location "
-                            "or raise 'Locations allowed'")
+        f.fail("locations", f"The plan allows {entitlements['maxLocations']} locations. Remove a location "
+                            "or raise Locations allowed.")
     f.done()
 
     tenant_id, now = new_id(), now_iso()
@@ -456,8 +457,8 @@ def create_tenant(req) -> tuple[int, dict]:
     except ClientError as e:
         if e.response["Error"]["Code"] == "TransactionCanceledException" and \
                 cancellation_codes(e)[0] == "ConditionalCheckFailed":
-            raise ApiError(409, "slug_taken", "That slug is already used by another customer",
-                           fields={"slug": "Already used by another customer - pick another, e.g. with the area: roma-sodermalm"}) from e
+            raise ApiError(409, "slug_taken", "Another customer already uses this slug. Pick another.",
+                           fields={"slug": "Already used. Pick another, e.g. with the area: roma-sodermalm."}) from e
         raise
 
     status = _start_onboarding(tenant_id, profile, run=1)
@@ -556,14 +557,14 @@ def update_tenant(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     unknown = sorted(set(req.body) - set(EDITABLE) - set(OWNER_EDITABLE))
     if unknown:
-        raise ApiError(400, "validation_failed", "These fields can't be changed here",
-                       fields={k: "Not editable" for k in unknown})
+        raise ApiError(400, "validation_failed", "Some of this can't be changed here. Reload the page and try again.",
+                       fields={k: "Can't be changed here." for k in unknown})
     owner_keys = [k for k in OWNER_EDITABLE if k in req.body]
     if owner_keys:
         status = (get_profile(tenant_id) or {}).get("status")
         if status != "provisioning_failed":
-            raise ApiError(409, "validation_failed", "The owner is already invited - manage people on the Users tab",
-                           fields={k: "Change it on the Users tab" for k in owner_keys})
+            raise ApiError(409, "validation_failed", "The owner is already invited. Change the owner on the Users tab.",
+                           fields={k: "Change it on the Users tab." for k in owner_keys})
     f = v.Fields(req.body)
     fields = _profile_fields(f)
     if "name" in req.body:
@@ -587,7 +588,7 @@ def update_tenant(req) -> tuple[int, dict]:
             sets.append(f"#f{i} = :v{i}")
             values[f":v{i}"] = to_ddb_value(fields[key])
     if not sets and not removes:
-        raise ApiError(400, "validation_failed", "Nothing to update")
+        raise ApiError(400, "validation_failed", "Nothing was changed. Change a field, then save.")
     sets += ["updatedAt = :now", "updatedBy = :by"]
     values.update({":now": {"S": now_iso()}, ":by": {"S": req.actor}})
     expr = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
@@ -597,7 +598,7 @@ def update_tenant(req) -> tuple[int, dict]:
             ConditionExpression="attribute_exists(PK)", ExpressionAttributeNames=names,
             ExpressionAttributeValues=values, ReturnValues="ALL_NEW")
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
-        raise not_found("No such tenant") from e
+        raise not_found("We can't find this customer. Reload the page.") from e
     write_audit(tenant_id, "profile_updated", req.actor, {"fields": sorted(names.values())})
     return 200, {"tenant": public(from_ddb(out["Attributes"]))}
 
@@ -645,7 +646,8 @@ def set_plan(req) -> tuple[int, dict]:
     f.done()
     plan = get_plan(plan_id)
     if plan is None:
-        raise ApiError(400, "validation_failed", "Unknown plan", fields={"planId": "Unknown plan"})
+        raise ApiError(400, "validation_failed", "Unknown plan. Pick one of the listed plans.",
+                       fields={"planId": "Unknown plan. Pick one of the listed plans."})
     tenant, subscription = apply_plan(tenant_id, profile, plan, req.actor, overrides=overrides, force=force,
                                       price_sek=price_sek, free=free)
     return 200, {"tenant": tenant, "subscription": subscription}
@@ -673,8 +675,8 @@ def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrid
     count = int(profile.get("locationCount", 0))
     if ent["maxLocations"] < count and not force:
         raise ApiError(409, "below_location_count",
-                       f"The tenant already has {count} locations; the new limit is {ent['maxLocations']}. "
-                       "Send force=true to apply anyway (existing locations keep working, no new ones).",
+                       f"The customer has {count} locations, but the new limit is {ent['maxLocations']}. "
+                       "Confirm to apply anyway: the locations keep working, but no new ones can be added.",
                        locationCount=count)
     ensure_billing_map(tenant_id)
     values = {":p": {"S": plan_id}, ":n": {"S": now_iso()}, ":b": {"S": actor}}
@@ -762,7 +764,7 @@ def _set_status(tenant_id: str, to: str, allowed_from: tuple[str, ...], actor: s
             ExpressionAttributeNames={"#s": "status"}, ExpressionAttributeValues=values)
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
         current = (get_profile(tenant_id) or {}).get("status")
-        raise ApiError(409, "invalid_status", f"Not possible while the tenant is {current}",
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(current)}.",
                        currentStatus=current) from e
 
 
@@ -837,8 +839,8 @@ def purge_now(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
     if req.body.get("confirmSlug") != profile.get("slug"):
-        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
-                       fields={"confirmSlug": "Does not match"})
+        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm, e.g. pizzeria-roma.",
+                       fields={"confirmSlug": "This doesn't match the slug. Type it exactly."})
     now = now_iso()
     try:
         client("dynamodb").update_item(
@@ -849,7 +851,7 @@ def purge_now(req) -> tuple[int, dict]:
             ExpressionAttributeValues={":n": {"S": now}, ":b": {"S": req.actor}, ":off": {"S": "offboarded"}})
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
         current = (get_profile(tenant_id) or {}).get("status")
-        raise ApiError(409, "invalid_status", f"Only an offboarded customer's data can be deleted (it is {current})",
+        raise ApiError(409, "invalid_status", f"Only an offboarded customer's data can be deleted. This customer is {status_words(current)}.",
                        currentStatus=current) from e
     write_audit(tenant_id, "purge_requested", req.actor, {"previousPurgeAt": profile.get("purgeAt")})
     out = {"status": "offboarded", "purgeAt": now}
@@ -893,8 +895,8 @@ def restore_tenant(tenant_id: str, actor: str) -> dict:
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
         current = get_profile(tenant_id) or {}
         status = current.get("status")
-        why = (f"Only an offboarded customer can be restored (it is {status})" if status != "offboarded"
-               else "Too late: the customer's data is being deleted")
+        why = (f"Only an offboarded customer can be restored. This customer is {status_words(status)}."
+               if status != "offboarded" else "Too late: the customer's data is already being deleted.")
         raise ApiError(409, "not_restorable", why, currentStatus=status) from e
     users = [u for u in tenant_users(tenant_id) if u.get("status", "active") == "active"]
     n, failed = _cognito_each(users, "admin_enable_user")
@@ -922,10 +924,10 @@ def offboard(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
     if req.body.get("confirmSlug") != profile.get("slug"):
-        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm",
-                       fields={"confirmSlug": "Does not match"})
+        raise ApiError(400, "validation_failed", "Type the customer's slug to confirm, e.g. pizzeria-roma.",
+                       fields={"confirmSlug": "This doesn't match the slug. Type it exactly."})
     if profile.get("status") == "provisioning":
-        raise ApiError(409, "invalid_status", "Wait until setup has finished (or failed)",
+        raise ApiError(409, "invalid_status", "Setup is still running. Wait until it finishes, then try again.",
                        currentStatus="provisioning")
     return 202, offboard_tenant(tenant_id, profile, req.actor)
 
@@ -965,7 +967,7 @@ def retry_onboarding(req) -> tuple[int, dict]:
         _set_status(tenant_id, "provisioning", ("provisioning_failed",), req.actor)
         profile["status"] = "provisioning"
     elif status != "active":
-        raise ApiError(409, "invalid_status", f"Not possible while the tenant is {status}", currentStatus=status)
+        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(status)}.", currentStatus=status)
     run = int(profile.get("onboardingRuns", 1)) + 1
     result = _start_onboarding(tenant_id, profile, run)
     write_audit(tenant_id, "onboarding_rerun", req.actor, {"run": run})

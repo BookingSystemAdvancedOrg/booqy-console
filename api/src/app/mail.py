@@ -105,15 +105,15 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        f.fail("logo", "Must be an object")
+        f.fail("logo", "Upload a logo, or choose the Booqy logo.")
         return None
     kind = raw.get("kind")
     if kind not in ("booqy", "custom"):
-        f.fail("logo.kind", "Must be booqy or custom")
+        f.fail("logo.kind", "Choose the Booqy logo or your own.")
         return None
     color = raw.get("color")
     if color is not None and not (isinstance(color, str) and HEX_COLOUR.match(color)):
-        f.fail("logo.color", "A colour like #3a2418")
+        f.fail("logo.color", "Write a colour like #3a2418.")
         return None
     data_url = raw.get("dataUrl")
     if not data_url:
@@ -123,19 +123,19 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
             return saved
         if kind == "booqy":
             return {"kind": "booqy"}
-        f.fail("logo", "Upload a logo, or choose the Booqy logo")
+        f.fail("logo", "Upload a logo, or choose the Booqy logo.")
         return None
     match = re.match(r"^data:(image/png|image/jpeg);base64,([A-Za-z0-9+/=\s]+)$", str(data_url))
     if not match:
-        f.fail("logo", "The logo must be a PNG or JPEG")
+        f.fail("logo", "Use a PNG or JPEG picture for the logo.")
         return None
     try:
         blob = base64.b64decode(match.group(2), validate=False)
     except (binascii.Error, ValueError):
-        f.fail("logo", "The logo file is damaged")
+        f.fail("logo", "The logo file can't be opened. Save it again and upload it.")
         return None
     if len(blob) > LOGO_MAX_BYTES:
-        f.fail("logo", f"The logo must be under {LOGO_MAX_BYTES // 1000} kB (the console shrinks it; try a smaller file)")
+        f.fail("logo", f"The logo is too big. Use a file under {LOGO_MAX_BYTES // 1000} kB.")
         return None
     out = {"kind": kind, "contentType": match.group(1), "data": base64.b64encode(blob).decode("ascii"),
            "name": str(raw.get("name") or "logo")[:100]}
@@ -149,7 +149,7 @@ def put_template(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     sender = f.text("senderName", required=True, max_len=60)
     reply_to = f.email("replyTo", required=True)
-    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
+    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="Write a colour like #1a120e.")
     signature = f.text("signature", max_len=600) or ""
     footer = f.text("footer", max_len=600) or ""
     logo = _parse_logo(f, current)
@@ -305,7 +305,7 @@ def preview(req) -> tuple[int, dict]:
         reply_to = f.email("replyTo")
         if reply_to:
             template["replyTo"] = reply_to
-        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
+        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="Write a colour like #1a120e.")
         if accent:
             template["accentColor"] = accent
         logo = _parse_logo(f, template)
@@ -394,11 +394,11 @@ def _operator_email(req) -> str:
     try:
         user = client("cognito-idp").admin_get_user(UserPoolId=env("OPERATOR_USER_POOL_ID"), Username=req.actor)
     except ClientError:
-        raise ApiError(400, "no_email", "Couldn't find your operator account's email address") from None
+        raise ApiError(400, "no_email", "We can't find the email of your account. Add it under Operators, then try again.") from None
     attrs = {a["Name"]: a["Value"] for a in user.get("UserAttributes") or []}
     email = (attrs.get("email") or "").strip().lower()
     if not email:
-        raise ApiError(400, "no_email", "Your operator account has no email address")
+        raise ApiError(400, "no_email", "Your account has no email. Add it under Operators, then try again.")
     return email
 
 
@@ -426,7 +426,7 @@ def _find(newsletter_id: str) -> dict:
     for row in rows:
         if row.get("newsletterId") == newsletter_id:
             return row
-    raise not_found("No such newsletter")
+    raise not_found("We can't find this newsletter. It may have been removed. Reload the page.")
 
 
 def get_newsletter(req) -> tuple[int, dict]:
@@ -445,7 +445,7 @@ def send(req) -> tuple[int, dict]:
         return 200, {"test": True, "sentTo": to}
     recipients = _recipients()
     if not recipients:
-        raise ApiError(400, "no_recipients", "There are no active customers to send to")
+        raise ApiError(400, "no_recipients", "No active customers to send to yet. Nothing was sent.")
     created_at = now_iso()
     newsletter_id = new_id()
     row = {"PK": PK, "SK": f"{NEWSLETTER_PREFIX}{created_at}#{newsletter_id}", "newsletterId": newsletter_id,
