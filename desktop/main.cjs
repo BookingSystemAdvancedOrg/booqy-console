@@ -43,7 +43,18 @@ function readTarget() {
   // bara i opackade körningar så att en installerad app aldrig kan pekas om.
   if (!app.isPackaged && process.env.BOOQY_URL) url = process.env.BOOQY_URL
   if (!url) throw new Error(`Ingen adress för miljön "${env}" i desktop.config.json`)
-  return { env, url }
+  return { env, url, appId: built?.appId ?? null }
+}
+
+/**
+ * Fönstrets ikon på Linux: app-icon.png, som build.mjs packar (med DEV-brickan
+ * i dev). macOS tar ikonen från appen och Windows från .exe-filen, båda redan
+ * rätt per miljö. Saknas filen (npm start) gäller Electrons egen.
+ */
+function windowIcon() {
+  if (process.platform !== 'linux') return {}
+  const file = path.join(__dirname, 'app-icon.png')
+  return fs.existsSync(file) ? { icon: file } : {}
 }
 
 function isAppUrl(raw) {
@@ -254,6 +265,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     title: APP_NAME,
+    ...windowIcon(),
     ...glassWindowOptions(),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: secureWebPreferences,
@@ -326,6 +338,7 @@ app.on('web-contents-created', (_e, contents) => {
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
           backgroundColor: '#fdfaf6',
+          ...windowIcon(),
           webPreferences: secureWebPreferences,
         },
       }
@@ -419,6 +432,9 @@ function buildMenu() {
 
 // ---- Start ----------------------------------------------------------------
 app.enableSandbox()
+// Windows: samma id som genvägen installationsprogrammet skapar (appId), så
+// att aktivitetsfältet och notiserna visar genvägens ikon (Dev-ikonen i dev).
+if (process.platform === 'win32' && target.appId) app.setAppUserModelId(target.appId)
 app.setAboutPanelOptions({ applicationName: APP_NAME, copyright: 'Booqy' })
 
 if (!app.requestSingleInstanceLock()) {

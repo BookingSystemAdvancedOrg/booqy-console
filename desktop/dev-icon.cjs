@@ -427,9 +427,11 @@ function encodeIco(frames) {
  * Ikonerna för ett bygge, som sökvägar från desktop/ (det electron-builder
  * vill ha). Produktion: de incheckade filerna, orörda. Alla andra miljöer:
  * samma ikon med DEV-brickan, skriven till build/dev/ i samma storlekar.
+ * `window` är fönstrets egen ikon på Linux (build.mjs packar den som
+ * app-icon.png, main.cjs sätter den på fönstren).
  */
 function iconsFor(env, desktopDir = __dirname) {
-  if (env === 'prod') return { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons' }
+  if (env === 'prod') return { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons', window: 'build/icons/512x512.png' }
   const build = path.join(desktopDir, 'build')
   const out = path.join(build, 'dev')
   const base = decodePng(fs.readFileSync(path.join(build, 'icon.png')))
@@ -441,7 +443,7 @@ function iconsFor(env, desktopDir = __dirname) {
   fs.writeFileSync(path.join(out, 'icon.png'), encodePng(devIcon(base)))
   // Windows: en färdig .ico, så att små storlekar får den rena brickan.
   fs.writeFileSync(path.join(out, 'icon.ico'), encodeIco(ICO_SIZES.map((size) => ({ size, png: encodePng(devIcon(base, size)) }))))
-  return { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons' }
+  return { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons', window: 'build/dev/icons/512x512.png' }
 }
 
 module.exports = { decodePng, encodePng, encodeIco, ICO_SIZES, resize, tileOf, coloursOf, BADGE, badgeShape, stamp, devIcon, iconsFor, LETTERS_FROM }

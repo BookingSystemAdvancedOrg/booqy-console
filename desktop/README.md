@@ -231,6 +231,16 @@ from the 1024 px icon). `npm test` fails if a redrawn logo would end up under
 the pill. Linux installs made with `install.sh` get a changed icon when the
 install command is run again.
 
+Where the dev icon shows (all from the same badged files, prod gets the plain
+ones): macOS `.app`, Dock, About panel and the DMG volume icon (all from the
+`.icns`); Windows `.exe`, installer, uninstaller, Start menu and desktop
+shortcuts and the taskbar (from the `.ico`; `main.cjs` sets the app user model
+id to `appId` so the taskbar and notifications belong to that shortcut);
+Linux deb and AppImage icon set, `.desktop` entry and the window itself
+(`build.mjs` packs the 512 px icon as `app-icon.png`, `main.cjs` sets it on
+every window; `desktopName` ties the window to the `.desktop` entry under
+Wayland). An icon change reaches installed apps only with a new shell version.
+
 macOS "Dark" icon style (checked on macOS 27.2, 2026-11-16): macOS redraws a
 light icon with a dark tile, and the black b of the off-white production
 icon then nearly disappears. An icon with light detail on a dark shape, like

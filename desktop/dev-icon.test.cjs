@@ -62,7 +62,7 @@ test('the production icon is a square tile with two clearly different colours', 
 test('production builds use the committed icon and nothing is generated', () => {
   const dir = sandbox()
   try {
-    assert.deepEqual(icon.iconsFor('prod', dir), { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons' })
+    assert.deepEqual(icon.iconsFor('prod', dir), { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons', window: 'build/icons/512x512.png' })
     assert.equal(fs.existsSync(path.join(dir, 'build', 'dev')), false)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -168,7 +168,7 @@ test('dev builds get the icon and the whole Linux set, with the badge', () => {
   const dir = sandbox()
   try {
     const icons = icon.iconsFor('dev', dir)
-    assert.deepEqual(icons, { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons' })
+    assert.deepEqual(icons, { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons', window: 'build/dev/icons/512x512.png' })
     const made = fs.readdirSync(path.join(dir, 'build', 'dev', 'icons')).sort()
     assert.deepEqual(made, setNames())
     for (const name of made) {
@@ -180,6 +180,9 @@ test('dev builds get the icon and the whole Linux set, with the badge', () => {
     }
     const app = icon.decodePng(fs.readFileSync(path.join(dir, icons.app)))
     assert.ok(Buffer.from(app.data).equals(Buffer.from(icon.devIcon(base).data)), 'build/dev/icon.png is not the badged icon')
+    // The Linux window icon is one of the badged set, never the plain one.
+    const win = icon.decodePng(fs.readFileSync(path.join(dir, icons.window)))
+    assert.ok(Buffer.from(win.data).equals(Buffer.from(icon.devIcon(base, 512).data)), 'the window icon is not the badged icon')
     // The production files in the same folder are untouched.
     for (const rel of ['icon.png', ...setNames().map((n) => path.join('icons', n))]) {
       assert.ok(fs.readFileSync(path.join(dir, 'build', rel)).equals(fs.readFileSync(path.join(BUILD, rel))), `${rel} changed`)

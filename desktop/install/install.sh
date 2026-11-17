@@ -69,6 +69,7 @@ Type=Application
 Name=$NAME
 Exec="$bin/$SLUG.AppImage" %U
 Icon=$icons/$SLUG.png
+StartupWMClass=$SLUG
 Terminal=false
 Categories=Office;
 DESKTOP
