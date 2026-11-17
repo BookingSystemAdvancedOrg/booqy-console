@@ -1,8 +1,9 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { InboxSwitch } from "../components/InboxSwitch";
 import { api } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
+  Card, ErrorNotice, Field, Modal, Notice, Reason, Status, errorMessage, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
@@ -46,20 +47,28 @@ function useDebounced<T>(fn: () => Promise<T>, deps: unknown[], wait = 400) {
 /** The email as it will arrive, in a sandbox: nothing in it can run. Keep sandbox="" (no
  *  allow-scripts): the server-rendered HTML has no script, and a "Blocked script execution
  *  in 'about:srcdoc'" log only comes from test tools that inject scripts into every frame. */
-function Preview({ html, title }: { html: string | null; title: string }) {
+function Preview({ html, title, error }: { html: string | null; title: string; error?: unknown }) {
   return (
     <div className="card mail-preview">
       <div className="card__head"><h2>{title}</h2></div>
       <div className="card__body">
         <p className="mail-preview__hint">As the owner sees it</p>
-        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : <SkelLines n={8} />}
+        {/* A failed preview says so (the frame would otherwise keep the last render, or a skeleton, without a word). */}
+        <ErrorNotice error={error} />
+        {html ? <iframe className="mail-preview__frame" title="Email preview" sandbox="" srcDoc={html} /> : !error && <SkelLines n={8} />}
       </div>
     </div>
   );
 }
 
 export default function MailPage({ tab: initial }: { tab?: "outbox" }) {
-  const [tab, setTab] = useState<Tab>(initial === "outbox" ? "Outbox" : "Compose");
+  // ?tab=brand-template opens that tab (Settings, Platform, Email brand template links here).
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    if (initial === "outbox") return "Outbox";
+    const asked = TABS.find((name) => helpSlug(name) === params.get("tab") && (name !== "Outbox" || IS_DEV));
+    return asked ?? "Compose";
+  });
   const [sentNotice, setSentNotice] = useState<string | null>(null);
   return (
     <>
@@ -148,7 +157,7 @@ function Compose({ onSent }: { onSent: (message: string) => void }) {
           </button>
         </div>
       </Card>
-      <Preview html={preview.value?.html ?? null} title="Preview" />
+      <Preview html={preview.value?.html ?? null} error={preview.error} title="Preview" />
       {confirm && (
         <Modal title="Send to every owner?" onClose={() => setConfirm(false)}>
           <div className="stack">
@@ -228,7 +237,7 @@ function NewsletterModal({ id, onClose }: { id: string; onClose: () => void }) {
             <dt>Status</dt><dd><Status value={n!.status} /></dd>
             <dt>Sent</dt><dd>{fmtDate(n!.createdAt)} by {n!.createdBy}</dd>
             <dt>Result</dt><dd>{n!.sentCount} of {n!.recipientCount} delivered{n!.failedCount ? `, ${n!.failedCount} failed` : ""}</dd>
-            {n!.lastError && <><dt>Last error</dt><dd className="error-text">{n!.lastError}</dd></>}
+            {n!.lastError && <><dt>Last error</dt><dd className="error-text"><Reason text={n!.lastError} fallback="Sending stopped. This is Booqy's fault." /></dd></>}
           </dl>
           <pre className="newsletter-body">{n!.body}</pre>
           <RecipientList recipients={data.recipients} />
@@ -247,7 +256,7 @@ function RecipientList({ recipients }: { recipients: NewsletterRecipient[] }) {
           <tr key={r.email}>
             <td className="small cell-stack" data-label="Owner">{r.email}</td>
             <td className="small cell-title">{r.tenantName}</td>
-            <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Failed{r.error ? `: ${r.error}` : ""}</span> : r.status}</td>
+            <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Not delivered{r.error ? <>: <Reason text={r.error} fallback="the email was refused." /></> : "."}</span> : r.status}</td>
           </tr>
         ))}
       </tbody>
@@ -275,7 +284,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("That file isn't an image the browser can read."));
+    img.onerror = () => reject(new Error("We can't open this file as a picture. Pick a PNG or JPG."));
     img.src = src;
   });
 }
@@ -314,7 +323,7 @@ async function renderLogo(src: string, color: string | null): Promise<string> {
     ctx.putImageData(data, 0, 0);
   }
   const url = canvas.toDataURL("image/png");
-  if (url.length > 300_000) throw new Error("The logo is still over 200 kB after shrinking. Pick a simpler image.");
+  if (url.length > 300_000) throw new Error("The logo is still too big after shrinking. Pick a simpler picture.");
   return url;
 }
 
@@ -322,7 +331,7 @@ function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("That file couldn't be read."));
+    reader.onerror = () => reject(new Error("We can't open this file. Pick another one."));
     reader.readAsDataURL(file);
   });
 }
@@ -397,7 +406,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
     e.preventDefault();
     setSaved(false);
     if (f.logo.kind === "custom" && !customPreview) {
-      setFileError("Upload a logo file, or choose the Booqy logo.");
+      setFileError("Pick a logo file, or choose the Booqy logo.");
       return;
     }
     const res = await a.run(() => api.saveMailTemplate(f));
@@ -453,7 +462,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
           </div>
         </Card>
       </form>
-      <Preview html={preview.value?.html ?? null} title="Preview with sample text" />
+      <Preview html={preview.value?.html ?? null} error={preview.error} title="Preview with sample text" />
     </div>
   );
 }

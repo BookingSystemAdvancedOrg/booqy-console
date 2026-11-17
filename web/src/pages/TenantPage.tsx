@@ -1,14 +1,15 @@
-import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
+import { FormEvent, useEffect, useRef, useState, useLayoutEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
+  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Reason, Status, compact, errorMessage, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone } from "../types";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import DomainWizard, { NameServerBox, RecordsTable, RestaurantText, SupportCaseBox, TransferModal, money, whoActs, withoutWho } from "../components/DomainWizard";
 import { Select } from "../components/Select";
+import { CopyButton } from "../components/CopyButton";
 import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
@@ -16,12 +17,13 @@ import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, 
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
-import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
+import { SkelBlock, SkelCard, SkelPage, SkelRows } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { InfoTip } from "../components/StepFlow";
+import { planName } from "../components/planName";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -33,6 +35,9 @@ export default function TenantPage() {
   const [search, setSearch] = useSearchParams();
   const [tab, setTab] = useState<Tab>(search.get("stripe") ? "Payments" : search.get("tab") === "billing" ? "Billing" : search.get("tab") === "website" ? "Website" : "Overview");
   const { data, error, loading, reload } = useLoad(() => api.tenant(tenantId), [tenantId]);
+  // Refresh also loads a tab (Billing, Website, Users) whose own first load failed.
+  const [refreshed, setRefreshed] = useState(0);
+  const refresh = () => { setRefreshed((n) => n + 1); return reload(); };
   // Switching tabs drops what a form holds, so a dirty form asks first.
   const goTab = (next: Tab) => { if (next === tab || confirmLeave()) setTab(next); };
   // "Fix it" on the failed-setup banner: open Overview's edit form on that field.
@@ -86,7 +91,7 @@ export default function TenantPage() {
           <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}</h1>
           <p className="muted mono small">{t.slug} · {t.tenantId}</p>
         </div>
-        <RefreshButton reload={reload} />
+        <RefreshButton reload={refresh} />
       </div>
 
       {search.get("created") && t.status === "provisioning" && (
@@ -119,12 +124,12 @@ export default function TenantPage() {
 
       {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
       {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />}
-      {tab === "Users" && <Users tenant={t} />}
+      {tab === "Users" && <Users tenant={t} refreshed={refreshed} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
-      {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} />}
+      {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} refreshed={refreshed} />}
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
       {tab === "Domains" && <Domains detail={data} onChanged={reload} />}
-      {tab === "Website" && <WebsiteTab tenant={t} />}
+      {tab === "Website" && <WebsiteTab tenant={t} refreshed={refreshed} />}
       {tab === "Integrations" && hasIntegrations(t) && <Integrations tenant={t} />}
       {tab === "Activity" && <Activity detail={data} />}
       {tab === "Suspend or offboard" && <Danger tenant={t} onChanged={reload} />}
@@ -153,7 +158,7 @@ function RetryBanner({ tenant, onDone, onFix }: { tenant: Tenant; onDone: () => 
   const field = Object.keys(failure.fields)[0];
   return (
     <Notice kind="error">
-      <strong>Setup failed.</strong> {field ? failure.fields[field] : failure.message}
+      <strong>Setup failed.</strong> {field ? failure.fields[field] : <Reason text={failure.message || "-"} fallback="Booqy couldn't finish it. Press Retry setup." />}
       <div className="row">
         {field && <button className="btn btn--small btn--primary" onClick={() => onFix(field)}>Fix {FIX_LABEL[field] ?? field}</button>}
         <SaveButton kind="plain" small type="button" label="Retry setup" busy={a.busy} busyLabel="Retrying…" done={a.done} doneLabel="Started"
@@ -182,6 +187,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
   detail: TenantDetail; onSaved: () => void; fixField: string | null; onFixed: () => void;
 }) {
   const live = detail.tenant;
+  const plans = useLoad(() => api.plans());
   // While editing, changes are counted against the customer as it was when
   // Edit was pressed: the page refetches live, and a field changed elsewhere
   // in the meantime is not overwritten unless you changed it too.
@@ -293,7 +299,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
         <Card title="At a glance">
           <dl className="dl">
             <Row label="Owner" value={t.ownerName && `${t.ownerName} · ${t.ownerEmail}`} />
-            <Row label="Plan" value={`${t.planId} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
+            <Row label="Plan" value={`${planName(t.planId, plans.data)} - ${t.locationCount} of ${t.entitlements.maxLocations} locations`} />
             <Row label="Features" value={Object.entries(contractFeatures(t.entitlements.features)).filter(([, on]) => on).map(([k]) => featureLabel(k)).join(", ")} />
             <Row label="Payments" value={t.stripe?.chargesEnabled ? "Ready" : t.stripe?.accountId ? "Stripe setup not finished" : "No Stripe account yet"} />
             <Row label="Website" value={t.primaryDomain} />
@@ -442,19 +448,29 @@ function DeleteLocationModal({ tenant, location, onClose, onDone }: { tenant: Te
 }
 
 // --------------------------------------------------------------------- users
-function Users({ tenant }: { tenant: Tenant }) {
+function Users({ tenant, refreshed = 0 }: { tenant: Tenant; refreshed?: number }) {
   const users = useLoad(() => api.users(tenant.tenantId), [tenant.tenantId]);
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => { setRetrying(true); await users.reload(); setRetrying(false); };
+  // Only a Refresh pressed after this tab opened, and only after a failed load.
+  const seenRefresh = useRef(refreshed);
+  useEffect(() => {
+    if (refreshed === seenRefresh.current) return;
+    seenRefresh.current = refreshed;
+    if (!users.data && users.error) void retry();
+  }, [refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
   const [f, setF] = useState({ email: "", name: "" });
   const a = useAction();
   const dirty = useDirty(f, { email: "", name: "" });
   return (
     <div className="cols">
       <Card title="Sign-in accounts">
-        <ErrorNotice error={users.error} />
+        <ErrorNotice error={users.error} onRetry={() => void retry()} />
+        {(users.loading || retrying) && !users.data ? <SkelPage label="Loading users"><SkelRows n={3} cols={4} /></SkelPage> : users.data && (
         <table className="table">
           <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Since</th></tr></thead>
           <tbody>
-            {(users.data ?? []).map((u) => (
+            {users.data.map((u) => (
               <tr key={u.cognitoSub}>
                 <td className="cell-title">{u.name}<div className="muted small">{u.email}</div></td>
                 <td className="cell-fact" data-label="Role">{u.role === "owner_user" ? "Owner" : "Staff"}</td>
@@ -462,9 +478,10 @@ function Users({ tenant }: { tenant: Tenant }) {
                 <td className="small cell-fact" data-label="Since">{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
-            {users.data?.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
+            {users.data.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
           </tbody>
         </table>
+        )}
         <p className="muted small">Staff are invited from the admin app.</p>
       </Card>
       <Card title="Invite another owner">
@@ -490,7 +507,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
   const plans = useLoad(() => api.plans());
   const [planId, setPlanId] = useState(tenant.planId);
   const [maxLocations, setMax] = useState(tenant.entitlements.maxLocations);
-  const [features, setFeatures] = useState(tenant.entitlements.features);
+  // Contract keys only: a retired key (terminal) would make the form look changed from the start.
+  const [features, setFeatures] = useState(() => contractFeatures(tenant.entitlements.features));
   // Every contract limit as input text: the plan's, or the tenant's own (incl. overrides).
   const limitsOf = (p?: { limits?: Tenant["entitlements"]["limits"] }) =>
     Object.fromEntries(LIMIT_KEYS.map((k) => [k, limitValue(k, p?.limits)])) as Record<LimitKey, string>;
@@ -530,13 +548,13 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     // and own price; another plan: start from that plan's defaults.
     if (planId === tenant.planId) {
       setMax(tenant.entitlements.maxLocations);
-      setFeatures(tenant.entitlements.features);
+      setFeatures(contractFeatures(tenant.entitlements.features));
       setLimits(limitsOf(tenant.entitlements));
       setPrice(ownPrice != null ? String(ownPrice) : priceText(plan?.free ? thenPlan : plan));
     } else if (plan) {
       // Onto Free: never below the locations in use (Free has no fixed limit).
       setMax(plan.free ? Math.max(defaultLocations(plan), tenant.locationCount) : defaultLocations(plan));
-      setFeatures(plan.features);
+      setFeatures(contractFeatures(plan.features));
       setLimits(limitsOf(plan));
       // Onto Free: the own price stays as the price after it.
       setPrice(plan.free ? (ownPrice != null ? String(ownPrice) : priceText(thenPlan)) : priceText(plan));
@@ -613,7 +631,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       </div>
       {belowCount ? (
         <Notice kind="warn">
-          {(a.error as ApiError).message}
+          {errorMessage(a.error)}
           <div className="row"><SaveButton kind="danger" small type="button" label="Apply anyway" busy={a.busy} onClick={() => void save(true)} /></div>
         </Notice>
       ) : <ErrorNotice error={a.error} />}
@@ -651,7 +669,7 @@ function Payments({ tenant, onChanged, stripeParam }: { tenant: Tenant; onChange
         <Notice kind="ok">
           Onboarding link (expires within minutes - open it now, or share on a call):
           <div className="copy"><input className="input mono" readOnly value={url} onFocus={(e) => e.target.select()} />
-            <button className="btn btn--small" onClick={() => navigator.clipboard.writeText(url)}>Copy</button>
+            <CopyButton text={url} />
             <a className="btn btn--small" href={url} target="_blank" rel="noreferrer">Open</a></div>
         </Notice>
       )}
@@ -731,7 +749,7 @@ export function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged
               return (
                 <tr key={d.domain}>
                   <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
-                    {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
+                    {d.lastError && <div className="small error-text"><Reason text={d.lastError} fallback="This domain didn't connect. This is Booqy's fault." /></div>}</td>
                   <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
                   <td className="cell-badge"><Status value={d.status} /></td>
                   <td className="right">{d.kind === "custom" && d.status !== "removing" && !ofOrder && (
@@ -797,15 +815,15 @@ function ZoneCard({ tenant, zone: z, onChanged, onTransfer, onMoveAgain }: {
       )}
       {z.lastError && (
         <Notice kind={z.who === "restaurant" ? "warn" : "error"}>
-          <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> {withoutWho(z.lastError)}
+          <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> <Reason text={withoutWho(z.lastError)} fallback="This domain step stopped. Try again, or copy the details so we can fix it." />
         </Notice>
       )}
-      {z.devError && <p className="small error-text">dev: {z.devError}</p>}
+      {z.devError && <p className="small error-text">Dev site: <Reason text={z.devError} fallback="The dev site didn't connect." /></p>}
       {z.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.supportCase} />}
       {z.transfer?.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.transfer.supportCase} />}
       {z.transfer && z.transfer.status !== "transferred" && (
         <p className="small">Transfer: <Status value={z.transfer.status} /> {z.transfer.statusDetail}
-          {z.transfer.error && <span className="error-text"> {z.transfer.error}</span>}</p>
+          {z.transfer.error && <span className="error-text"> <Reason text={z.transfer.error} fallback="The move stopped." /></span>}</p>
       )}
       {z.records && ["awaiting_records", "records_timeout"].includes(z.status) && <RecordsTable records={z.records} />}
       {z.status === "awaiting_nameservers" && z.nameServers && <NameServerBox domain={z.domain} nameServers={z.nameServers} />}
@@ -928,7 +946,7 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
       <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger" saved={a.done} savedLabel="Done">
         <ErrorNotice error={a.error} />
         {failed.length > 0 && (
-          <Notice kind="warn">Some users could not be updated - press the button again to retry: {failed.join(", ")}</Notice>
+          <Notice kind="warn">Some users weren't updated: {failed.join(", ")}. Press the button again.</Notice>
         )}
         {tenant.status === "suspended" ? (
           <>
@@ -983,9 +1001,9 @@ function Restore({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void 
     <Card title="Restore customer" saved={a.done} savedLabel="Restoring">
       <ErrorNotice error={a.error} />
       {result && result.failed.length > 0 && (
-        <Notice kind="warn">Some users could not be enabled: {result.failed.join(", ")}</Notice>
+        <Notice kind="warn">Some users weren't turned on: {result.failed.join(", ")}. Try again.</Notice>
       )}
-      {result?.onboardingError && <Notice kind="warn">Setup did not start: {result.onboardingError}. Use Retry on the Overview tab.</Notice>}
+      {result?.onboardingError && <Notice kind="warn">Setup didn't start. Use Retry on the Overview tab. <Reason text={result.onboardingError} fallback="" /></Notice>}
       <p>
         Restorable until <strong>{fmtDate(tenant.purgeAt)}</strong>{!tenant.purgeAt && " (the date is set at the next deletion run)"}.
         Users can sign in again, the website comes back on {tenant.slug}.{PLATFORM_DOMAIN || "booqy.se"} and its repo is unarchived.

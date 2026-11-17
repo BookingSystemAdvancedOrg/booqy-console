@@ -13,10 +13,10 @@ import { BackdropPreview } from './BackdropPreview'
 
 const UPLOAD_ERRORS: Record<UploadError, string> = {
   'not-image': 'That is not a picture. Choose a JPG, PNG, WebP or HEIC image.',
-  unreadable: 'The picture could not be read here. Try a JPG or PNG.',
-  'too-large': 'The picture is too large, even shrunk. Try another one.',
+  unreadable: 'We can\'t open this picture. Pick a JPG or PNG.',
+  'too-large': 'The picture is too big, even after shrinking. Pick another one.',
   limit: 'Your library is full. Remove a picture to upload a new one.',
-  failed: 'The picture could not be saved. Try again.',
+  failed: 'The picture wasn\'t saved. Try again.',
 }
 
 const at = (e: MouseEvent) => (e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : undefined)
@@ -64,7 +64,7 @@ export function BackdropLibrary() {
   async function remove(item: BackdropItem) {
     setConfirmFor(null)
     setMenuFor(null)
-    if (!(await deleteBackdrop(item.id))) setError('The picture could not be removed. Try again.')
+    if (!(await deleteBackdrop(item.id))) setError('The picture wasn\'t removed. Try again.')
   }
 
   const full = lib.items.length >= lib.max

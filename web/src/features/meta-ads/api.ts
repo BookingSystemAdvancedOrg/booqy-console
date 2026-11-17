@@ -1,6 +1,4 @@
-import { accessToken } from "../../auth";
-import { ApiError } from "../../api";
-import { withBusy } from "../../busy";
+import { request, type ErrorMessages } from "../../api";
 
 /** Operator routes A14-A17 (CONTRACTS.md 6.A), forwarded by platform-tenants to meta-ads. */
 
@@ -14,31 +12,18 @@ export interface MetaAdsTenant {
   spendThisMonthSek: number;
 }
 
-const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
+/** The cap range the server accepts (meta_ads MIN_BUDGET_SEK..1 000 000). */
+export const CAP_RANGE = "Use whole kronor from 100 to 1 000 000, like 5000.";
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  return withBusy(async () => {
-    const token = await accessToken();
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}${path}`, {
-        method,
-        headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-    } catch {
-      throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const code = (data.error as string) ?? "error";
-      const message = res.status === 404 ? "Meta ads is not deployed in this environment, or the tenant is unknown."
-        : res.status === 503 ? "The Meta ads feature did not answer. Try again in a minute."
-        : typeof data.message === "string" ? data.message : `Request failed (${code}).`;
-      throw new ApiError(res.status, code, message, data.fields ?? {});
-    }
-    return data as T;
-  });
+const messages: ErrorMessages = (status, code) =>
+  status === 404 ? "Meta ads isn't switched on here, or we can't find this customer."
+  : status === 503 ? "Meta ads didn't answer. Try again in a minute."
+  : status === 400 && code === "invalid_cap" ? CAP_RANGE
+  : undefined;
+
+/** Through api.ts: busy bar, quiet live refetch, 401 refresh, request id and the refetch after a save, as every call. */
+function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return request<T>(method, path, body, { messages });
 }
 
 export const metaAdsApi = {

@@ -16,6 +16,7 @@ import "./WebsitePage.css";
 import { RefreshButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage } from "../components/Skeleton";
 import { InfoTip } from "../components/StepFlow";
+import { DateInput } from "../components/DateInput";
 
 const PLACES = ["Countries", "Regions", "Cities"] as const;
 const TECH = ["Devices", "Browsers", "Operating systems", "Languages"] as const;
@@ -69,10 +70,10 @@ export default function WebsitePage() {
         {preset === "custom" && (
           <div className="range">
             <label className="range__field"><span>From</span>
-              <input className="input" type="date" value={custom.from} max={custom.to}
+              <DateInput value={custom.from} max={custom.to}
                      onChange={(e) => e.target.value && setCustom({ ...custom, from: e.target.value })} /></label>
             <label className="range__field"><span>To</span>
-              <input className="input" type="date" value={custom.to} min={custom.from}
+              <DateInput value={custom.to} min={custom.from}
                      onChange={(e) => e.target.value && setCustom({ ...custom, to: e.target.value })} /></label>
           </div>
         )}
@@ -116,7 +117,7 @@ export default function WebsitePage() {
             <Kpi label="Engaged time" value={fmtDuration(k.avgEngagedSeconds)} trend={trends.seconds} />
           </section>
 
-          <div className="charts">
+          <div className="charts web-traffic">
             <Card title="Visits per day">
               <p className="insight">Bars are visits, the line is unique visitors. Compared with {prev}</p>
               <BarLineChart points={data.series.map((p) => ({ key: p.day, bar: p.visits, line: p.visitors }))}

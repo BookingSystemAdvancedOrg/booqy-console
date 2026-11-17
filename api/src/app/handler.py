@@ -90,6 +90,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/billing/card-link": billing.card_link,
     "POST /platform/tenants/{tenantId}/billing/invoices/{invoiceId}/remind": billing.remind_invoice,
     "POST /platform/tenants/{tenantId}/billing/invoice": billing.invoice_now,
+    "POST /platform/tenants/{tenantId}/billing/credit-notes": billing.create_credit_notes,
     "GET /platform/finance/invoices": finance.invoices,
     "POST /platform/finance/invoicing": billing.invoicing,
     # Website page: booqy.se's cookieless statistics
@@ -132,7 +133,29 @@ class Request:
 _groups = groups
 
 
+def _unqualified(context) -> bool:
+    """True for an invoke without an alias or version: the plain function ARN
+    (six colons) or $LATEST. Every real entry point (API Gateway, the
+    schedules, the domain-provision workflow, the newsletter hand-over) uses
+    the live alias; only prod's site link role (booqy-sites-prod-link)
+    invokes the function unqualified, and it may only hand over site tasks."""
+    arn = getattr(context, "invoked_function_arn", "") or ""
+    return arn.count(":") == 6 or arn.endswith(":$LATEST")
+
+
+def _site_task(event: dict) -> dict:
+    result = site.site_task(event)
+    log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
+                         "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
+    return result
+
+
 def handler(event, context):
+    if _unqualified(context):
+        if isinstance(event, dict) and set(event) == {"siteTask"}:
+            return _site_task(event)
+        log.warning("refused a non-site-task unqualified invoke")
+        return {"error": "forbidden", "message": "Site tasks only"}
     # The domain-provision workflow invokes the function directly (no
     # routeKey, no JWT). API Gateway events always carry a routeKey, and only
     # API Gateway and that workflow's role may invoke this function.
@@ -165,19 +188,17 @@ def handler(event, context):
     # (dev only): create or adopt the restaurant's dev tenant, or archive its
     # dev site. That role may invoke this function and nothing else.
     if "siteTask" in event and "routeKey" not in event:
-        result = site.site_task(event)
-        log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
-                             "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
-        return result
+        return _site_task(event)
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)
     if fn is None:
-        return respond(404, {"error": "not_found", "message": "This page doesn't exist in the API. Reload the console; "
-                                                              "it may be newer than the API."})
+        return respond(404, {"error": "not_found", "message": "This needs a newer Booqy than the one running. "
+                                                              "Reload the page."})
     claims = (((event.get("requestContext") or {}).get("authorizer") or {}).get("jwt") or {}).get("claims") or {}
     if OPERATOR_GROUP not in _groups(claims):
-        return respond(403, {"error": "forbidden", "message": "Platform operators only"})
+        return respond(403, {"error": "forbidden", "message": "Only Booqy operators can do this. Sign in with your "
+                                                              "operator account."})
     actor = claims.get("username") or claims.get("sub") or "unknown"
     try:
         req = Request(path=event.get("pathParameters") or {}, query=event.get("queryStringParameters") or {},
@@ -194,6 +215,5 @@ def handler(event, context):
         return respond(e.status, error_body(e))
     except Exception:  # noqa: BLE001 - last line of defence, details only in the logs
         log.exception("unhandled error on %s (request %s)", route, request_id)
-        return respond(500, {"error": "internal_error", "message": "Something went wrong on our side. Try again; if it keeps failing, "
-                                                                     "check the platform-tenants logs for this reference.",
+        return respond(500, {"error": "internal_error", "message": "Something broke on Booqy's side. Try again in a minute.",
                              "requestId": request_id})

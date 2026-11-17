@@ -76,7 +76,7 @@ for (const vp of SIZES) {
     })
 
     test(`theme toggle ${vp.name} ${theme}`, async ({ page }, info) => {
-      await open(page, '/settings', vp, theme)
+      await open(page, '/settings#appearance', vp, theme)
       const issues: Issue[] = []
       const toggle = page.locator('button.theme-toggle[data-mode]').filter({ visible: true }).first()
       if (!(await toggle.count())) issues.push({ kind: 'theme-toggle', severity: 'high', message: 'No visible theme toggle' })

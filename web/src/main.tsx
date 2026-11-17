@@ -1,3 +1,4 @@
+import { BRANCHES, BRANCH_LABEL, LEAVES, branchVisible, leafPath, treeOf } from "./settingsTree";
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -79,7 +80,7 @@ if (import.meta.env.PROD) {
       text: "A new version is available", reload: "Reload", reloading: "Reloading", later: "Not now",
       hint: "Loads the new version. Save what you are working on first.",
       unsaved: "You have unsaved changes", reloadAnyway: "Reload anyway", cancel: "Cancel",
-      failed: "Could not reload. Try again.", updated: "Updated", whatsNew: "New", more: "+{n} more",
+      failed: "The page didn't reload. Try again.", updated: "Updated", whatsNew: "New", more: "+{n} more",
     },
     // Also lists what is new since this build (src/whatsNew.ts).
     whatsNew: { since: BUILT_N },
@@ -142,6 +143,22 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
       ...(helpChatEnabled() ? [{ id: "a-help", group: "Actions" as const, label: "Ask the help assistant", icon: "search" as const, keywords: "help assistant question how ask booqy", run: openHelpChat }] : []),
       { id: "a-signout", group: "Actions", label: "Sign out", icon: "logout", run: onSignOut },
       ...ALL_NAV.map((n): PaletteItem => ({ id: `n-${n.to}`, group: "Go to", label: n.label, icon: n.icon, run: () => go(n.to) })),
+      // Settings, branch by branch and leaf by leaf: found by typing, opened in place.
+      ...BRANCHES.filter(branchVisible).flatMap((b): PaletteItem[] => [
+        { id: `s-${b}`, group: "Settings", label: BRANCH_LABEL[b], hint: treeOf(b).label, icon: "gear", searchOnly: true,
+          keywords: LEAVES.filter((l) => l.branch === b).map((l) => `${l.label} ${l.keywords ?? ""}`).join(" "), run: () => go(`/settings#${b}`) },
+        ...LEAVES.filter((l) => l.branch === b && l.label !== BRANCH_LABEL[b]).map((l): PaletteItem => ({
+          id: `s-${b}-${l.label}`, group: "Settings", label: l.label, hint: BRANCH_LABEL[b], icon: "gear", searchOnly: true, keywords: l.keywords,
+          run: () => { if (confirmLeave()) navigate(`/settings#${b}`, { state: { leaf: l.label } }); },
+        })),
+      ]),
+      // Settings that link to their own page (Profile picture, Email brand template).
+      ...LEAVES.flatMap((l): PaletteItem[] => {
+        if (!l.to) return [];
+        const to = l.to;
+        const [tree, place] = leafPath(l);
+        return [{ id: `s-${to}`, group: "Settings", label: l.label, hint: place === l.label ? tree : place, icon: "gear", searchOnly: true, keywords: l.keywords, run: () => go(to) }];
+      }),
       ...recent
         .filter((p) => p !== here)
         .map(navFor)
@@ -149,7 +166,7 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
         .slice(0, 4)
         .map((n): PaletteItem => ({ id: `r-${n.to}`, group: "Recent", label: n.label, icon: n.icon, run: () => go(n.to) })),
     ];
-  }, [go, onSignOut]);
+  }, [go, navigate, onSignOut]);
   return <CommandPalette items={items} />;
 }
 
@@ -272,7 +289,7 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage name={user.name} email={user.email} />} />
+          <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/profile" element={<ProfilePage me={user} onSaved={saveProfile} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />

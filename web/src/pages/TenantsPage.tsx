@@ -11,6 +11,7 @@ import { CtaAddLink } from "../components/ds";
 import { useRowOpen } from "../components/rowLink";
 import { FreeBadge } from "../components/FreeFields";
 import { FREE_PLAN_ID } from "../free";
+import { planName } from "../components/planName";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -39,6 +40,12 @@ export default function TenantsPage() {
     const to = isoDay(new Date());
     return api.financeInvoices({ from: addDays(to, -365), to });
   });
+  const plans = useLoad(() => api.plans());
+  const [invoicesRetrying, setInvoicesRetrying] = useState(false);
+  const retryInvoices = async () => { setInvoicesRetrying(true); await invoices.reload(); setInvoicesRetrying(false); };
+  // Not loaded (null), failed ("unknown"): never "-", which reads as no invoices.
+  const invoiceState = (tenantId: string): CustomerInvoices | null | undefined | "unknown" =>
+    invoices.loading || invoicesRetrying ? null : invoices.error && !invoices.data ? "unknown" : billing.get(tenantId);
   const billing = useMemo(() => {
     const by = new Map<string, PaymentRow[]>();
     (invoices.data?.invoices ?? []).forEach((r) => by.set(r.tenantId, [...(by.get(r.tenantId) ?? []), r]));
@@ -91,6 +98,7 @@ export default function TenantsPage() {
       </div>
 
       <ErrorNotice error={error} onRetry={() => void reload()} />
+      {data && !invoices.data && !invoicesRetrying && <ErrorNotice error={invoices.error} onRetry={() => void retryInvoices()} />}
       {/* A failed load is not an empty list: no "No customers match" under the error. */}
       {loading && !data ? <SkelPage label="Loading customers"><SkelTable rows={6} cols={5} /></SkelPage> : data && (
         <div className="table-wrap">
@@ -108,8 +116,8 @@ export default function TenantsPage() {
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
                   <td className="cell-badge"><Status value={t.status} /></td>
-                  <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : t.planId}</td>
-                  <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoices.loading ? null : billing.get(t.tenantId)} /></td>
+                  <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : planName(t.planId, plans.data)}</td>
+                  <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoiceState(t.tenantId)} /></td>
                   <td className="cell-fact" data-label="Locations">{t.locationCount} / {t.maxLocations ?? "-"}</td>
                   <td className="phone-hide" data-label="Payments">{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
                   <td className="small phone-hide" data-label="Site">{t.primaryDomain ?? <span className="muted">-</span>}</td>
@@ -128,8 +136,9 @@ export default function TenantsPage() {
 }
 
 /** Paid, open or overdue: the customer's invoices at a glance, a click from the Billing tab. */
-function InvoiceCell({ tenantId, state }: { tenantId: string; state: CustomerInvoices | null | undefined }) {
+function InvoiceCell({ tenantId, state }: { tenantId: string; state: CustomerInvoices | null | undefined | "unknown" }) {
   if (state === null) return <span className="muted small">…</span>;
+  if (state === "unknown") return <span className="muted" title="Invoices did not load" aria-label="Invoices did not load">?</span>;
   if (!state || state.state === "none") return <span className="muted">-</span>;
   const text = { overdue: "Overdue", open: "Open", paid: "Paid" }[state.state];
   const sub = state.state === "overdue" ? `${state.daysLate} ${state.daysLate === 1 ? "day" : "days"} late`

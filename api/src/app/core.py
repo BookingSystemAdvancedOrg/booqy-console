@@ -116,7 +116,7 @@ def groups(claims: dict) -> set[str]:
     return {g.strip(" ,\"'") for g in raw.strip("[]").replace(",", " ").split() if g.strip(" ,\"'")}
 
 
-def not_found(what: str = "Not found") -> ApiError:
+def not_found(what: str = "We can't find this. It may have been removed. Reload the page.") -> ApiError:
     return ApiError(404, "not_found", what)
 
 
@@ -142,22 +142,63 @@ def respond(status: int, body) -> dict:
 # Route 53, Step Functions, json): the caller gets this instead, the
 # original goes to the log (handler.py logs it with the request id).
 SAFE_MESSAGES = {
-    "invalid_json": "The request body isn't valid JSON. Reload the page and try again.",
-    "stripe_error": "Stripe refused the request. Check the customer's Stripe account and try again; "
-                    "the reason is in the platform-tenants logs.",
+    "invalid_json": "Booqy couldn't read what the page sent. Reload the page and try again.",
+    "stripe_error": "Stripe said no. Check the customer's Stripe account, then try again.",
     "stripe_unreachable": "Stripe didn't answer. Try again in a minute.",
-    "registration_refused": "Route 53 refused the registration. Check the contact details and that the domain "
-                            "is still free, then try again; the reason is in the platform-tenants logs.",
-    "transfer_refused": "Route 53 refused the transfer. Check the authorization code and that the domain is "
-                        "unlocked at the current registrar; the reason is in the platform-tenants logs.",
-    "dns_setup_failed": "Couldn't set up DNS for the domain. Try again; the reason is in the platform-tenants logs.",
-    "workflow_start_failed": "Couldn't start onboarding. Try again in a minute; the reason is in the "
-                             "platform-tenants logs.",
+    "registration_refused": "The domain couldn't be bought. Check the contact details and that the domain is "
+                            "still free.",
+    "transfer_refused": "The domain couldn't be moved. Check the transfer code and that the domain is unlocked "
+                        "where it is now.",
+    "dns_setup_failed": "Booqy couldn't set up the domain. Try again in a minute.",
+    "workflow_start_failed": "Setting up the customer didn't start. Try again in a minute.",
+    "site_repo_failed": "The website job didn't go through. Try again in a minute.",
+}
+
+# Customer statuses in words an operator reads in a sentence (tenant
+# statuses: provisioning, provisioning_failed, active, suspended,
+# offboarding, offboarded, purged).
+STATUS_WORDS = {
+    "provisioning": "still being set up",
+    "provisioning_failed": "stuck in setup",
+    "active": "active",
+    "suspended": "paused",
+    "offboarding": "being offboarded",
+    "offboarded": "offboarded",
+    "purged": "deleted",
+}
+
+# What the operator does next, per status.
+STATUS_NEXT = {
+    "provisioning": "Wait until setup has finished, then try again.",
+    "provisioning_failed": "Press Retry setup first.",
+    "suspended": "Press Resume customer first.",
+    "offboarding": "Wait until offboarding has finished.",
+    "offboarded": "Restore the customer first.",
+    "purged": "Nothing more can be done for this customer.",
 }
 
 
+def status_words(status) -> str:
+    return STATUS_WORDS.get(status or "", "in its current state")
+
+
+def not_while(status) -> str:
+    """'Not possible while the customer is paused. Press Resume customer first.'"""
+    nxt = STATUS_NEXT.get(status or "", "Reload the page to see the customer's current state.")
+    return f"Not possible while the customer is {status_words(status)}. {nxt}"
+
+
+def _fallback_message(err: ApiError) -> str:
+    """For an error raised with a code only (a feature's answer): never the bare code."""
+    if err.status >= 500:
+        return "Something broke on Booqy's side. Try again in a minute."
+    if err.extra.get("fields"):
+        return "A field needs a change. Fix the marked field and save again."
+    return "This wasn't accepted. Check what you entered and try again."
+
+
 def error_body(err: ApiError) -> dict:
-    body = {"error": err.code, "message": SAFE_MESSAGES.get(err.code) or err.message or err.code}
+    body = {"error": err.code, "message": SAFE_MESSAGES.get(err.code) or err.message or _fallback_message(err)}
     body.update(err.extra)
     return body
 

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({ website: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import WebsitePage from "./WebsitePage";
+import { formatDate } from "../components/DateInput";
 
 const renderPage = () => render(<MemoryRouter><WebsitePage /></MemoryRouter>);
 
@@ -51,7 +52,7 @@ describe("WebsitePage", () => {
     const [{ from, to }] = mocks.website.mock.lastCall!;
     expect((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000).toBe(6);
     await userEvent.click(screen.getByRole("button", { name: "Custom" }));
-    expect(screen.getByLabelText("From")).toHaveValue(from);
+    expect(screen.getByLabelText("From")).toHaveValue(formatDate(from));   // DD/MM/YYYY, the branded DateInput
   });
 
   it("explains an empty site and an environment without statistics", async () => {

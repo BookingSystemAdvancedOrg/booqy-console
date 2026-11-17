@@ -77,6 +77,13 @@ describe("HelpChat", () => {
     expect(launcher).toHaveAttribute("aria-label", "Ask Booqy");
   });
 
+  it("shows a question mark on the launcher, as admin does, not a second search magnifier", async () => {
+    renderChat();
+    const launcher = await screen.findByRole("button", { name: "Ask Booqy" });
+    expect(launcher.querySelector('svg[data-icon="help"]')).not.toBeNull();
+    expect(launcher.querySelector('circle[r="6"]')).toBeNull();
+  });
+
   it("answers today's Background question and lights the setting up in Settings", async () => {
     const user = userEvent.setup();
     renderChat();
@@ -84,7 +91,7 @@ describe("HelpChat", () => {
     expect(question()).toHaveFocus();
     await user.type(question(), "How do I change the background behind the glass?{Enter}");
     await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Your image"));
-    const go = screen.getByRole("button", { name: "Open Settings" });
+    const go = screen.getByRole("button", { name: "Open Appearance and sound" });
     expect(go).toHaveClass("btn--primary");
     await user.click(go);
     expect(screen.getByTestId("where")).toHaveTextContent("/settings");
@@ -207,7 +214,7 @@ describe("HelpChat", () => {
       renderChat();
       await openPanel(user);
       await user.type(question(), "How do I add a new customer?{Enter}");
-      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy fault"), SLOW);
+      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy's fault"), SLOW);
       await user.click(screen.getByRole("button", { name: "Details" }));
       expect(screen.getByRole("log")).toHaveTextContent("Request id: req-42");
       // Try again asks once more, without a second copy of the question.
@@ -215,7 +222,7 @@ describe("HelpChat", () => {
       await user.click(screen.getByRole("button", { name: "Try again" }));
       await screen.findByRole("button", { name: "Open New customer" }, SLOW);
       expect(screen.getAllByText("How do I add a new customer?")).toHaveLength(1);
-      expect(screen.queryByText(/Booqy fault/)).toBeNull();
+      expect(screen.queryByText(/Booqy's fault/)).toBeNull();
     } finally {
       vi.unstubAllGlobals();
       setCorpus(buildCorpus());
@@ -237,7 +244,7 @@ describe("HelpChat", () => {
       renderChat();
       await openPanel(user);
       await user.type(question(), "First question{Enter}");
-      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy fault"), SLOW);
+      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy's fault"), SLOW);
       await user.type(question(), "Second question{Enter}");
       await screen.findByText("About: Second question", undefined, SLOW);
       await user.click(screen.getByRole("button", { name: "Try again" }));

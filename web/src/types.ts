@@ -559,6 +559,26 @@ export interface Invoice {
   feeSek?: number | null;
   smsParts?: number | null;
   smsSek?: number | null;
+  /** Credit notes on it, incl VAT: paid back to the card, and the rest (to the customer's balance, or lowering what is owed). */
+  refundedSek?: number;
+  creditedSek?: number;
+  /** What can still be refunded (paid) or credited (paid or open), incl VAT. */
+  creditableSek?: number;
+  /** Paid by card (not outside Stripe): can go back to the card. */
+  refundable?: boolean;
+}
+
+/** POST .../billing/credit-notes: one result per invoice. */
+export type CreditNoteResult =
+  | { invoiceId: string; ok: true; creditNoteId: string; number?: string; totalSek: number; refundedSek: number; creditedSek: number; pdf?: string }
+  | { invoiceId: string; ok: false; error: string; message: string; leftSek?: number };
+
+export interface CreditNotesResponse {
+  results: CreditNoteResult[];
+  ok: number;
+  failed: number;
+  refundedSek: number;
+  creditedSek: number;
 }
 
 /** One line of an invoicing run (preview or real). */
@@ -596,6 +616,8 @@ export interface PaymentsView {
     invoices: number; paid: number; open: number; overdue: number;
     invoicedSek: number; collectedSek: number; outstandingSek: number; overdueSek: number;
     lateFeesSek: number; interestSek: number;
+    /** Paid back to the card, ex VAT; collectedSek is net of it. */
+    refundedSek?: number;
   };
   invoices: PaymentRow[];
 }
@@ -608,7 +630,9 @@ export interface BillingView {
 export interface FinanceKpis {
   mrrSek: number;
   revenueSek: number;
+  /** Net of refunds (refundedSek, paid back to the card). */
   collectedSek: number;
+  refundedSek?: number;
   outstandingSek: number;
   /** The whole AWS bill ("platform") without a customer filter, else the customer's allocated share. */
   costSek: number;
@@ -669,6 +693,7 @@ export interface FinanceTenantRow {
   revenueSek: number;
   collectedSek: number;
   creditedSek: number;
+  refundedSek?: number;
   outstandingSek: number;
   costSek: number;
   costSplitSek: { baseline: number; requests: number; email: number; sms: number };

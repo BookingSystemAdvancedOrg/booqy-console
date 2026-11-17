@@ -35,6 +35,9 @@
   .table.table > tbody > tr > td[data-label]::before {
     content: attr(data-label); float: left; margin-right: 14px; max-width: 48%;
     font: 600 13px/1.55 var(--sans); letter-spacing: 0; text-transform: none; text-align: left; color: var(--print-2);
+    /* a label keeps its word whole ("Outstanding") when it fits; too narrow, it hyphenates
+       instead of running into the next cell; only values break anywhere */
+    overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto;
   }
   .table.table > tbody > tr > td:not([data-label]) { text-align: left !important; }
   .table.table > tbody > tr > td:empty { display: none; }
@@ -129,6 +132,13 @@
   /* a filter group: an even grid, every option the same size */
   .chips[data-glide="track"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
   .chips[data-glide="track"] > :is(button, a) { justify-content: center; min-height: 36px; }
+  /* the page tabs: the same even grid, three across; a long name takes two lines */
+  .tabs[data-glide="track"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+  .tabs[data-glide="track"] > :is(button, a) {
+    display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 2px 6px;
+    padding: 6px 8px; white-space: normal; text-align: center; line-height: 1.15;
+  }
+  .tabs[data-glide="track"] > :is(button, a) .tab__n { margin-left: 0; }
   .toolbar > .input.search { flex: 1 1 100%; width: 100%; max-width: none; }
 }
 

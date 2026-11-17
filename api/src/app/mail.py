@@ -105,15 +105,15 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        f.fail("logo", "Must be an object")
+        f.fail("logo", "Upload a logo, or choose the Booqy logo.")
         return None
     kind = raw.get("kind")
     if kind not in ("booqy", "custom"):
-        f.fail("logo.kind", "Must be booqy or custom")
+        f.fail("logo.kind", "Choose the Booqy logo or your own.")
         return None
     color = raw.get("color")
     if color is not None and not (isinstance(color, str) and HEX_COLOUR.match(color)):
-        f.fail("logo.color", "A colour like #3a2418")
+        f.fail("logo.color", "Write a colour like #3a2418.")
         return None
     data_url = raw.get("dataUrl")
     if not data_url:
@@ -123,19 +123,19 @@ def _parse_logo(f: v.Fields, current: dict) -> dict | None:
             return saved
         if kind == "booqy":
             return {"kind": "booqy"}
-        f.fail("logo", "Upload a logo, or choose the Booqy logo")
+        f.fail("logo", "Upload a logo, or choose the Booqy logo.")
         return None
     match = re.match(r"^data:(image/png|image/jpeg);base64,([A-Za-z0-9+/=\s]+)$", str(data_url))
     if not match:
-        f.fail("logo", "The logo must be a PNG or JPEG")
+        f.fail("logo", "Use a PNG or JPEG picture for the logo.")
         return None
     try:
         blob = base64.b64decode(match.group(2), validate=False)
     except (binascii.Error, ValueError):
-        f.fail("logo", "The logo file is damaged")
+        f.fail("logo", "The logo file can't be opened. Save it again and upload it.")
         return None
     if len(blob) > LOGO_MAX_BYTES:
-        f.fail("logo", f"The logo must be under {LOGO_MAX_BYTES // 1000} kB (the console shrinks it; try a smaller file)")
+        f.fail("logo", f"The logo is too big. Use a file under {LOGO_MAX_BYTES // 1000} kB.")
         return None
     out = {"kind": kind, "contentType": match.group(1), "data": base64.b64encode(blob).decode("ascii"),
            "name": str(raw.get("name") or "logo")[:100]}
@@ -149,7 +149,7 @@ def put_template(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     sender = f.text("senderName", required=True, max_len=60)
     reply_to = f.email("replyTo", required=True)
-    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
+    accent = f.text("accentColor", required=True, max_len=7, pattern=HEX_COLOUR, msg="Write a colour like #1a120e.")
     signature = f.text("signature", max_len=600) or ""
     footer = f.text("footer", max_len=600) or ""
     logo = _parse_logo(f, current)
@@ -305,7 +305,7 @@ def preview(req) -> tuple[int, dict]:
         reply_to = f.email("replyTo")
         if reply_to:
             template["replyTo"] = reply_to
-        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="A colour like #1a120e")
+        accent = f.text("accentColor", max_len=7, pattern=HEX_COLOUR, msg="Write a colour like #1a120e.")
         if accent:
             template["accentColor"] = accent
         logo = _parse_logo(f, template)
@@ -394,11 +394,11 @@ def _operator_email(req) -> str:
     try:
         user = client("cognito-idp").admin_get_user(UserPoolId=env("OPERATOR_USER_POOL_ID"), Username=req.actor)
     except ClientError:
-        raise ApiError(400, "no_email", "Couldn't find your operator account's email address") from None
+        raise ApiError(400, "no_email", "We can't find the email of your account. Add it under Operators, then try again.") from None
     attrs = {a["Name"]: a["Value"] for a in user.get("UserAttributes") or []}
     email = (attrs.get("email") or "").strip().lower()
     if not email:
-        raise ApiError(400, "no_email", "Your operator account has no email address")
+        raise ApiError(400, "no_email", "Your account has no email. Add it under Operators, then try again.")
     return email
 
 
@@ -426,7 +426,7 @@ def _find(newsletter_id: str) -> dict:
     for row in rows:
         if row.get("newsletterId") == newsletter_id:
             return row
-    raise not_found("No such newsletter")
+    raise not_found("We can't find this newsletter. It may have been removed. Reload the page.")
 
 
 def get_newsletter(req) -> tuple[int, dict]:
@@ -445,7 +445,7 @@ def send(req) -> tuple[int, dict]:
         return 200, {"test": True, "sentTo": to}
     recipients = _recipients()
     if not recipients:
-        raise ApiError(400, "no_recipients", "There are no active customers to send to")
+        raise ApiError(400, "no_recipients", "No active customers to send to yet. Nothing was sent.")
     created_at = now_iso()
     newsletter_id = new_id()
     row = {"PK": PK, "SK": f"{NEWSLETTER_PREFIX}{created_at}#{newsletter_id}", "newsletterId": newsletter_id,
@@ -468,56 +468,78 @@ def _invoke_self(function_arn: str, payload: dict) -> None:
 
 def _send_task(event: dict, context) -> dict:
     """The asynchronous send: one recipient at a time from the stored
-    cursor, counts written back every message, hand-over before timeout."""
+    cursor, the cursor, counts and that recipient's status written back
+    after every message (conditional on the cursor it started from), so a
+    retried or duplicate invocation resumes after the last one sent instead
+    of mailing everyone again; hand-over before timeout."""
     newsletter_id = event.get("newsletterId") or ""
     created_at = event.get("createdAt") or ""
     key = _newsletter_key(newsletter_id, created_at)
     ddb = client("dynamodb")
-    row = from_ddb(ddb.get_item(TableName=tenant_table(), Key=key).get("Item"))
+    row = from_ddb(ddb.get_item(TableName=tenant_table(), Key=key, ConsistentRead=True).get("Item"))
     if not row or row.get("status") != "sending":
         return {"status": "skipped"}
     template = _load_template()
     recipients = row.get("recipients") or []
     cursor = int(row.get("cursor") or 0)
     sent, failed = int(row.get("sentCount") or 0), int(row.get("failedCount") or 0)
-    last_error = None
     while cursor < len(recipients):
         if context is not None and context.get_remaining_time_in_millis() < HANDOVER_MS:
-            ddb.update_item(TableName=tenant_table(), Key=key,
-                            UpdateExpression="SET #c = :c, sentCount = :s, failedCount = :f, recipients = :r",
-                            ExpressionAttributeNames={"#c": "cursor"},
-                            ExpressionAttributeValues={":c": {"N": str(cursor)}, ":s": {"N": str(sent)},
-                                                       ":f": {"N": str(failed)}, ":r": to_ddb({"r": recipients})["r"]})
             _invoke_self(context.invoked_function_arn, {"mailTask": "send", "newsletterId": newsletter_id,
                                                         "createdAt": created_at})
             return {"status": "handed_over", "cursor": cursor}
         recipient = recipients[cursor]
+        error = None
         try:
             _send_one(recipient["email"], row["subject"], row["body"], template)
-            recipient["status"] = "sent"
             sent += 1
         except (ClientError, BotoCoreError) as exc:
             err = getattr(exc, "response", {}).get("Error", {}) if hasattr(exc, "response") else {}
-            last_error = f"{err.get('Code') or type(exc).__name__}: {err.get('Message') or exc}"[:300]
-            log.warning("newsletter %s: %s failed: %s", newsletter_id, recipient["email"], last_error)
-            recipient["status"] = "failed"
-            recipient["error"] = last_error
+            error = f"{err.get('Code') or type(exc).__name__}: {err.get('Message') or exc}"[:300]
+            # No address in the log: it is on the newsletter row (recipients[i].error).
+            log.warning("newsletter %s: recipient %d failed: %s", newsletter_id, cursor, err.get("Code") or type(exc).__name__)
             failed += 1
+        if not _save_progress(ddb, key, cursor, sent, failed, error):
+            return {"status": "superseded", "cursor": cursor}
         cursor += 1
         if cursor < len(recipients):
             time.sleep(SEND_PAUSE_S)
-    update = {"cursor": cursor, "sentCount": sent, "failedCount": failed, "recipients": recipients,
-              "status": "sent" if failed == 0 else ("failed" if sent == 0 else "partly_sent"),
-              "finishedAt": now_iso(), "lastError": last_error}
-    names = {f"#{k}": k for k in update}
-    values = {f":{k}": to_ddb({k: val})[k] for k, val in update.items() if val is not None}
-    sets = ", ".join(f"#{k} = :{k}" for k in update if update[k] is not None)
-    removes = [f"#{k}" for k in update if update[k] is None]
-    expression = f"SET {sets}" + (f" REMOVE {', '.join(removes)}" if removes else "")
-    ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression=expression,
-                    ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    status = "sent" if failed == 0 else ("failed" if sent == 0 else "partly_sent")
+    try:
+        ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression="SET #st = :st, finishedAt = :at",
+                        ConditionExpression="#st = :sending AND #c = :c",
+                        ExpressionAttributeNames={"#st": "status", "#c": "cursor"},
+                        ExpressionAttributeValues={":st": {"S": status}, ":at": {"S": now_iso()},
+                                                   ":sending": {"S": "sending"}, ":c": {"N": str(cursor)}})
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return {"status": "superseded", "cursor": cursor}
     log.info(json.dumps({"newsletter": newsletter_id, "sent": sent, "failed": failed}))
-    return {"status": update["status"], "sent": sent, "failed": failed}
+    return {"status": status, "sent": sent, "failed": failed}
+
+
+def _save_progress(ddb, key: dict, index: int, sent: int, failed: int, error: str | None) -> bool:
+    """Moves the cursor past recipient `index` with its result and the new
+    counts, only while the row is still sending at that cursor. False when
+    another invocation already moved on (nothing more to do here)."""
+    sets = ["#c = :next", "sentCount = :s", "failedCount = :f", f"recipients[{index}].#st = :rs"]
+    values = {":next": {"N": str(index + 1)}, ":s": {"N": str(sent)}, ":f": {"N": str(failed)},
+              ":rs": {"S": "failed" if error else "sent"}, ":cur": {"N": str(index)}, ":sending": {"S": "sending"}}
+    names = {"#c": "cursor", "#st": "status"}
+    if error:
+        sets += [f"recipients[{index}].#re = :re", "lastError = :re"]
+        names["#re"] = "error"
+        values[":re"] = {"S": error}
+    try:
+        ddb.update_item(TableName=tenant_table(), Key=key, UpdateExpression="SET " + ", ".join(sets),
+                        ConditionExpression="#st = :sending AND #c = :cur",
+                        ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
 
 
 def mail_task(event: dict, context) -> dict:

@@ -141,3 +141,22 @@ describe("api: the help assistant's question is quiet", () => {
     await expect(api.helpAnswer({ question: "q", history: [] })).rejects.toMatchObject({ status: 503, extra: { requestId: "req-123" } });
   });
 });
+
+describe("api: the mail preview is quiet", () => {
+  it("shows no busy bar and makes no page refetch on each typing pause", async () => {
+    const { getBusyState } = await import("./test/busyProbe");
+    const { LIVE_SAVED_EVENT } = await import("./live");
+    const seen: unknown[] = [];
+    const on = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener(LIVE_SAVED_EVENT, on);
+    let during = true;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      during = getBusyState();
+      return json(200, { subject: "s", html: "<p>x</p>", text: "x" });
+    }));
+    await api.mailPreview({ subject: "s", body: "b" });
+    window.removeEventListener(LIVE_SAVED_EVENT, on);
+    expect(during).toBe(false);
+    expect(seen).toEqual([]);
+  });
+});

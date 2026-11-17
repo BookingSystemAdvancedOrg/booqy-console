@@ -2,7 +2,7 @@ import { ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId,
 import { createPortal } from "react-dom";
 import { ApiError } from "../api";
 import { Link } from "react-router-dom";
-import { describeError, errorDetails, type ErrorInfo } from "../errors";
+import { describeError, errorDetails, fieldTexts, plainReason, type ErrorInfo } from "../errors";
 import { CheckMark, useFlash } from "./save";
 import { InfoTip } from "./StepFlow";
 import { helpSlug } from "../features/help/helpId";
@@ -143,7 +143,7 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
   if (!error) return null;
   const info = describeError(error);
   // Try again wherever the text says so: a Booqy fault, no connection, too many requests.
-  const retry = onRetry && (info.actor === "booqy" || info.code === "network" || info.status === 429 || info.code === "too_many_requests" || info.code === "rate_limited");
+  const retry = onRetry && (info.actor === "booqy" || info.code === "network" || info.code === "timeout" || info.status === 429 || info.code === "too_many_requests" || info.code === "rate_limited");
   return (
     <Notice kind="error">
       <span>{info.text}</span>
@@ -176,6 +176,24 @@ function CopyDetails({ info }: { info: ErrorInfo }) {
       <button type="button" className="btn btn--ghost btn--small" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? "Hide details" : "Details"}</button>
       {open && <pre className="error-notice__details">{details}</pre>}
     </>
+  );
+}
+
+/**
+ * A reason a backend job stored (a domain's or a send's lastError): shown as it is when it reads
+ * plainly, else `fallback` in plain words with the original behind Details, to copy for the logs.
+ */
+export function Reason({ text, fallback, className }: { text?: string | null; fallback: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  const plain = plainReason(text);
+  if (plain) return <span className={className}>{plain}</span>;
+  return (
+    <span className={className}>
+      {fallback}{" "}
+      <button type="button" className="btn btn--ghost btn--small" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? "Hide details" : "Details"}</button>
+      {open && <pre className="error-notice__details">{text}</pre>}
+    </span>
   );
 }
 
@@ -298,8 +316,8 @@ export function useAction() {
     } catch (e) {
       setError(e);
       if (e instanceof ApiError) {
-        setFields(e.fields);
-        if (Object.keys(e.fields).length) focusFirstInvalid();
+        setFields(fieldTexts(e.fields));
+        if (Object.keys(e.fields ?? {}).length) focusFirstInvalid();
       }
       return undefined;
     } finally {

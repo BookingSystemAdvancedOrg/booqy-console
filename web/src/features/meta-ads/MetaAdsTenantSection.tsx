@@ -1,4 +1,6 @@
+import { SkelCard, SkelPage } from "../../components/Skeleton";
 import { Card, ErrorNotice, Notice, useAction, useLoad } from "../../components/ui";
+import { fmtSek } from "../../finance";
 import { metaAdsApi } from "./api";
 
 const STATUS: Record<string, string> = { connected: "Connected", needs_reauth: "Needs to log in again", disconnected: "Not connected" };
@@ -9,7 +11,7 @@ export default function MetaAdsTenantSection({ tenantId }: { tenantId: string })
   const action = useAction();
 
   if (error) return <Card title="Meta ads"><ErrorNotice error={error} /></Card>;
-  if (!data) return null;
+  if (!data) return <SkelPage label="Loading Meta ads"><SkelCard lines={5} /></SkelPage>;
 
   async function toggle() {
     if (!data) return;
@@ -25,7 +27,7 @@ export default function MetaAdsTenantSection({ tenantId }: { tenantId: string })
         <dt>Ad account</dt><dd>{data.adAccountId ?? "-"}</dd>
         <dt>Facebook page</dt><dd>{data.pageId ?? "-"}</dd>
         <dt>Instagram</dt><dd>{data.instagramId ?? "-"}</dd>
-        <dt>Spend this month</dt><dd>{data.spendThisMonthSek.toLocaleString("en-GB")} SEK</dd>
+        <dt>Spend this month</dt><dd>{fmtSek(data.spendThisMonthSek)}</dd>
       </dl>
       <ErrorNotice error={action.error} />
       {/* Nothing to pause before Meta is connected; a pause set earlier can still be lifted. */}

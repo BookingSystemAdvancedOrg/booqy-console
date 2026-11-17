@@ -1,13 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Billing, BillingView, Tenant } from "../types";
+import type { Billing, BillingView, Invoice, Tenant } from "../types";
 import { endDateFor, monthOf, isoDay, addDays } from "../finance";
 
 const mocks = vi.hoisted(() => ({
-  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(), invoiceNow: vi.fn(),
+  billing: vi.fn(), startSubscription: vi.fn(), updateSubscription: vi.fn(), cardLink: vi.fn(), remindInvoice: vi.fn(), invoiceNow: vi.fn(), creditNotes: vi.fn(),
 }));
-vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
+vi.mock("../api", async (importOriginal) => ({ api: mocks, ApiError: (await importOriginal<typeof import("../api")>()).ApiError }));
 
 import BillingTab from "./BillingTab";
 
@@ -211,5 +211,146 @@ describe("BillingTab", () => {
     render(<BillingTab tenant={{ ...tenant, status: "suspended" }} cardParam={null} onChanged={() => {}} />);
     expect(await screen.findByRole("button", { name: "Start agreement" })).toBeDisabled();
     expect(screen.getByText(/has no price yet/)).toBeInTheDocument();
+  });
+});
+
+describe("BillingTab when the first load fails (finding 180)", () => {
+  it("offers Try again, which loads it", async () => {
+    mocks.billing.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(billing());
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("No agreement")).toBeInTheDocument();
+    expect(mocks.billing).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads again when the page's Refresh is pressed", async () => {
+    mocks.billing.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(billing());
+    const { rerender } = render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} refreshed={0} />);
+    await screen.findByRole("button", { name: "Try again" });
+    rerender(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} refreshed={1} />);
+    expect(await screen.findByText("No agreement")).toBeInTheDocument();
+  });
+});
+
+describe("BillingTab refunds and credits", () => {
+  const paid = (id: string, number: string, extra: Partial<Invoice> = {}): Invoice => ({
+    invoiceId: id, number, status: "paid", subtotalSek: 1000, taxSek: 250, totalSek: 1250, amountPaidSek: 1250,
+    amountRemainingSek: 0, outstandingSek: 0, periodStart: "2026-10-01", periodEnd: "2026-10-31", paidOutOfBand: false,
+    daysLate: 0, remindersSent: 0, kind: "advance", refundedSek: 0, creditedSek: 0, creditableSek: 1250, refundable: true, ...extra,
+  });
+  const invoices = [
+    paid("in_a", "F-0010"),
+    paid("in_b", "F-0011", { refundedSek: 250, creditableSek: 1000 }),
+    paid("in_c", "F-0012", { refundedSek: 1250, creditableSek: 0 }),
+    paid("in_d", "F-0013", { creditedSek: 100, creditableSek: 1150 }),
+  ];
+
+  it("shows the refunded, partly refunded and credited status and ticks only what is left", async () => {
+    mocks.billing.mockResolvedValue({ ...running(), invoices });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    expect(await screen.findByText("Refunded")).toBeInTheDocument();
+    expect(screen.getByText("Partly refunded")).toBeInTheDocument();
+    expect(screen.getByText("Credited")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Pick invoice F-0010" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Pick invoice F-0012" })).not.toBeInTheDocument();
+  });
+
+  it("totals the ticked invoices and refunds them with one request id", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({ ...running(), invoices });
+    mocks.creditNotes.mockResolvedValue({ results: [
+      { invoiceId: "in_a", ok: true, creditNoteId: "cn_1", totalSek: 12.5, refundedSek: 12.5, creditedSek: 0 },
+      { invoiceId: "in_b", ok: true, creditNoteId: "cn_2", totalSek: 1000, refundedSek: 1000, creditedSek: 0 },
+    ], ok: 2, failed: 0, refundedSek: 1012.5, creditedSek: 0 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Pick invoice F-0010" }));
+    await user.click(screen.getByRole("checkbox", { name: "Pick invoice F-0011" }));
+    const bar = screen.getByRole("button", { name: /Refund or credit \(2\)/ });
+    expect(bar).toHaveTextContent(/2[\s\u00a0]250,00 kr/);
+    await user.click(bar);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("radio", { name: "Back to the card" })).toHaveAttribute("aria-checked", "true");
+    const amount = within(dialog).getByRole("textbox", { name: "Amount for F-0010, incl VAT" });
+    await user.clear(amount);
+    await user.type(amount, "99999");
+    expect(within(dialog).getByText(/At most 1[\s\u00a0]250,00 kr/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^Refund / })).toBeDisabled();
+    await user.tab();                                  // capped on leaving the field
+    expect(amount).toHaveValue("1250,00");
+    await user.clear(amount);
+    await user.type(amount, "12,50");
+    expect(within(dialog).getByRole("button", { name: /^Refund 1[\s\u00a0]012,50 kr$/ })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: /^Refund 1[\s\u00a0]012,50 kr$/ }));
+    await waitFor(() => expect(mocks.creditNotes).toHaveBeenCalledTimes(1));
+    const [id, body] = mocks.creditNotes.mock.calls[0];
+    expect(id).toBe("t1");
+    expect(body).toMatchObject({ method: "refund", reason: "other",
+                                 items: [{ invoiceId: "in_a", amountSek: "12.50" }, { invoiceId: "in_b", amountSek: "1000.00" }] });
+    expect(body.requestId).toEqual(expect.any(String));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(mocks.billing).toHaveBeenCalledTimes(2));      // reloaded: the rows show the new status
+    expect(screen.queryByRole("button", { name: /Refund or credit/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed invoice in the dialog with its reason and retries it as a new attempt of the same request", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({ ...running(), invoices });
+    mocks.creditNotes.mockResolvedValueOnce({ results: [
+      { invoiceId: "in_a", ok: true, creditNoteId: "cn_1", totalSek: 1250, refundedSek: 0, creditedSek: 1250 },
+      { invoiceId: "in_d", ok: false, error: "stripe_error", message: "Stripe: try later" },
+    ], ok: 1, failed: 1, refundedSek: 0, creditedSek: 1250 }).mockResolvedValueOnce({ results: [
+      { invoiceId: "in_d", ok: true, creditNoteId: "cn_2", totalSek: 1150, refundedSek: 0, creditedSek: 1150 },
+    ], ok: 1, failed: 0, refundedSek: 0, creditedSek: 1150 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Pick invoice F-0010" }));
+    await user.click(screen.getByRole("checkbox", { name: "Pick invoice F-0013" }));
+    await user.click(screen.getByRole("button", { name: /Refund or credit \(2\)/ }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: "Credit next invoice" }));
+    await user.click(within(dialog).getByRole("button", { name: /^Credit 2[\s\u00a0]400,00 kr$/ }));
+    expect(await within(dialog).findByText("Stripe said no to this. Check the customer in Stripe, then try again.")).toBeInTheDocument();
+    expect(within(dialog).queryByText("F-0010")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Credit 1[\s\u00a0]150,00 kr$/ }));
+    await waitFor(() => expect(mocks.creditNotes).toHaveBeenCalledTimes(2));
+    const [[, first], [, second]] = mocks.creditNotes.mock.calls;
+    expect(second.requestId).toBe(first.requestId);
+    expect(first.items).toEqual([{ invoiceId: "in_a", amountSek: "1250.00" }, { invoiceId: "in_d", amountSek: "1150.00" }]);
+    // a new attempt: Stripe answers a key it saw fail with the same failure for 24 h
+    expect(second.items).toEqual([{ invoiceId: "in_d", amountSek: "1150.00", attempt: 1 }]);
+    expect(second.method).toBe("credit");
+  });
+
+  it("only credits when an invoice is open or paid outside Stripe", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({ ...running(), invoices: [
+      paid("in_o", "F-0020", { status: "open", amountPaidSek: 0, amountRemainingSek: 1250, creditableSek: 1250, refundable: false }),
+    ] });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Pick invoice F-0020" }));
+    await user.click(screen.getByRole("button", { name: /Refund or credit \(1\)/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("radio", { name: "Back to the card" })).toBeDisabled();
+    expect(within(dialog).getByRole("radio", { name: "Credit next invoice" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("shows a Booqy fault on one invoice with Copy details, a Stripe refusal without", async () => {
+    const user = userEvent.setup();
+    mocks.billing.mockResolvedValue({ ...running(), invoices });
+    mocks.creditNotes.mockResolvedValueOnce({ results: [
+      { invoiceId: "in_a", ok: false, error: "internal_error", message: "The refund of this invoice did not finish" },
+      { invoiceId: "in_d", ok: false, error: "stripe_error", message: "Stripe: card_declined" },
+    ], ok: 0, failed: 2, refundedSek: 0, creditedSek: 0 });
+    render(<BillingTab tenant={tenant} cardParam={null} onChanged={() => {}} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Pick invoice F-0010" }));
+    await user.click(screen.getByRole("checkbox", { name: "Pick invoice F-0013" }));
+    await user.click(screen.getByRole("button", { name: /Refund or credit \(2\)/ }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^Refund / }));
+    const rows = await within(dialog).findAllByRole("listitem");
+    const booqy = rows.find((r) => within(r).queryByText("F-0010"))!;
+    const stripe = rows.find((r) => within(r).queryByText("F-0013"))!;
+    expect(within(booqy).getByRole("button", { name: "Copy details" })).toBeInTheDocument();
+    expect(within(stripe).getByText("Stripe said no to this. Check the customer in Stripe, then try again.")).toBeInTheDocument();
+    expect(within(stripe).queryByRole("button", { name: "Copy details" })).not.toBeInTheDocument();
   });
 });

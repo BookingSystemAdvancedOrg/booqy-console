@@ -1,7 +1,7 @@
 import { GLASS_BACKDROP_KEY } from './storageRegistry'
 
 /**
- * The background behind the glass ("Background" in Settings, Appearance and sound).
+ * The background behind the glass ("Background" in Settings, You, Appearance and sound).
  *
  * - See-through (the default, nothing stored): in the desktop app whatever is
  *   behind the window shows through; in a browser Booqy's backdrop.

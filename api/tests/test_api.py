@@ -94,7 +94,7 @@ def test_create_reports_every_problem_at_once(aws):
     status, res = call("POST /platform/tenants", body=body)
     assert status == 400
     assert {"ownerEmail", "planId", "locations.0.address", "locations.1.name"} <= set(res["fields"])
-    assert res["message"] == f"{len(res['fields'])} fields need fixing"
+    assert res["message"] == f"{len(res['fields'])} fields need a change. Fix the marked fields and save again."
 
 
 @pytest.mark.parametrize("org,vat,field,expected", [
@@ -326,7 +326,9 @@ def test_stripe_link_and_sync(aws, tenant, monkeypatch):
     assert status == 200 and body["url"].startswith("https://connect.stripe.com")
     onboarding = seen[0][2]["use_case"]["account_onboarding"]
     assert seen[0][2]["account"] == "acct_123456" and onboarding["configurations"] == ["merchant"]
-    assert onboarding["return_url"] == f"https://ops.example.se/tenants/{tenant}?stripe=return"
+    # The restaurant fills in the form: back to Booqy Admin, not the console (audit 168).
+    assert onboarding["return_url"] == "https://app.example.se/settings/payments?stripe=return"
+    assert onboarding["refresh_url"] == "https://app.example.se/settings/payments?stripe=refresh"
     status, body = call("POST /platform/tenants/{tenantId}/stripe/sync", p)
     assert status == 200 and body["stripe"]["chargesEnabled"] is True
     t = call("GET /platform/tenants/{tenantId}", p)[1]["tenant"]
@@ -396,7 +398,7 @@ def _owner_of(aws, email, tenant_id):
 def test_a_taken_owner_email_is_a_field_error_at_create(aws, tenant):
     _owner_of(aws, "owner@roma.se", tenant)
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two"})
-    assert status == 400 and body["fields"]["ownerEmail"].startswith("Already signs in to Pizzeria Roma")
+    assert status == 400 and body["fields"]["ownerEmail"].startswith("Already used to sign in to Pizzeria Roma")
     assert "owner+roma2@roma.se" in body["fields"]["ownerEmail"]
     # Nothing was written: the slug is still free.
     assert call("POST /platform/tenants", body={**NEW_TENANT, "slug": "roma-two", "ownerEmail": "new@roma.se"})[0] == 202
@@ -405,7 +407,7 @@ def test_a_taken_owner_email_is_a_field_error_at_create(aws, tenant):
 def test_owner_fields_are_editable_only_after_a_failed_setup(aws, tenant):
     p = {"tenantId": tenant}
     status, body = call("PATCH /platform/tenants/{tenantId}", p, {"ownerEmail": "other@roma.se"})
-    assert status == 409 and body["fields"] == {"ownerEmail": "Change it on the Users tab"}
+    assert status == 409 and body["fields"] == {"ownerEmail": "Change it on the Users tab."}
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
                            UpdateExpression="SET #s = :f", ExpressionAttributeNames={"#s": "status"},
                            ExpressionAttributeValues={":f": {"S": "provisioning_failed"}})
@@ -490,3 +492,25 @@ def test_provider_and_parser_text_never_reaches_the_operator():
     assert error_body(ApiError(502, "stripe_error", "Stripe: x", stripeStatus=400))["stripeStatus"] == 400
     assert error_body(ApiError(409, "self", "You can't disable your own account"))["message"] == \
         "You can't disable your own account"
+
+
+def test_a_code_only_error_never_shows_the_bare_code():
+    from app.core import ApiError, error_body
+    assert error_body(ApiError(400, "rejected"))["message"] == "This wasn't accepted. Check what you entered and try again."
+    assert "invalid_phone" not in error_body(ApiError(400, "invalid_phone", fields={"phone": "invalid_phone"}))["message"]
+    assert error_body(ApiError(502, "hook_failed"))["message"].startswith("Something broke on Booqy's side.")
+
+
+@pytest.mark.parametrize("status, words, step", [
+    ("provisioning", "still being set up", "Wait until setup has finished"),
+    ("provisioning_failed", "stuck in setup", "Retry setup"),
+    ("suspended", "paused", "Resume customer"),
+    ("offboarding", "being offboarded", "Wait until offboarding"),
+    ("offboarded", "offboarded", "Restore the customer"),
+    ("purged", "deleted", "Nothing more"),
+    ("something_new", "in its current state", "Reload the page"),
+])
+def test_every_customer_status_reads_as_words_with_a_next_step(status, words, step):
+    from app.core import not_while
+    text = not_while(status)
+    assert words in text and step in text and "_" not in text and text.endswith(".")

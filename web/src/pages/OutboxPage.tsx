@@ -19,12 +19,13 @@ function linksOf(m: OutboxMessage): string[] {
 }
 
 function MessageView({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data: m, error, loading } = useLoad(() => api.outboxMessage(id), [id]);
+  const { data: m, error, loading, reload } = useLoad(() => api.outboxMessage(id), [id]);
   const [tab, setTab] = useState<"html" | "text">("html");
+  const [retrying, setRetrying] = useState(false);
   useEffect(() => setTab("html"), [id]);
 
-  if (error) return <ErrorNotice error={error} />;
-  if (loading || !m) return <SkelCard lines={8} />;
+  if (error && !retrying) return <ErrorNotice error={error} onRetry={async () => { setRetrying(true); await reload(); setRetrying(false); }} />;
+  if (loading || retrying || !m) return <SkelCard lines={8} />;
   const links = linksOf(m);
   const showHtml = m.channel === "email" && !!m.html && tab === "html";
 
@@ -86,6 +87,8 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
   const { rows, cursor: next, append } = usePagedList(data?.messages, data?.next ?? null, outboxKey, newerMessage);
   const [selected, setSelected] = useState<string | null>(null);
   const paging = useAction();
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => { setRetrying(true); await reload(); setRetrying(false); };
 
   const loadMore = async () => {
     if (!next) return;
@@ -111,13 +114,13 @@ export default function OutboxPage({ embedded = false }: { embedded?: boolean })
         </div>
       </div>
 
-      <ErrorNotice error={error} />
+      {!retrying && <ErrorNotice error={error} onRetry={() => void retry()} />}
       <ErrorNotice error={paging.error} />
       {data && !data.enabled && (
         <Notice kind="info">The outbox is off here - emails are sent normally (infrastructure <code>mail_outbox</code>).</Notice>
       )}
 
-      {loading && !data ? <SkelPage label="Loading the outbox"><SkelTable rows={6} cols={4} /></SkelPage> : data?.enabled && (
+      {(loading || retrying) && !data ? <SkelPage label="Loading the outbox"><SkelTable rows={6} cols={4} /></SkelPage> : data?.enabled && (
         <div className={`outbox${selected ? " outbox--reading" : ""}`}>
           <div className="table-wrap" data-help="outbox:list">
             <table className="table">

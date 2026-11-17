@@ -720,6 +720,8 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .status--billing-trialing, .status--billing-paused, .status--invoice-open, .status--billing-incomplete { color: var(--warn); }
 .status--billing-past_due, .status--billing-unpaid, .status--invoice-uncollectible, .status--invoice-void, .status--invoice-overdue { color: var(--ink-red); }
 .status--billing-none, .status--billing-canceled, .status--invoice-draft { color: var(--print-2); }
+.status--invoice-refunded, .status--invoice-credited { color: var(--print-2); }
+.status--invoice-partly_refunded { color: var(--warn); }
 .cell-link { display: block; color: inherit; text-decoration: none; }
 .cell-link:hover .status { text-decoration: underline; }
 .table-wrap--inner { box-shadow: none; margin: 0; animation: none; }
@@ -741,6 +743,8 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
   .kpi__value { font-size: 22px; }
   .charts { grid-template-columns: minmax(0, 1fr); }
   .kpis--lead, .kpis--units { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* three figures in two columns: the third takes the whole row, no empty slot */
+  .kpis--units > .kpi:nth-child(odd):last-child { grid-column: 1 / -1; }
   .kpis--lead .kpi { padding: 14px 14px 18px; }
   .kpis--lead .kpi::before { margin: -14px -14px 8px; }
   .kpis--lead .kpi__value { font-size: 26px; }
@@ -763,7 +767,9 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .kpi--hero .kpi__value { font-size: 46px; line-height: 1; letter-spacing: -0.03em; }
 /* A tile shows only its label and number; a trend is a small chip beside the label. */
 .kpi__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.kpi__head .kpi__label { min-width: 0; }
+.kpi__head { flex-wrap: wrap; row-gap: 4px; }
+/* the label keeps its words whole: when it and the chip do not fit, the chip moves under it */
+.kpi__head .kpi__label { min-width: 0; flex: 0 1 auto; max-width: 100%; overflow-wrap: break-word; }
 .kpi__head .delta, .kpi__head .info-tip { flex: none; }
 /* The chip is a button: a tap, hover or focus shows what it compares with. */
 .delta-tip { display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0; border: 0; background: none; color: inherit; font: inherit; cursor: help; border-radius: var(--r-pill); }
@@ -792,7 +798,7 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 
 .kpi--rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; padding: 18px 22px 24px; align-content: start; }
 .kpi--rings::before { grid-column: 1 / -1; margin: -18px -22px 2px; }
-.ring { margin: 0; display: grid; justify-items: center; gap: 8px; min-width: 0; }
+.ring { margin: 0; display: grid; align-content: start; justify-items: center; gap: 8px; min-width: 0; }
 .ring__title { font: 760 11px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--print-2); text-align: center; }
 .ring__svg { width: 150px; height: 150px; display: block; }
 .ring__track { fill: none; stroke: var(--paper-2); stroke-width: 14; }
@@ -804,7 +810,7 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .ring__seg--steel { stroke: var(--steel-lo); }
 .ring__value { font: 820 24px var(--sans); font-stretch: 112%; letter-spacing: -0.02em; fill: var(--print); }
 .ring__center-label { font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; fill: var(--print-2); }
-.ring__legend { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: 3px; font: 420 12px/1.5 var(--mono); font-stretch: 87.5%; }
+.ring__legend { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 260px; display: grid; gap: 3px; font: 420 12px/1.5 var(--mono); font-stretch: 87.5%; }
 .ring__legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .ring__swatch { width: 10px; height: 10px; border-radius: var(--r-md); display: inline-block; }
 .ring__swatch--ink { background: var(--print); } .ring__swatch--red { background: var(--ink-red); } .ring__swatch--warn { background: #d9961f; }
@@ -1333,6 +1339,12 @@ html.is-busy, html.is-busy * { cursor: progress; }
 :root[data-theme="dark"] .tab--on, :root[data-theme="dark"] .tab--on:hover,
 :root[data-theme="dark"] .setting-toggle[aria-pressed="true"], :root[data-theme="dark"] .setting-toggle[aria-pressed="true"]:hover,
 :root[data-theme="dark"] .btn--primary:hover:not(:disabled) { color: #1a120e; }
+/* disabled stays greyed in both themes: the lacquered fills above outrank .btn:disabled */
+/* a finished save stays green (.save-btn--done) even while disabled */
+.btn.btn--primary:disabled:not(.save-btn--done), .btn.btn--danger:disabled:not(.save-btn--done),
+:root[data-theme="dark"] .btn.btn--primary:disabled:not(.save-btn--done), :root[data-theme="dark"] .btn.btn--danger:disabled:not(.save-btn--done) {
+  background: var(--glass-fill); color: var(--print-2); border-color: var(--paper-line); box-shadow: none;
+}
 
 /* the other buttons and chips: pearl, a glossy off-white pill */
 .btn:not(.btn--primary):not(.btn--ghost):not(.btn--danger), .chip:not(.chip--on), .setting-toggle:not([aria-pressed="true"]) {
@@ -1494,6 +1506,10 @@ html.is-busy, html.is-busy * { cursor: progress; }
 @media (prefers-reduced-transparency: reduce) {
   [data-glide="track"], .glass-refract [data-glide="track"] { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-surface) !important; }
 }
+/* the page tabs (a customer has up to 11) wrap onto a second row on laptops
+   instead of hiding the last ones (Suspend or offboard) behind a sideways scroll.
+   A 20 px radius is a full pill for one row and a rounded box for two. */
+.tabs[data-glide="track"] { flex-wrap: wrap !important; row-gap: 2px !important; overflow: visible; border-radius: 20px !important; }
 /* phones: the bar spans the width and the options share it, like booqy.se;
    a group that still doesn't fit scrolls sideways */
 @media (max-width: 560px) {
@@ -1691,7 +1707,8 @@ html.is-busy, html.is-busy * { cursor: progress; }
 }
 
 :root[data-theme="dark"] .sound-volume input[type="range"] {
-  background: linear-gradient(90deg, #f6f1ea var(--fill, 70%), rgba(213, 196, 174, 0.2) var(--fill, 70%));
+  /* only the image: the shorthand would reset the phone's 6 px track size (phoneTargets.css) */
+  background-image: linear-gradient(90deg, #f6f1ea var(--fill, 70%), rgba(213, 196, 174, 0.2) var(--fill, 70%));
 }
 
 :root[data-theme="dark"] .sound-volume input[type="range"]:focus-visible {

@@ -259,6 +259,15 @@ describe("Plan tab", () => {
     expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ marketing: false, siteBuilder: true });
   });
 
+  it("opens clean for a tenant that still carries a retired feature key (finding 190)", async () => {
+    mocks.plans.mockResolvedValue([{ ...STARTER, features: { ...STARTER.features, terminal: true } }]);
+    const legacy = { ...tenant, entitlements: { ...tenant.entitlements, features: { ...tenant.entitlements.features, terminal: true } } };
+    render(<PlanTab tenant={legacy} onSaved={() => {}} />);
+    await screen.findByText("Starter");
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(document.querySelector(".check--changed")).toBeNull();
+  });
+
   it("sends no limit when it equals the plan's", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");

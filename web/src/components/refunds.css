@@ -1,0 +1,61 @@
+/* Refunds and credits of Booqy's invoices (Billing tab): the pick column,
+   the bar under the table, and the confirm dialog (RefundModal.tsx). */
+
+.invoice-table th.cell-pick, .invoice-table td.cell-pick { width: 44px; padding-right: 0; }
+.pick { display: inline-grid; place-items: center; width: 32px; height: 32px; margin: -6px 0; border-radius: var(--r-md); }
+.pick input { width: 18px; height: 18px; margin: 0; }
+.pick:hover { background: var(--glass-surface); }
+.invoice-table tr.is-picked > td { background: var(--glass-surface); }
+
+.pick-bar {
+  position: fixed; z-index: 150; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); translate: -50% 0;
+  width: max-content; max-width: calc(100vw - 32px);
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px; border: 1.5px solid var(--paper-line); border-radius: var(--r-pill, 999px);
+  background: var(--paper); box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.55);
+  animation: pick-bar-in 220ms var(--ease) both;
+}
+@keyframes pick-bar-in { from { opacity: 0; translate: -50% 12px; } }
+@media (prefers-reduced-motion: reduce) { .pick-bar { animation: none; } }
+.pick-bar .btn { font-variant-numeric: tabular-nums; }
+
+.refund__method { margin: 0; }
+.refund__method .chip:disabled { opacity: 0.45; }
+.refund__rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.refund__row {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px 16px; align-items: start;
+  padding: 12px 14px; border: 1.5px solid var(--paper-line); border-radius: var(--r-md); background: var(--glass-surface);
+}
+.refund__head { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.refund__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.refund__facts dt { font-size: 12px; color: var(--print-2); }
+.refund__facts dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.refund__amount { margin: 0; }
+.refund__input { display: flex; align-items: center; gap: 6px; }
+.refund__input .input { width: 100%; min-width: 0; text-align: right; }
+.refund__failed { grid-column: 1 / -1; margin: 0; }
+.refund__sum { display: flex; align-items: center; gap: 6px; margin: 0; font-variant-numeric: tabular-nums; }
+
+/* tablets: the amount drops under the facts */
+@media (max-width: 900px) {
+  .refund__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .refund__amount { grid-column: 1 / -1; }
+}
+
+/* phones: each row is a card (phoneTables.css); the tick sits in its top right corner */
+@media (max-width: 640px) {
+  .invoice-table.table > tbody > tr > td.cell-pick {
+    position: absolute; top: 8px; right: 0; width: auto; padding: 0 !important; grid-column: auto; order: 0;
+  }
+  .invoice-table.table > tbody > tr:has(> td.cell-pick > .pick) > td.cell-title { padding-right: 48px !important; }
+  .invoice-table .pick { width: 44px; height: 44px; margin: 0; }
+  .invoice-table .pick input { width: 22px; height: 22px; }
+  .pick-bar { left: 16px; right: 16px; width: auto; max-width: none; translate: none; padding: 8px; border-radius: var(--r-lg, 18px); }
+  @keyframes pick-bar-in { from { opacity: 0; translate: 0 12px; } }
+  .pick-bar .btn--danger { flex: 1 1 auto; min-width: 0; white-space: normal; line-height: 1.25; padding-block: 6px; }
+  .pick-bar .btn--ghost { flex: none; }
+  .refund__row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  html.has-tabbar .pick-bar { bottom: calc(var(--tabbar-room) + 8px); }
+}

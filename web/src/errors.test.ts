@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { BOOQY_FAULT, describeError, errorDetails } from "./errors";
+import { BOOQY_FAULT, describeError, errorDetails, fieldText, isPlain, plainReason } from "./errors";
 
 const api = (status: number, code: string, server?: string, extra: Record<string, unknown> = {}) => {
   const e = new ApiError(status, code, server ?? "", {}, extra);
@@ -29,15 +29,78 @@ describe("who acts (console)", () => {
   });
 
   it("the operator acts: the API's own message, or what to do and where", () => {
-    expect(describeError(api(409, "slug_taken", "That address is taken. Pick another one."))).toMatchObject({
-      actor: "operator", text: "That address is taken. Pick another one.",
+    // A known code gets the console's own words, whatever the API wrote.
+    expect(describeError(api(409, "slug_taken", "That slug is already used by another customer"))).toMatchObject({
+      actor: "operator", text: "Another customer already uses that address. Pick another one.",
     });
     expect(describeError(api(403, "forbidden")).link).toEqual({ to: "/operators", label: "Open Operators" });
-    expect(describeError(api(0, "network")).text).toMatch(/internet connection/);
+    expect(describeError(api(0, "network")).text).toBe("We can't reach Booqy right now. Check your internet and try again.");
     expect(describeError(new TypeError("Failed to fetch")).actor).toBe("operator");
-    expect(describeError(api(404, "not_found")).text).toMatch(/removed elsewhere/);
+    expect(describeError(api(404, "not_found")).text).toMatch(/may have been removed/);
     expect(describeError(api(429, "too_many_requests")).text).toMatch(/Wait a few seconds/);
     expect(describeError(new Error("Pick a plan first.")).text).toBe("Pick a plan first.");
+  });
+
+  it("never shows a raw API, Stripe or AWS message", () => {
+    // known codes: the console's words, not the API's
+    expect(describeError(api(502, "stripe_error", "Stripe: No such customer: 'cus_123'")).text).toBe(
+      "Stripe said no to this. Check the customer in Stripe, then try again.");
+    expect(describeError(api(502, "registration_refused", "Route 53 refused the registration: InvalidInput")).text)
+      .not.toMatch(/Route 53|InvalidInput/);
+    expect(describeError(api(409, "below_location_count", "Send force=true to apply anyway")).text).not.toMatch(/force/);
+    // unknown codes: the API's message only when it reads plainly
+    expect(describeError(api(409, "new_rule", "Pick a later date"))).toMatchObject({ actor: "operator", text: "Pick a later date." });
+    for (const raw of ["KeyError: 'tenantId'", "status must be active", "invalid_cursor", "Request failed (400)", "{\"a\":1}"]) {
+      expect(describeError(api(400, "new_rule", raw)).actor, raw).toBe("booqy");
+    }
+    // a feature's own text wins, and a field refusal points at the fields
+    const own = api(404, "not_found", "x");
+    own.ownMessage = "Meta ads isn't switched on here.";
+    expect(describeError(own).text).toBe("Meta ads isn't switched on here.");
+    const fields = new ApiError(400, "validation_failed", "2 fields need fixing", { email: "Required" });
+    expect(describeError(fields).text).toMatch(/fields need fixing/);
+    expect(describeError(api(0, "timeout")).text).toMatch(/too long/);
+  });
+
+  it("field messages in plain words with an example", () => {
+    expect(fieldText("Required")).toBe("Fill this in.");
+    expect(fieldText("Not a valid email address, e.g. anna@restaurang.se")).toMatch(/anna@restaurang\.se/);
+    expect(fieldText("Not a valid phone number, e.g. 070-123 45 67 or +46 70 123 45 67")).toMatch(/070-123 45 67/);
+    expect(fieldText("At most 200 characters")).toBe("Too long. Use at most 200 characters.");
+    expect(fieldText("Doesn't match the org. number - it should be SE556677889901")).toBe(
+      "It should be SE556677889901 to match the org. number.");
+    expect(fieldText("Must be an object")).toMatch(/doesn't look right/);
+    expect(fieldText("Pick the plan after Free")).toBe("Pick the plan after Free.");
+    expect(fieldText("invalid_cap")).toMatch(/doesn't look right/);
+  });
+
+  it("isPlain and plainReason keep sentences, drop raw text", () => {
+    expect(isPlain("Pick another one")).toBe(true);
+    expect(isPlain("GitHub 403")).toBe(false);
+    expect(isPlain("At most 500 kr is left")).toBe(true);
+    expect(plainReason("CNAME missing")).toBe("CNAME missing.");
+    expect(plainReason("botocore.exceptions.ClientError: AccessDenied")).toBeUndefined();
+  });
+
+  it("the API's current field texts keep their example", () => {
+    expect(fieldText("Write a Stripe account id, e.g. acct_1A2b3C.")).toMatch(/acct_1A2b3C/);
+    expect(fieldText("Write it like www.restaurang.se, without https:// or *.")).toMatch(/www\.restaurang\.se/);
+    expect(fieldText("Fill in street, postal code and city.")).toBe("Fill in street, postal code and city.");
+    expect(fieldText("Too high. Use 500 or less.")).toBe("Too high. Use 500 or less.");
+    expect(fieldText("Write an amount in kronor, e.g. 499.")).toBe("Write an amount in kronor, e.g. 499.");
+    expect(fieldText("The logo is too big. Use a file under 500 kB.")).toBe("The logo is too big. Use a file under 500 kB.");
+    expect(isPlain("502 Bad Gateway")).toBe(false);
+    expect(isPlain("Upstream returned 500.")).toBe(false);
+  });
+
+  it("invalid_status and not_transferable say what state stops it", () => {
+    expect(describeError(api(409, "invalid_status", "Not possible while the customer is paused.", { currentStatus: "suspended" })).text)
+      .toMatch(/paused\. Resume the customer first/);
+    expect(describeError(api(409, "invalid_status", "x", { currentStatus: "provisioning" })).text).toMatch(/still being set up/);
+    expect(describeError(api(409, "not_transferable", "x", { transferability: "UNTRANSFERABLE" })).text).toMatch(/locked/);
+    const dontKnow = describeError(api(409, "not_transferable", "x", { transferability: "DONT_KNOW" }));
+    expect(dontKnow.actor).toBe("booqy");
+    expect(describeError(api(403, "owner_only", "Only an owner can change an email.")).link?.to).toBe("/operators");
   });
 
   it("details to copy: code, status, request id, page and time, nothing else", () => {

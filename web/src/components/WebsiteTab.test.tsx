@@ -83,7 +83,9 @@ describe("WebsiteTab", () => {
     mocks.site.mockResolvedValueOnce({ ...ready, status: "failed", lastError: "GitHub 403", repoExists: false, deploys: undefined });
     mocks.retrySite.mockResolvedValue({ status: "creating" });
     const { unmount } = render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByText("GitHub 403")).toBeInTheDocument();
+    // A raw reason is not shown as it is: plain words, the original behind Details.
+    expect(await screen.findByText(/Press Retry to try again/)).toBeInTheDocument();
+    expect(screen.queryByText("GitHub 403")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.retrySite).toHaveBeenCalledWith("t1");
     unmount();
@@ -167,9 +169,36 @@ describe("WebsiteTab", () => {
     } });
     mocks.mountSiteDomain.mockResolvedValue({ hosting: {} });
     render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByText("CNAME missing")).toBeInTheDocument();
+    expect(await screen.findByText("CNAME missing.")).toBeInTheDocument();
     expect(screen.getByText("After www.roma.se is live in production")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.mountSiteDomain).toHaveBeenCalledWith("t1", "prod");
+  });
+});
+
+describe("WebsiteTab when the first load fails (finding 180)", () => {
+  it("offers Try again, which loads it", async () => {
+    mocks.site.mockReset().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(ready);
+    render(<WebsiteTab tenant={tenant} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("link", { name: "BooqyCustomers/site-roma" })).toBeInTheDocument();
+  });
+
+  it("loads again when the page's Refresh is pressed", async () => {
+    mocks.site.mockReset().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(ready);
+    const { rerender } = render(<WebsiteTab tenant={tenant} refreshed={0} />);
+    await screen.findByRole("button", { name: "Try again" });
+    rerender(<WebsiteTab tenant={tenant} refreshed={1} />);
+    expect(await screen.findByRole("link", { name: "BooqyCustomers/site-roma" })).toBeInTheDocument();
+  });
+
+  it("opened after an earlier Refresh, or refreshed mid load, loads once", async () => {
+    let answer: (v: SiteStatus) => void = () => {};
+    mocks.site.mockReset().mockReturnValue(new Promise<SiteStatus>((r) => { answer = r; }));
+    const { rerender } = render(<WebsiteTab tenant={tenant} refreshed={2} />);
+    rerender(<WebsiteTab tenant={tenant} refreshed={3} />);
+    answer(ready);
+    expect(await screen.findByRole("link", { name: "BooqyCustomers/site-roma" })).toBeInTheDocument();
+    expect(mocks.site).toHaveBeenCalledTimes(1);
   });
 });

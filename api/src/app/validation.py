@@ -23,6 +23,16 @@ STRIPE_ACCOUNT_RE = re.compile(r"^acct_[A-Za-z0-9]{6,}$")
 POSTAL_CODE_RE = re.compile(r"^\d{3} ?\d{2}$")
 
 
+def fields_message(n: int = 0) -> str:
+    """The sentence above a form with marked fields."""
+    if n > 1:
+        return f"{n} fields need a change. Fix the marked fields and save again."
+    return "A field needs a change. Fix the marked field and save again."
+
+
+REQUIRED = "Fill this in."
+
+
 class Fields:
     """Collects field errors, raises them all at once."""
 
@@ -36,52 +46,51 @@ class Fields:
     def done(self) -> None:
         if self.errors:
             n = len(self.errors)
-            raise ApiError(400, "validation_failed",
-                           f"{n} field{'s' if n > 1 else ''} need{'' if n > 1 else 's'} fixing", fields=self.errors)
+            raise ApiError(400, "validation_failed", fields_message(n), fields=self.errors)
 
     def text(self, field, *, required=False, max_len=200, pattern=None, msg=None, lower=False):
         value = self.data.get(field)
         if value is None or (isinstance(value, str) and value.strip() == ""):
             if required:
-                self.fail(field, "Required")
+                self.fail(field, REQUIRED)
             return None
         if not isinstance(value, str):
-            self.fail(field, "Must be text")
+            self.fail(field, "Write this as text.")
             return None
         value = value.strip()
         if lower:
             value = value.lower()
         if len(value) > max_len:
-            self.fail(field, f"At most {max_len} characters")
+            self.fail(field, f"Too long. Use at most {max_len} characters.")
             return None
         if pattern is not None and not pattern.match(value):
-            self.fail(field, msg or "Invalid format")
+            self.fail(field, msg or "This doesn't look right. Check it for typos.")
             return None
         return value
 
     def email(self, field, required=False):
         return self.text(field, required=required, max_len=254, pattern=EMAIL_RE,
-                         msg="Not a valid email address, e.g. anna@restaurang.se", lower=True)
+                         msg="This email looks wrong. Write it like anna@restaurang.se.", lower=True)
 
     def phone(self, field, required=False):
         return self.text(field, required=required, max_len=20, pattern=PHONE_RE,
-                         msg="Not a valid phone number, e.g. 070-123 45 67 or +46 70 123 45 67")
+                         msg="This phone number looks wrong. Write it like 070-123 45 67.")
 
     def integer(self, field, *, required=False, minimum=None, maximum=None):
         value = self.data.get(field)
         if value is None:
             if required:
-                self.fail(field, "Required")
+                self.fail(field, REQUIRED)
             return None
         if isinstance(value, bool) or not isinstance(value, (int, Decimal)) or value != int(value):
-            self.fail(field, "Must be a whole number")
+            self.fail(field, "Use a whole number, e.g. 3.")
             return None
         value = int(value)
         if minimum is not None and value < minimum:
-            self.fail(field, f"At least {minimum}")
+            self.fail(field, f"Too low. Use {minimum} or more.")
             return None
         if maximum is not None and value > maximum:
-            self.fail(field, f"At most {maximum}")
+            self.fail(field, f"Too high. Use {maximum} or less.")
             return None
         return value
 
@@ -90,16 +99,16 @@ class Fields:
         if value is None:
             return None
         if not isinstance(value, bool):
-            self.fail(field, "Must be true or false")
+            self.fail(field, "Pick yes or no.")
             return None
         return value
 
 
 def slug(f: Fields, field="slug"):
     value = f.text(field, required=True, max_len=40, lower=True, pattern=SLUG_RE,
-                   msg="3-40 characters: a-z, 0-9 and '-', not starting or ending with '-'")
+                   msg="Use 3-40 small letters, digits or hyphens, e.g. pizzeria-roma.")
     if value in RESERVED_SLUGS:
-        f.fail(field, "Reserved name - pick another")
+        f.fail(field, "Booqy uses this name itself. Pick another, e.g. pizzeria-roma.")
         return None
     return value
 
@@ -116,12 +125,12 @@ def luhn_ok(digits: str) -> bool:
 def org_number(f: Fields, field="orgNumber"):
     """'5566778899' or '556677-8899' -> '556677-8899', check digit verified."""
     value = f.text(field, max_len=11, pattern=ORG_NUMBER_RE,
-                   msg="10 digits as NNNNNN-NNNN, e.g. 556677-8899")
+                   msg="Write 10 digits like 556677-8899.")
     if value is None:
         return None
     digits = value.replace("-", "")
     if not luhn_ok(digits):
-        f.fail(field, "The last digit (check digit) doesn't match - look for a typo")
+        f.fail(field, "The last digit doesn't fit the others. Check for a typo.")
         return None
     return f"{digits[:6]}-{digits[6:]}"
 
@@ -129,11 +138,11 @@ def org_number(f: Fields, field="orgNumber"):
 def vat_number(f: Fields, org: str | None, field="vatNumber"):
     """A Swedish VAT number is SE + the 10-digit org. number + 01."""
     value = f.text(field, max_len=14, pattern=VAT_RE,
-                   msg="SE + the 10-digit org. number + 01, e.g. SE556677889901")
+                   msg="Write SE, the org. number and 01, e.g. SE556677889901.")
     if value and org:
         expected = f"SE{org.replace('-', '')}01"
         if value != expected:
-            f.fail(field, f"Doesn't match the org. number - it should be {expected}")
+            f.fail(field, f"This doesn't match the org. number. It should be {expected}.")
             return None
     return value
 
@@ -143,16 +152,16 @@ def address(f: Fields, field="address", required=False):
     value = f.data.get(field)
     if value is None:
         if required:
-            f.fail(field, "Required")
+            f.fail(field, REQUIRED)
         return None
     if not isinstance(value, dict):
-        f.fail(field, "Must be an object")
+        f.fail(field, "Fill in street, postal code and city.")
         return None
     sub = Fields(value)
     out = {
         "street": sub.text("street", required=True, max_len=120),
         "postalCode": sub.text("postalCode", required=True, max_len=10, pattern=POSTAL_CODE_RE,
-                               msg="Swedish postal code, e.g. 123 45"),
+                               msg="Write a Swedish postal code, e.g. 123 45."),
         "city": sub.text("city", required=True, max_len=80),
         "country": (sub.text("country", max_len=2) or "SE").upper(),
     }
@@ -177,20 +186,21 @@ def location_fields(data: dict, *, partial: bool, prefix: str = "") -> dict:
             out["stripeAccountId"] = ""          # "" = remove the override
         else:
             out["stripeAccountId"] = f.text("stripeAccountId", max_len=64, pattern=STRIPE_ACCOUNT_RE,
-                                            msg="Stripe account id, e.g. acct_1A2b3C")
+                                            msg="Write a Stripe account id, e.g. acct_1A2b3C.")
     if f.errors:
-        raise ApiError(400, "validation_failed", "Some fields are invalid",
+        raise ApiError(400, "validation_failed", fields_message(len(f.errors)),
                        fields={f"{prefix}{k}": v for k, v in f.errors.items()})
     return {k: v for k, v in out.items() if v is not None}
 
 
 def hostname(value) -> str:
     if not isinstance(value, str):
-        raise ApiError(400, "validation_failed", "Invalid domain", fields={"domain": "Required"})
+        raise ApiError(400, "validation_failed", "Type the domain, e.g. www.restaurang.se.",
+                       fields={"domain": "Fill this in, e.g. www.restaurang.se."})
     host = value.strip().lower().rstrip(".")
     if host.startswith(("http://", "https://")) or "/" in host or "*" in host or not HOST_RE.match(host):
-        raise ApiError(400, "validation_failed", "Invalid domain",
-                       fields={"domain": "A hostname like www.restaurang.se (no https://, no wildcards)"})
+        raise ApiError(400, "validation_failed", "The domain looks wrong. Write it like www.restaurang.se.",
+                       fields={"domain": "Write it like www.restaurang.se, without https:// or *."})
     return host
 
 

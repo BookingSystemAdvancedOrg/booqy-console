@@ -81,7 +81,7 @@ test.describe('Console: operators', () => {
 
   test('own avatar upload @mobile', async ({ page }, info) => {
     const w = watch(page)
-    await page.goto('/settings')
+    await page.goto('/profile')
     const file = page.locator('input[type=file]').first()
     await file.setInputFiles('fixtures/dish.jpg')
     await page.waitForTimeout(4000)
@@ -118,8 +118,8 @@ test.describe('Console: mail, finance, website, settings, help', () => {
   })
 
   test('settings: theme toggle, background options, click sound @mobile', async ({ page }, info) => {
-    await page.goto('/settings')
-    await expect(page.getByRole('heading', { name: 'Appearance and sound' })).toBeVisible()
+    await page.goto('/settings#appearance')
+    await expect(page.getByRole('heading', { name: 'Appearance and sound' }).first()).toBeVisible()
     const t = (await page.locator('body').innerText()).replace(/\s+/g, ' ')
     info.annotations.push({ type: 'settings', description: t.slice(0, 700) })
     const before = await page.evaluate(() => document.documentElement.dataset.theme ?? '')

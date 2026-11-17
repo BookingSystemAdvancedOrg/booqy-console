@@ -182,7 +182,7 @@ platforms in CI (macOS minutes are expensive) and every running app installs it.
 ```bash
 BOOQY_TEST_SUFFIX=Updatetest node build.mjs --env dev --mac --only zip --arch arm64
 # copy release/dev/mac-arm64/*.app to a writable folder ("old"), then:
-BOOQY_TEST_SUFFIX=Updatetest BOOQY_TEST_VERSION=1.4.1 node build.mjs --env dev --mac --only zip --arch arm64
+BOOQY_TEST_SUFFIX=Updatetest BOOQY_TEST_VERSION=99.0.0 node build.mjs --env dev --mac --only zip --arch arm64
 # serve a folder with the new zip and a latest.json {version, macZip: {arm64: {url, sha256}}}
 BOOQY_UPDATE_TEST=1 BOOQY_UPDATE_FEED=http://127.0.0.1:8790/feed "<old>.app/Contents/MacOS/<name>"
 ```
@@ -211,3 +211,28 @@ taskbar. electron-builder makes the `.icns` (macOS) and `.ico` (Windows) from
 ```bash
 for s in 16 24 32 48 64 128 256 512 1024; do sips -z $s $s build/icon.png --out build/icons/${s}x${s}.png; done
 ```
+
+### Dev builds carry a DEV badge
+
+Production ("Booqy Console") shows the logo and nothing else. Every other
+environment ("Booqy Console Dev") gets the same icon with a "DEV" pill in the top
+right corner, so the two apps can be told apart in the Dock and taskbar.
+
+`build.mjs` draws the pill on the production icon each time it builds
+(`dev-icon.cjs`, written to `build/dev/`, git-ignored), in every size of the
+Linux set, and `publish.mjs` does the same for the icon `install.sh` uses.
+There are no extra image files to keep in step: change `icon.png` and the dev
+icon follows. The pill uses the icon's own two colours inverted (the mark's
+colour as background, the tile's colour for the letters), so it stays within
+the two allowed logos. Below 64 px the letters are left out and the pill is
+plain (Linux set, the `install.sh` icon and the Windows `.ico`, which
+`dev-icon.cjs` writes itself; the macOS `.icns` is scaled by electron-builder
+from the 1024 px icon). `npm test` fails if a redrawn logo would end up under
+the pill. Linux installs made with `install.sh` get a changed icon when the
+install command is run again.
+
+macOS "Dark" icon style (checked on macOS 27.2, 2026-11-16): macOS redraws a
+light icon with a dark tile, and the black b of the off-white production
+icon then nearly disappears. An icon with light detail on a dark shape, like
+the pill on the Console dev icon, is left as it is. A real dark variant of the
+production icon needs an Icon Composer `.icon` file: not done.

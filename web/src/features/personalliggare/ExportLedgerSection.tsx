@@ -4,6 +4,7 @@ import { Card, ErrorNotice, Field, Notice, useAction, useLoad } from "../../comp
 import { SaveButton } from "../../components/save";
 import { exportLedger, type LedgerExport } from "./api";
 import { Select } from "../../components/Select";
+import { DateInput } from "../../components/DateInput";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -56,10 +57,10 @@ export default function ExportLedgerSection({ tenantId }: { tenantId: string }) 
           )}
         </Field>
         <Field label="From" required error={a.fields.from}>
-          <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <DateInput value={from} onChange={(e) => setFrom(e.target.value)} />
         </Field>
         <Field label="To" required>
-          <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DateInput value={to} onChange={(e) => setTo(e.target.value)} />
         </Field>
         </div>
         <SaveButton label="Download CSV" busy={a.busy} busyLabel="Exporting…" done={a.done} doneLabel="Downloaded"

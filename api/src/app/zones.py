@@ -38,6 +38,7 @@ from . import validation as v
 from .core import (ApiError, cancellation_codes, client, env, from_ddb, log, new_id, not_found, now_iso,
                    query_all, regional_client, tenant_table, to_ddb, write_audit)
 from .domains import claim_host
+from .core import not_while
 from .tenants import get_profile
 
 # What we sell. .nu can't be registered through Route 53 (connect works for
@@ -103,7 +104,7 @@ def _s3():
 def _doc_bucket() -> str:
     bucket = env("DOMAIN_DOCUMENTS_BUCKET", "")
     if not bucket:
-        raise ApiError(409, "domains_not_configured", "Domain registration isn't set up in this environment")
+        raise ApiError(409, "domains_not_configured", "Buying domains isn't switched on here yet. Booqy has to set this up.")
     return bucket
 
 
@@ -114,7 +115,8 @@ def _tld(domain: str) -> str:
 
 def _apex(value, field="domain") -> str:
     if not isinstance(value, str):
-        raise ApiError(400, "validation_failed", "Invalid domain", fields={field: "Required"})
+        raise ApiError(400, "validation_failed", "Type the domain, e.g. restaurang.se.",
+                       fields={field: "Fill this in, e.g. restaurang.se."})
     host = value.strip().lower().rstrip(".")
     for prefix in ("https://", "http://"):
         if host.startswith(prefix):
@@ -123,12 +125,12 @@ def _apex(value, field="domain") -> str:
     if host.startswith("www."):
         host = host[4:]
     if not APEX_RE.match(host):
-        raise ApiError(400, "validation_failed", "Invalid domain",
-                       fields={field: "The domain itself, like restaurang.se (no www, no subdomain)"})
+        raise ApiError(400, "validation_failed", "The domain looks wrong. Write it like restaurang.se.",
+                       fields={field: "Write the domain itself, like restaurang.se, without www."})
     platform = env("PLATFORM_DOMAIN", "")
     if platform and (host == platform or host.endswith("." + platform) or platform.endswith("." + host)):
-        raise ApiError(400, "validation_failed", "That's the platform's own domain",
-                       fields={field: "Use the restaurant's own domain"})
+        raise ApiError(400, "validation_failed", "That's Booqy's own domain. Use the restaurant's domain instead.",
+                       fields={field: "Use the restaurant's own domain, e.g. restaurang.se."})
     return host
 
 
@@ -138,20 +140,20 @@ def prod_only() -> None:
     the test zones instead (domains.add_domain), and dev IAM can't register
     or transfer anyway."""
     if env("ENVIRONMENT") != "prod":
-        raise ApiError(409, "prod_only", "Domains are bought, connected and transferred only in the production "
-                                         "console. Here, Add domain maps it onto the test sites")
+        raise ApiError(409, "prod_only", "Buy, connect and move domains in the production console. "
+                                         "Here, use Add domain to show it on the test sites.")
 
 
 def _require_sites() -> None:
     if not env("PLATFORM_DOMAIN", "") or not env("TENANT_DOMAIN_CNAME_TARGET", ""):
         raise ApiError(409, "platform_domain_not_configured",
-                       "Restaurant domains aren't switched on in this environment (tenant_sites_enabled)")
+                       "Restaurant domains aren't switched on here yet. Booqy has to set this up.")
 
 
 def _active_tenant(tenant_id: str) -> dict:
     profile = get_profile(tenant_id)
     if profile.get("status") not in ("active", "provisioning", "suspended"):
-        raise ApiError(409, "invalid_status", f"The tenant is {profile.get('status')}",
+        raise ApiError(409, "invalid_status", not_while(profile.get('status')),
                        currentStatus=profile.get("status"))
     return profile
 
@@ -203,12 +205,11 @@ def _claim_zone(tenant_id: str, domain: str, row: dict) -> None:
             raise
         codes = cancellation_codes(e)
         if codes[0] == "ConditionalCheckFailed":
-            raise ApiError(409, "domain_in_use", "This domain belongs to another customer",
-                           fields={"domain": "Used by another customer"}) from e
+            raise ApiError(409, "domain_in_use", "This domain is used by another customer. Remove it there first.",
+                           fields={"domain": "Used by another customer."}) from e
         if len(codes) > 1 and codes[1] == "ConditionalCheckFailed":
-            existing = _zone_row(tenant_id, domain) or {}
-            raise ApiError(409, "domain_exists", f"Already in progress ({existing.get('status', '?')})",
-                           fields={"domain": "Already added"}) from e
+            raise ApiError(409, "domain_exists", "This domain is already being set up. Find it in the list below.",
+                           fields={"domain": "Already added."}) from e
         raise
 
 
@@ -254,6 +255,7 @@ def public_zone(row: dict) -> dict:
     out.update(own_domains.public_extra(row))
     out["registrar"] = "route53" if out["registered"] or row.get("mode") in ("register", "transfer_in") else "external"
     out["transferable"] = (row.get("mode") == "connect" and row.get("status") == "live" and not row.get("simulated")
+                           and not out["registered"]
                            and _tld(row["domain"]) in TLDS
                            and row.get("transferStatus") not in ("transferring", "awaiting_verification", "transferred"))
     return out
@@ -336,8 +338,8 @@ def search(req) -> tuple[int, dict]:
         label = LABEL_RE.sub("-", raw).strip("-")
         candidates = [f"{label}.{t}" for t in SEARCH_TLDS]
     if not (2 <= len(label) <= 63) or not APEX_RE.match(candidates[0]):
-        raise ApiError(400, "validation_failed", "Type a name, e.g. arya or arya.se",
-                       fields={"q": "2-63 characters: a-z, 0-9 and '-'"})
+        raise ApiError(400, "validation_failed", "Type a name, e.g. arya or arya.se.",
+                       fields={"q": "Use 2-63 small letters, digits or hyphens, e.g. arya."})
     with ThreadPoolExecutor(max_workers=4) as pool:
         availability = list(pool.map(_availability, candidates))
     results = [_offer(d, a) for d, a in zip(candidates, availability)]
@@ -380,11 +382,11 @@ def document_download(req) -> tuple[int, dict]:
     domain = _apex(req.path.get("domain"))
     row = _zone_row(tenant_id, domain)
     if not row or not row.get("documentKey"):
-        raise not_found("No registreringsbevis for this domain (it's deleted 30 days after upload)")
+        raise not_found("There is no registreringsbevis for this domain. It is deleted 30 days after upload.")
     try:
         _s3().head_object(Bucket=_doc_bucket(), Key=row["documentKey"])
     except ClientError as e:
-        raise not_found("The registreringsbevis has been deleted (30 days after upload) - upload it again") from e
+        raise not_found("The registreringsbevis was deleted 30 days after upload. Upload it again.") from e
     url = _s3().generate_presigned_url("get_object", ExpiresIn=300, Params={
         "Bucket": _doc_bucket(), "Key": row["documentKey"],
         "ResponseContentDisposition": f'attachment; filename="registreringsbevis-{domain}.pdf"'})
@@ -397,7 +399,7 @@ def _contact(f: v.Fields, profile: dict) -> dict:
     our account). Prefilled from the profile in the Console, editable there."""
     c = v.Fields(f.data.get("contact") or {})
     org = c.text("legalName", required=True, max_len=150)
-    org_number = c.text("orgNumber", required=True, max_len=11, pattern=v.ORG_NUMBER_RE, msg="Format NNNNNN-NNNN")
+    org_number = c.text("orgNumber", required=True, max_len=11, pattern=v.ORG_NUMBER_RE, msg="Write 10 digits like 556677-8899.")
     first = c.text("firstName", required=True, max_len=60)
     last = c.text("lastName", required=True, max_len=60)
     email = c.email("email", required=True)
@@ -405,7 +407,7 @@ def _contact(f: v.Fields, profile: dict) -> dict:
     addr = v.address(c, required=True)
     number = v.e164(phone)
     if phone and not number:
-        c.fail("phone", "Use a number like 08-123 45 67 or +46 70 123 45 67")
+        c.fail("phone", "This phone number looks wrong. Write it like 08-123 45 67.")
     for k, msg in c.errors.items():
         f.fail(f"contact.{k}", msg)
     if c.errors:
@@ -430,7 +432,7 @@ def _document_key(f: v.Fields, tenant_id: str, tld: str) -> str | None:
         return None
     key = f.text("documentKey", required=True, max_len=200)
     if key and not key.startswith(DOC_PREFIX.format(tenant=tenant_id)):
-        f.fail("documentKey", "Upload the registreringsbevis again")
+        f.fail("documentKey", "Upload the registreringsbevis again.")
         return None
     return key
 
@@ -441,16 +443,16 @@ def _check_document(key: str | None) -> None:
     try:
         head = _s3().head_object(Bucket=_doc_bucket(), Key=key)
     except ClientError as e:
-        raise ApiError(400, "validation_failed", "The registreringsbevis wasn't uploaded",
-                       fields={"documentKey": "Upload the registreringsbevis (PDF) first"}) from e
+        raise ApiError(400, "validation_failed", "The registreringsbevis is missing. Upload it first.",
+                       fields={"documentKey": "Upload the registreringsbevis (PDF) first."}) from e
     if head.get("ContentLength", 0) > DOC_MAX_BYTES:
-        raise ApiError(400, "validation_failed", "File too large", fields={"documentKey": "At most 10 MB"})
+        raise ApiError(400, "validation_failed", "The file is too big. Use a PDF under 10 MB.", fields={"documentKey": "Use a PDF under 10 MB."})
 
 
 def _accepted_price(f: v.Fields) -> dict:
     accepted = f.data.get("acceptedPrice") or {}
     if not isinstance(accepted, dict) or "amount" not in accepted:
-        f.fail("acceptedPrice", "Confirm the price")
+        f.fail("acceptedPrice", "Confirm the price first.")
         return {}
     return accepted
 
@@ -463,7 +465,7 @@ def _check_price(accepted: dict, current: dict, renewal: dict | None) -> None:
     except Exception:  # noqa: BLE001 - a malformed amount is just "not the same price"
         same = False
     if not same:
-        raise ApiError(409, "price_changed", "The price has changed - check it and confirm again",
+        raise ApiError(409, "price_changed", "The price has changed. Check the new price and confirm again.",
                        price=current, renewalPrice=renewal)
 
 
@@ -482,8 +484,8 @@ def register(req) -> tuple[int, dict]:
     domain = _apex(req.body.get("domain"))
     tld = _tld(domain)
     if tld not in TLDS:
-        raise ApiError(400, "validation_failed", f".{tld} can't be bought here",
-                       fields={"domain": f"We register {', '.join('.' + t for t in TLDS)} - connect other domains instead"})
+        raise ApiError(400, "validation_failed", f".{tld} domains can't be bought here. Connect it instead.",
+                       fields={"domain": f"We sell {', '.join('.' + t for t in TLDS)}. Connect other domains instead."})
     f = v.Fields(req.body)
     f.boolean("makePrimary")                     # always primary now; still accepted
     contact = _contact(f, profile)
@@ -494,11 +496,11 @@ def register(req) -> tuple[int, dict]:
 
     availability = _availability(domain)
     if availability != "AVAILABLE":
-        raise ApiError(409, "domain_unavailable", f"{domain} can't be registered ({availability.lower()})",
+        raise ApiError(409, "domain_unavailable", f"{domain} can't be bought. It's taken or not for sale. Try another name.",
                        availability=availability)
     price = _price(tld)
     if not price or not price.get("registration"):
-        raise ApiError(502, "price_unavailable", "Couldn't get the current price - try again")
+        raise ApiError(502, "price_unavailable", "We couldn't get the price right now. Try again in a minute.")
     current = price["registration"]
     _check_price(accepted, current, price.get("renewal"))
 
@@ -521,15 +523,20 @@ def register(req) -> tuple[int, dict]:
             PrivacyProtectAdminContact=privacy, PrivacyProtectRegistrantContact=privacy,
             PrivacyProtectTechContact=privacy)
     except ClientError as e:
+        from . import domain_mail
         message = e.response["Error"].get("Message") or str(e)
-        _update_zone(tenant_id, domain, status="failed", lastError=f"Route 53 refused the registration: {message}"[:1000])
+        _update_zone(tenant_id, domain, status="failed", **{
+            **domain_mail.error("booqy", domain), "lastError": f"Route 53 refused the registration: {message}"[:1000]})
         _release_claim(tenant_id, domain)
         write_audit(tenant_id, "domain_registration_refused", req.actor, {"domain": domain, "error": message[:300]})
         raise ApiError(502, "registration_refused", f"Route 53 refused the registration: {message}") from e
 
     status = "awaiting_verification" if tld in VERIFY_TLDS else "registering"
     _update_zone(tenant_id, domain, operationId=op["OperationId"], status=status)
-    _start_provision(tenant_id, domain, "register", True, req.actor)
+    try:
+        _start_provision(tenant_id, domain, "register", True, req.actor)
+    except Exception as e:  # noqa: BLE001 - paid for: the order stays (operationId kept) and Retry resumes it
+        own_domains.start_failed(tenant_id, domain, e)
     write_audit(tenant_id, "domain_registration_started", req.actor,
                 {"domain": domain, "price": f"{current['amount']} {current['currency']}",
                  "verificationRequired": tld in VERIFY_TLDS})
@@ -553,26 +560,37 @@ def support_case_text(domain: str, company: str, org_number: str, action: str = 
 TRANSFER_BUSY = ("transferring", "awaiting_verification")
 TRANSFERABILITY_TEXT = {
     "TRANSFERABLE": None,
-    "UNTRANSFERABLE": "The current registrar says it can't be transferred yet - usually it's locked, or was "
-                      "registered or transferred less than 60 days ago",
-    "DONT_KNOW": "The registry didn't answer - try again in a while",
-    "DOMAIN_IN_OWN_ACCOUNT": "It's already registered in our Route 53 account",
-    "DOMAIN_IN_ANOTHER_ACCOUNT": "It's registered in another AWS account - transfer it between accounts instead",
-    "PREMIUM_DOMAIN": "Premium domains can't be transferred here",
+    "UNTRANSFERABLE": "This domain can't move yet. It's usually locked, or it was bought or moved less than "
+                      "60 days ago. The restaurant unlocks it, or waits.",
+    "DONT_KNOW": "The domain registry didn't answer. Try again in a while.",
+    "DOMAIN_IN_OWN_ACCOUNT": "This domain is already with Booqy. Nothing to move.",
+    "DOMAIN_IN_ANOTHER_ACCOUNT": "This domain is in another Booqy account. Booqy moves it between accounts.",
+    "PREMIUM_DOMAIN": "Premium domains can't be moved here. Keep it where it is.",
 }
+# When the registry gives a reason this table doesn't know (its own words go to the log).
+NOT_TRANSFERABLE = "This domain can't move right now. Check that it's unlocked, then try again."
+
+
+def transfer_reason(domain: str, status: str, message: str | None) -> str | None:
+    """Why the domain can't move, in plain words (None when it can); the registry's own words go to the log."""
+    if status == "TRANSFERABLE":
+        return None
+    if status not in TRANSFERABILITY_TEXT and message:
+        log.info(json.dumps({"notTransferable": domain, "status": status, "detail": str(message)[:500]}))
+    return TRANSFERABILITY_TEXT.get(status) or NOT_TRANSFERABLE
 
 
 def _connected_zone(tenant_id: str, domain: str) -> dict:
     row = _zone_row(tenant_id, domain)
     if not row:
-        raise not_found("Connect the domain first - its DNS has to be in Route 53 before the registration moves")
+        raise not_found("Connect the domain first. Then you can move it to Booqy.")
     if row.get("mode") != "connect":
-        raise ApiError(409, "already_route53", "This domain was bought here - it's already registered in Route 53")
+        raise ApiError(409, "already_route53", "This domain was bought through Booqy, so there is nothing to move.")
     if row.get("status") != "live":
-        raise ApiError(409, "not_live", f"Finish connecting it first (status {row.get('status')}) - "
-                                        "the site must be live on our DNS before the registration moves")
+        raise ApiError(409, "not_live", "Finish connecting the domain first. "
+                                        "It has to show Live before it can move.")
     if row.get("transferStatus") in TRANSFER_BUSY + ("transferred",):
-        raise ApiError(409, "transfer_exists", f"Transfer already {row['transferStatus'].replace('_', ' ')}")
+        raise ApiError(409, "transfer_exists", "This domain is already being moved. Wait until it's done.")
     return row
 
 
@@ -601,11 +619,11 @@ def transfer_check(req) -> tuple[int, dict]:
     tld = _tld(domain)
     if tld not in TLDS:
         return 200, {"domain": domain, "transferable": False,
-                     "reason": f".{tld} can't be registered through Route 53 - it stays at its registrar (DNS is ours already)"}
+                     "reason": f".{tld} domains can't move to Booqy. Keep it where it is: the site already works."}
     status, message = _transferability(domain)
     price = _price(tld) or {}
     return 200, {"domain": domain, "transferable": status == "TRANSFERABLE", "transferability": status,
-                 "reason": TRANSFERABILITY_TEXT.get(status, message), "price": price.get("transfer"),
+                 "reason": transfer_reason(domain, status, message), "price": price.get("transfer"),
                  "renewalPrice": price.get("renewal"), "verificationRequired": tld in VERIFY_TLDS}
 
 
@@ -622,7 +640,7 @@ def transfer(req) -> tuple[int, dict]:
     row = _connected_zone(tenant_id, domain)
     tld = _tld(domain)
     if tld not in TLDS:
-        raise ApiError(400, "validation_failed", f".{tld} can't be registered through Route 53")
+        raise ApiError(400, "validation_failed", f".{tld} domains can't be moved to Booqy. Keep them where they are.")
     f = v.Fields(req.body)
     auth_code = f.text("authCode", required=True, max_len=1024)
     contact = _contact(f, profile)
@@ -633,11 +651,12 @@ def transfer(req) -> tuple[int, dict]:
 
     status, message = _transferability(domain, auth_code)
     if status != "TRANSFERABLE":
-        raise ApiError(409, "not_transferable", TRANSFERABILITY_TEXT.get(status) or message or status,
+        log.info(json.dumps({"notTransferable": domain, "status": status, "detail": str(message or "")[:500]}))
+        raise ApiError(409, "not_transferable", TRANSFERABILITY_TEXT.get(status) or NOT_TRANSFERABLE,
                        transferability=status)
     price = _price(tld) or {}
     if not price.get("transfer"):
-        raise ApiError(502, "price_unavailable", "Couldn't get the current price - try again")
+        raise ApiError(502, "price_unavailable", "We couldn't get the price right now. Try again in a minute.")
     _check_price(accepted, price["transfer"], price.get("renewal"))
 
     org_number = contact.pop("_orgNumber")
@@ -726,13 +745,13 @@ def _txt_chunks(value: str) -> str:
 
 def _skip_reason(rel: str, rtype: str) -> str | None:
     if rtype in ("NS", "SOA"):
-        return "Managed by Route 53"
+        return "Booqy sets these by itself."
     if rel == "" and rtype in ("A", "AAAA", "CNAME"):
-        return "Replaced: the domain points at the restaurant site"
+        return "Replaced: the domain now shows the restaurant site."
     if rel == "www" or rel.endswith(".www"):
-        return "Replaced: www points at the restaurant site"
+        return "Replaced: www now shows the restaurant site."
     if rel.startswith("_cf-challenge"):
-        return "Written by the platform"
+        return "Booqy writes this by itself."
     return None
 
 
@@ -740,18 +759,18 @@ def _records(raw, domain: str, f: v.Fields) -> tuple[list[dict], list[dict]]:
     """The reviewed record list from the Console -> (records to import,
     records skipped with the reason)."""
     if not isinstance(raw, list) or len(raw) > 200:
-        f.fail("records", "A list of at most 200 records")
+        f.fail("records", "Add at most 200 records.")
         return [], []
     keep, skipped, seen = [], [], {}
     for i, r in enumerate(raw):
         if not isinstance(r, dict):
-            f.fail(f"records.{i}", "Must be an object")
+            f.fail(f"records.{i}", "This record is empty. Fill it in or remove it.")
             continue
         rtype = str(r.get("type") or "").upper()
         name = r.get("name")
         values = r.get("values")
         if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9_.*@-]*", name.strip().lower().rstrip(".")):
-            f.fail(f"records.{i}.name", "Invalid name")
+            f.fail(f"records.{i}.name", "The name looks wrong. Use @, www or a word like mail.")
             continue
         rel = _rel(name, domain)
         reason = _skip_reason(rel, rtype)
@@ -759,15 +778,15 @@ def _records(raw, domain: str, f: v.Fields) -> tuple[list[dict], list[dict]]:
             skipped.append({"name": _fqdn(rel, domain), "type": rtype, "reason": reason})
             continue
         if rtype not in RECORD_TYPES:
-            f.fail(f"records.{i}.type", f"One of {', '.join(RECORD_TYPES)}")
+            f.fail(f"records.{i}.type", f"Pick one of {', '.join(RECORD_TYPES)}.")
             continue
         if not isinstance(values, list) or not 1 <= len(values) <= 20 or \
                 not all(isinstance(x, str) and 0 < len(x.strip()) <= 4000 for x in values):
-            f.fail(f"records.{i}.values", "1-20 values")
+            f.fail(f"records.{i}.values", "Add 1 to 20 values.")
             continue
         ttl = r.get("ttl", 3600)
         if isinstance(ttl, bool) or not isinstance(ttl, (int, Decimal)) or not 60 <= int(ttl) <= 172800:
-            f.fail(f"records.{i}.ttl", "60-172800 seconds")
+            f.fail(f"records.{i}.ttl", "Use 60 to 172800 seconds, e.g. 3600.")
             continue
         vals = [_txt_chunks(x) if rtype == "TXT" else x.strip() for x in values]
         key = (rel, rtype)
@@ -782,7 +801,7 @@ def _records(raw, domain: str, f: v.Fields) -> tuple[list[dict], list[dict]]:
         names.setdefault(rec["name"], set()).add(rec["type"])
     for name, types in names.items():
         if "CNAME" in types and len(types) > 1:
-            f.fail("records", f"{name}: a CNAME can't share its name with other records")
+            f.fail("records", f"{name}: a CNAME can't have the same name as another record. Remove one of them.")
     for rec in keep:                          # CloudFront's certificate comes from Amazon's CA
         if rec["type"] == "CAA" and rec["name"] == domain and \
                 not any("amazon" in val.lower() for val in rec["values"]):
@@ -878,13 +897,17 @@ def connect(req) -> tuple[int, dict]:
         "requestedBy": req.actor, "requestedAt": now_iso(), "lastError": None, "simulated": sim or None,
         "attempt": int(previous.get("attempt") or 0) + 1,
         **dict(zip(("canonicalHost", "aliasHosts", "devHost"), own_domains.hosts_for("connect", domain))),
+        **own_domains.kept_registration(previous),
     })
     # Recorded before anything else can fail, so a retry reuses the zone.
     zone_id, name_servers = own_domains._ensure_zone(tenant_id, domain, previous, records, sim)
     dnssec = domain.startswith("dnssec") if sim else own_domains.ds_present(domain)
 
     _update_zone(tenant_id, domain, status="awaiting_nameservers", importedRecords=len(records), dnssec=dnssec)
-    _start_provision(tenant_id, domain, "connect", True, req.actor)
+    try:
+        _start_provision(tenant_id, domain, "connect", True, req.actor)
+    except Exception as e:  # noqa: BLE001 - the zone and records stay; Retry starts the workflow
+        own_domains.start_failed(tenant_id, domain, e)
     domain_mail.send(profile, "nameserver_steps", domain=domain, name_servers=name_servers, dnssec=dnssec)
     write_audit(tenant_id, "domain_connect_started", req.actor,
                 {"domain": domain, "importedRecords": len(records), "hostedZoneId": zone_id})
@@ -909,7 +932,7 @@ def _task_registration_status(tenant_id: str, domain: str) -> dict:
     if row.get("status") in ("removing", "removed"):
         return {"status": "cancelled"}
     if not row.get("operationId"):
-        _update_zone(tenant_id, domain, status="failed", lastError="No registration operation recorded")
+        own_domains._fail(tenant_id, domain, "booqy", lastError="No registration operation recorded")
         return {"status": "failed"}
     if row.get("simulated"):
         op = own_domains.sim_operation(row)
@@ -1057,7 +1080,7 @@ def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> d
         raise ValueError(f"bad status {status}")
     row = _zone_row(tenant_id, domain) or {}
     if row.get("status") in ("removing", "removed"):
-        return {"status": row["status"]}
+        return {"status": "cancelled"}           # removed while it ran: the workflow ends Cancelled, no alert
     mode = row.get("mode") or "connect"
     if status == "live":
         # domain-attach also ends successfully when the certificate never got
@@ -1075,10 +1098,15 @@ def _task_mark(tenant_id: str, domain: str, status: str, error: str | None) -> d
     if status == "live":
         fields.update(lastError=None, lastErrorSv=None, who=None, errorCode=None, liveAt=now_iso(),
                       devStatus=row.get("devStatus") if row.get("devStatus") == "live" else "waiting_for_prod")
+    elif status == "timed_out" and mode == "transfer_in" and row.get("status") == "awaiting_verification":
+        # The .se identity check (AWS Support case) is Booqy's to finish, not
+        # the restaurant's; the Route 53 operation is still pending, so Retry
+        # watches the same move again.
+        fields.update(domain_mail.error("verification_timeout", domain))
     elif status == "timed_out" and mode in TIMED_OUT_AS:
         code, new_status = TIMED_OUT_AS[mode]
         fields.update(domain_mail.error(code, domain), status=new_status)
-        if error:
+        if error and new_status not in own_domains.RESUBMIT:   # an expired move is sent again, never retried
             fields["lastError"] = error[:1000]
         status = new_status
     elif row.get("status") in CLASSIFIED and status == "failed":

@@ -1,14 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { MutableRefObject } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
-import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
+import { ErrorNotice, Modal, Notice, Reason, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 import { useRowOpen } from "./rowLink";
 import { helpSlug } from "../features/help/helpId";
 import { InfoTip } from "./StepFlow";
+import { MonthPicker } from "./DateInput";
+import "../pages/finance.css";
 
 const STATUSES = [
   { id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "open", label: "Open" }, { id: "overdue", label: "Overdue" },
@@ -16,7 +19,7 @@ const STATUSES = [
 type StatusFilter = (typeof STATUSES)[number]["id"];
 
 /** Who has paid for a month: one row per invoice, with reminders and fees. */
-export default function PaymentsView() {
+export default function PaymentsView({ reloadRef }: { reloadRef?: MutableRefObject<(() => Promise<boolean>) | null> } = {}) {
   const [month, setMonth] = useState(() => isoDay(new Date()).slice(0, 7));
   const [status, setStatus] = useState<StatusFilter>("all");
   const [needle, setNeedle] = useState("");
@@ -26,6 +29,12 @@ export default function PaymentsView() {
   const thisMonth = isoDay(new Date()).slice(0, 7);
   const s = data?.summary;
   const [invoicing, setInvoicing] = useState(false);
+  // Lets the Finance header's Refresh reload this list.
+  useEffect(() => {
+    if (!reloadRef) return;
+    reloadRef.current = reload;
+    return () => { reloadRef.current = null; };
+  }, [reloadRef, reload]);
 
   return (
     <>
@@ -41,16 +50,12 @@ export default function PaymentsView() {
       {invoicing && <InvoicingModal onClose={() => setInvoicing(false)} onDone={() => { setInvoicing(false); void reload(); }} />}
       <div className="toolbar finance-toolbar">
         {/* One sand pill like the status bar beside it: arrows either side and
-            the month as words. The browser's own month field sits invisibly
-            over the words, so a click (or the keyboard) still opens its picker. */}
+            the month as words, which open the Booqy month calendar. */}
         <div className="month-pick" role="group" aria-label="Month">
           <button type="button" className="month-pick__step" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
-          <label className="month-pick__label">
-            <span aria-hidden="true">{monthLabel(month)}</span>
-            <input className="month-pick__native" type="month" value={month} max={thisMonth} aria-label="Month"
-                   onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* picker not allowed here; typing still works */ } }}
-                   onChange={(e) => { if (e.target.value) setMonth(e.target.value); }} />
-          </label>
+          <MonthPicker className="month-pick__label" value={month} max={thisMonth} aria-label="Month" onChange={setMonth}>
+            {monthLabel(month)}
+          </MonthPicker>
           <button type="button" className="month-pick__step" aria-label="Next month" disabled={month >= thisMonth}
                   onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
         </div>
@@ -65,7 +70,7 @@ export default function PaymentsView() {
                aria-label="Filter invoices by customer" onChange={(e) => setNeedle(e.target.value)} />
       </div>
 
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} onRetry={() => void reload()} />
       {loading && !data ? <SkelPage label="Checking payments"><SkelKpis className="kpis--row" /><SkelTable rows={5} cols={8} /></SkelPage> : data && s && (
         <>
           <section className="kpis kpis--row" aria-label={`Payments ${monthLabel(month)}`}>
@@ -77,7 +82,7 @@ export default function PaymentsView() {
           {rows.length === 0 ? (
             <Notice kind="info">
               {data.invoices.length === 0
-                ? `No invoices for ${monthLabel(month).toLowerCase()}${status !== "all" ? ` with status ${status}` : ""}. Stripe creates them on each customer's billing date.`
+                ? `No invoices for ${monthLabel(month).toLowerCase()}${status !== "all" ? ` with status ${status}` : ""}.${s.invoices === 0 ? " They are created on the 1st." : ""}`
                 : "No invoice matches that customer."}
             </Notice>
           ) : (
@@ -108,7 +113,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         {preview.loading && !preview.data ? <SkelRows n={4} cols={4} /> : shown && (
           <>
             {shown.invoices.length === 0 && shown.errors.length === 0 ? (
-              <Notice kind="info">{result ? "Nothing was invoiced." : "Nothing to invoice: every complete period is already invoiced."}</Notice>
+              <Notice kind="info">{result ? "Nothing was invoiced." : "Nothing to invoice: every month is already invoiced."}</Notice>
             ) : (
               <div className="table-wrap table-wrap--inner">
                 <table className="table">
@@ -124,7 +129,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
                       </tr>
                     ))}
                     {shown.errors.map((e) => (
-                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad">{e.error}</td></tr>
+                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad"><Reason text={e.error} fallback="Not invoiced. This is Booqy's fault, try again." /></td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -133,7 +138,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
             <p className="small muted">
               {shown.invoices.length} invoice{shown.invoices.length === 1 ? "" : "s"}, {fmtSek(shown.totalSek, { decimals: true })} ex VAT
               {shown.skipped?.length ? `; ${shown.skipped.length} period${shown.skipped.length === 1 ? "" : "s"} with nothing to charge` : ""}
-              {shown.migrated?.length ? `; ${shown.migrated.length} moved to arrears` : ""}.
+              {shown.migrated?.length ? `; ${shown.migrated.length} legacy subscription${shown.migrated.length === 1 ? "" : "s"} moved to monthly invoicing` : ""}.
             </p>
           </>
         )}
@@ -160,7 +165,7 @@ function Row({ r, onChanged }: { r: PaymentRow; onChanged: () => void }) {
     <tr className={overdue ? "row-link overdue" : "row-link"} onClick={(e) => openRow(e, `/tenants/${r.tenantId}?tab=billing`)}>
       <td className="cell-title">
         <Link to={`/tenants/${r.tenantId}?tab=billing`} className="strong row-link__name">{r.name}</Link>
-        <div className="muted small mono">{r.orgNumber ?? r.slug}{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
+        <div className="muted small mono"><span className="finance-org">{r.orgNumber ?? r.slug}</span>{r.tenantStatus !== "active" ? <> · <Status value={r.tenantStatus} /></> : null}</div>
       </td>
       <td className="mono small cell-stack" data-label="Invoice">
         {r.hostedInvoiceUrl ? <a href={r.hostedInvoiceUrl} target="_blank" rel="noreferrer">{r.number ?? r.invoiceId}</a> : r.number ?? r.invoiceId}

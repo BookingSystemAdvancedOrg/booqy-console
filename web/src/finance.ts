@@ -278,12 +278,12 @@ const toCsvText = (rows: string[][]) => "﻿" + rows.map((r) => r.map(csvEscape)
 
 /** One row per customer for the chosen period, amounts in SEK excluding VAT. */
 export function customersCsv(rows: FinanceTenantRow[]): string {
-  const head = ["Customer", "Legal name", "Org number", "Status", "Billing", "MRR SEK", "Revenue SEK", "Collected SEK", "Credited SEK",
+  const head = ["Customer", "Legal name", "Org number", "Status", "Billing", "MRR SEK", "Revenue SEK", "Collected SEK", "Credited SEK", "Refunded SEK",
     "Outstanding SEK", "Cost SEK", "Cost baseline SEK", "Cost requests SEK", "Cost email SEK", "Cost SMS SEK", "Margin SEK", "Margin %",
     "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS cost SEK", "Free until",
     "Cost per booking SEK", "Cost per order SEK", "Active days", "Invoices"];
   const body = rows.map((t) => [t.name, t.legalName ?? "", t.orgNumber ?? "", t.status, t.billingStatus, csvNumber(t.mrrSek), csvNumber(t.revenueSek),
-    csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.outstandingSek), csvNumber(t.costSek), csvNumber(t.costSplitSek?.baseline),
+    csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.refundedSek ?? 0), csvNumber(t.outstandingSek), csvNumber(t.costSek), csvNumber(t.costSplitSek?.baseline),
     csvNumber(t.costSplitSek?.requests), csvNumber(t.costSplitSek?.email), csvNumber(t.costSplitSek?.sms), csvNumber(t.marginSek),
     csvNumber(t.marginPct, 1), csvNumber(t.bookings, 0), csvNumber(t.orders, 0), csvNumber(t.requests, 0), csvNumber(t.emails, 0),
     csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsCostSek),
@@ -308,13 +308,34 @@ export function isOverdue(i: Pick<Invoice, "status" | "daysLate">): boolean {
   return (i.status === "open" || i.status === "uncollectible") && i.daysLate > 0;
 }
 
-/** An invoice's status as the operator reads it: open past its due date is overdue. */
-export function invoiceStatus(i: Pick<Invoice, "status" | "daysLate">): Invoice["status"] | "overdue" {
+export type InvoiceShownStatus = Invoice["status"] | "overdue" | "refunded" | "partly_refunded" | "credited";
+
+/** An invoice's status as the operator reads it: open past its due date is overdue; a paid one with
+ * credit notes is refunded (all of it back), partly refunded, or credited (to the customer's balance). */
+export function invoiceStatus(i: Pick<Invoice, "status" | "daysLate" | "refundedSek" | "creditedSek"> & { amountPaidSek?: number }): InvoiceShownStatus {
+  if (i.status === "paid") {
+    const refunded = Number(i.refundedSek) || 0, credited = Number(i.creditedSek) || 0;
+    if (refunded > 0) return refunded + credited >= (Number(i.amountPaidSek) || 0) - 0.005 ? "refunded" : "partly_refunded";
+    if (credited > 0) return "credited";
+  }
   return i.status === "open" && i.daysLate > 0 ? "overdue" : i.status;
+}
+
+/** Can still be refunded or credited: paid, open or uncollectible, with something left. */
+export function canCredit(i: Pick<Invoice, "status" | "creditableSek">): boolean {
+  return ["paid", "open", "uncollectible"].includes(i.status) && (Number(i.creditableSek) || 0) > 0;
+}
+
+/** "12,50" or "12.5" -> 12.5 (two decimals at most), else null. */
+export function parseSek(text: string): number | null {
+  const t = text.replace(/\s|\u00a0|kr/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  return Number(t);
 }
 
 export const INVOICE_STATUS_TEXT: Record<string, string> = {
   draft: "Draft", open: "Open", overdue: "Overdue", paid: "Paid", void: "Void", uncollectible: "Uncollectible",
+  refunded: "Refunded", partly_refunded: "Partly refunded", credited: "Credited",
 };
 
 export interface CustomerInvoices { state: "overdue" | "open" | "paid" | "none"; daysLate: number; open: number; latestMonth?: string }

@@ -68,13 +68,14 @@ def test_invite(site_repo, tenant):
     assert site_repo.calls[-1][1] == {"action": "invite", "tenantId": tenant, "username": "anna"}
     site_repo.error = "not a GitHub username"
     status, body = call("POST /platform/tenants/{tenantId}/site/invite", p, {"username": "a/b"})
-    assert status == 400 and body["fields"] == {"username": "Not a GitHub username"}
+    assert status == 400 and body["fields"] == {"username": "GitHub doesn't know this username. Check it, e.g. anna-dev."}
 
 
-def test_site_repo_errors_reach_the_operator(site_repo, tenant):
+def test_site_repo_errors_reach_the_operator_in_plain_words(site_repo, tenant):
     site_repo.error = "GitHub POST /repos/x: 403 Resource not accessible by integration"
     status, body = call("POST /platform/tenants/{tenantId}/site/redeploy", {"tenantId": tenant})
-    assert status == 502 and body["error"] == "site_repo_failed" and "403" in body["message"]
+    assert status == 502 and body["error"] == "site_repo_failed" and "403" not in body["message"]
+    assert body["message"] == "The website job didn't go through. Try again in a minute."
 
 
 def test_archive_needs_the_slug(site_repo, tenant):
@@ -126,7 +127,7 @@ def test_prod_link_mirrors_an_owner_who_already_owns_a_dev_customer(site_repo, a
 
 def test_prod_link_names_the_field_it_cannot_mirror(site_repo, aws):
     out = _task({"action": "mirror", **PROD_PROFILE, "ownerName": ""})
-    assert out["error"] == "validation_failed" and "ownerName: Required" in out["message"]
+    assert out["error"] == "validation_failed" and "ownerName: Fill this in." in out["message"]
 
 
 REPO = {"name": "site-pizzeria-roma", "id": 9001, "html_url": "https://github.com/BooqyCustomers/site-pizzeria-roma",
@@ -388,7 +389,7 @@ def test_a_mapped_label_another_customer_holds_is_refused_and_a_failed_map_is_ro
 def test_test_hosts_are_never_added_directly_and_real_customers_are_managed_from_prod(site_repo, aws, tenant, test_sites):
     p = {"tenantId": tenant}
     status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "x.test.booqy.se"})
-    assert status == 400 and "test mapping" in body["message"]
+    assert status == 400 and "Test site addresses" in body["message"]
     assert call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "x.test-dev.booqy.se"})[0] == 400
     # tenant has no siteKind: the dev side of a real customer.
     status, body = call("POST /platform/tenants/{tenantId}/domains", p, {"domain": "roma.se"})
@@ -426,4 +427,4 @@ def test_a_test_customer_redeploys_either_branch(site_repo, aws, tenant):
 def test_the_test_zones_are_never_a_customer_slug(aws, slug):
     from conftest import NEW_TENANT
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "slug": slug})
-    assert status == 400 and body["fields"]["slug"].startswith("Reserved")
+    assert status == 400 and body["fields"]["slug"].startswith("Booqy uses this name itself")

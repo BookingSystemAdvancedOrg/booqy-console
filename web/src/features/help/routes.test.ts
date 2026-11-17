@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BRANCHES } from "../../settingsTree";
 import { buildCorpus, helpSlug, parseNav } from "../../../scripts/help-corpus.mjs";
 import { KB, ROUTE_PATTERNS } from "./kb";
 
@@ -89,6 +90,8 @@ describe("help knowledge base", () => {
     expect(rows.length).toBeGreaterThanOrEqual(4);
     for (const row of rows) expect(row, "setting-row without data-help").toMatch(/data-help="settings:[\w-]+"/);
     expect(read("components/DesktopAppCard.tsx")).toContain('data-help="settings:desktop-app"');
+    // Every Settings branch has a row with an id, and the tree and branch heading carry the branch's id.
+    expect(read("components/SettingsTree.tsx")).toContain("data-help={`settings-branch:${b}`}");
     for (const [prefix, path] of Object.entries(TAB_PAGES)) {
       expect(read(path), `${path}: tab buttons without data-help`).toContain(`data-help={\`${prefix}:\${helpSlug(name)}\`}`);
     }
@@ -104,6 +107,7 @@ describe("help knowledge base", () => {
     for (const m of code.matchAll(/<Kpi\b[^>]*?label="([^"]+)"/g)) known.add(`kpi:${helpSlug(m[1])}`);
     for (const m of code.matchAll(/<Card\b[^>]*?title="([^"]+)"/g)) known.add(`card:${helpSlug(m[1])}`);
     for (const item of parseNav()) known.add(`nav:${item.to}`);
+    for (const b of BRANCHES) known.add(`settings-branch:${b}`);
     for (const [prefix, path] of Object.entries(TAB_PAGES)) for (const t of tabs(path)) known.add(`${prefix}:${helpSlug(t)}`);
     const filters = read("pages/TenantsPage.tsx").match(/const FILTERS = \[([^\]]+)\]/)?.[1] ?? "";
     for (const f of filters.matchAll(/"([^"]+)"/g)) known.add(`customers:filter:${f[1]}`);

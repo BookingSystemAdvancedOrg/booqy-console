@@ -21,7 +21,7 @@ export function luhnOk(digits: string): boolean {
 /** Shown once all 10 digits are in; an incomplete number is left to the API. */
 export function orgNumberProblem(value: string): string | undefined {
   const d = digitsOf(value);
-  if (d.length === 10 && !luhnOk(d)) return "The last digit (check digit) doesn't match - look for a typo";
+  if (d.length === 10 && !luhnOk(d)) return "One digit looks wrong. Check the number for a typo.";
   return undefined;
 }
 

@@ -4,15 +4,17 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
-  BillingView, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
+  BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
   Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
 
 export class ApiError extends Error {
-  /** The API's own message when it had a useful one (errors.ts builds the who-acts text from it). */
+  /** The API's own message ("" when it had none). errors.ts shows it only for a code it doesn't know, and only when it reads plainly. */
   serverMessage?: string;
+  /** A feature's own text for this status (RequestOptions.messages): shown as written. */
+  ownMessage?: string;
 
   constructor(
     public status: number,
@@ -27,32 +29,24 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
-/** What to say when the response has no message of its own (a gateway
- * error page, a crash, a throttle): who acts, as in errors.ts. */
-function fallbackMessage(status: number, requestId?: unknown): string {
-  const ref = requestId ? ` (request ${requestId})` : "";
-  if (status === 403) return "Your account isn't allowed to do this. Sign out and in again; if it persists, another operator checks your account under Operators.";
-  if (status === 404) return "Not found: it may have been removed elsewhere. The page shows what is left by itself.";
-  if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
-  return `Something failed on Booqy's side${ref}. This is a Booqy fault (a bug or an outage), not something you did. Try again; if it keeps failing, copy the details and look the request up in the logs.`;
-}
-
 /** API Gateway's request id: the body's (platform-tenants puts it in 500s), else the header when it is readable. */
 function requestIdOf(res: Response, extra: Record<string, unknown>): string | undefined {
   const raw = typeof extra.requestId === "string" ? extra.requestId : res.headers?.get?.("apigw-requestid");
   return raw && /^[A-Za-z0-9=_.:-]{1,100}$/.test(raw) ? raw : undefined;
 }
 
-/** quiet: no busy bar and no "data changed" signal (a read-only POST with its own animation, as the help assistant's). signal: abort the call. */
-type RequestOptions = { quiet?: boolean; signal?: AbortSignal };
+/** quiet: no busy bar and no "data changed" signal (a read-only POST with its own animation, as the help assistant's). signal: abort the call.
+ * messages: a feature's own text for an error status (features/*: "not deployed here" for a 404), used in place of the API's. */
+export type RequestOptions = { quiet?: boolean; signal?: AbortSignal; messages?: ErrorMessages };
+export type ErrorMessages = (status: number, code: string) => string | undefined;
 
 // Every call shows the busy bar (busy.ts), so no load is ever silent; only
 // the quiet live refetches (live.ts quietly) and opts.quiet skip it. After a
 // write, every live page refetches at once (also after a 409: someone saved
 // in between).
-function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<T> {
-  if (opts.quiet || (isQuiet() && method === "GET")) return send<T>(method, path, body, opts.signal);
-  const call = withBusy(() => send<T>(method, path, body, opts.signal));
+export function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<T> {
+  if (opts.quiet || (isQuiet() && method === "GET")) return send<T>(method, path, body, opts.signal, opts.messages);
+  const call = withBusy(() => send<T>(method, path, body, opts.signal, opts.messages));
   if (method === "GET") return call;
   return call.then(
     (value) => {
@@ -66,8 +60,8 @@ function request<T>(method: string, path: string, body?: unknown, opts: RequestO
   );
 }
 
-async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, messages?: ErrorMessages): Promise<T> {
+  const offline = () => new ApiError(0, "network", "We can't reach Booqy right now. Check your internet and try again.");
   const call = async (token: string) => {
     try {
       return await fetch(`${BASE}${path}`, {
@@ -77,7 +71,7 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
         signal,
       });
     } catch {
-      if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+      if (signal?.aborted) throw new ApiError(0, "timeout", "Booqy took too long to answer. Try again in a moment.");
       throw offline();
     }
   };
@@ -98,7 +92,7 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
       // token rejected (revoked, account disabled/deleted) - back to the login page
       await signOut().catch(() => undefined);
       notifySignedOut();
-      throw new ApiError(401, "unauthorized", "Signed out");
+      throw new ApiError(401, "unauthorized", "You were signed out. Sign in again, then redo your last step.");
     }
   }
   // The timeout can also fire while the body is still arriving: the same timeout then;
@@ -107,25 +101,27 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
   try {
     text = await res.text();
   } catch {
-    if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+    if (signal?.aborted) throw new ApiError(0, "timeout", "Booqy took too long to answer. Try again in a moment.");
     throw offline();
   }
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. This is a Booqy fault, not something you did. Try again; if it keeps failing, look the request up in the logs.");
+    if (res.ok) throw new ApiError(res.status, "bad_response", "Booqy sent an answer we can't read.");
   }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
     const requestId = requestIdOf(res, extra);
     if (requestId) extra.requestId = requestId;
     // The generic 500 text says nothing useful - give what to do instead.
-    const useful = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error");
-    const err = new ApiError(res.status, typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error",
-                             useful ? (message as string) : fallbackMessage(res.status, requestId),
-                             (fields as Record<string, string>) ?? {}, extra);
-    if (useful) err.serverMessage = message as string;
+    const code = typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error";
+    const own = messages?.(res.status, code);
+    const server = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error") ? message : "";
+    // The message stays the API's own (logs, tests); people read errors.ts's text, never this.
+    const err = new ApiError(res.status, code, own || server || code, (fields as Record<string, string>) ?? {}, extra);
+    err.serverMessage = server;
+    if (own) err.ownMessage = own;
     throw err;
   }
   return data as T;
@@ -249,6 +245,9 @@ export const api = {
   },
   remindInvoice: (id: string, invoiceId: string) =>
     request<{ remindersSent: number }>("POST", `${t(id)}/billing/invoices/${encodeURIComponent(invoiceId)}/remind`, {}),
+  creditNotes: (id: string, body: { items: { invoiceId: string; amountSek: string; attempt?: number }[]; method: "refund" | "credit";
+                                   reason: string; memo?: string; requestId: string }) =>
+    request<CreditNotesResponse>("POST", `${t(id)}/billing/credit-notes`, body),
   website: (params: { from: string; to: string }) =>
     request<WebsiteOverview>("GET", `/platform/website?${new URLSearchParams(params)}`),
   financeStripeSync: () =>
@@ -287,8 +286,9 @@ export const api = {
   mailTemplate: () => request<{ template: MailTemplate }>("GET", "/platform/mail/template").then((r) => r.template),
   saveMailTemplate: (body: MailTemplateInput) =>
     request<{ template: MailTemplate }>("PUT", "/platform/mail/template", body).then((r) => r.template),
+  // Quiet: a preview saves nothing, so no busy bar and no refetch of open pages on every typing pause.
   mailPreview: (body: { subject: string; body: string; template?: Partial<MailTemplateInput> }) =>
-    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body),
+    request<{ subject: string; html: string; text: string }>("POST", "/platform/mail/preview", body, { quiet: true }),
   mailRecipients: () => request<{ count: number; recipients: MailRecipient[] }>("GET", "/platform/mail/recipients"),
   newsletters: () => request<{ newsletters: Newsletter[] }>("GET", "/platform/mail/newsletters").then((r) => r.newsletters),
   newsletter: (id: string) =>
@@ -320,5 +320,5 @@ async function postToS3(upload: { url: string; fields: Record<string, string> },
   for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
   form.append("file", file);                 // must be the last field
   const res = await fetch(upload.url, { method: "POST", body: form });
-  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The upload was refused - is it a PDF under 10 MB?");
+  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The file didn't upload. Pick a PDF under 10 MB and try again.");
 }

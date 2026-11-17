@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import devIcon from './dev-icon.cjs'
 
 const { values } = parseArgs({
   options: {
@@ -134,7 +135,8 @@ for (const name of ['install.sh', 'install.ps1']) {
     { stdio: 'inherit' },
   )
 }
-put(new URL('./build/icons/256x256.png', import.meta.url).pathname, `${slug}/icon.png`, 'public, max-age=86400')
+// Ikonen som install.sh ger Linux-genvägen: i dev den med DEV-brickan, som appen själv.
+put(new URL(`./${devIcon.iconsFor(values.env).set}/256x256.png`, import.meta.url).pathname, `${slug}/icon.png`, 'public, max-age=300')
 
 for (const yml of ['latest.yml', 'latest-linux.yml']) {
   if (found.includes(yml)) put(join(values.dir, yml), `${slug}/updates/${yml}`, 'public, max-age=60')

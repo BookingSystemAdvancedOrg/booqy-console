@@ -158,6 +158,10 @@ def test_transfer_check(od):
     body = call("GET /platform/domains/transfer-check", query={"domain": "roma.com"})[1]
     assert not body["transferable"] and body["errorCode"] == "locked" and body["who"] == "restaurant"
     assert "lås upp" in body["lastErrorSv"]
+    assert body["reason"].startswith("This domain can't move yet.")
+    od.domains.transferable = "SOMETHING_NEW"            # a registry answer we have no words for
+    body = call("GET /platform/domains/transfer-check", query={"domain": "roma.com"})[1]
+    assert body["reason"] == "This domain can't move right now. Check that it's unlocked, then try again."
 
 
 def test_unsupported_tld_points_to_keeping_the_registrar(od, tenant, monkeypatch):
@@ -732,3 +736,244 @@ def test_tld_list(sim):
     status, body = call("GET /platform/domains/tlds")
     assert status == 200 and {t["tld"] for t in body["tlds"]} >= {"se", "com", "eu"} and "nu" not in {t["tld"] for t in body["tlds"]}
     assert next(t for t in body["tlds"] if t["tld"] == "se")["sellable"]
+
+
+# ------------------------------------------- order state machine (audit 2026-11-16)
+def _detail_zone(tenant, domain):
+    zones = call("GET /platform/tenants/{tenantId}", {"tenantId": tenant})[1]["zones"]
+    return next(z for z in zones if z["domain"] == domain)
+
+
+def _refusing_r53(monkeypatch, code, message):
+    """Route 53 whose record changes are refused (the zone itself is made)."""
+    from app import zones
+    real = zones._route53()
+
+    class R53:
+        refuse = True
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def change_resource_record_sets(self, **kw):
+            if self.refuse:
+                raise ClientError({"Error": {"Code": code, "Message": message}}, "ChangeResourceRecordSets")
+            return real.change_resource_record_sets(**kw)
+    r53 = R53()
+    monkeypatch.setattr(zones, "_route53", lambda: r53)
+    return r53
+
+
+CONNECT = {"domain": "roma.se", "records": [{"name": "@", "type": "MX", "ttl": 3600, "values": ["mx1.one.com."]}]}
+
+
+def test_a_failed_record_import_is_never_retried_without_the_records(od, aws, tenant, monkeypatch):
+    p = {"tenantId": tenant}
+    r53 = _refusing_r53(monkeypatch, "InvalidChangeBatch", "Invalid MX record value")
+    status, body = call("POST /platform/tenants/{tenantId}/domains/connections", p, CONNECT)
+    assert status == 400 and body["error"] == "validation_failed" and "One of the records was refused" in body["fields"]["records"]
+    assert "Invalid MX" not in body["message"] + body["fields"]["records"]   # Route 53's own words stay in the log
+    z = _zone(aws, tenant, "roma.se")
+    assert z["status"] == "failed" and z["hostedZoneId"] and z["recordsImported"] is False and z["who"] == "booqy"
+    assert _detail_zone(tenant, "roma.se")["canRetry"] is False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.se"})
+    assert status == 409 and body["error"] == "not_retryable" and "records" in body["message"]
+    # connected again with the records fixed: the same zone, the records in it
+    r53.refuse = False
+    zone_id = z["hostedZoneId"]
+    fixed = {"domain": "roma.se", "records": [{"name": "@", "type": "MX", "ttl": 3600, "values": ["10 mx1.one.com."]}]}
+    status, body = call("POST /platform/tenants/{tenantId}/domains/connections", p, fixed)
+    assert status == 202, body
+    z = _zone(aws, tenant, "roma.se")
+    assert z["hostedZoneId"] == zone_id and z["recordsImported"] is True and z["status"] == "awaiting_nameservers"
+
+
+def test_retry_needs_the_route53_call_to_have_happened(od, aws, tenant, monkeypatch):
+    p = {"tenantId": tenant}
+    # (a) RegisterDomain refused at once: failed, Booqy acts, no Retry (place it again)
+    od.domains.refuse = "Invalid contact"
+    status, _ = call("POST /platform/tenants/{tenantId}/domains/registrations", p,
+                     {"domain": "roma.eu", "contact": CONTACT, "acceptedPrice": PRICE})
+    assert status == 502
+    z = _zone(aws, tenant, "roma.eu")
+    assert z["status"] == "failed" and z["who"] == "booqy" and z["errorCode"] == "booqy" and "Booqys fel" in z["lastErrorSv"]
+    assert "Invalid contact" in z["lastError"]
+    assert _detail_zone(tenant, "roma.eu")["canRetry"] is False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.eu"})
+    assert status == 409 and body["error"] == "not_retryable" and "Place the order again" in body["message"]
+    assert _zone(aws, tenant, "roma.eu")["status"] == "failed"
+    # (b) a move to Booqy that failed before TransferDomain: start the move again
+    _refusing_r53(monkeypatch, "Throttling", "Rate exceeded")
+    status, _ = call("POST /platform/tenants/{tenantId}/domains/transfers", p, TRANSFER)
+    assert status == 502 and od.domains.transfers == []
+    z = _zone(aws, tenant, "roma.com")
+    assert z["status"] == "failed" and "transferInOperationId" not in z
+    assert _detail_zone(tenant, "roma.com")["canRetry"] is False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.com"})
+    assert status == 409 and body["error"] == "not_retryable"
+    assert _executions(aws) == []
+
+
+def test_a_bought_domain_whose_workflow_did_not_start_resumes_with_retry(od, aws, tenant, monkeypatch):
+    from app import own_domains
+    p = {"tenantId": tenant}
+    real_start, fail = own_domains.start, {"on": True}
+
+    def flaky_start(*args, **kwargs):
+        if fail["on"]:
+            raise ClientError({"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}}, "StartExecution")
+        return real_start(*args, **kwargs)
+    monkeypatch.setattr(own_domains, "start", flaky_start)
+    import boto3
+    from moto.core import DEFAULT_ACCOUNT_ID
+    from moto.sns.models import sns_backends
+    topic = boto3.client("sns", region_name="eu-north-1").create_topic(Name="prod-platform-alerts")["TopicArn"]
+    monkeypatch.setenv("ALERT_TOPIC_ARN", topic)
+    status, body = call("POST /platform/tenants/{tenantId}/domains/registrations", p,
+                        {"domain": "roma.eu", "contact": CONTACT, "acceptedPrice": PRICE})
+    assert status == 202, body
+    sent = sns_backends[DEFAULT_ACCOUNT_ID]["eu-north-1"].topics[topic].sent_notifications
+    assert len(sent) == 1 and "roma.eu" in sent[0][2] and "didn't start" in sent[0][2]
+    z = _zone(aws, tenant, "roma.eu")
+    assert z["status"] == "failed" and z["operationId"] == "op-1" and z["who"] == "booqy"
+    assert "didn't start" in z["lastError"] and _executions(aws) == []
+    assert body["zone"]["canRetry"] is True
+    # Retry while it still can't start: failed again (never left registering), 502
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.eu"})
+    assert status == 502 and body["error"] == "workflow_not_started"
+    assert _zone(aws, tenant, "roma.eu")["status"] == "failed"
+    fail["on"] = False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.eu"})
+    assert status == 202 and body["zone"]["status"] == "registering"
+    assert _zone(aws, tenant, "roma.eu")["operationId"] == "op-1"
+    assert [e["mode"] for e in _executions(aws)] == ["register"]
+    # connect: the zone is made, the workflow didn't start; Retry starts it
+    fail["on"] = True
+    status, body = call("POST /platform/tenants/{tenantId}/domains/connections", p, {"domain": "roma.se", "records": []})
+    assert status == 202 and body["zone"]["status"] == "failed" and body["zone"]["canRetry"] is True
+    fail["on"] = False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.se"})
+    assert status == 202 and body["zone"]["status"] == "awaiting_nameservers"
+
+
+def test_a_remove_that_stopped_half_way_runs_again(od, aws, tenant, monkeypatch):
+    from app import own_domains
+    _connected_live(od, aws, tenant)
+    p = {"tenantId": tenant, "domain": "roma.se"}
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("DynamoDB throttled")
+    real = own_domains.release
+    monkeypatch.setattr(own_domains, "release", broken)
+    assert call("DELETE /platform/tenants/{tenantId}/zones/{domain}", p)[0] == 500
+    assert _zone(aws, tenant, "roma.se")["status"] == "removing"
+    assert _detail_zone(tenant, "roma.se")["canRemove"] is True
+    monkeypatch.setattr(own_domains, "release", real)
+    status, body = call("DELETE /platform/tenants/{tenantId}/zones/{domain}", p)
+    assert status == 202 and body["zone"]["status"] == "removed"
+    assert od.kvs.keys == {} and _profile(aws, tenant)["primaryDomain"] == "pizzeria-roma.booqy.se"
+    status, body = call("DELETE /platform/tenants/{tenantId}/zones/{domain}", p)
+    assert status == 409 and body["error"] == "already_removed"
+
+
+def test_a_bought_domain_connected_again_after_removal_stays_registered_here(od, aws, tenant):
+    p = {"tenantId": tenant, "domain": "roma.se"}
+    _put(aws, tenant, "ZONE#roma.se", tenantId=tenant, domain="roma.se", mode="register", status="removed",
+         registeredAt="2026-01-10T00:00:00Z", expiresAt="2027-01-10T00:00:00+00:00", autoRenew=True, attempt=1)
+    status, body = call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant},
+                        {"domain": "roma.se", "records": []})
+    assert status == 202, body
+    z = _zone(aws, tenant, "roma.se")
+    assert z["mode"] == "connect" and z["registeredAt"] == "2026-01-10T00:00:00Z" and z["autoRenew"] is True
+    _update(aws, tenant, "ZONE#roma.se", status="live")
+    zone = _detail_zone(tenant, "roma.se")
+    assert zone["registered"] is True and zone["registrar"] == "route53" and zone["transferable"] is False
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/auth-code", p, {})
+    assert status == 200 and body == {"authCode": "s3cret-Code"}
+    # a domain that was only connected stays external (and can still be transferred in)
+    _put(aws, tenant, "ZONE#roma.eu", tenantId=tenant, domain="roma.eu", mode="connect", status="removed", attempt=1)
+    call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant}, {"domain": "roma.eu", "records": []})
+    _update(aws, tenant, "ZONE#roma.eu", status="live")
+    zone = _detail_zone(tenant, "roma.eu")
+    assert zone["registered"] is False and zone["registrar"] == "external" and zone["transferable"] is True
+    # a registration Route 53 refused (or that failed) never held the domain: connected again, it stays external
+    for apex, extra in (("roma.com", {}), ("roma.net", {"operationId": "op-9", "operationStatus": "FAILED"})):
+        _put(aws, tenant, f"ZONE#{apex}", tenantId=tenant, domain=apex, mode="register", status="removed",
+             requestedAt="2026-11-01T00:00:00Z", attempt=1, **extra)
+        assert call("POST /platform/tenants/{tenantId}/domains/connections", {"tenantId": tenant},
+                    {"domain": apex, "records": []})[0] == 202
+        assert "registeredAt" not in _zone(aws, tenant, apex)
+        _update(aws, tenant, f"ZONE#{apex}", status="live")
+        zone = _detail_zone(tenant, apex)
+        assert zone["registered"] is False and zone["registrar"] == "external" and zone["transferable"] is True
+
+
+def test_removed_while_the_workflow_runs_ends_cancelled(od, aws, tenant):
+    _connected_live(od, aws, tenant)
+    for status in ("removing", "removed"):
+        _update(aws, tenant, "ZONE#roma.se", status=status)
+        assert _task("set_canonical", tenant, "roma.se") == {"status": "cancelled"}
+        assert _task("mark", tenant, "roma.se", status="live") == {"status": "cancelled"}
+        assert _task("mark", tenant, "roma.se", status="failed", error="AttachBoth: x") == {"status": "cancelled"}
+        assert _zone(aws, tenant, "roma.se")["status"] == status
+
+
+def test_a_se_move_waiting_for_the_identity_check_times_out_as_booqys(od, aws, tenant):
+    p = {"tenantId": tenant}
+    call("POST /platform/tenants/{tenantId}/domains/transfers", p, TRANSFER)
+    _update(aws, tenant, "ZONE#roma.com", status="awaiting_verification")
+    mails = len(od.mails)
+    assert _task("mark", tenant, "roma.com", mode="transfer_in", status="timed_out",
+                 error="... ask the owner to approve the e-mail, then press Retry.") == {"status": "timed_out"}
+    z = _zone(aws, tenant, "roma.com")
+    assert z["status"] == "timed_out" and z["who"] == "booqy" and z["errorCode"] == "verification_timeout"
+    assert "owner" not in z["lastError"] and "AWS Support" in z["lastError"]
+    assert "Ingen godkände" not in z["lastErrorSv"] and len(od.mails) == mails          # nothing asked of the restaurant
+    zone = _detail_zone(tenant, "roma.com")
+    assert zone["canRetry"] is True and zone["canResubmit"] is False and "restaurantSteps" not in zone
+    status, body = call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", {**p, "domain": "roma.com"})
+    assert status == 202 and body["zone"]["status"] == "transferring"
+    assert _zone(aws, tenant, "roma.com")["transferInOperationId"] == "op-transfer"
+
+
+def test_an_expired_move_says_start_again_not_retry(od, aws, tenant):
+    call("POST /platform/tenants/{tenantId}/domains/transfers", {"tenantId": tenant}, TRANSFER)
+    _task("mark", tenant, "roma.com", mode="transfer_in", status="timed_out",
+          error="The transfer was not approved within 3 checks (14 days). ... then press Retry.")
+    z = _zone(aws, tenant, "roma.com")
+    assert z["status"] == "transfer_expired" and "press Retry" not in z["lastError"]
+    assert "start the move again" in z["lastError"]
+    zone = _detail_zone(tenant, "roma.com")
+    assert zone["canResubmit"] is True and zone["canRetry"] is False
+
+
+def test_a_rejected_moves_zone_stays_with_the_records_order(od, aws, tenant):
+    def refuse(**kw):
+        raise ClientError({"Error": {"Code": "InvalidInput", "Message": "Invalid authorization code"}}, "TransferDomain")
+    od.domains.transfer_domain = refuse
+    call("POST /platform/tenants/{tenantId}/domains/transfers", {"tenantId": tenant}, TRANSFER)
+    rejected = _zone(aws, tenant, "roma.com")
+    assert rejected["status"] == "transfer_rejected" and rejected["hostedZoneId"]
+    status, body = call("POST /platform/tenants/{tenantId}/domains/records", {"tenantId": tenant}, {"domain": "roma.com"})
+    assert status == 202, body
+    z = _zone(aws, tenant, "roma.com")
+    assert z["mode"] == "records" and z["hostedZoneId"] == rejected["hostedZoneId"]
+    assert z["nameServers"] == rejected["nameServers"]
+
+
+def test_reminders_start_again_after_retry(od, aws, tenant):
+    p = {"tenantId": tenant, "domain": "roma.se"}
+    call("POST /platform/tenants/{tenantId}/domains/records", {"tenantId": tenant}, {"domain": "roma.se"})
+    week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    _update(aws, tenant, "ZONE#roma.se", requestedAt=week, remindersSent=["24", "72", "144"])
+    _task("mark", tenant, "roma.se", status="timed_out", error="x")
+    assert call("POST /platform/tenants/{tenantId}/zones/{domain}/retry", p)[0] == 202
+    z = _zone(aws, tenant, "roma.se")
+    assert "remindersSent" not in z and z["retriedAt"]
+    before = od.mails.kinds().count("records_reminder")
+    _task("records_status", tenant, "roma.se", attempt=2)
+    assert od.mails.kinds().count("records_reminder") == before                   # not due yet
+    _update(aws, tenant, "ZONE#roma.se", retriedAt=(datetime.now(timezone.utc) - timedelta(hours=25)).isoformat())
+    _task("records_status", tenant, "roma.se", attempt=2)
+    assert od.mails.kinds().count("records_reminder") == before + 1
+    assert _zone(aws, tenant, "roma.se")["remindersSent"] == ["24"]

@@ -122,7 +122,7 @@ def test_email_change_to_a_taken_address(aws):
     owner_group(aws, me)
     status, body = call("PATCH /platform/operators/{username}", {"username": other},
                         body={"email": "me@x.se"}, actor=me, groups=OWNER)
-    assert status == 409 and body["fields"] == {"email": "Already an operator"}
+    assert status == 409 and body["fields"] == {"email": "Already used. Use another email."}
 
 
 def test_roles_in_the_list(aws):

@@ -38,9 +38,10 @@ describe("ExportLedgerSection", () => {
 
   it("shows the error when nothing is there", async () => {
     vi.mocked(exportLedger).mockRejectedValue(new ApiError(404, "not_found", "No staff ledger records for this location."));
+    // A test-built ApiError has no own text: the console's plain not-found text shows.
     render(<ExportLedgerSection tenantId="t1" />);
     await screen.findByRole("combobox", { name: /^Location/ });
     fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
-    expect(await screen.findByText(/No staff ledger records/)).toBeInTheDocument();
+    expect(await screen.findByText(/We can't find this/)).toBeInTheDocument();
   });
 });

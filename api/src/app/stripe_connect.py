@@ -73,22 +73,26 @@ def _account_id(tenant_id: str) -> str:
     account_id = (profile.get("stripe") or {}).get("accountId")
     if not account_id:
         raise ApiError(409, "no_stripe_account",
-                       "The connected account is created by onboarding - wait for it, or retry onboarding")
+                       "The customer's Stripe account isn't ready yet. Wait for setup to finish, or press Retry setup.")
     return account_id
 
 
 def account_link(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     account_id = _account_id(tenant_id)
-    base = env("PLATFORM_ADMIN_APP_URL").rstrip("/")
+    # The restaurant fills in the form, so Stripe sends it back to Booqy Admin
+    # (its own account-link page: refresh asks for a new link there); the
+    # console only while ADMIN_APP_URL is not set.
+    admin = (env("ADMIN_APP_URL", "") or "").rstrip("/")
+    base = admin + "/settings/payments" if admin else env("PLATFORM_ADMIN_APP_URL").rstrip("/") + f"/tenants/{tenant_id}"
     link = stripe_request("POST", "/v2/core/account_links", {
         "account": account_id,
         "use_case": {
             "type": "account_onboarding",
             "account_onboarding": {
                 "configurations": ["merchant"],
-                "refresh_url": f"{base}/tenants/{tenant_id}?stripe=refresh",
-                "return_url": f"{base}/tenants/{tenant_id}?stripe=return",
+                "refresh_url": f"{base}?stripe=refresh",
+                "return_url": f"{base}?stripe=return",
             },
         },
     })

@@ -5,7 +5,7 @@ import PhoneAgentTenantSection from "./PhoneAgentTenantSection";
 import { phoneAgentApi } from "./api";
 import { ApiError } from "../../api";
 
-vi.mock("./api", () => ({ phoneAgentApi: { settings: vi.fn(), saveSettings: vi.fn(), tenant: vi.fn(), setPaused: vi.fn() } }));
+vi.mock("./api", async (orig) => ({ ...(await orig<typeof import("./api")>()), phoneAgentApi: { settings: vi.fn(), saveSettings: vi.fn(), tenant: vi.fn(), setPaused: vi.fn() } }));
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -45,5 +45,44 @@ describe("PhoneAgentSettingsCard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Turn kill switch on (stop all calls)" }));
     expect(await screen.findByText(/The kill switch is ON/)).toBeInTheDocument();
     expect(phoneAgentApi.saveSettings).toHaveBeenCalledWith({ killSwitch: true, maxMinutesCap: 1000 });
+  });
+
+  it("the kill switch sends the saved ceiling, not an empty cap in the field", async () => {
+    vi.mocked(phoneAgentApi.settings).mockResolvedValue({ killSwitch: false, maxMinutesCap: 1000 });
+    vi.mocked(phoneAgentApi.saveSettings).mockResolvedValue({ killSwitch: true, maxMinutesCap: 1000 });
+    render(<PhoneAgentSettingsCard />);
+    const field = await screen.findByLabelText(/Max minutes/);
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn kill switch on (stop all calls)" }));
+    expect(await screen.findByText(/The kill switch is ON/)).toBeInTheDocument();
+    expect(phoneAgentApi.saveSettings).toHaveBeenCalledWith({ killSwitch: true, maxMinutesCap: 1000 });
+  });
+
+  it("says the cap range once, under the field, instead of the raw code invalid_cap", async () => {
+    vi.mocked(phoneAgentApi.settings).mockResolvedValue({ killSwitch: false, maxMinutesCap: 1000 });
+    vi.mocked(phoneAgentApi.saveSettings).mockRejectedValue(new ApiError(400, "invalid_cap", "Use whole minutes from 0 to 100 000, like 600.", { maxMinutesCap: "invalid_cap" }));
+    render(<PhoneAgentSettingsCard />);
+    fireEvent.change(await screen.findByLabelText(/Max minutes/), { target: { value: "-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save ceiling" }));
+    await screen.findByText(/Use whole minutes from 0 to 100 000/);
+    expect(screen.getAllByText(/Use whole minutes from 0 to 100 000/)).toHaveLength(1);
+    expect(document.querySelector(".notice--error")).toBeNull();
+    expect(screen.queryByText("invalid_cap")).not.toBeInTheDocument();
+  });
+
+  it("is a styled, fixed-width field with the hint in the card's (i) tip", async () => {
+    vi.mocked(phoneAgentApi.settings).mockResolvedValue({ killSwitch: false, maxMinutesCap: 1000 });
+    render(<PhoneAgentSettingsCard />);
+    const field = await screen.findByLabelText(/Max minutes/);
+    expect(field).toHaveClass("input");
+    expect(field.style.width).toBe("160px");
+    expect(screen.getByRole("button", { name: "About Phone agent" })).toBeInTheDocument();
+    expect(document.querySelector(".field__hint")).toBeNull();
+  });
+
+  it("shows a skeleton while loading", () => {
+    vi.mocked(phoneAgentApi.settings).mockReturnValue(new Promise(() => undefined));
+    render(<PhoneAgentSettingsCard />);
+    expect(screen.getByRole("status", { name: "Loading the phone agent" })).toBeInTheDocument();
   });
 });

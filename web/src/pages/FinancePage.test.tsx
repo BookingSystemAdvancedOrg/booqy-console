@@ -261,9 +261,48 @@ describe("FinancePage", () => {
     expect(await screen.findByText("F-0001, sent")).toBeInTheDocument();
   });
 
-  it("shows the API error", async () => {
-    mocks.financeOverview.mockRejectedValue(new Error("The API didn't respond."));
+  it("shows the agreement phase in words, not the API code", async () => {
+    const base = overview();
+    mocks.financeOverview.mockResolvedValue({ ...base, tenants: [
+      { ...base.tenants[0], billingStatus: "scheduled" },
+      { ...base.tenants[1], billingStatus: "ending" },
+    ] });
     renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent("The API didn't respond.");
+    expect(await screen.findByText("Starts later")).toBeInTheDocument();
+    expect(screen.getByText("Ending")).toBeInTheDocument();
+    expect(screen.queryByText("scheduled")).not.toBeInTheDocument();
+    expect(screen.getByText("556000-0001")).toHaveClass("finance-org");
+  });
+
+  it("shows the customer list's error with Try again instead of 'No customer matches'", async () => {
+    const user = userEvent.setup();
+    mocks.tenants.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderPage();
+    await screen.findAllByText("2 980 kr");
+    await user.type(screen.getByLabelText("Filter by customer"), "roma");
+    expect(screen.queryByText("No customer matches.")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("option", { name: /Pizzeria Roma/ })).toBeInTheDocument();
+  });
+
+  it("refreshes the Payments list from the header Refresh", async () => {
+    const user = userEvent.setup();
+    mocks.financeInvoices.mockResolvedValue({ period: { from: "2026-10-01", to: "2026-10-31", status: "all" },
+      summary: { invoices: 0, paid: 0, open: 0, overdue: 0, invoicedSek: 0, collectedSek: 0, outstandingSek: 0, overdueSek: 0, lateFeesSek: 0, interestSek: 0 },
+      invoices: [] });
+    renderPage();
+    await screen.findAllByText("2 980 kr");
+    await user.click(screen.getByRole("button", { name: "Payments" }));
+    await screen.findByText("0 of 0 paid");
+    const overviewCalls = mocks.financeOverview.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(mocks.financeInvoices).toHaveBeenCalledTimes(2));
+    expect(mocks.financeOverview.mock.calls.length).toBe(overviewCalls);
+  });
+
+  it("shows the API error", async () => {
+    mocks.financeOverview.mockRejectedValue(new Error("The overview didn't load."));
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The overview didn't load.");
   });
 });

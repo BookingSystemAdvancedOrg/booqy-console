@@ -1,6 +1,4 @@
-import { accessToken } from "../../auth";
-import { ApiError } from "../../api";
-import { withBusy } from "../../busy";
+import { request, type ErrorMessages } from "../../api";
 
 /** Operator route H9 (CONTRACTS.md 6.H), forwarded by platform-tenants to personalliggare; audited per call. */
 
@@ -16,28 +14,14 @@ export interface LedgerExport {
   content: string;
 }
 
-const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
+const messages: ErrorMessages = (status) =>
+  status === 404 ? "There is no staff ledger for this location, or the staff ledger isn't switched on here."
+  : status === 400 ? "Check the dates. From must be on or before To, at most one year apart."
+  : status === 503 ? "The staff ledger didn't answer. Try again in a minute."
+  : undefined;
 
-export async function exportLedger(tenantId: string, q: { locationId: string; from: string; to: string }): Promise<LedgerExport> {
-  return withBusy(async () => {
-    const token = await accessToken();
-    const query = new URLSearchParams(q).toString();
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}/platform/tenants/${encodeURIComponent(tenantId)}/personalliggare/export?${query}`,
-                        { headers: { Authorization: `Bearer ${token}` } });
-    } catch {
-      throw new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const code = (data.error as string) ?? "error";
-      const message = res.status === 404 ? "No staff ledger records for this location, or the feature is not deployed in this environment."
-        : res.status === 400 ? "Check the dates: from must be on or before to, at most one year."
-        : res.status === 503 ? "The staff ledger did not answer. Try again in a minute."
-        : `Request failed (${code}).`;
-      throw new ApiError(res.status, code, message, data.fields ?? {});
-    }
-    return data as LedgerExport;
-  });
+/** Through api.ts: busy bar, 401 refresh and request id, as every call. */
+export function exportLedger(tenantId: string, q: { locationId: string; from: string; to: string }): Promise<LedgerExport> {
+  const query = new URLSearchParams(q).toString();
+  return request<LedgerExport>("GET", `/platform/tenants/${encodeURIComponent(tenantId)}/personalliggare/export?${query}`, undefined, { messages });
 }
