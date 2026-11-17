@@ -1,8 +1,9 @@
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BRANCHES, BRANCH_LABEL, LEAVES, TREES, searchLeaves } from "./settingsTree";
-import { SettingsTreeNav } from "./components/SettingsTree";
+import { BRANCHES, BRANCH_LABEL, LEAVES, TREES, buildApples, isBranch, isTree, searchLeaves, type BranchId, type TreeId } from "./settingsTree";
+import { BranchHead, BranchPager, SettingsField, SettingsTreeNav, SettingsTreePage, useViewFocus } from "./components/SettingsTree";
 
 describe("settings tree", () => {
   it("gives every branch one tree and keeps #desktop-app", () => {
@@ -34,5 +35,86 @@ describe("settings tree", () => {
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByRole("treeitem", { name: "You" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("treeitem", { name: "Profile" })).toBeNull();
+  });
+});
+
+const field = (apples = {}) =>
+  render(<SettingsField trees={TREES} apples={apples} visible={() => true} onTree={() => {}} onBranch={() => {}} onLeaf={() => {}} onLink={() => {}} />);
+
+describe("settings field", () => {
+  it("gives every tree a real h2 heading with the button inside it", () => {
+    field();
+    for (const t of TREES) {
+      const heading = screen.getByRole("heading", { level: 2, name: t.label });
+      expect(heading.closest("button"), t.label).toBeNull();
+      expect(within(heading).getByRole("button", { name: t.label })).toBeInTheDocument();
+      expect(heading.closest("section")).toHaveAttribute("aria-labelledby", heading.id);
+    }
+  });
+
+  it("shows no empty listbox when the search has no hits, and announces the count", async () => {
+    const user = userEvent.setup();
+    field();
+    const box = screen.getByRole("combobox", { name: "Search settings" });
+    await user.type(box, "zzzz");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(box).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("No matches");
+    await user.clear(box);
+    await user.type(box, "kill");
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByRole("status")).toHaveTextContent("2 matches");
+  });
+
+  it("draws a green dot only for what is running, nothing for preferences, amber for a kill switch", () => {
+    const apples = buildApples({ theme: "light", sound: false, meta: { killSwitch: false }, phone: { killSwitch: true, maxMinutesCap: 60 } });
+    const tone = Object.fromEntries(Object.values(apples).flat().map((a) => [a!.text, a!.tone ?? "neutral"]));
+    expect(tone).toEqual({ Light: "neutral", "Sound off": "neutral", "Meta ads running": "ok", "Phone agent paused": "warn" });
+    expect(buildApples({ theme: "dark", sound: true, meta: { killSwitch: true }, phone: { killSwitch: false, maxMinutesCap: 60 } }).platform)
+      .toEqual([{ text: "Meta ads paused by kill switch", branch: "meta-ads", tone: "warn" }, { text: "Phone cap 60 min", branch: "phone-agent", tone: "ok" }]);
+    field(apples);
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("class", "stree-apple");
+    expect(screen.getByRole("button", { name: "Meta ads running" })).toHaveAttribute("class", "stree-apple ok");
+    expect(screen.getByRole("button", { name: "Phone agent paused" })).toHaveAttribute("class", "stree-apple warn");
+  });
+});
+
+/** The page's views (field, tree, branch) as in SettingsPage, with the same focus rule. */
+function Views() {
+  const [view, setView] = useState("");
+  const body = useRef<HTMLDivElement>(null);
+  useViewFocus(view, body);
+  const go = (to: BranchId | TreeId | null) => setView(to ?? "");
+  const tree = isTree(view) ? TREES.find((t) => t.id === view) : undefined;
+  return (
+    <div ref={body}>
+      {view === "" && <SettingsField trees={TREES} apples={{}} visible={() => true} onTree={go} onBranch={go} onLeaf={(l) => go(l.branch)} onLink={() => {}} />}
+      {tree && <SettingsTreePage tree={tree} apples={[]} onField={() => go(null)} onBranch={go} onLink={() => {}} />}
+      {isBranch(view) && <BranchHead key={view} branch={view} onField={() => go(null)} onTree={go} />}
+      {isBranch(view) && <BranchPager order={BRANCHES} branch={view} onBranch={go} />}
+    </div>
+  );
+}
+
+describe("focus follows the view", () => {
+  it("moves to the new heading, and back to where you came from", async () => {
+    const user = userEvent.setup();
+    render(<Views />);
+    screen.getByRole("button", { name: "Appearance and sound" }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { level: 2, name: "Appearance and sound" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: BRANCH_LABEL["desktop-app"] }));
+    expect(screen.getByRole("heading", { level: 2, name: BRANCH_LABEL["desktop-app"] })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("button", { name: BRANCH_LABEL["desktop-app"] })).toHaveFocus();
+    screen.getByRole("button", { name: "Platform" }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { level: 2, name: "Platform" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: BRANCH_LABEL["phone-agent"] }));
+    expect(screen.getByRole("heading", { level: 2, name: BRANCH_LABEL["phone-agent"] })).toHaveFocus();
+    await user.click(screen.getAllByRole("button", { name: /Platform/ })[0]);
+    expect(screen.getByRole("button", { name: BRANCH_LABEL["phone-agent"] })).toHaveFocus();
+    await user.click(screen.getAllByRole("button", { name: /Settings/ })[0]);
+    expect(screen.getByRole("button", { name: "Platform" })).toHaveFocus();
   });
 });

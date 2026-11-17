@@ -84,3 +84,34 @@ export function searchLeaves(query: string, visible: (b: BranchId) => boolean = 
     .sort((a, b) => Number(!fold(a.label).startsWith(words[0])) - Number(!fold(b.label).startsWith(words[0])))
     .slice(0, 8);
 }
+
+/**
+ * An apple: the important thing on a tree (live status); a press opens its
+ * branch. The tone says what the dot means: "ok" (green) only for something
+ * running, "warn" for something that needs action, none for preferences.
+ */
+export interface Apple { text: string; branch: BranchId; tone?: "ok" | "warn" }
+
+export interface AppleInput {
+  theme: string;
+  sound: boolean;
+  meta: { killSwitch: boolean } | null;
+  phone: { killSwitch: boolean; maxMinutesCap: number } | null;
+}
+
+export function buildApples({ theme, sound, meta, phone }: AppleInput): Partial<Record<TreeId, Apple[]>> {
+  return {
+    you: [
+      { text: theme === "dark" ? "Dark" : "Light", branch: "appearance" },
+      { text: sound ? "Sound on" : "Sound off", branch: "appearance" },
+    ],
+    platform: [
+      ...(meta ? [meta.killSwitch
+        ? { text: "Meta ads paused by kill switch", branch: "meta-ads" as const, tone: "warn" as const }
+        : { text: "Meta ads running", branch: "meta-ads" as const, tone: "ok" as const }] : []),
+      ...(phone ? [phone.killSwitch
+        ? { text: "Phone agent paused", branch: "phone-agent" as const, tone: "warn" as const }
+        : { text: `Phone cap ${phone.maxMinutesCap} min`, branch: "phone-agent" as const, tone: "ok" as const }] : []),
+    ],
+  };
+}

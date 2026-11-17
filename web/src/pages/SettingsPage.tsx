@@ -10,8 +10,8 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import { Slot } from "../slots";
 import { DesktopAppCard } from "../components/DesktopAppCard";
 import { InfoTip } from "../components/StepFlow";
-import { BranchHead, BranchPager, SettingsField, SettingsTreeNav, SettingsTreePage, type Apple } from "../components/SettingsTree";
-import { LEAVES, TREES, branchVisible, fold, isBranch, isTree, treeOf, type BranchId, type Leaf, type TreeId } from "../settingsTree";
+import { BranchHead, BranchPager, SettingsField, SettingsTreeNav, SettingsTreePage, useViewFocus } from "../components/SettingsTree";
+import { LEAVES, TREES, branchVisible, buildApples, fold, isBranch, isTree, treeOf, type BranchId, type Leaf, type TreeId } from "../settingsTree";
 import { useTheme } from "../theme";
 import { useSound } from "../press";
 import { confirmLeave } from "../components/save";
@@ -85,20 +85,10 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
       .then(([meta, phone]) => { if (!gone) setPlatform({ meta, phone }); });
     return () => { gone = true; };
   }, [onField]);
-  const apples: Partial<Record<TreeId, Apple[]>> = {
-    you: [
-      { text: theme === "dark" ? "Dark" : "Light", branch: "appearance" },
-      { text: sound ? "Sound on" : "Sound off", branch: "appearance" },
-    ],
-    platform: [
-      ...(platform.meta ? [platform.meta.killSwitch
-        ? { text: "Meta ads paused by kill switch", branch: "meta-ads" as const, warn: true }
-        : { text: "Meta ads running", branch: "meta-ads" as const }] : []),
-      ...(platform.phone ? [platform.phone.killSwitch
-        ? { text: "Phone agent paused", branch: "phone-agent" as const, warn: true }
-        : { text: `Phone cap ${platform.phone.maxMinutesCap} min`, branch: "phone-agent" as const }] : []),
-    ],
-  };
+  const apples = buildApples({ theme, sound, meta: platform.meta, phone: platform.phone });
+  // Focus follows the view (its heading, or the card or row you came from).
+  const body = useRef<HTMLDivElement>(null);
+  useViewFocus(hash.replace(/^#/, ""), body);
 
   const pane = (b: BranchId) => ({ className: "settings-branch", "data-branch": b, hidden: branch !== b });
 
@@ -112,7 +102,7 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
       </div>
       <div className="settings-layout" data-view={view.kind}>
         <SettingsTreeNav trees={trees} current={branch} currentTree={currentTree} onBranch={go} onLink={leave} />
-        <div className="settings-body">
+        <div className="settings-body" ref={body}>
           {view.kind === "field" && (
             <SettingsField trees={trees} apples={apples} visible={branchVisible} onTree={go} onBranch={go}
               onLeaf={(leaf) => { setPendingLeaf(leaf); go(leaf.branch); }} onLink={leave} />

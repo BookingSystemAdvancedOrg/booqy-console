@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
+import type { CSSProperties, FocusEvent, KeyboardEvent, RefObject } from "react";
 import { Icon } from "./ds";
 import { BRANCH_LABEL, searchLeaves, treeOf } from "../settingsTree";
-import type { BranchId, Leaf, Tree, TreeId } from "../settingsTree";
+import type { Apple, BranchId, Leaf, Tree, TreeId } from "../settingsTree";
 import "./settingsTree.css";
 
 /**
@@ -11,8 +11,30 @@ import "./settingsTree.css";
  * drill down: field, tree, branch, with a back button.
  */
 
-/** An apple: the important thing on a tree (live status); a press opens its branch. */
-export interface Apple { text: string; branch: BranchId; warn?: boolean }
+export type { Apple };
+
+/**
+ * Focus follows the view. When the view (field, tree, branch) changes while
+ * focus is in it or was dropped (the pressed button went away), focus moves
+ * to the new view's heading or, going back, to the card or row you came from
+ * (data-stree-from). Focus outside (the tree on the left) stays put.
+ */
+export function useViewFocus(view: string, body: RefObject<HTMLElement | null>) {
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    const from = last.current;
+    last.current = view;
+    const root = body.current;
+    if (from === null || from === view || !root) return;
+    const now = document.activeElement as HTMLElement | null;
+    const dropped = !now || now === document.body || !now.isConnected || now.closest("[hidden]") !== null || root.contains(now);
+    if (!dropped) return;
+    const target = (from && root.querySelector<HTMLElement>(`[data-stree-from="${from}"]`))
+      || root.querySelector<HTMLElement>(".stree-title")
+      || root.querySelector<HTMLElement>(".stree-search input");
+    target?.focus({ preventScroll: true });
+  }, [view, body]);
+}
 
 type NavItem =
   | { key: string; kind: "tree"; tree: Tree }
@@ -118,7 +140,7 @@ function Apples({ apples, onBranch }: { apples: Apple[]; onBranch: (b: BranchId)
     <ul className="stree-apples" aria-label="Status">
       {apples.map((a) => (
         <li key={`${a.branch}:${a.text}`}>
-          <button type="button" className={a.warn ? "stree-apple warn" : "stree-apple"} onClick={() => onBranch(a.branch)} title={BRANCH_LABEL[a.branch]}>
+          <button type="button" className={a.tone ? `stree-apple ${a.tone}` : "stree-apple"} onClick={() => onBranch(a.branch)} title={BRANCH_LABEL[a.branch]}>
             <span className="stree-apple-dot" aria-hidden="true" />{a.text}
           </button>
         </li>
@@ -138,15 +160,17 @@ export function SettingsField({ trees, apples, visible, onTree, onBranch, onLeaf
       <div className="stree-grid">
         {trees.map((tree, i) => (
           <section key={tree.id} className="card stree-card" style={{ "--i": i } as CSSProperties} aria-labelledby={`stree-${tree.id}`}>
-            <button type="button" className="stree-card-head" onClick={() => onTree(tree.id)}>
-              <span className="stree-icon" aria-hidden="true"><Icon name={tree.icon} size={19} /></span>
-              <h2 className="stree-card-title" id={`stree-${tree.id}`}>{tree.label}</h2>
-              <span className="stree-card-go"><Chevron dir="right" /></span>
-            </button>
+            <h2 className="stree-card-heading" id={`stree-${tree.id}`}>
+              <button type="button" className="stree-card-head" data-stree-from={tree.id} onClick={() => onTree(tree.id)}>
+                <span className="stree-icon" aria-hidden="true"><Icon name={tree.icon} size={19} /></span>
+                <span className="stree-card-title">{tree.label}</span>
+                <span className="stree-card-go" aria-hidden="true"><Chevron dir="right" /></span>
+              </button>
+            </h2>
             <Apples apples={apples[tree.id] ?? []} onBranch={onBranch} />
             <ul className="stree-card-branches">
               {tree.branches.map((b) => (
-                <li key={b}><button type="button" className="stree-card-branch" onClick={() => onBranch(b)}>{BRANCH_LABEL[b]}</button></li>
+                <li key={b}><button type="button" className="stree-card-branch" data-stree-from={b} onClick={() => onBranch(b)}>{BRANCH_LABEL[b]}</button></li>
               ))}
               {tree.link && (
                 <li><button type="button" className="stree-card-branch" onClick={() => onLink(tree.link!.to)}>{tree.link.label} <Icon name="arrow-right" size={14} /></button></li>
@@ -173,12 +197,12 @@ export function SettingsTreePage({ tree, apples, onField, onBranch, onLink }: {
             <li aria-current="page">{tree.label}</li>
           </ol>
         </nav>
-        <h2 className="stree-title">{tree.label}</h2>
+        <h2 className="stree-title" tabIndex={-1}>{tree.label}</h2>
       </div>
       <Apples apples={apples} onBranch={onBranch} />
       <ul className="stree-rows">
         {tree.branches.map((b) => (
-          <li key={b}><button type="button" className="stree-rowbtn" onClick={() => onBranch(b)}><span>{BRANCH_LABEL[b]}</span><Chevron dir="right" /></button></li>
+          <li key={b}><button type="button" className="stree-rowbtn" data-stree-from={b} onClick={() => onBranch(b)}><span>{BRANCH_LABEL[b]}</span><Chevron dir="right" /></button></li>
         ))}
         {tree.link && (
           <li><button type="button" className="stree-rowbtn" onClick={() => onLink(tree.link!.to)}><span>{tree.link.label}</span><Icon name="arrow-right" size={16} /></button></li>
@@ -201,7 +225,7 @@ export function BranchHead({ branch, onField, onTree }: { branch: BranchId; onFi
           <li aria-current="page">{BRANCH_LABEL[branch]}</li>
         </ol>
       </nav>
-      <h2 className="stree-title" data-help={`settings-branch:${branch}`}>{BRANCH_LABEL[branch]}</h2>
+      <h2 className="stree-title" tabIndex={-1} data-help={`settings-branch:${branch}`}>{BRANCH_LABEL[branch]}</h2>
     </div>
   );
 }
@@ -227,7 +251,9 @@ function LeafSearch({ visible, onLeaf }: { visible: (b: BranchId) => boolean; on
   const [active, setActive] = useState(0);
   const results = useMemo(() => searchLeaves(query, visible), [query, visible]);
   const current = Math.min(active, Math.max(results.length - 1, 0));
-  const open = query.trim().length > 0;
+  const searching = query.trim().length > 0;
+  // No hits, no list (an empty listbox is invalid); the line below says so.
+  const open = searching && results.length > 0;
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown" && results.length) setActive((current + 1) % results.length);
     else if (e.key === "ArrowUp" && results.length) setActive((current - 1 + results.length) % results.length);
@@ -242,13 +268,16 @@ function LeafSearch({ visible, onLeaf }: { visible: (b: BranchId) => boolean; on
         <Icon name="search" size={17} />
         <span className="sr-only">Search settings</span>
         <input type="text" role="combobox" aria-expanded={open} aria-controls={`${id}-list`}
-               aria-activedescendant={open && results.length ? `${id}-o${current}` : undefined}
+               aria-activedescendant={open ? `${id}-o${current}` : undefined}
                aria-autocomplete="list" autoComplete="off" spellCheck={false} placeholder="Search settings"
                value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }} onKeyDown={onKeyDown} />
       </label>
+      <p className="sr-only" role="status">
+        {searching ? (results.length === 1 ? "1 match" : results.length ? `${results.length} matches` : "No matches") : ""}
+      </p>
+      {searching && !open && <div className="stree-results"><p className="stree-empty">No match for “{query.trim()}”.</p></div>}
       {open && (
         <div className="stree-results" id={`${id}-list`} role="listbox" aria-label="Settings">
-          {results.length === 0 && <p className="stree-empty">No match for “{query.trim()}”.</p>}
           {results.map((leaf, i) => (
             <div key={`${leaf.branch}:${leaf.label}`} id={`${id}-o${i}`} role="option" aria-selected={i === current}
                  className="stree-result" onMouseMove={() => i !== current && setActive(i)} onClick={() => onLeaf(leaf)}>

@@ -45,18 +45,21 @@
 .stree-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 22px; align-items: start; }
 .stree-card.card { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin: 0; padding: 18px 22px 12px; animation-delay: calc(var(--i, 0) * 60ms); }
 .stree-card .stree-icon { width: 38px; height: 38px; border-radius: 12px; background: var(--paper-2, var(--glass-fill)); color: var(--print); }
+.stree-card-heading { margin: 0; font: inherit; }
 .stree-card-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--print); text-align: left; cursor: default; }
-.stree-card-title { flex: 1; margin: 0; font: 400 22px/1.2 var(--serif); color: var(--print); }
+.stree-card-title { flex: 1; min-width: 0; margin: 0; font: 400 22px/1.2 var(--serif); color: var(--print); }
 .stree-card-go { display: inline-flex; color: var(--print-2); transition: translate 200ms var(--ease); }
 .stree-apples { display: flex; flex-wrap: wrap; gap: 6px; }
 .stree-apple { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; margin: 0; padding: 0 12px; border: 0; border-radius: var(--r-pill); background: var(--pearl); box-shadow: var(--pearl-rim); font: 600 13px/1.2 var(--sans); color: var(--print); cursor: default; transition: filter 200ms var(--ease); }
 .stree-apple::after { content: ""; position: absolute; inset: -7px -2px; }
-.stree-apple-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ok); }
+/* The dot: green only for something running, amber for what needs action, an empty ring for preferences. */
+.stree-apple-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--print-2); opacity: 0.7; }
+.stree-apple.ok .stree-apple-dot { background: var(--ok); box-shadow: none; opacity: 1; }
 .stree-apple.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
-.stree-apple.warn .stree-apple-dot { background: var(--warn); }
+.stree-apple.warn .stree-apple-dot { background: var(--warn); box-shadow: none; opacity: 1; }
 .stree-card-branches { display: flex; flex-direction: column; }
 .stree-card-branch { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; margin: 0; padding: 0 2px; border: 0; border-top: 1.5px dashed var(--paper-line); background: transparent; font: 500 15px/1.25 var(--sans); color: var(--print); text-align: left; cursor: default; transition: padding 200ms var(--ease); }
-.stree-card-branch:focus-visible, .stree-card-head:focus-visible, .stree-apple:focus-visible, .stree-pager-link:focus-visible, .stree-crumbs button:focus-visible, .stree-back:focus-visible, .stree-rowbtn:focus-visible { outline: 2px solid var(--focus, #a88462); outline-offset: 2px; border-radius: var(--r-md); }
+.stree-card-branch:focus-visible, .stree-card-head:focus-visible, .stree-apple:focus-visible, .stree-pager-link:focus-visible, .stree-crumbs button:focus-visible, .stree-back:focus-visible, .stree-rowbtn:focus-visible, .stree-title:focus-visible { outline: 2px solid var(--focus, #a88462); outline-offset: 2px; border-radius: var(--r-md); }
 
 /* a tree, a branch */
 .stree-view { display: flex; flex-direction: column; gap: 16px; animation: stree-in 260ms var(--ease) both; }
@@ -69,7 +72,7 @@
 .stree-crumbs li + li::before { content: "\203A"; margin-right: 6px; }
 .stree-crumbs button { min-height: 28px; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: default; transition: color 200ms var(--ease); }
 .stree-crumbs [aria-current="page"] { color: var(--fg); }
-.stree-title { margin: 2px 0 6px; font: 400 30px/1.15 var(--serif); color: var(--fg); }
+.stree-title { margin: 2px 0 6px; border-radius: var(--r-md); outline: none; font: 400 30px/1.15 var(--serif); color: var(--fg); }
 .stree-pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1.5px dashed var(--fg-line); }
 .stree-pager-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: transparent; font: 600 14px/1.2 var(--sans); color: var(--fg); cursor: default; transition: background-color 200ms var(--ease); }
 .stree-pager-link.next { margin-left: auto; }
