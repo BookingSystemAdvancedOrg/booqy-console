@@ -490,7 +490,7 @@ function Connect({ tenant, initialDomain, onDone }: { tenant: Tenant; initialDom
           {scan.dnssec && <Notice kind="warn">DNSSEC is on: they turn it off before switching name servers.</Notice>}
           <RecordsReview scan={scan} rows={rows} setRows={setRows} />
           <ErrorNotice error={connect.error} />
-          {Object.entries(connect.fields).map(([k, msg]) => <p key={k} className="small error-text">{k}: {msg}</p>)}
+          {Object.entries(connect.fields).map(([k, msg]) => <p key={k} className="small error-text">{msg}</p>)}
           <label className="check confirm"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
             Records checked with the restaurant (email too)</label>
           <div className="row">
@@ -620,7 +620,7 @@ function MoveToBooqy({ tenant, initialDomain, onBack, onKeep, onDone }: {
       )}
       {check?.supported && !check.transferable && (
         <>
-          <Notice kind={check.who === "booqy" ? "error" : "warn"}>{check.who && <><strong>{whoActs(check.who)}:</strong> </>}{withoutWho(check.lastError ?? check.reason ?? "It can't be moved right now.")}</Notice>
+          <Notice kind={check.who === "booqy" ? "error" : "warn"}>{check.who && <><strong>{whoActs(check.who)}:</strong> </>}<Reason text={withoutWho(check.lastError ?? check.reason ?? "It can't be moved right now.")} fallback="It can't be moved right now. Try again later." /></Notice>
           {check.lastErrorSv && <RestaurantText text={check.lastErrorSv} title="Restaurant (Swedish)" />}
           <button type="button" className="link" onClick={() => onKeep(check.domain)}>Keep current registrar instead</button>
         </>

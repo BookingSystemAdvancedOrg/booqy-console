@@ -82,7 +82,7 @@ describe("feature clients go through api.ts", () => {
     await expect(exportLedger("t1", { locationId: "l", from: "2026-01-01", to: "2026-02-01" }))
       .rejects.toMatchObject({ message: "There is no staff ledger for this location, or the staff ledger isn't switched on here." });
     await expect(phoneAgentApi.saveSettings({ killSwitch: true, maxMinutesCap: 1 }))
-      .rejects.toMatchObject({ status: 400, message: "Use whole minutes from 0 to 100000, like 600.", fields: { maxMinutesCap: "invalid_cap" } });
+      .rejects.toMatchObject({ status: 400, message: "Use whole minutes from 0 to 100 000, like 600.", fields: { maxMinutesCap: "invalid_cap" } });
   });
 
   it("maps the Meta ads invalid_cap to the cap range", async () => {

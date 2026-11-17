@@ -82,6 +82,27 @@ describe("who acts (console)", () => {
     expect(plainReason("botocore.exceptions.ClientError: AccessDenied")).toBeUndefined();
   });
 
+  it("the API's current field texts keep their example", () => {
+    expect(fieldText("Write a Stripe account id, e.g. acct_1A2b3C.")).toMatch(/acct_1A2b3C/);
+    expect(fieldText("Write it like www.restaurang.se, without https:// or *.")).toMatch(/www\.restaurang\.se/);
+    expect(fieldText("Fill in street, postal code and city.")).toBe("Fill in street, postal code and city.");
+    expect(fieldText("Too high. Use 500 or less.")).toBe("Too high. Use 500 or less.");
+    expect(fieldText("Write an amount in kronor, e.g. 499.")).toBe("Write an amount in kronor, e.g. 499.");
+    expect(fieldText("The logo is too big. Use a file under 500 kB.")).toBe("The logo is too big. Use a file under 500 kB.");
+    expect(isPlain("502 Bad Gateway")).toBe(false);
+    expect(isPlain("Upstream returned 500.")).toBe(false);
+  });
+
+  it("invalid_status and not_transferable say what state stops it", () => {
+    expect(describeError(api(409, "invalid_status", "Not possible while the customer is paused.", { currentStatus: "suspended" })).text)
+      .toMatch(/paused\. Resume the customer first/);
+    expect(describeError(api(409, "invalid_status", "x", { currentStatus: "provisioning" })).text).toMatch(/still being set up/);
+    expect(describeError(api(409, "not_transferable", "x", { transferability: "UNTRANSFERABLE" })).text).toMatch(/locked/);
+    const dontKnow = describeError(api(409, "not_transferable", "x", { transferability: "DONT_KNOW" }));
+    expect(dontKnow.actor).toBe("booqy");
+    expect(describeError(api(403, "owner_only", "Only an owner can change an email.")).link?.to).toBe("/operators");
+  });
+
   it("details to copy: code, status, request id, page and time, nothing else", () => {
     const info = describeError(api(500, "internal_error", undefined, { requestId: "abc-123" }));
     const text = errorDetails(info, "/tenants/t1?token=secret#x", new Date("2026-11-14T10:00:00Z"));

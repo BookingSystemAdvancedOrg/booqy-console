@@ -815,7 +815,7 @@ function ZoneCard({ tenant, zone: z, onChanged, onTransfer, onMoveAgain }: {
       )}
       {z.lastError && (
         <Notice kind={z.who === "restaurant" ? "warn" : "error"}>
-          <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> {withoutWho(z.lastError)}
+          <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> <Reason text={withoutWho(z.lastError)} fallback="This domain step stopped. Try again, or copy the details so we can fix it." />
         </Notice>
       )}
       {z.devError && <p className="small error-text">Dev site: <Reason text={z.devError} fallback="The dev site didn't connect." /></p>}

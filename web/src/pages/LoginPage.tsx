@@ -1,5 +1,6 @@
 import { withBusy } from "../busy";
 import { Printing, errorMessage } from "../components/ui";
+import { NETWORK } from "../errors";
 import { STORAGE_REGISTRY } from "../storageRegistry";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Logo } from "../components/Logo";
@@ -60,6 +61,12 @@ function message(e: unknown, reset = false): string {
     case "TooManyRequestsException":
     case "TooManyFailedAttemptsException":
       return "Too many tries. Wait a few minutes and try again.";
+    case "UserNotFoundException":
+      return reset ? "That didn't work. Check the email for typos, then try again." : "The email or password is wrong. Check both and try again.";
+    case "PasswordResetRequiredException":
+      return 'You need a new password. Press "Forgot your password?" below.';
+    case "NetworkError":
+      return NETWORK;
     case "ExpiredCodeException":
       return reset
         ? "This link is too old (it works for one hour). Ask for a new one."

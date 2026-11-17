@@ -51,7 +51,7 @@ const CODE_TEXT: Record<string, Known> = {
     text: "Your account can't do this. Sign out and in again. If it still fails, ask another operator to check your account.",
     link: OPERATORS_LINK,
   },
-  not_found: { text: "We can't find this. It may have been removed. The page now shows what is left." },
+  not_found: { text: "We can't find this. It may have been removed. Reload the page to see what is left." },
   too_many_requests: { text: "Too many tries at once. Wait a few seconds and try again." },
   rate_limited: { text: "Too many tries at once. Wait a few seconds and try again." },
   conflict: { text: "Someone else changed this just now. You see the latest now. Make your change again if needed." },
@@ -61,6 +61,7 @@ const CODE_TEXT: Record<string, Known> = {
   user_exists: { text: "This email already has an account. Use another email." },
   invalid_status: { text: "This can't be done for the customer right now. Wait until setup has finished, then try again." },
   already_invoiced: { text: "That period is already invoiced. Pick a later start date." },
+  already_route53: { text: "This domain was bought through Booqy, so there is nothing to move." },
   already_removed: { text: "This was already removed. The page now shows what is left." },
   already_signed_in: { text: "This operator has already signed in. They can use Forgot password instead." },
   already_subscribed: { text: "The customer already has a running agreement. Change it on the Plan tab." },
@@ -94,6 +95,9 @@ const CODE_TEXT: Record<string, Known> = {
   not_paid: { text: "Only a paid invoice can be refunded. Credit it instead." },
   not_registered_here: { text: "This domain was bought somewhere else. Get the move code from that company." },
   not_retryable: { text: "This can't be tried again. Start the move again from the Domains tab." },
+  not_restorable: { text: "This customer can't be restored. Only a customer who left Booqy can, before the data is deleted." },
+  not_transferable: { text: "This domain can't move right now. The restaurant checks that it is unlocked, then you try again." },
+  owner_only: { text: "Only an owner can do this. Ask an owner to do it.", link: OPERATORS_LINK },
   not_simulated: { text: "This order is real, so it can't be simulated. Simulation only works on test orders in the dev console." },
   not_subscribed: { text: "The customer has no running agreement." },
   not_trial: { text: "The customer already pays for a plan." },
@@ -145,6 +149,37 @@ const CODE_TEXT: Record<string, Known> = {
   no_seller_details: { actor: "booqy", text: "Invoicing isn't set up right, so no invoice was sent." },
 };
 
+/** invalid_status says what state the customer is in (extra.currentStatus) and what to do about it. */
+const STATUS_TEXT: Record<string, string> = {
+  provisioning: "The customer is still being set up. Wait until setup has finished, then try again.",
+  provisioning_failed: "The customer's setup stopped. Press Retry setup on the customer first.",
+  failed: "The customer's setup stopped. Press Retry setup on the customer first.",
+  suspended: "The customer is paused. Resume the customer first, under Suspend or offboard.",
+  offboarding: "The customer is leaving Booqy, so this can't be done.",
+  offboarded: "The customer has left Booqy, so this can't be done. Restore them first if they come back.",
+  purged: "The customer's data is deleted, so this can't be done.",
+};
+
+/** not_transferable says why the domain can't move (extra.transferability). */
+const TRANSFER_TEXT: Record<string, Known> = {
+  UNTRANSFERABLE: { text: "This domain can't move yet. It is locked, or it moved less than 60 days ago. The restaurant unlocks it, or waits." },
+  DONT_KNOW: { actor: "booqy", text: "The domain company didn't answer." },
+  DOMAIN_IN_OWN_ACCOUNT: { text: "This domain is already with Booqy. There is nothing to move." },
+  DOMAIN_IN_ANOTHER_ACCOUNT: { actor: "booqy", text: "This domain sits in another Booqy account." },
+  PREMIUM_DOMAIN: { text: "Premium domains can't be moved to Booqy. Keep it where it is now." },
+};
+
+/** The text for a known code; some codes are worded by what the API adds (the customer's state). */
+function knownText(code: string, extra: Record<string, unknown> | undefined): Known | undefined {
+  if (code === "invalid_status" && typeof extra?.currentStatus === "string" && STATUS_TEXT[extra.currentStatus]) {
+    return { text: STATUS_TEXT[extra.currentStatus] };
+  }
+  if (code === "not_transferable" && typeof extra?.transferability === "string" && TRANSFER_TEXT[extra.transferability]) {
+    return TRANSFER_TEXT[extra.transferability];
+  }
+  return CODE_TEXT[code];
+}
+
 const FIELDS_MARKED = "Some fields need fixing. They are marked, fix them and save again.";
 const FORM_CHECK = "Something in the form doesn't look right. Check it and try again.";
 const SOMETHING_FAILED = "Something went wrong at Booqy.";
@@ -160,8 +195,10 @@ export function isBooqyFault(status: number, code: string): boolean {
 export function isPlain(text: string): boolean {
   const t = text.trim();
   if (!t || t.length > 200 || !/^[A-Z0-9"']/.test(t)) return false;
-  if (/[{}[\]<>=\\|`]|\w_\w|\b[a-z]+[A-Z]\w*\b/.test(t)) return false;
-  return !/\b(api|server|token|session|request|endpoint|json|http|https|status|null|undefined|true|false|exception|error|stack|lambda|dynamo\w*|cognito|route 53|aws|tenant|invalid|parameter|timeout|webhook|idempoten\w*|var)\b|\b[45]\d\d\b(?!\s*(kr|kronor|sek|days|minutes|%))/i.test(t);
+  if (/[{}[\]<>=\\|`]|\w_\w|\b(?!kB\b)[a-z]+[A-Z]\w*\b/.test(t)) return false;
+  return !/\b(api|server|token|session|request|endpoint|json|http|https|status|null|undefined|true|false|exception|error|stack|lambda|dynamo\w*|cognito|route 53|aws|tenant|invalid|parameter|timeout|webhook|idempoten\w*|var)\b/i.test(t)
+    // An HTTP number standing alone ("502 Bad Gateway", "returned 500", "(404)"), not "Use 500 or less" or "e.g. 499.".
+    && !/(^|\s|\()(?<!(e\.g\.|like) )[45]\d\d(?=\s+[A-Z]|\.?\s*$|\))/.test(t);
 }
 
 /** A reason a backend job stored (lastError and the like) as a sentence when it reads plainly, else undefined. */
@@ -187,6 +224,7 @@ export function fieldText(raw: string): string {
   if (!t || t === "Required") return "Fill this in.";
   if (/valid email/i.test(t) || t === "Not an email address") return "Write the email like this: anna@restaurang.se.";
   if (/valid phone/i.test(t)) return "Write the phone number like this: 070-123 45 67.";
+  if (/^Fill in street/.test(t)) return "Fill in street, postal code and city.";
   if (/postal code/i.test(t)) return "Write the postal code like this: 123 45.";
   if (/^10 digits as NNNNNN-NNNN/.test(t)) return "Write the org. number like this: 556677-8899.";
   if (/check digit/i.test(t)) return "One digit looks wrong. Check the number for a typo.";
@@ -194,8 +232,8 @@ export function fieldText(raw: string): string {
   if (/^SE \+ the 10-digit/.test(t)) return "Write the VAT number like this: SE556677889901.";
   if (/^3-40 characters/.test(t)) return "Use 3 to 40 small letters, digits or hyphens, like pizza-roma.";
   if (/^Reserved name/.test(t)) return "Booqy keeps this name for itself. Pick another one, like pizza-roma.";
-  if (/^A hostname like/.test(t)) return "Write only the domain, like www.restaurang.se.";
-  if (/^Stripe account id/.test(t)) return "Write the Stripe account id, like acct_1A2b3C.";
+  if (/^A hostname like|without https:\/\//.test(t)) return "Write only the domain, like www.restaurang.se.";
+  if (/Stripe account id/i.test(t)) return "Write the Stripe account id, like acct_1A2b3C.";
   if (/^A colour like/.test(t)) return "Write the colour like this: #3a2418.";
   if (/yyyy-mm-dd/.test(t)) return "Pick a date, like 2027-01-31.";
   if (t === "Must be a whole number") return "Use a whole number, like 5.";
@@ -233,7 +271,7 @@ export function describeError(error: unknown): ErrorInfo {
     if (status === 0 && code !== "timeout") return { ...base, actor: "operator", text: NETWORK };
     if (code === "network") return { ...base, actor: "operator", text: NETWORK };
     if (own) return isBooqyFault(status, code) ? booqy(base, own) : { ...base, actor: "operator", text: own };
-    const known = CODE_TEXT[code];
+    const known = knownText(code, error.extra);
     if (known) {
       if (known.actor === "booqy") return booqy(base, known.text);
       return { ...base, actor: "operator", text: known.text, ...(known.link ? { link: known.link } : {}) };

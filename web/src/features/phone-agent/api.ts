@@ -10,7 +10,7 @@ export interface PhoneAgentTenant {
 }
 
 /** The minutes cap range the server accepts. */
-export const CAP_RANGE = "Use whole minutes from 0 to 100000, like 600.";
+export const CAP_RANGE = "Use whole minutes from 0 to 100 000, like 600.";
 
 const messages: ErrorMessages = (status, code) =>
   status === 404 ? "The phone agent isn't switched on here, or not for this customer."
