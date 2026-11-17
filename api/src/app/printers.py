@@ -215,24 +215,25 @@ def _kind(body: dict, required: bool) -> str | None:
 def _sync(tenant_id: str, location_id: str, now: datetime, *, printer_id: str | None = None,
           auto: bool = False) -> None:
     """Marks the location for the application's station sync; the first
-    printer becomes the order printer (auto print on, as admin's setup)."""
+    printer becomes the order printer (auto print on, as admin's setup).
+    The order printer is set before the token, so a sync that runs in
+    between never builds the stations without it."""
     ddb = client("dynamodb")
+    if printer_id:
+        try:
+            ddb.update_item(
+                TableName=print_table(), Key={"PK": _pk(location_id), "SK": {"S": "SETTINGS"}},
+                UpdateExpression=("SET printerId = :p, " + ("autoPrint = :true, " if auto else "")
+                                  + "version = if_not_exists(version, :zero) + :one"),
+                ConditionExpression="attribute_not_exists(printerId) OR attribute_type(printerId, :null)",
+                ExpressionAttributeValues={":p": {"S": printer_id}, ":zero": {"N": "0"}, ":one": {"N": "1"},
+                                           ":null": {"S": "NULL"}, **({":true": {"BOOL": True}} if auto else {})})
+        except ddb.exceptions.ConditionalCheckFailedException:
+            pass
     ddb.update_item(TableName=print_table(), Key={"PK": _pk(location_id), "SK": {"S": "SETTINGS"}},
                     UpdateExpression="SET syncRouting = :t, tenantId = :tenant, updatedAt = :now",
                     ExpressionAttributeValues={":t": {"S": uuid.uuid4().hex}, ":tenant": {"S": tenant_id},
                                                ":now": {"S": _iso(now)}})
-    if not printer_id:
-        return
-    try:
-        ddb.update_item(
-            TableName=print_table(), Key={"PK": _pk(location_id), "SK": {"S": "SETTINGS"}},
-            UpdateExpression=("SET printerId = :p, " + ("autoPrint = :true, " if auto else "")
-                              + "version = if_not_exists(version, :zero) + :one"),
-            ConditionExpression="attribute_not_exists(printerId) OR attribute_type(printerId, :null)",
-            ExpressionAttributeValues={":p": {"S": printer_id}, ":zero": {"N": "0"}, ":one": {"N": "1"},
-                                       ":null": {"S": "NULL"}, **({":true": {"BOOL": True}} if auto else {})})
-    except ddb.exceptions.ConditionalCheckFailedException:
-        pass
 
 
 def add_printer(req) -> tuple[int, dict]:
