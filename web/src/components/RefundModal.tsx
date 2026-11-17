@@ -160,7 +160,7 @@ export function RefundModal({ tenantId, invoices, onClose, onDone }: {
           <button type="button" className="btn btn--danger" disabled={invalid || a.busy || total <= 0} aria-busy={a.busy || undefined} onClick={() => void submit()}>
             {a.busy ? (method === "refund" ? "Refunding…" : "Crediting…") : `${verb} ${fmtSek(total, { decimals: true })}`}
           </button>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn--ghost" disabled={a.busy} onClick={onClose}>Cancel</button>
         </div>
       </div>
     </Modal>
