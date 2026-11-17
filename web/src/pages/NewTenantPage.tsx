@@ -15,6 +15,7 @@ import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, r
 import { playChime } from "../press";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
 import { FreeFields } from "../components/FreeFields";
+import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeLabel, freeProblems, newFreeForm, stockholmToday } from "../free";
 
@@ -535,13 +536,8 @@ export default function NewTenantPage() {
                   {plan && <SelectAllFeatures keys={featureKeys()} features={features} onChange={(all) => setFeatureEdits(all)} />}
                 </div>
                 {plan ? (
-                  <div className="checks">
-                    {featureKeys().map((k) => (
-                      <label key={k} className="check">
-                        <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {featureLabel(k)}
-                      </label>
-                    ))}
-                  </div>
+                  <FeatureList keys={featureKeys()} checked={features}
+                               onToggle={(k, on) => setFeatureEdits({ ...featureEdits, [k]: on })} />
                 ) : <span className="field__hint">Pick a plan first</span>}
               </div>
             </div>

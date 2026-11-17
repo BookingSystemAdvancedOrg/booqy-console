@@ -21,6 +21,7 @@ import { SkelBlock, SkelCard, SkelPage, SkelRows } from "../components/Skeleton"
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
+import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
@@ -620,13 +621,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
             <span className="field__label">Features</span>
             <SelectAllFeatures keys={featureKeys()} features={features} onChange={setFeatures} />
           </div>
-          <div className="checks">
-            {featureKeys().map((k) => (
-              <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
-                <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {featureLabel(k)}
-              </label>
-            ))}
-          </div>
+          <FeatureList keys={featureKeys()} checked={features} onToggle={(k, on) => setFeatures({ ...features, [k]: on })}
+                       changed={(k) => !!features[k] !== !!tenant.entitlements.features[k]} />
         </div>
       </div>
       {belowCount ? (

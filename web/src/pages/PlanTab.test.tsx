@@ -265,7 +265,7 @@ describe("Plan tab", () => {
     render(<PlanTab tenant={legacy} onSaved={() => {}} />);
     await screen.findByText("Starter");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
-    expect(document.querySelector(".check--changed")).toBeNull();
+    expect(document.querySelector(".feat--changed")).toBeNull();
   });
 
   it("sends no limit when it equals the plan's", async () => {

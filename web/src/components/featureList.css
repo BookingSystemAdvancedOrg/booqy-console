@@ -1,0 +1,40 @@
+/* Plan features: one row per feature, name and one line, "?" at the right end. */
+/* capped, so the "?" stays next to its line on wide screens */
+.feats { list-style: none; margin: 4px 0 0; padding: 0; max-width: 720px; border-top: 1px dashed var(--paper-line); }
+.feat {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px;
+  border-bottom: 1px dashed var(--paper-line);
+}
+.feat__main { display: flex; align-items: flex-start; gap: 12px; min-width: 0; min-height: 44px; padding: 9px 0; box-sizing: border-box; }
+.feat__box { flex: none; width: 18px; height: 18px; margin: 1px 0 0; }
+.feat__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.feat__name { font: 600 14px/1.3 var(--sans); color: var(--print); overflow-wrap: anywhere; }
+.feat__line { font: 400 13px/1.35 var(--sans); color: var(--print-2); overflow-wrap: anywhere; }
+.feat--changed .feat__name::after {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; background: var(--ink-red); vertical-align: 1px;
+}
+.feat__help {
+  display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--print-2); transition: color 160ms var(--ease), background-color 160ms var(--ease);
+}
+.feat__help:hover, .feat__help[aria-expanded="true"] { color: var(--print); background: var(--glass-fill); }
+.feat__help:focus-visible { outline: 2px solid var(--print); outline-offset: 1px; color: var(--print); }
+@media (pointer: coarse), (max-width: 640px) { .feat__help { width: 44px; height: 44px; } }
+
+.feat-pop {
+  position: fixed; left: 0; top: 0; z-index: 400; box-sizing: border-box; overflow: auto; overscroll-behavior: contain;
+  padding: 12px 14px; border-radius: var(--r-md); background: var(--glass-pop, var(--paper)); color: var(--print);
+  box-shadow: var(--glass-edge, var(--rim)), 0 14px 30px -14px rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  font: 400 13px/1.45 var(--sans); text-align: left; white-space: normal; overflow-wrap: anywhere; hyphens: manual;
+}
+.feat-pop:focus { outline: none; }
+.feat-pop:focus-visible { outline: 2px solid var(--print); outline-offset: 2px; }
+.feat-pop p { margin: 0; }
+.feat-pop p + p { margin-top: 8px; }
+.feat-pop__title { font-weight: 600; font-size: 14px; }
+.feat-pop__label { font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) {
+  .feat-pop { animation: feat-pop-in 140ms var(--ease) both; }
+}
+@keyframes feat-pop-in { from { opacity: 0; } to { opacity: 1; } }
