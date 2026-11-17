@@ -239,7 +239,11 @@ under the pill or if a small badge stops being crisp. Linux installs made
 with `install.sh` keep a downloaded copy of the icon; the AppImage rewrites
 that copy at start with its own window icon (`linux-menu.cjs`, admin from
 1.4.4, console from 1.4.5), so an older install picks up a changed icon with
-the next self-update.
+the next self-update. A single picture scaled down by the desktop loses the
+small badge, so from 1.4.6 the AppImage also copies its own hicolor set
+(`$APPDIR/usr/share/icons/hicolor`) into `~/.local/share/icons/hicolor` and
+switches the entry to `Icon=<slug>` (marked `X-Booqy-Icons=hicolor`): menu,
+dock and taskbar then take the drawn 24, 32 or 48 px icon, as with the deb.
 
 Where the dev icon shows (all from the same badged files, prod gets the plain
 ones): macOS `.app`, Dock, About panel and the DMG volume icon (all from the
