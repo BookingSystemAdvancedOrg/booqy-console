@@ -38,7 +38,7 @@ from . import validation as v
 from .core import (ApiError, cancellation_codes, client, env, from_ddb, log, new_id, not_found, now_iso,
                    query_all, regional_client, tenant_table, to_ddb, write_audit)
 from .domains import claim_host
-from .core import status_words
+from .core import not_while
 from .tenants import get_profile
 
 # What we sell. .nu can't be registered through Route 53 (connect works for
@@ -153,7 +153,7 @@ def _require_sites() -> None:
 def _active_tenant(tenant_id: str) -> dict:
     profile = get_profile(tenant_id)
     if profile.get("status") not in ("active", "provisioning", "suspended"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.",
+        raise ApiError(409, "invalid_status", not_while(profile.get('status')),
                        currentStatus=profile.get("status"))
     return profile
 
@@ -571,6 +571,15 @@ TRANSFERABILITY_TEXT = {
 NOT_TRANSFERABLE = "This domain can't move right now. Check that it's unlocked, then try again."
 
 
+def transfer_reason(domain: str, status: str, message: str | None) -> str | None:
+    """Why the domain can't move, in plain words (None when it can); the registry's own words go to the log."""
+    if status == "TRANSFERABLE":
+        return None
+    if status not in TRANSFERABILITY_TEXT and message:
+        log.info(json.dumps({"notTransferable": domain, "status": status, "detail": str(message)[:500]}))
+    return TRANSFERABILITY_TEXT.get(status) or NOT_TRANSFERABLE
+
+
 def _connected_zone(tenant_id: str, domain: str) -> dict:
     row = _zone_row(tenant_id, domain)
     if not row:
@@ -610,11 +619,11 @@ def transfer_check(req) -> tuple[int, dict]:
     tld = _tld(domain)
     if tld not in TLDS:
         return 200, {"domain": domain, "transferable": False,
-                     "reason": f".{tld} can't be registered through Route 53 - it stays at its registrar (DNS is ours already)"}
+                     "reason": f".{tld} domains can't move to Booqy. Keep it where it is: the site already works."}
     status, message = _transferability(domain)
     price = _price(tld) or {}
     return 200, {"domain": domain, "transferable": status == "TRANSFERABLE", "transferability": status,
-                 "reason": TRANSFERABILITY_TEXT.get(status, message), "price": price.get("transfer"),
+                 "reason": transfer_reason(domain, status, message), "price": price.get("transfer"),
                  "renewalPrice": price.get("renewal"), "verificationRequired": tld in VERIFY_TLDS}
 
 
@@ -736,13 +745,13 @@ def _txt_chunks(value: str) -> str:
 
 def _skip_reason(rel: str, rtype: str) -> str | None:
     if rtype in ("NS", "SOA"):
-        return "Managed by Route 53"
+        return "Booqy sets these by itself."
     if rel == "" and rtype in ("A", "AAAA", "CNAME"):
-        return "Replaced: the domain points at the restaurant site"
+        return "Replaced: the domain now shows the restaurant site."
     if rel == "www" or rel.endswith(".www"):
-        return "Replaced: www points at the restaurant site"
+        return "Replaced: www now shows the restaurant site."
     if rel.startswith("_cf-challenge"):
-        return "Written by the platform"
+        return "Booqy writes this by itself."
     return None
 
 

@@ -48,7 +48,7 @@ from zoneinfo import ZoneInfo
 from botocore.exceptions import BotoCoreError, ClientError
 
 from . import validation as v
-from .core import (SAFE_MESSAGES, ApiError, client, env, error_body, log, now_iso, query_all, status_words,
+from .core import (SAFE_MESSAGES, ApiError, client, env, error_body, log, now_iso, not_while, query_all,
                    tenant_table, to_ddb, to_ddb_value, write_audit)
 from .stripe_connect import stripe_request
 from .tenants import (FREE_NOTICE_DAYS, FREE_PLAN_ID, add_months, apply_plan, ensure_billing_map, get_plan, get_profile, offboard_tenant,
@@ -998,7 +998,7 @@ def start_for(tenant_id: str, profile: dict, *, actor: str, method: str | None =
     Booqy Admin. Days already invoiced (a restart inside a paid month) are
     never invoiced again."""
     if profile.get("status") not in ("provisioning", "active"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.",
+        raise ApiError(409, "invalid_status", not_while(profile.get('status')),
                        currentStatus=profile.get("status"))
     billing = _billing(profile)
     today = _today()

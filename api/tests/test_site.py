@@ -75,7 +75,7 @@ def test_site_repo_errors_reach_the_operator_in_plain_words(site_repo, tenant):
     site_repo.error = "GitHub POST /repos/x: 403 Resource not accessible by integration"
     status, body = call("POST /platform/tenants/{tenantId}/site/redeploy", {"tenantId": tenant})
     assert status == 502 and body["error"] == "site_repo_failed" and "403" not in body["message"]
-    assert body["message"] == "The website job didn't go through."
+    assert body["message"] == "The website job didn't go through. Try again in a minute."
 
 
 def test_archive_needs_the_slug(site_repo, tenant):

@@ -158,6 +158,10 @@ def test_transfer_check(od):
     body = call("GET /platform/domains/transfer-check", query={"domain": "roma.com"})[1]
     assert not body["transferable"] and body["errorCode"] == "locked" and body["who"] == "restaurant"
     assert "lås upp" in body["lastErrorSv"]
+    assert body["reason"].startswith("This domain can't move yet.")
+    od.domains.transferable = "SOMETHING_NEW"            # a registry answer we have no words for
+    body = call("GET /platform/domains/transfer-check", query={"domain": "roma.com"})[1]
+    assert body["reason"] == "This domain can't move right now. Check that it's unlocked, then try again."
 
 
 def test_unsupported_tld_points_to_keeping_the_registrar(od, tenant, monkeypatch):

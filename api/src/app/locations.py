@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 from . import validation as v
 from .core import (ApiError, audit_put, cancellation_codes, client, from_ddb, location_table, new_id,
                    not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value, write_audit)
-from .core import status_words
+from .core import not_while
 from .validation import REQUIRED, fields_message
 from .tenants import HIDDEN, get_profile, tkey
 
@@ -43,7 +43,7 @@ def create_location(req) -> tuple[int, dict]:
         fields.pop("stripeAccountId")
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", not_while(profile['status']), currentStatus=profile["status"])
     location_id, now = new_id(), now_iso()
     item = {"PK": f"TENANT#{tenant_id}", "SK": f"LOCATION#{location_id}", "tenantId": tenant_id,
             "locationId": location_id, "createdAt": now, "createdBy": req.actor,
@@ -84,7 +84,7 @@ def update_location(req) -> tuple[int, dict]:
     fields = v.location_fields(req.body, partial=True)
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", not_while(profile['status']), currentStatus=profile["status"])
     sets, removes, names, values = [], [], {}, {}
     for i, key in enumerate(k for k in ("name", "address", "phone", "email", "stripeAccountId") if k in req.body):
         names[f"#f{i}"] = key

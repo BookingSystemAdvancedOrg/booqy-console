@@ -492,3 +492,25 @@ def test_provider_and_parser_text_never_reaches_the_operator():
     assert error_body(ApiError(502, "stripe_error", "Stripe: x", stripeStatus=400))["stripeStatus"] == 400
     assert error_body(ApiError(409, "self", "You can't disable your own account"))["message"] == \
         "You can't disable your own account"
+
+
+def test_a_code_only_error_never_shows_the_bare_code():
+    from app.core import ApiError, error_body
+    assert error_body(ApiError(400, "rejected"))["message"] == "This wasn't accepted. Check what you entered and try again."
+    assert "invalid_phone" not in error_body(ApiError(400, "invalid_phone", fields={"phone": "invalid_phone"}))["message"]
+    assert error_body(ApiError(502, "hook_failed"))["message"].startswith("Something broke on Booqy's side.")
+
+
+@pytest.mark.parametrize("status, words, step", [
+    ("provisioning", "still being set up", "Wait until setup has finished"),
+    ("provisioning_failed", "stuck in setup", "Retry setup"),
+    ("suspended", "paused", "Resume customer"),
+    ("offboarding", "being offboarded", "Wait until offboarding"),
+    ("offboarded", "offboarded", "Restore the customer"),
+    ("purged", "deleted", "Nothing more"),
+    ("something_new", "in its current state", "Reload the page"),
+])
+def test_every_customer_status_reads_as_words_with_a_next_step(status, words, step):
+    from app.core import not_while
+    text = not_while(status)
+    assert words in text and step in text and "_" not in text and text.endswith(".")

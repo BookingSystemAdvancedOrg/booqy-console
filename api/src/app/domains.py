@@ -20,7 +20,7 @@ from botocore.exceptions import ClientError
 
 from .core import (ApiError, cancellation_codes, client, env, from_ddb, new_id, not_found, now_iso, tenant_table,
                    to_ddb, write_audit)
-from .core import status_words
+from .core import not_while
 from .tenants import get_profile
 
 RETRYABLE = ("validation_timeout", "failed")
@@ -222,7 +222,7 @@ def add_domain(req) -> tuple[int, dict]:
     check_custom_host(host)
     profile = get_profile(tenant_id)
     if profile.get("status") not in ("active", "provisioning", "suspended"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.", currentStatus=profile.get("status"))
+        raise ApiError(409, "invalid_status", not_while(profile.get('status')), currentStatus=profile.get("status"))
     if env("ENVIRONMENT") != "prod" and env("TEST_SITES_ENABLED", "false") == "true":
         return _add_test_domain(req, tenant_id, host, profile)
 

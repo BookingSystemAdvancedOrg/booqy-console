@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 
 from . import validation as v
 from .core import ApiError, client, env, now_iso, to_ddb, user_table, write_audit
-from .core import status_words
+from .core import not_while
 from .tenants import get_profile, tenant_users
 
 LOCKED_STATUSES = ("offboarding", "offboarded")
@@ -32,7 +32,7 @@ def invite_owner(req) -> tuple[int, dict]:
     f.done()
     profile = get_profile(tenant_id)
     if profile.get("status") in LOCKED_STATUSES:
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile['status'])}.", currentStatus=profile["status"])
+        raise ApiError(409, "invalid_status", not_while(profile['status']), currentStatus=profile["status"])
 
     idp, pool = client("cognito-idp"), env("TENANT_USER_POOL_ID")
     try:

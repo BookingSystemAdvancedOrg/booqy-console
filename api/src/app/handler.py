@@ -215,5 +215,5 @@ def handler(event, context):
         return respond(e.status, error_body(e))
     except Exception:  # noqa: BLE001 - last line of defence, details only in the logs
         log.exception("unhandled error on %s (request %s)", route, request_id)
-        return respond(500, {"error": "internal_error", "message": "Something broke on Booqy's side.",
+        return respond(500, {"error": "internal_error", "message": "Something broke on Booqy's side. Try again in a minute.",
                              "requestId": request_id})

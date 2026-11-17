@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from botocore.exceptions import ClientError
 
 from . import validation as v
-from .core import status_words
+from .core import not_while, status_words
 from .contracts import FEATURE_KEYS, LIMITS
 from .core import (ApiError, audit_put, cancellation_codes, client, env, from_ddb, location_table,
                    new_id, not_found, now_iso, query_all, tenant_table, to_ddb, to_ddb_value,
@@ -764,7 +764,7 @@ def _set_status(tenant_id: str, to: str, allowed_from: tuple[str, ...], actor: s
             ExpressionAttributeNames={"#s": "status"}, ExpressionAttributeValues=values)
     except client("dynamodb").exceptions.ConditionalCheckFailedException as e:
         current = (get_profile(tenant_id) or {}).get("status")
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(current)}.",
+        raise ApiError(409, "invalid_status", not_while(current),
                        currentStatus=current) from e
 
 
@@ -967,7 +967,7 @@ def retry_onboarding(req) -> tuple[int, dict]:
         _set_status(tenant_id, "provisioning", ("provisioning_failed",), req.actor)
         profile["status"] = "provisioning"
     elif status != "active":
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(status)}.", currentStatus=status)
+        raise ApiError(409, "invalid_status", not_while(status), currentStatus=status)
     run = int(profile.get("onboardingRuns", 1)) + 1
     result = _start_onboarding(tenant_id, profile, run)
     write_audit(tenant_id, "onboarding_rerun", req.actor, {"run": run})

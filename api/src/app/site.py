@@ -51,7 +51,7 @@ from types import SimpleNamespace
 from . import domains
 from . import validation as v
 from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table, write_audit
-from .core import status_words
+from .core import not_while
 from .tenants import create_tenant, get_plan, get_profile, restore_tenant
 
 _SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
@@ -102,7 +102,7 @@ def retry(req) -> tuple[int, dict]:
     tenant_id = req.path["tenantId"]
     profile = _require(tenant_id)
     if profile.get("status") not in ("active", "suspended"):
-        raise ApiError(409, "invalid_status", f"Not possible while the customer is {status_words(profile.get('status'))}.",
+        raise ApiError(409, "invalid_status", not_while(profile.get('status')),
                        currentStatus=profile.get("status"))
     invoke({"action": "provision", "tenantId": tenant_id}, wait=False)
     write_audit(tenant_id, "site_setup_rerun", req.actor)

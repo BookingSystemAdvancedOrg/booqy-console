@@ -447,7 +447,7 @@ def transfer_check(req) -> tuple[int, dict]:
     status, message = zones._transferability(apex)
     dnssec = apex.startswith("dnssec") if sim else ds_present(apex)
     out = {"domain": apex, "supported": True, "transferable": status == "TRANSFERABLE" and not dnssec,
-           "transferability": status, "reason": zones.TRANSFERABILITY_TEXT.get(status, message),
+           "transferability": status, "reason": zones.transfer_reason(apex, status, message),
            "price": price.get("transfer"), "renewalPrice": price.get("renewal"),
            "verificationRequired": tld in zones.VERIFY_TLDS, "dnssec": dnssec, "simulated": sim}
     if dnssec:
@@ -795,7 +795,7 @@ def retry(req) -> tuple[int, dict]:
         else:
             start_failed(tenant_id, apex, e)
         raise ApiError(502, "workflow_not_started",
-                       "Setting up the domain didn't start.") from e
+                       "Setting up the domain didn't start. Press Retry again in a minute.") from e
     write_audit(tenant_id, "domain_retried", req.actor, {"domain": apex, "attempt": attempt, "devOnly": dev_only})
     return 202, {"zone": zones.public_zone(zones._zone_row(tenant_id, apex) or {})}
 
@@ -821,7 +821,7 @@ def notify(req) -> tuple[int, dict]:
     else:
         raise ApiError(409, "nothing_to_send", "The restaurant has nothing to do for this domain right now, so no email was sent.")
     if not sent:
-        raise ApiError(502, "mail_failed", "The email to the restaurant wasn't sent.")
+        raise ApiError(502, "mail_failed", "The email to the restaurant wasn't sent. Try again in a minute.")
     write_audit(tenant_id, "domain_steps_sent", req.actor, {"domain": apex, "to": domain_mail.recipient(profile)})
     return 200, {"sentTo": domain_mail.recipient(profile)}
 
@@ -840,7 +840,7 @@ def simulate(req) -> tuple[int, dict]:
     event = (req.body or {}).get("event")
     if event not in SIM_EVENTS or row.get("mode") not in SIM_EVENTS[event]:
         raise ApiError(400, "validation_failed", "This test event doesn't fit this order. Pick one of the listed events.",
-                       fields={"event": ", ".join(k for k, modes in SIM_EVENTS.items() if row.get("mode") in modes)})
+                       fields={"event": "Pick one of the listed events."})
     zones._update_zone(tenant_id, apex, simState=event)
     result = _check_status(tenant_id, apex, {**row, "simState": event})
     write_audit(tenant_id, "domain_simulated", req.actor, {"domain": apex, "event": event})
