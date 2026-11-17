@@ -444,4 +444,4 @@ function iconsFor(env, desktopDir = __dirname) {
   return { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons' }
 }
 
-module.exports = { decodePng, encodePng, encodeIco, ICO_SIZES, resize, tileOf, coloursOf, badgeShape, devIcon, iconsFor, LETTERS_FROM }
+module.exports = { decodePng, encodePng, encodeIco, ICO_SIZES, resize, tileOf, coloursOf, BADGE, badgeShape, stamp, devIcon, iconsFor, LETTERS_FROM }
