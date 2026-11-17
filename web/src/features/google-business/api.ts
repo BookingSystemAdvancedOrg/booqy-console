@@ -6,8 +6,8 @@ export interface GoogleBusinessLink { locationId: string; title: string; syncSta
 export interface GoogleBusinessTenant { status: "connected" | "needs_reauth" | "disconnected"; links: GoogleBusinessLink[] }
 
 const messages: ErrorMessages = (status) =>
-  status === 404 ? "Google Business Profile is not deployed in this environment, or the tenant is unknown."
-  : status === 503 ? "The Google Business Profile feature did not answer. Try again in a minute."
+  status === 404 ? "Google Business Profile isn't switched on here, or we can't find this customer."
+  : status === 503 ? "Google Business Profile didn't answer. Try again in a minute."
   : undefined;
 
 /** Through api.ts: busy bar, quiet live refetch, 401 refresh and request id, as every call. */

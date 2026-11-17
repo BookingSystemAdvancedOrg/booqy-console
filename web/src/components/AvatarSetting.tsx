@@ -41,7 +41,7 @@ export function AvatarSetting({ name, email }: { name?: string; email?: string }
           {mine.url ? "Change picture" : "Choose picture"}
         </label>
         {mine.url && (
-          <button type="button" className="row-action row-action--danger" onClick={() => void removeMyAvatar().then((ok) => !ok && setError("The picture could not be removed. Try again."))}>
+          <button type="button" className="row-action row-action--danger" onClick={() => void removeMyAvatar().then((ok) => !ok && setError("The picture wasn't removed. Try again."))}>
             Remove
           </button>
         )}
@@ -81,7 +81,7 @@ function CropDialog({ src, onClose, onError }: { src: string; onClose: () => voi
       ok = false;
     }
     setBusy(false);
-    if (!ok) onError("The picture could not be saved. Try again, or try a JPG or PNG.");
+    if (!ok) onError("The picture wasn't saved. Try again, or pick a JPG or PNG.");
     onClose();
   }
 
@@ -122,7 +122,7 @@ function CropDialog({ src, onClose, onError }: { src: string; onClose: () => voi
             draggable={false}
             onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
             onError={() => {
-              onError("The picture could not be read here. Try a JPG or PNG.");
+              onError("We can't open this picture. Pick a JPG or PNG.");
               onClose();
             }}
             style={crop ? { transform: `translate(${crop.x}px, ${crop.y}px) scale(${crop.scale})` } : { opacity: 0 }}

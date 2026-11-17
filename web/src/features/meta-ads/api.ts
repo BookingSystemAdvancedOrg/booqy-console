@@ -13,11 +13,11 @@ export interface MetaAdsTenant {
 }
 
 /** The cap range the server accepts (meta_ads MIN_BUDGET_SEK..1 000 000). */
-export const CAP_RANGE = "Whole kronor, 100 to 1 000 000.";
+export const CAP_RANGE = "Use whole kronor from 100 to 1 000 000, like 5000.";
 
 const messages: ErrorMessages = (status, code) =>
-  status === 404 ? "Meta ads is not deployed in this environment, or the tenant is unknown."
-  : status === 503 ? "The Meta ads feature did not answer. Try again in a minute."
+  status === 404 ? "Meta ads isn't switched on here, or we can't find this customer."
+  : status === 503 ? "Meta ads didn't answer. Try again in a minute."
   : status === 400 && code === "invalid_cap" ? CAP_RANGE
   : undefined;
 

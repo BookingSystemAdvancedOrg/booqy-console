@@ -28,7 +28,8 @@ export default function PhoneAgentSettingsCard() {
     const saved = await action.run(() => phoneAgentApi.saveSettings({ killSwitch, maxMinutesCap: ceiling }));
     if (saved) { setData(saved); if (fromField) setCap(null); }
   }
-  const capError = action.fields.maxMinutesCap === "invalid_cap" ? CAP_RANGE : action.fields.maxMinutesCap;
+  // useAction words field messages plainly; the raw code says which range to show.
+  const capError = action.error instanceof ApiError && action.error.fields?.maxMinutesCap === "invalid_cap" ? CAP_RANGE : action.fields.maxMinutesCap;
 
   return (
     <Card title="Phone agent" saved={action.done} info={<>Owners can set their own cap up to this ceiling (0-100000).</>}>

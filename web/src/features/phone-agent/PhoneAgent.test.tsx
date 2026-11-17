@@ -60,12 +60,12 @@ describe("PhoneAgentSettingsCard", () => {
 
   it("says the cap range once, under the field, instead of the raw code invalid_cap", async () => {
     vi.mocked(phoneAgentApi.settings).mockResolvedValue({ killSwitch: false, maxMinutesCap: 1000 });
-    vi.mocked(phoneAgentApi.saveSettings).mockRejectedValue(new ApiError(400, "invalid_cap", "The cap must be a whole number from 0 to 100000.", { maxMinutesCap: "invalid_cap" }));
+    vi.mocked(phoneAgentApi.saveSettings).mockRejectedValue(new ApiError(400, "invalid_cap", "Use whole minutes from 0 to 100000, like 600.", { maxMinutesCap: "invalid_cap" }));
     render(<PhoneAgentSettingsCard />);
     fireEvent.change(await screen.findByLabelText(/Max minutes/), { target: { value: "-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save ceiling" }));
-    await screen.findByText(/The cap must be a whole number from 0 to 100000/);
-    expect(screen.getAllByText(/The cap must be a whole number from 0 to 100000/)).toHaveLength(1);
+    await screen.findByText(/Use whole minutes from 0 to 100000/);
+    expect(screen.getAllByText(/Use whole minutes from 0 to 100000/)).toHaveLength(1);
     expect(document.querySelector(".notice--error")).toBeNull();
     expect(screen.queryByText("invalid_cap")).not.toBeInTheDocument();
   });

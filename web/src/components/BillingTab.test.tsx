@@ -308,7 +308,7 @@ describe("BillingTab refunds and credits", () => {
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByRole("radio", { name: "Credit next invoice" }));
     await user.click(within(dialog).getByRole("button", { name: /^Credit 2[\s\u00a0]400,00 kr$/ }));
-    expect(await within(dialog).findByText("Stripe: try later")).toBeInTheDocument();
+    expect(await within(dialog).findByText("Stripe said no to this. Check the customer in Stripe, then try again.")).toBeInTheDocument();
     expect(within(dialog).queryByText("F-0010")).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: /^Credit 1[\s\u00a0]150,00 kr$/ }));
     await waitFor(() => expect(mocks.creditNotes).toHaveBeenCalledTimes(2));
@@ -350,7 +350,7 @@ describe("BillingTab refunds and credits", () => {
     const booqy = rows.find((r) => within(r).queryByText("F-0010"))!;
     const stripe = rows.find((r) => within(r).queryByText("F-0013"))!;
     expect(within(booqy).getByRole("button", { name: "Copy details" })).toBeInTheDocument();
-    expect(within(stripe).getByText("Stripe: card_declined")).toBeInTheDocument();
+    expect(within(stripe).getByText("Stripe said no to this. Check the customer in Stripe, then try again.")).toBeInTheDocument();
     expect(within(stripe).queryByRole("button", { name: "Copy details" })).not.toBeInTheDocument();
   });
 });

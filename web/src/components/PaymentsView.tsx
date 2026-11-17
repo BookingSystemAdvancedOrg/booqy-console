@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay, matchesCustomer, monthLabel, monthRange, shiftMonth } from "../finance";
 import type { InvoicingRun, PaymentRow } from "../types";
-import { ErrorNotice, Modal, Notice, Status, useAction, useLoad } from "./ui";
+import { ErrorNotice, Modal, Notice, Reason, Status, useAction, useLoad } from "./ui";
 import { SaveButton } from "./save";
 import { SkelKpis, SkelPage, SkelRows, SkelTable } from "./Skeleton";
 import { useRowOpen } from "./rowLink";
@@ -129,7 +129,7 @@ function InvoicingModal({ onClose, onDone }: { onClose: () => void; onDone: () =
                       </tr>
                     ))}
                     {shown.errors.map((e) => (
-                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad">{e.error}</td></tr>
+                      <tr key={e.tenantId}><td className="strong">{e.name}</td><td colSpan={result ? 4 : 3} className="bad"><Reason text={e.error} fallback="Not invoiced. This is Booqy's fault, try again." /></td></tr>
                     ))}
                   </tbody>
                 </table>

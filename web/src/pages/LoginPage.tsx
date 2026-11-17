@@ -11,7 +11,7 @@ import {
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
-const PASSWORD_RULES = "At least 14 characters, with upper- and lowercase letters, a number and a symbol.";
+const PASSWORD_RULES = "Use at least 14 characters, with big and small letters, a number and a symbol.";
 
 // "Forgot your password?" emails a link here (infrastructure:
 // compute/lambda/cognito-custom-message): /reset-password#code=123456&email=...
@@ -43,27 +43,27 @@ function message(e: unknown, reset = false): string {
   switch (name) {
     case "NotAuthorizedException": {
       const text = (e as Error).message;
-      if (text.includes("disabled")) return "This account is disabled. Ask another operator to enable it.";
+      if (text.includes("disabled")) return "This account is turned off. Ask another operator to turn it on.";
       if (reset && text.includes("current state")) {
-        return "This account hasn't been activated yet - sign in with the temporary password from your "
-          + "invitation, or ask another operator to resend it (Operators).";
+        return "This account isn't active yet. Sign in with the temporary password from your invitation, "
+          + "or ask another operator to send a new one.";
       }
-      return reset ? "This reset doesn't work for the account. Request a new link, or sign in." : "Wrong email or password.";
+      return reset ? "This reset link doesn't work for this account. Ask for a new link, or sign in." : "The email or password is wrong. Check both and try again.";
     }
     case "CodeMismatchException":
       return reset
-        ? "This link or code doesn't work anymore - it may have been used, or replaced by a newer one. Request a new link."
-        : "That code is wrong or has expired. Try the newest code from your app.";
+        ? "This link or code doesn't work anymore. Ask for a new link."
+        : "That code is wrong or too old. Type the newest code from your app.";
     case "InvalidPasswordException":
-      return `The password doesn't meet the rules. ${PASSWORD_RULES}`;
+      return `The password is too weak. ${PASSWORD_RULES}`;
     case "LimitExceededException":
     case "TooManyRequestsException":
     case "TooManyFailedAttemptsException":
-      return "Too many attempts. Wait a few minutes and try again.";
+      return "Too many tries. Wait a few minutes and try again.";
     case "ExpiredCodeException":
       return reset
-        ? "The link has expired (it works for one hour). Request a new one."
-        : "The code has expired. Request a new one.";
+        ? "This link is too old (it works for one hour). Ask for a new one."
+        : "The code is too old. Ask for a new one.";
     default:
       return errorMessage(e);
   }
@@ -191,7 +191,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
               <Form title="Choose your password" lead={`First sign-in: replace the temporary password. ${PASSWORD_RULES}`}
                     error={error} busy={busy} submit="Save password"
                     onSubmit={(v) => run(async () => {
-                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      if (v.password !== v.confirm) throw new Error("The two passwords aren't the same. Type them again.");
                       await next(await confirmSignIn({ challengeResponse: v.password }));
                     })}>
                 <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
@@ -257,7 +257,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
               <Form title="Choose a new password" lead={PASSWORD_RULES} error={error} info={info} busy={busy}
                     submit="Save new password"
                     onSubmit={(v) => run(async () => {
-                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      if (v.password !== v.confirm) throw new Error("The two passwords aren't the same. Type them again.");
                       await confirmResetPassword({ username: email.trim().toLowerCase(), confirmationCode: v.code.replace(/\s+/g, ""),
                                                    newPassword: v.password });
                       await passwordChanged();
@@ -273,7 +273,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
               <Form title="Choose a new password" lead={`For ${email}. ${PASSWORD_RULES}`} error={error} busy={busy}
                     submit="Save new password"
                     onSubmit={(v) => run(async () => {
-                      if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+                      if (v.password !== v.confirm) throw new Error("The two passwords aren't the same. Type them again.");
                       await confirmResetPassword({ username: email, confirmationCode: step.code, newPassword: v.password });
                       await passwordChanged();
                     }, true)}

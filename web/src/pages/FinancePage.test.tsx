@@ -301,8 +301,8 @@ describe("FinancePage", () => {
   });
 
   it("shows the API error", async () => {
-    mocks.financeOverview.mockRejectedValue(new Error("The API didn't respond."));
+    mocks.financeOverview.mockRejectedValue(new Error("The overview didn't load."));
     renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent("The API didn't respond.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The overview didn't load.");
   });
 });

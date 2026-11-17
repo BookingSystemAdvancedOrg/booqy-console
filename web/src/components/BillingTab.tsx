@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { api } from "../api";
 import { INVOICE_STATUS_TEXT, addDays, canCredit, endDateFor, firstInvoiceText, fmtDay, fmtInt, fmtSek, invoiceStatus, isOverdue, isoDay } from "../finance";
 import type { Billing, Invoice, InvoicingRun, Tenant } from "../types";
-import { Card, ErrorNotice, Modal, Notice, fmtDate, useAction, useLoad } from "./ui";
+import { Card, ErrorNotice, Modal, Notice, Reason, fmtDate, useAction, useLoad } from "./ui";
 import { SaveButton, useFlash } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { fmtFreeDay } from "../free";
@@ -109,7 +109,7 @@ export default function BillingTab({ tenant, cardParam, onChanged, refreshed = 0
         {run && (
           <Notice kind={run.errors.length ? "error" : "ok"}>
             {run.invoices.length === 0 ? "Nothing to invoice." : `${run.invoices.length} invoice${run.invoices.length === 1 ? "" : "s"} created, ${fmtSek(run.totalSek, { decimals: true })} ex VAT.`}
-            {run.errors.map((e) => <div key={e.tenantId}>{e.error}</div>)}
+            {run.errors.map((e) => <div key={e.tenantId}><Reason text={e.error} fallback="An invoice wasn't created. This is Booqy's fault, try again." /></div>)}
           </Notice>
         )}
         <ErrorNotice error={invoiceNow.error} />

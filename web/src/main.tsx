@@ -80,7 +80,7 @@ if (import.meta.env.PROD) {
       text: "A new version is available", reload: "Reload", reloading: "Reloading", later: "Not now",
       hint: "Loads the new version. Save what you are working on first.",
       unsaved: "You have unsaved changes", reloadAnyway: "Reload anyway", cancel: "Cancel",
-      failed: "Could not reload. Try again.", updated: "Updated", whatsNew: "New", more: "+{n} more",
+      failed: "The page didn't reload. Try again.", updated: "Updated", whatsNew: "New", more: "+{n} more",
     },
     // Also lists what is new since this build (src/whatsNew.ts).
     whatsNew: { since: BUILT_N },

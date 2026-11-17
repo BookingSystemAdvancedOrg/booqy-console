@@ -19,7 +19,7 @@ describe("MailPage: the preview", () => {
   it("says so when the preview fails, instead of a skeleton forever", async () => {
     vi.mocked(api.mailPreview).mockRejectedValue(new ApiError(503, "service_unavailable", "x"));
     render(<MemoryRouter><MailPage /></MemoryRouter>);
-    expect(await screen.findByText(/Booqy fault/, {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(await screen.findByText(/Booqy's fault/, {}, { timeout: 2000 })).toBeInTheDocument();
     expect(document.querySelector(".mail-preview .skel-lines")).toBeNull();
   });
 

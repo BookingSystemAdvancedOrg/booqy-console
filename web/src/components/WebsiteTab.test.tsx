@@ -83,7 +83,9 @@ describe("WebsiteTab", () => {
     mocks.site.mockResolvedValueOnce({ ...ready, status: "failed", lastError: "GitHub 403", repoExists: false, deploys: undefined });
     mocks.retrySite.mockResolvedValue({ status: "creating" });
     const { unmount } = render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByText("GitHub 403")).toBeInTheDocument();
+    // A raw reason is not shown as it is: plain words, the original behind Details.
+    expect(await screen.findByText(/Press Retry to try again/)).toBeInTheDocument();
+    expect(screen.queryByText("GitHub 403")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.retrySite).toHaveBeenCalledWith("t1");
     unmount();
@@ -167,7 +169,7 @@ describe("WebsiteTab", () => {
     } });
     mocks.mountSiteDomain.mockResolvedValue({ hosting: {} });
     render(<WebsiteTab tenant={tenant} />);
-    expect(await screen.findByText("CNAME missing")).toBeInTheDocument();
+    expect(await screen.findByText("CNAME missing.")).toBeInTheDocument();
     expect(screen.getByText("After www.roma.se is live in production")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.mountSiteDomain).toHaveBeenCalledWith("t1", "prod");

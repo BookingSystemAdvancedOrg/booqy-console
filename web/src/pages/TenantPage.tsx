@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState, useLayoutEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
-  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Status, compact, fmtDate, useAction, useLoad } from "../components/ui";
+  Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Reason, Status, compact, errorMessage, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone } from "../types";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
@@ -158,7 +158,7 @@ function RetryBanner({ tenant, onDone, onFix }: { tenant: Tenant; onDone: () => 
   const field = Object.keys(failure.fields)[0];
   return (
     <Notice kind="error">
-      <strong>Setup failed.</strong> {field ? failure.fields[field] : failure.message}
+      <strong>Setup failed.</strong> {field ? failure.fields[field] : <Reason text={failure.message || "-"} fallback="Booqy couldn't finish it. Press Retry setup." />}
       <div className="row">
         {field && <button className="btn btn--small btn--primary" onClick={() => onFix(field)}>Fix {FIX_LABEL[field] ?? field}</button>}
         <SaveButton kind="plain" small type="button" label="Retry setup" busy={a.busy} busyLabel="Retrying…" done={a.done} doneLabel="Started"
@@ -631,7 +631,7 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
       </div>
       {belowCount ? (
         <Notice kind="warn">
-          {(a.error as ApiError).message}
+          {errorMessage(a.error)}
           <div className="row"><SaveButton kind="danger" small type="button" label="Apply anyway" busy={a.busy} onClick={() => void save(true)} /></div>
         </Notice>
       ) : <ErrorNotice error={a.error} />}
@@ -749,7 +749,7 @@ export function Domains({ detail, onChanged }: { detail: TenantDetail; onChanged
               return (
                 <tr key={d.domain}>
                   <td className="strong cell-title">{d.domain} {d.primary && <span className="tag">primary</span>}
-                    {d.lastError && <div className="small error-text">{d.lastError}</div>}</td>
+                    {d.lastError && <div className="small error-text"><Reason text={d.lastError} fallback="This domain didn't connect. This is Booqy's fault." /></div>}</td>
                   <td data-label="Type">{d.kind === "platform" ? "Platform" : "Restaurant's own"}</td>
                   <td className="cell-badge"><Status value={d.status} /></td>
                   <td className="right">{d.kind === "custom" && d.status !== "removing" && !ofOrder && (
@@ -818,12 +818,12 @@ function ZoneCard({ tenant, zone: z, onChanged, onTransfer, onMoveAgain }: {
           <strong>{whoActs(z.who === "restaurant" ? "restaurant" : "booqy")}:</strong> {withoutWho(z.lastError)}
         </Notice>
       )}
-      {z.devError && <p className="small error-text">dev: {z.devError}</p>}
+      {z.devError && <p className="small error-text">Dev site: <Reason text={z.devError} fallback="The dev site didn't connect." /></p>}
       {z.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.supportCase} />}
       {z.transfer?.supportCase && <SupportCaseBox domain={z.domain} tenantId={id} supportCase={z.transfer.supportCase} />}
       {z.transfer && z.transfer.status !== "transferred" && (
         <p className="small">Transfer: <Status value={z.transfer.status} /> {z.transfer.statusDetail}
-          {z.transfer.error && <span className="error-text"> {z.transfer.error}</span>}</p>
+          {z.transfer.error && <span className="error-text"> <Reason text={z.transfer.error} fallback="The move stopped." /></span>}</p>
       )}
       {z.records && ["awaiting_records", "records_timeout"].includes(z.status) && <RecordsTable records={z.records} />}
       {z.status === "awaiting_nameservers" && z.nameServers && <NameServerBox domain={z.domain} nameServers={z.nameServers} />}
@@ -946,7 +946,7 @@ export function Danger({ tenant, onChanged }: { tenant: Tenant; onChanged: () =>
       <Card title={tenant.status === "suspended" ? "Resume" : "Suspend"} tone="danger" saved={a.done} savedLabel="Done">
         <ErrorNotice error={a.error} />
         {failed.length > 0 && (
-          <Notice kind="warn">Some users could not be updated - press the button again to retry: {failed.join(", ")}</Notice>
+          <Notice kind="warn">Some users weren't updated: {failed.join(", ")}. Press the button again.</Notice>
         )}
         {tenant.status === "suspended" ? (
           <>
@@ -1001,9 +1001,9 @@ function Restore({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void 
     <Card title="Restore customer" saved={a.done} savedLabel="Restoring">
       <ErrorNotice error={a.error} />
       {result && result.failed.length > 0 && (
-        <Notice kind="warn">Some users could not be enabled: {result.failed.join(", ")}</Notice>
+        <Notice kind="warn">Some users weren't turned on: {result.failed.join(", ")}. Try again.</Notice>
       )}
-      {result?.onboardingError && <Notice kind="warn">Setup did not start: {result.onboardingError}. Use Retry on the Overview tab.</Notice>}
+      {result?.onboardingError && <Notice kind="warn">Setup didn't start. Use Retry on the Overview tab. <Reason text={result.onboardingError} fallback="" /></Notice>}
       <p>
         Restorable until <strong>{fmtDate(tenant.purgeAt)}</strong>{!tenant.purgeAt && " (the date is set at the next deletion run)"}.
         Users can sign in again, the website comes back on {tenant.slug}.{PLATFORM_DOMAIN || "booqy.se"} and its repo is unarchived.

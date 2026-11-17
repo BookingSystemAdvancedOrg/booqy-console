@@ -3,7 +3,7 @@ import { api, ApiError, uploadToS3 } from "../api";
 import type {
   DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, RequiredRecord, SupportCase, Tenant, TransferCheck, TransferInCheck, Zone,
 } from "../types";
-import { ErrorNotice, Field, Modal, Notice, Printing, useAction } from "./ui";
+import { ErrorNotice, Field, Modal, Notice, Printing, Reason, useAction } from "./ui";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "./PhoneInput";
 import { Select } from "./Select";
@@ -287,9 +287,9 @@ export function RegistreringsbevisUpload({ tenantId, error, onKey, onBusy }: {
     if (!f) return;
     onBusy(true);
     const key = await upload.run(async () => {
-      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF.");
+      if (f.type !== "application/pdf") throw new Error("The registreringsbevis must be a PDF file. Pick a PDF.");
       const up = await api.documentUpload(tenantId);
-      if (f.size > up.maxBytes) throw new Error("At most 10 MB.");
+      if (f.size > up.maxBytes) throw new Error("The file is too big. Pick a PDF under 10 MB.");
       await uploadToS3(up.upload, f);
       return up.documentKey;
     });
@@ -347,7 +347,7 @@ export function TransferModal({ tenant, domain, onClose, onDone }: {
             renewals handled by us. DNS is already ours, so nothing goes offline. A failed transfer just leaves it where it is.</p>
           {check.busy && <Printing inline label="Checking with the registry" />}
           <ErrorNotice error={check.error} />
-          {info && !info.transferable && <Notice kind="warn">Can't transfer right now: {info.reason}</Notice>}
+          {info && !info.transferable && <Notice kind="warn">This domain can't be moved right now. <Reason text={info.reason} fallback="The domain company says no." /></Notice>}
           {info?.transferable && (
             <form onSubmit={onSubmit} noValidate>
               <p className="small"><strong>{money(info.price)}</strong> - includes one more year; then {money(info.renewalPrice)}/year (auto-renews).</p>

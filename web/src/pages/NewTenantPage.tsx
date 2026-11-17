@@ -2,7 +2,7 @@ import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { firstInvoiceText as firstInvoiceFor, fmtDay, isoDay } from "../finance";
-import { Card, ErrorNotice, Field, Notice, Printing, compact, useAction, useLoad } from "../components/ui";
+import { Card, ErrorNotice, Field, Notice, Printing, Reason, compact, useAction, useLoad } from "../components/ui";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { PhoneInput } from "../components/PhoneInput";
@@ -78,9 +78,9 @@ function jump(key: string) {
 /** A failed onboarding run (tenant.lastError, "Error: Cause") as the form
  * field to fix, when there is one. */
 export function setupFailure(lastError: string | undefined): { fields: Record<string, string>; message: string } {
-  const text = lastError ?? "Setup failed";
+  const text = lastError ?? "";
   if (text.startsWith("OwnerEmailInUse")) {
-    return { fields: { ownerEmail: "Already the owner of another customer - use another address" }, message: text };
+    return { fields: { ownerEmail: "This email already owns another customer. Use another email." }, message: text };
   }
   return { fields: {}, message: text.replace(/^[A-Za-z.]+: /, "") };
 }
@@ -643,7 +643,7 @@ export default function NewTenantPage() {
               </div>
             ) : saved && setupError ? (
               <div className="notice notice--error" role="alert">
-                <strong>Setup stopped:</strong> {setupError} Fix it if it's in the form, then <strong>Save and retry</strong>.
+                <strong>Setup stopped.</strong> <Reason text={setupError} fallback="Booqy couldn't finish it." /> Fix it if it's in the form, then <strong>Save and retry</strong>.
               </div>
             ) : error ? (
               <ErrorNotice error={error} />

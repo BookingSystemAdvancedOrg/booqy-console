@@ -23,26 +23,26 @@ describe("progressPct", () => {
 describe("stepProblems", () => {
   it("asks for the name, then the slug, and a valid org. number", () => {
     // one error for an empty name: the slug fills itself in from it
-    expect(stepProblems("company", blank)).toEqual({ name: "Required" });
-    expect(stepProblems("company", { ...blank, name: "Roma" })).toEqual({ slug: "Required" });
+    expect(stepProblems("company", blank)).toEqual({ name: "Fill this in." });
+    expect(stepProblems("company", { ...blank, name: "Roma" })).toEqual({ slug: "Fill this in." });
     expect(stepProblems("company", { ...blank, name: "Roma", slug: "roma", orgProblem: "check digit" })).toEqual({ orgNumber: "check digit" });
     expect(stepProblems("company", { ...blank, name: "Roma", slug: "roma" })).toEqual({});
   });
   it("asks for the owner's name and a real email", () => {
-    expect(stepProblems("owner", blank)).toEqual({ ownerName: "Required", ownerEmail: "Required" });
-    expect(stepProblems("owner", { ...blank, ownerName: "Lamo", ownerEmail: "lamo@" })).toEqual({ ownerEmail: "Not an email address" });
+    expect(stepProblems("owner", blank)).toEqual({ ownerName: "Fill this in.", ownerEmail: "Fill this in." });
+    expect(stepProblems("owner", { ...blank, ownerName: "Lamo", ownerEmail: "lamo@" })).toEqual({ ownerEmail: "Write the email like this: anna@restaurang.se." });
     expect(stepProblems("owner", { ...blank, ownerName: "Lamo", ownerEmail: "lamo@roma.se" })).toEqual({});
   });
   it("lets contact be empty but checks emails that are typed", () => {
     expect(stepProblems("contact", blank)).toEqual({});
-    expect(stepProblems("contact", { ...blank, billingEmail: "nope" })).toEqual({ billingEmail: "Not an email address" });
+    expect(stepProblems("contact", { ...blank, billingEmail: "nope" })).toEqual({ billingEmail: "Write the email like this: anna@restaurang.se." });
   });
   it("needs a plan, and no more locations than allowed", () => {
-    expect(stepProblems("plan", blank)).toEqual({ planId: "Pick a plan" });
+    expect(stepProblems("plan", blank)).toEqual({ planId: "Pick a plan." });
     expect(stepProblems("plan", { ...blank, planId: "starter" })).toEqual({});
     const extra = { "free.thenPlanId": "Pick the plan after Free" };
     expect(stepProblems("plan", { ...blank, planId: "free", planExtra: extra })).toEqual(extra);
-    expect(stepProblems("plan", { ...blank, planExtra: extra })).toEqual({ planId: "Pick a plan" });
+    expect(stepProblems("plan", { ...blank, planExtra: extra })).toEqual({ planId: "Pick a plan." });
     expect(Object.keys(stepProblems("locations", { ...blank, locationCount: 2 }))).toEqual(["locations"]);
     expect(stepProblems("notes", blank)).toEqual({});
   });

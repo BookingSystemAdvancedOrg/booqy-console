@@ -48,13 +48,13 @@ describe("MetaAdsSettingsCard: the kill switch and the cap field", () => {
 
   it("says the cap range once, under the field, instead of the raw code invalid_cap", async () => {
     vi.mocked(metaAdsApi.settings).mockResolvedValue({ killSwitch: false, maxMonthlyCapSek: 20000 });
-    vi.mocked(metaAdsApi.saveSettings).mockRejectedValue(new ApiError(400, "invalid_cap", "Whole kronor, 100 to 1 000 000.", { maxMonthlyCapSek: "invalid_cap" }));
+    vi.mocked(metaAdsApi.saveSettings).mockRejectedValue(new ApiError(400, "invalid_cap", "Use whole kronor from 100 to 1 000 000, like 5000.", { maxMonthlyCapSek: "invalid_cap" }));
     render(<MetaAdsSettingsCard />);
     fireEvent.change(await screen.findByLabelText(/Max monthly cap/), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: "Save ceiling" }));
     // Once under the field, not again in a red notice (the card's (i) tip also carries the range, inside a longer text).
-    await screen.findByText("Whole kronor, 100 to 1 000 000.");
-    expect(screen.getAllByText("Whole kronor, 100 to 1 000 000.")).toHaveLength(1);
+    await screen.findByText("Use whole kronor from 100 to 1 000 000, like 5000.");
+    expect(screen.getAllByText("Use whole kronor from 100 to 1 000 000, like 5000.")).toHaveLength(1);
     expect(document.querySelector(".notice--error")).toBeNull();
     expect(screen.queryByText("invalid_cap")).not.toBeInTheDocument();
   });
@@ -88,7 +88,7 @@ describe("MetaAdsSettingsCard before meta-ads is deployed", () => {
   it("still shows other errors", async () => {
     vi.mocked(metaAdsApi.settings).mockRejectedValue(new ApiError(503, "feature_unavailable", "The feature did not answer; try again"));
     render(<MetaAdsSettingsCard />);
-    expect(await screen.findByText(/did not answer/)).toBeInTheDocument();
+    expect(await screen.findByText(/didn't answer/)).toBeInTheDocument();
   });
 });
 

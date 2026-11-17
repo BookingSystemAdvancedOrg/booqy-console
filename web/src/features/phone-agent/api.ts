@@ -10,11 +10,11 @@ export interface PhoneAgentTenant {
 }
 
 /** The minutes cap range the server accepts. */
-export const CAP_RANGE = "The cap must be a whole number from 0 to 100000.";
+export const CAP_RANGE = "Use whole minutes from 0 to 100000, like 600.";
 
 const messages: ErrorMessages = (status, code) =>
-  status === 404 ? "The phone agent is not deployed in this environment, or it is not on for this tenant."
-  : status === 503 ? "The phone agent did not answer. Try again in a minute."
+  status === 404 ? "The phone agent isn't switched on here, or not for this customer."
+  : status === 503 ? "The phone agent didn't answer. Try again in a minute."
   : status === 400 && code === "invalid_cap" ? CAP_RANGE
   : undefined;
 

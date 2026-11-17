@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { InboxSwitch } from "../components/InboxSwitch";
 import { api } from "../api";
 import {
-  Card, ErrorNotice, Field, Modal, Notice, Status, errorMessage, fmtDate, useAction, useLoad,
+  Card, ErrorNotice, Field, Modal, Notice, Reason, Status, errorMessage, fmtDate, useAction, useLoad,
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
@@ -237,7 +237,7 @@ function NewsletterModal({ id, onClose }: { id: string; onClose: () => void }) {
             <dt>Status</dt><dd><Status value={n!.status} /></dd>
             <dt>Sent</dt><dd>{fmtDate(n!.createdAt)} by {n!.createdBy}</dd>
             <dt>Result</dt><dd>{n!.sentCount} of {n!.recipientCount} delivered{n!.failedCount ? `, ${n!.failedCount} failed` : ""}</dd>
-            {n!.lastError && <><dt>Last error</dt><dd className="error-text">{n!.lastError}</dd></>}
+            {n!.lastError && <><dt>Last error</dt><dd className="error-text"><Reason text={n!.lastError} fallback="Sending stopped. This is Booqy's fault." /></dd></>}
           </dl>
           <pre className="newsletter-body">{n!.body}</pre>
           <RecipientList recipients={data.recipients} />
@@ -256,7 +256,7 @@ function RecipientList({ recipients }: { recipients: NewsletterRecipient[] }) {
           <tr key={r.email}>
             <td className="small cell-stack" data-label="Owner">{r.email}</td>
             <td className="small cell-title">{r.tenantName}</td>
-            <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Failed{r.error ? `: ${r.error}` : ""}</span> : r.status}</td>
+            <td className="small" data-label="Status">{r.status === "failed" ? <span className="error-text">Not delivered{r.error ? <>: <Reason text={r.error} fallback="the email was refused." /></> : "."}</span> : r.status}</td>
           </tr>
         ))}
       </tbody>
@@ -284,7 +284,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("That file isn't an image the browser can read."));
+    img.onerror = () => reject(new Error("We can't open this file as a picture. Pick a PNG or JPG."));
     img.src = src;
   });
 }
@@ -323,7 +323,7 @@ async function renderLogo(src: string, color: string | null): Promise<string> {
     ctx.putImageData(data, 0, 0);
   }
   const url = canvas.toDataURL("image/png");
-  if (url.length > 300_000) throw new Error("The logo is still over 200 kB after shrinking. Pick a simpler image.");
+  if (url.length > 300_000) throw new Error("The logo is still too big after shrinking. Pick a simpler picture.");
   return url;
 }
 
@@ -331,7 +331,7 @@ function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("That file couldn't be read."));
+    reader.onerror = () => reject(new Error("We can't open this file. Pick another one."));
     reader.readAsDataURL(file);
   });
 }
@@ -406,7 +406,7 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
     e.preventDefault();
     setSaved(false);
     if (f.logo.kind === "custom" && !customPreview) {
-      setFileError("Upload a logo file, or choose the Booqy logo.");
+      setFileError("Pick a logo file, or choose the Booqy logo.");
       return;
     }
     const res = await a.run(() => api.saveMailTemplate(f));

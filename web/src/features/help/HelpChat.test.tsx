@@ -214,7 +214,7 @@ describe("HelpChat", () => {
       renderChat();
       await openPanel(user);
       await user.type(question(), "How do I add a new customer?{Enter}");
-      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy fault"), SLOW);
+      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy's fault"), SLOW);
       await user.click(screen.getByRole("button", { name: "Details" }));
       expect(screen.getByRole("log")).toHaveTextContent("Request id: req-42");
       // Try again asks once more, without a second copy of the question.
@@ -222,7 +222,7 @@ describe("HelpChat", () => {
       await user.click(screen.getByRole("button", { name: "Try again" }));
       await screen.findByRole("button", { name: "Open New customer" }, SLOW);
       expect(screen.getAllByText("How do I add a new customer?")).toHaveLength(1);
-      expect(screen.queryByText(/Booqy fault/)).toBeNull();
+      expect(screen.queryByText(/Booqy's fault/)).toBeNull();
     } finally {
       vi.unstubAllGlobals();
       setCorpus(buildCorpus());
@@ -244,7 +244,7 @@ describe("HelpChat", () => {
       renderChat();
       await openPanel(user);
       await user.type(question(), "First question{Enter}");
-      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy fault"), SLOW);
+      await waitFor(() => expect(screen.getByRole("log")).toHaveTextContent("Booqy's fault"), SLOW);
       await user.type(question(), "Second question{Enter}");
       await screen.findByText("About: Second question", undefined, SLOW);
       await user.click(screen.getByRole("button", { name: "Try again" }));

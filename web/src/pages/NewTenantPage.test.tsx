@@ -307,7 +307,7 @@ describe("NewTenantPage steps", () => {
     expect(progress()).toHaveAttribute("aria-valuenow", "88");
     await screen.findByText("Starter");
     done();
-    expect(screen.getByText("Pick a plan")).toBeInTheDocument();
+    expect(screen.getByText("Pick a plan.")).toBeInTheDocument();
     expect(progress()).toHaveAttribute("aria-valuenow", "88"); // no plan picked: still step 4
     fireEvent.click(document.getElementById("f-planId")!);
     done();

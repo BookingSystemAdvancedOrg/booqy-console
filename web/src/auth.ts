@@ -34,7 +34,7 @@ export interface Operator {
  */
 export class AuthUnavailableError extends Error {
   constructor() {
-    super("Couldn't reach the server. Check your internet connection and try again.");
+    super("We can't reach Booqy right now. Check your internet and try again.");
     this.name = "AuthUnavailableError";
   }
 }
@@ -89,7 +89,7 @@ export async function accessToken(): Promise<string> {
   const tokens = await session();
   if (!tokens?.accessToken) {
     notifySignedOut();
-    throw new Error("Signed out");
+    throw new Error("You were signed out. Sign in again.");
   }
   return tokens.accessToken.toString();
 }

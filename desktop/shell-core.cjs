@@ -19,8 +19,8 @@ main{max-width:26rem;padding:2rem;text-align:center}
 h1{font-size:1.4rem;margin:0 0 .5rem}p{margin:0 0 1.5rem;opacity:.85}
 a{display:inline-block;padding:.7rem 1.4rem;border-radius:3px;background:#1c1918;color:#fbfaf6;font-weight:700;text-decoration:none}
 @media (prefers-color-scheme:dark){body{background:#1c1918;color:#f6ece9}a{background:#fbfaf6;color:#1c1918}}
-</style></head><body><main><h1>Ingen anslutning</h1>
-<p>${esc(appName)} behöver internet. Vi försöker igen automatiskt så fort anslutningen är tillbaka.</p>
+</style></head><body><main><h1>Ingen internetanslutning</h1>
+<p>${esc(appName)} behöver internet. Kolla att wifi eller nätverkskabeln fungerar. Vi försöker igen av oss själva.</p>
 <a href="${esc(startUrl)}">Försök igen</a></main></body></html>`
 }
 

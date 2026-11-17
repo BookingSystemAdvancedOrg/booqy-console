@@ -11,8 +11,10 @@ import type {
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
 
 export class ApiError extends Error {
-  /** The API's own message when it had a useful one (errors.ts builds the who-acts text from it). */
+  /** The API's own message ("" when it had none). errors.ts shows it only for a code it doesn't know, and only when it reads plainly. */
   serverMessage?: string;
+  /** A feature's own text for this status (RequestOptions.messages): shown as written. */
+  ownMessage?: string;
 
   constructor(
     public status: number,
@@ -26,16 +28,6 @@ export class ApiError extends Error {
 }
 
 const BASE = import.meta.env.VITE_API_URL.replace(/\/$/, "");
-
-/** What to say when the response has no message of its own (a gateway
- * error page, a crash, a throttle): who acts, as in errors.ts. */
-function fallbackMessage(status: number, requestId?: unknown): string {
-  const ref = requestId ? ` (request ${requestId})` : "";
-  if (status === 403) return "Your account isn't allowed to do this. Sign out and in again; if it persists, another operator checks your account under Operators.";
-  if (status === 404) return "Not found: it may have been removed elsewhere. The page shows what is left by itself.";
-  if (status === 429) return "Too many requests right now. Wait a few seconds and try again.";
-  return `Something failed on Booqy's side${ref}. This is a Booqy fault (a bug or an outage), not something you did. Try again; if it keeps failing, copy the details and look the request up in the logs.`;
-}
 
 /** API Gateway's request id: the body's (platform-tenants puts it in 500s), else the header when it is readable. */
 function requestIdOf(res: Response, extra: Record<string, unknown>): string | undefined {
@@ -69,7 +61,7 @@ export function request<T>(method: string, path: string, body?: unknown, opts: R
 }
 
 async function send<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, messages?: ErrorMessages): Promise<T> {
-  const offline = () => new ApiError(0, "network", "Couldn't reach the API. Check your internet connection and try again.");
+  const offline = () => new ApiError(0, "network", "We can't reach Booqy right now. Check your internet and try again.");
   const call = async (token: string) => {
     try {
       return await fetch(`${BASE}${path}`, {
@@ -79,7 +71,7 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
         signal,
       });
     } catch {
-      if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+      if (signal?.aborted) throw new ApiError(0, "timeout", "Booqy took too long to answer. Try again in a moment.");
       throw offline();
     }
   };
@@ -100,7 +92,7 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
       // token rejected (revoked, account disabled/deleted) - back to the login page
       await signOut().catch(() => undefined);
       notifySignedOut();
-      throw new ApiError(401, "unauthorized", "Signed out");
+      throw new ApiError(401, "unauthorized", "You were signed out. Sign in again, then redo your last step.");
     }
   }
   // The timeout can also fire while the body is still arriving: the same timeout then;
@@ -109,14 +101,14 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
   try {
     text = await res.text();
   } catch {
-    if (signal?.aborted) throw new ApiError(0, "timeout", "The API took too long to answer.");
+    if (signal?.aborted) throw new ApiError(0, "timeout", "Booqy took too long to answer. Try again in a moment.");
     throw offline();
   }
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (res.ok) throw new ApiError(res.status, "bad_response", "The API sent an unreadable response. This is a Booqy fault, not something you did. Try again; if it keeps failing, look the request up in the logs.");
+    if (res.ok) throw new ApiError(res.status, "bad_response", "Booqy sent an answer we can't read.");
   }
   if (!res.ok) {
     const { error, message, fields, ...extra } = data;
@@ -125,10 +117,11 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
     // The generic 500 text says nothing useful - give what to do instead.
     const code = typeof error === "string" && error ? error : res.status >= 500 ? "internal_error" : "error";
     const own = messages?.(res.status, code);
-    const useful = own || (typeof message === "string" && message && !(res.status >= 500 && error === "internal_error") ? message as string : undefined);
-    const err = new ApiError(res.status, code, useful ?? fallbackMessage(res.status, requestId),
-                             (fields as Record<string, string>) ?? {}, extra);
-    if (useful) err.serverMessage = useful;
+    const server = typeof message === "string" && message && !(res.status >= 500 && error === "internal_error") ? message : "";
+    // The message stays the API's own (logs, tests); people read errors.ts's text, never this.
+    const err = new ApiError(res.status, code, own || server || code, (fields as Record<string, string>) ?? {}, extra);
+    err.serverMessage = server;
+    if (own) err.ownMessage = own;
     throw err;
   }
   return data as T;
@@ -327,5 +320,5 @@ async function postToS3(upload: { url: string; fields: Record<string, string> },
   for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
   form.append("file", file);                 // must be the last field
   const res = await fetch(upload.url, { method: "POST", body: form });
-  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The upload was refused - is it a PDF under 10 MB?");
+  if (!res.ok) throw new ApiError(res.status, "upload_failed", "The file didn't upload. Pick a PDF under 10 MB and try again.");
 }

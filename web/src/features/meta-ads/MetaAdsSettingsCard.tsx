@@ -28,7 +28,8 @@ export default function MetaAdsSettingsCard() {
     const saved = await action.run(() => metaAdsApi.saveSettings({ killSwitch, maxMonthlyCapSek: ceiling }));
     if (saved) { setData(saved); if (fromField) setCap(null); }
   }
-  const capError = action.fields.maxMonthlyCapSek === "invalid_cap" ? CAP_RANGE : action.fields.maxMonthlyCapSek;
+  // useAction words field messages plainly; the raw code says which range to show.
+  const capError = action.error instanceof ApiError && action.error.fields?.maxMonthlyCapSek === "invalid_cap" ? CAP_RANGE : action.fields.maxMonthlyCapSek;
 
   return (
     <Card title="Meta ads" saved={action.done} info={<>Owners can set their own cap up to this ceiling. {CAP_RANGE}</>}>

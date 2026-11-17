@@ -22,7 +22,7 @@ export function progressPct(done: number, total: number = STEPS.length): number 
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const emailProblem = (v: string) => (v && !EMAIL.test(v.trim()) ? "Not an email address" : undefined);
+const emailProblem = (v: string) => (v && !EMAIL.test(v.trim()) ? "Write the email like this: anna@restaurang.se." : undefined);
 
 export interface StepInput {
   name: string; slug: string; orgProblem?: string;
@@ -39,22 +39,22 @@ export interface StepInput {
 export function stepProblems(step: StepId, s: StepInput): Record<string, string> {
   const out: Record<string, string | undefined> = {};
   if (step === "company") {
-    if (!s.name.trim()) out.name = "Required";
+    if (!s.name.trim()) out.name = "Fill this in.";
     // the slug fills itself in from the name: only its own problem once there is a name
-    if (s.name.trim() && !s.slug) out.slug = "Required";
+    if (s.name.trim() && !s.slug) out.slug = "Fill this in.";
     out.orgNumber = s.orgProblem;
   } else if (step === "owner") {
-    if (!s.ownerName.trim()) out.ownerName = "Required";
-    out.ownerEmail = s.ownerEmail.trim() ? emailProblem(s.ownerEmail) : "Required";
+    if (!s.ownerName.trim()) out.ownerName = "Fill this in.";
+    out.ownerEmail = s.ownerEmail.trim() ? emailProblem(s.ownerEmail) : "Fill this in.";
   } else if (step === "contact") {
     out.contactEmail = emailProblem(s.contactEmail);
     out.billingEmail = emailProblem(s.billingEmail);
     out.replyToEmail = emailProblem(s.replyToEmail);
   } else if (step === "plan") {
-    if (!s.planId) out.planId = "Pick a plan";
+    if (!s.planId) out.planId = "Pick a plan.";
     else Object.assign(out, s.planExtra);
   } else if (step === "locations") {
-    if (s.locationCount > s.maxLocations) out.locations = `${s.maxLocations} allowed: remove one or raise Locations in Plan & invoicing`;
+    if (s.locationCount > s.maxLocations) out.locations = `The plan allows ${s.maxLocations}. Remove one, or raise Locations in Plan & invoicing.`;
   }
   return Object.fromEntries(Object.entries(out).filter((e): e is [string, string] => !!e[1]));
 }

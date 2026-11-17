@@ -61,14 +61,14 @@ describe("feature clients go through api.ts", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(502, { error: "internal_error" }, { "apigw-requestid": "req-9" })));
     const err = await metaAdsApi.tenant("t1").catch((e) => e);
     expect(err).toMatchObject({ status: 502, extra: { requestId: "req-9" } });
-    expect(describeError(err).text).toMatch(/Booqy fault/);
+    expect(describeError(err).text).toMatch(/Booqy's fault/);
     expect(err.message).not.toMatch(/Request failed/);
   });
 
   it("a 403 says who acts instead of 'Request failed (forbidden).'", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(403, { error: "forbidden" })));
     const err = await metaAdsApi.settings().catch((e) => e);
-    expect(err.message).toMatch(/Operators/);
+    expect(describeError(err)).toMatchObject({ text: expect.stringMatching(/check your account/), link: { to: "/operators" } });
   });
 
   it("keeps each feature's own 404 and 503 texts", async () => {
@@ -77,18 +77,18 @@ describe("feature clients go through api.ts", () => {
       .mockResolvedValueOnce(json(503, { error: "feature_unavailable" }))
       .mockResolvedValueOnce(json(404, { error: "not_found" }))
       .mockResolvedValueOnce(json(400, { error: "invalid_cap", fields: { maxMinutesCap: "invalid_cap" } })));
-    await expect(metaAdsApi.settings()).rejects.toMatchObject({ message: "Meta ads is not deployed in this environment, or the tenant is unknown." });
-    await expect(googleBusinessApi.tenant("t1")).rejects.toMatchObject({ message: "The Google Business Profile feature did not answer. Try again in a minute." });
+    await expect(metaAdsApi.settings()).rejects.toMatchObject({ message: "Meta ads isn't switched on here, or we can't find this customer." });
+    await expect(googleBusinessApi.tenant("t1")).rejects.toMatchObject({ message: "Google Business Profile didn't answer. Try again in a minute." });
     await expect(exportLedger("t1", { locationId: "l", from: "2026-01-01", to: "2026-02-01" }))
-      .rejects.toMatchObject({ message: "No staff ledger records for this location, or the feature is not deployed in this environment." });
+      .rejects.toMatchObject({ message: "There is no staff ledger for this location, or the staff ledger isn't switched on here." });
     await expect(phoneAgentApi.saveSettings({ killSwitch: true, maxMinutesCap: 1 }))
-      .rejects.toMatchObject({ status: 400, message: "The cap must be a whole number from 0 to 100000.", fields: { maxMinutesCap: "invalid_cap" } });
+      .rejects.toMatchObject({ status: 400, message: "Use whole minutes from 0 to 100000, like 600.", fields: { maxMinutesCap: "invalid_cap" } });
   });
 
   it("maps the Meta ads invalid_cap to the cap range", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(400, { error: "invalid_cap", fields: { maxMonthlyCapSek: "invalid_cap" } })));
     await expect(metaAdsApi.saveSettings({ killSwitch: false, maxMonthlyCapSek: 5 }))
-      .rejects.toMatchObject({ status: 400, message: "Whole kronor, 100 to 1 000 000.", fields: { maxMonthlyCapSek: "invalid_cap" } });
+      .rejects.toMatchObject({ status: 400, message: "Use whole kronor from 100 to 1 000 000, like 5000.", fields: { maxMonthlyCapSek: "invalid_cap" } });
   });
 
   it("a save tells live pages to refetch", async () => {

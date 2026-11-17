@@ -15,9 +15,9 @@ export interface LedgerExport {
 }
 
 const messages: ErrorMessages = (status) =>
-  status === 404 ? "No staff ledger records for this location, or the feature is not deployed in this environment."
-  : status === 400 ? "Check the dates: from must be on or before to, at most one year."
-  : status === 503 ? "The staff ledger did not answer. Try again in a minute."
+  status === 404 ? "There is no staff ledger for this location, or the staff ledger isn't switched on here."
+  : status === 400 ? "Check the dates. From must be on or before To, at most one year apart."
+  : status === 503 ? "The staff ledger didn't answer. Try again in a minute."
   : undefined;
 
 /** Through api.ts: busy bar, 401 refresh and request id, as every call. */

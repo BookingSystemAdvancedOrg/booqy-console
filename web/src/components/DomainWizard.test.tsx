@@ -136,12 +136,12 @@ describe("Registreringsbevis upload (finding 181)", () => {
     render(<RegistreringsbevisUpload tenantId="t1" onKey={() => {}} onBusy={() => {}} />);
     const input = document.querySelector("input[type=file]") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File(["x"], "bevis.png", { type: "image/png" })] } });
-    expect(await screen.findByText("The registreringsbevis must be a PDF.")).toBeInTheDocument();
-    expect(screen.queryByText(/Booqy's side/)).toBeNull();
+    expect(await screen.findByText("The registreringsbevis must be a PDF file. Pick a PDF.")).toBeInTheDocument();
+    expect(screen.queryByText(/Booqy's fault/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy details" })).toBeNull();
   });
 
-  it("says At most 10 MB for a PDF that is too big", async () => {
+  it("says the file is too big for a PDF that is too big", async () => {
     const { RegistreringsbevisUpload } = await import("./DomainWizard");
     const { fireEvent } = await import("@testing-library/react");
     const { api } = await import("../api");
@@ -149,7 +149,7 @@ describe("Registreringsbevis upload (finding 181)", () => {
     render(<RegistreringsbevisUpload tenantId="t1" onKey={() => {}} onBusy={() => {}} />);
     const input = document.querySelector("input[type=file]") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File(["xx"], "bevis.pdf", { type: "application/pdf" })] } });
-    expect(await screen.findByText("At most 10 MB.")).toBeInTheDocument();
+    expect(await screen.findByText("The file is too big. Pick a PDF under 10 MB.")).toBeInTheDocument();
     expect(screen.queryByText(/Booqy's side/)).toBeNull();
   });
 });
