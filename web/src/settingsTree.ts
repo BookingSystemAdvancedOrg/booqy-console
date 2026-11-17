@@ -6,19 +6,19 @@ import { isDesktopShell } from "./desktopDownloads";
  * page opens on the field, the trees are the big areas, the branches are the
  * sections (one view at a time, each with its own #address) and the leaves
  * are the single settings. The apples (live status) are worked out in
- * SettingsPage. #desktop-app keeps working: it is a branch.
+ * SettingsPage. #desktop-app keeps working: it is a branch. Pages that
+ * live elsewhere (Profile, the email brand template, Operators) are links on
+ * their tree; their old addresses (#profile, #mail-brand) lead there (MOVED).
  * scripts/help-corpus.mjs reads BRANCH_LABEL and TREES: keep each tree on one line.
  */
-export type BranchId = "profile" | "appearance" | "desktop-app" | "meta-ads" | "phone-agent" | "mail-brand";
+export type BranchId = "appearance" | "desktop-app" | "meta-ads" | "phone-agent";
 export type TreeId = "you" | "platform";
 
 export const BRANCH_LABEL: Record<BranchId, string> = {
-  profile: "Profile",
   appearance: "Appearance and sound",
   "desktop-app": "App",
   "meta-ads": "Meta ads limits",
   "phone-agent": "Phone agent limits",
-  "mail-brand": "Email brand template",
 };
 
 export interface Tree {
@@ -26,14 +26,19 @@ export interface Tree {
   label: string;
   icon: IconName;
   branches: BranchId[];
-  /** A page elsewhere that belongs here (shown as a link in the tree). */
-  link?: { to: string; label: string };
+  /** Pages elsewhere that belong here (links in the tree, with an arrow). */
+  links?: TreeLink[];
 }
 
+export interface TreeLink { to: string; label: string }
+
 export const TREES: Tree[] = [
-  { id: "you", label: "You", icon: "badge", branches: ["profile", "appearance", "desktop-app"] },
-  { id: "platform", label: "Platform", icon: "globe", branches: ["meta-ads", "phone-agent", "mail-brand"], link: { to: "/operators", label: "Operators" } },
+  { id: "you", label: "You", icon: "badge", branches: ["appearance", "desktop-app"], links: [{ to: "/profile", label: "Profile" }] },
+  { id: "platform", label: "Platform", icon: "globe", branches: ["meta-ads", "phone-agent"], links: [{ to: "/mail?tab=brand-template", label: "Email brand template" }, { to: "/operators", label: "Operators" }] },
 ];
+
+/** Branches that became links: their old #address leads to the page. */
+export const MOVED: Record<string, string> = { profile: "/profile", "mail-brand": "/mail?tab=brand-template" };
 
 export const BRANCHES: BranchId[] = TREES.flatMap((t) => t.branches);
 
@@ -52,11 +57,16 @@ export function branchVisible(branch: BranchId): boolean {
   return branch !== "desktop-app" || !isDesktopShell();
 }
 
-/** What the search finds: the visible label, its branch, other words; `find` is the text lit up when it differs (several split by |). */
-export interface Leaf { label: string; branch: BranchId; find?: string; keywords?: string }
+/**
+ * What the search finds: the visible label, its branch (or `to`, a linked
+ * page, and its tree), other words; `find` is the text lit up when it
+ * differs (several split by |).
+ */
+export type Leaf = { label: string; find?: string; keywords?: string } &
+  ({ branch: BranchId; to?: undefined; tree?: undefined } | { to: string; tree: TreeId; branch?: undefined });
 
 export const LEAVES: Leaf[] = [
-  { label: "Profile picture", branch: "profile", find: "Open my profile", keywords: "avatar photo name email" },
+  { label: "Profile picture", to: "/profile", tree: "you", keywords: "avatar photo name email" },
   { label: "Light or dark", branch: "appearance", keywords: "theme dark mode light mode" },
   { label: "Background", branch: "appearance", keywords: "backdrop wallpaper colour image see-through" },
   { label: "Click sound", branch: "appearance", keywords: "sound mute" },
@@ -66,19 +76,26 @@ export const LEAVES: Leaf[] = [
   { label: "Meta ads kill switch", branch: "meta-ads", find: "Turn kill switch", keywords: "pause all ads stop" },
   { label: "Phone agent minutes cap", branch: "phone-agent", find: "Max minutes", keywords: "ceiling calls voice" },
   { label: "Phone agent kill switch", branch: "phone-agent", find: "Turn kill switch", keywords: "pause calls stop" },
-  { label: "Email brand template", branch: "mail-brand", keywords: "sender name reply-to accent colour logo signature footer mail" },
+  { label: "Email brand template", to: "/mail?tab=brand-template", tree: "platform", keywords: "sender name reply-to accent colour logo signature footer mail" },
 ];
 
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 export { fold };
+
+/** Where a leaf sits: its tree and its branch, or the linked page. */
+export function leafPath(leaf: Leaf): [string, string] {
+  if (leaf.branch) return [treeOf(leaf.branch).label, BRANCH_LABEL[leaf.branch]];
+  const tree = TREES.find((t) => t.id === leaf.tree) as Tree;
+  return [tree.label, tree.links?.find((l) => l.to === leaf.to)?.label ?? leaf.label];
+}
 
 /** Leaves matching the query (label, branch, tree, keywords), without accents, only in visible branches. */
 export function searchLeaves(query: string, visible: (b: BranchId) => boolean = branchVisible): Leaf[] {
   const words = fold(query).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   return LEAVES.filter((leaf) => {
-    if (!visible(leaf.branch)) return false;
-    const hay = fold(`${leaf.label} ${BRANCH_LABEL[leaf.branch]} ${treeOf(leaf.branch).label} ${leaf.keywords ?? ""}`);
+    if (leaf.branch && !visible(leaf.branch)) return false;
+    const hay = fold(`${leaf.label} ${leafPath(leaf).join(" ")} ${leaf.keywords ?? ""}`);
     return words.every((w) => hay.includes(w));
   })
     .sort((a, b) => Number(!fold(a.label).startsWith(words[0])) - Number(!fold(b.label).startsWith(words[0])))

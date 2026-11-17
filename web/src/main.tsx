@@ -282,7 +282,7 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage name={user.name} email={user.email} />} />
+          <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/profile" element={<ProfilePage me={user} onSaved={saveProfile} />} />
           <Route path="/download" element={<DownloadRedirect />} />
           <Route path="/outbox" element={<MailPage tab="outbox" />} />

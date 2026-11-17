@@ -1,6 +1,7 @@
 /* Settings as a field, trees and branches (SettingsTree.tsx), as in admin.
-   From 1100 px the tree sits on the left, sticky. Smaller screens drill down
-   with a back button. Calm motion, once; none with reduced motion. */
+   From 1100 px the field takes the full width; a tree and a branch have the
+   tree on the left, sticky, and where you are on top. Smaller screens drill
+   down with a back button instead. Calm motion, once; none with reduced motion. */
 
 .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
 .settings-body { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
@@ -23,7 +24,7 @@
 .stree-row:focus-visible, .stree-branch:focus-visible { box-shadow: 0 0 0 2px var(--focus, #a88462); }
 .stree-group { display: flex; flex-direction: column; gap: 2px; padding-left: 44px; }
 .stree-group:not(:empty) { padding-bottom: 8px; animation: stree-unfold 260ms var(--ease) both; }
-.stree-branch { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border-radius: var(--r-md); font: 550 14.5px/1.25 var(--sans); color: var(--fg); transition: background-color 200ms var(--ease); }
+.stree-branch { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: var(--r-md); font: 550 14.5px/1.25 var(--sans); color: var(--fg); transition: background-color 200ms var(--ease); }
 .stree-branch.active { background: var(--lacquer); color: var(--bq-snow); box-shadow: var(--lacquer-rim); }
 :root[data-theme="dark"] .stree-branch.active { color: #1a120e; }
 .stree-link { color: var(--fg-2); }
@@ -70,7 +71,10 @@
 .stree-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0 0 4px -8px; padding: 0 12px 0 8px; border: 0; border-radius: var(--r-pill); background: transparent; font: 600 14px/1 var(--sans); color: var(--fg); cursor: default; transition: background-color 200ms var(--ease); }
 .stree-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font: 400 13px/1.3 var(--sans); color: var(--fg-2); }
 .stree-crumbs li + li::before { content: "\203A"; margin-right: 6px; }
-.stree-crumbs button { min-height: 28px; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: default; transition: color 200ms var(--ease); }
+.stree-crumbs { display: none; }
+.stree-crumbs button { position: relative; min-height: 28px; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: default; transition: color 200ms var(--ease); }
+/* The hit area reaches 44 px without the link growing. */
+.stree-crumbs button::after { content: ""; position: absolute; inset: -8px -4px; }
 .stree-crumbs [aria-current="page"] { color: var(--fg); }
 .stree-title { margin: 2px 0 6px; border-radius: var(--r-md); outline: none; font: 400 30px/1.15 var(--serif); color: var(--fg); }
 .stree-pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1.5px dashed var(--fg-line); }
@@ -91,6 +95,11 @@
   .settings-layout { grid-template-columns: 240px minmax(0, 1fr); gap: 32px; }
   .stree-nav { display: block; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow: auto; padding-right: 18px; border-right: 1.5px dashed var(--fg-line); }
   .stree-back { display: none; }
+  .stree-crumbs { display: block; }
+  /* The field: no tree twice, the cards get the full width. */
+  .settings-layout[data-view="field"] { grid-template-columns: minmax(0, 1fr); }
+  .settings-layout[data-view="field"] .stree-nav { display: none; }
+  .stree-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .stree-card.card { padding: 16px 16px 10px; }

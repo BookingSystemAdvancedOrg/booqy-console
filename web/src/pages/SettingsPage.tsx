@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { BackdropSetting } from "../components/BackdropSetting";
 import { isDesktopShell } from "../desktopDownloads";
-import { MyAvatar } from "../components/MyAvatar";
-import { firstName } from "../avatar";
 import { SoundToggle } from "../components/SoundToggle";
 import { SoundVolume } from "../components/SoundVolume";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -11,7 +9,7 @@ import { Slot } from "../slots";
 import { DesktopAppCard } from "../components/DesktopAppCard";
 import { InfoTip } from "../components/StepFlow";
 import { BranchHead, BranchPager, SettingsField, SettingsTreeNav, SettingsTreePage, useViewFocus } from "../components/SettingsTree";
-import { LEAVES, TREES, branchVisible, buildApples, fold, isBranch, isTree, treeOf, type BranchId, type Leaf, type TreeId } from "../settingsTree";
+import { LEAVES, MOVED, TREES, branchVisible, buildApples, fold, isBranch, isTree, treeOf, type BranchId, type Leaf, type TreeId } from "../settingsTree";
 import { useTheme } from "../theme";
 import { useSound } from "../press";
 import { confirmLeave } from "../components/save";
@@ -21,10 +19,10 @@ import { phoneAgentApi } from "../features/phone-agent/api";
 /**
  * Settings as a field of trees (settingsTree.ts): the page opens on the
  * field (a card per tree with its branches and apples, plus a search), each
- * branch is its own view at #branch. You: profile, appearance and sound
- * (kept in this browser under the same keys as booqy.se and admin), the app.
- * Platform: the Meta ads and phone agent ceilings, the email brand template
- * (edited in Mail) and Operators.
+ * branch is its own view at #branch. You: appearance and sound (kept in
+ * this browser under the same keys as booqy.se and admin), the app, and a
+ * link to Profile. Platform: the Meta ads and phone agent ceilings, and
+ * links to the email brand template (in Mail) and Operators.
  */
 type View = { kind: "field" } | { kind: "tree"; tree: TreeId } | { kind: "branch"; branch: BranchId };
 
@@ -38,7 +36,7 @@ function viewFromHash(hash: string): View {
 /** Branches drawn only while open; the platform cards stay (hidden) once opened so unsaved edits survive. */
 const ONLY_WHILE_OPEN: BranchId[] = ["appearance", "desktop-app"];
 
-export default function SettingsPage({ name, email }: { name?: string; email?: string }) {
+export default function SettingsPage({ email }: { email?: string }) {
   const navigate = useNavigate();
   const { hash, state: navState } = useLocation();
   const view = viewFromHash(hash);
@@ -51,6 +49,9 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
   const leave = useCallback((to: string) => { if (confirmLeave()) navigate(to); }, [navigate]);
   // The app branch does not exist in the desktop app: back to the field.
   useEffect(() => { if (branch && !branchVisible(branch)) navigate({ hash: "" }, { replace: true }); }, [branch, navigate]);
+  // Old addresses of branches that became links (#profile, #mail-brand) lead to their page.
+  const moved = MOVED[hash.replace(/^#/, "")];
+  useEffect(() => { if (moved) navigate(moved, { replace: true }); }, [moved, navigate]);
 
   const opened = useRef(new Set<BranchId>());
   if (branch) opened.current.add(branch);
@@ -105,32 +106,17 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
         <div className="settings-body" ref={body}>
           {view.kind === "field" && (
             <SettingsField trees={trees} apples={apples} visible={branchVisible} onTree={go} onBranch={go}
-              onLeaf={(leaf) => { setPendingLeaf(leaf); go(leaf.branch); }} onLink={leave} />
+              onLeaf={(leaf) => { if (leaf.branch) { setPendingLeaf(leaf); go(leaf.branch); } else if (leaf.to) leave(leaf.to); }} onLink={leave} />
           )}
           {shownTree && <SettingsTreePage tree={shownTree} apples={apples[shownTree.id] ?? []} onField={() => go(null)} onBranch={go} onLink={leave} />}
           {branch && <BranchHead key={branch} branch={branch} onField={() => go(null)} onTree={go} />}
 
           {/* Branches are hidden, not removed: unsaved edits stay. */}
-          {mounted("profile") && (
-            <div {...pane("profile")}>
-              <section className="card">
-                <div className="card__head"><h2>Your profile</h2></div>
-                <div className="card__body">
-                  <div className="setting-row" data-help="settings:profile">
-                    <div className="avatar-setting__who">
-                      <MyAvatar name={name} email={email} />
-                      <p className="strong">{firstName(name, email)}</p>
-                    </div>
-                    <Link to="/profile" className="btn btn--ghost">Open my profile</Link>
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
           {mounted("appearance") && (
             <div {...pane("appearance")}>
-              <section className="card">
-                <div className="card__head"><h2>Appearance and sound</h2></div>
+              {/* The branch heading above already says it; the card keeps its name for screen readers. */}
+              <section className="card" aria-labelledby="appearance-title">
+                <h2 className="sr-only" id="appearance-title">Appearance and sound</h2>
                 <div className="card__body">
                   <div className="setting-row" data-help="settings:theme">
                     <div>
@@ -181,26 +167,6 @@ export default function SettingsPage({ name, email }: { name?: string; email?: s
           {mounted("phone-agent") && (
             <div {...pane("phone-agent")}>
               <Slot id="settings.phoneAgent" />
-            </div>
-          )}
-          {mounted("mail-brand") && (
-            <div {...pane("mail-brand")}>
-              <section className="card">
-                <div className="card__head">
-                  <span className="card__title">
-                    <h2>Email brand template</h2>
-                    <InfoTip label="About the brand template">Sender name, reply-to, accent colour, logo, signature and footer line on every email to restaurant owners. It is edited in Mail.</InfoTip>
-                  </span>
-                </div>
-                <div className="card__body">
-                  <div className="setting-row" data-help="settings:mail-brand">
-                    <div>
-                      <p className="strong">Brand template</p>
-                    </div>
-                    <Link to="/mail?tab=brand-template" className="btn btn--ghost">Open in Mail</Link>
-                  </div>
-                </div>
-              </section>
             </div>
           )}
 

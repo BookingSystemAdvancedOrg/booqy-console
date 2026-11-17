@@ -1,14 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FocusEvent, KeyboardEvent, RefObject } from "react";
 import { Icon } from "./ds";
-import { BRANCH_LABEL, searchLeaves, treeOf } from "../settingsTree";
-import type { Apple, BranchId, Leaf, Tree, TreeId } from "../settingsTree";
+import { BRANCH_LABEL, leafPath, searchLeaves, treeOf } from "../settingsTree";
+import type { Apple, BranchId, Leaf, Tree, TreeId, TreeLink } from "../settingsTree";
 import "./settingsTree.css";
 
 /**
  * Settings as a field, trees and branches (settingsTree.ts), as in admin.
- * From 1100 px the tree sits on the left, always there. Smaller screens
- * drill down: field, tree, branch, with a back button.
+ * From 1100 px the field takes the full width; a tree and a branch have the
+ * tree on the left and where you are on top. Smaller screens drill down:
+ * field, tree, branch, with a back button instead.
  */
 
 export type { Apple };
@@ -39,7 +40,7 @@ export function useViewFocus(view: string, body: RefObject<HTMLElement | null>) 
 type NavItem =
   | { key: string; kind: "tree"; tree: Tree }
   | { key: string; kind: "branch"; branch: BranchId; tree: Tree }
-  | { key: string; kind: "link"; tree: Tree };
+  | { key: string; kind: "link"; link: TreeLink; tree: Tree };
 
 const Chevron = ({ dir }: { dir: "left" | "right" | "down" }) => <Icon name="chevron-down" size={16} className={`stree-chev stree-chev--${dir}`} />;
 
@@ -56,7 +57,7 @@ export function SettingsTreeNav({ trees, current, currentTree, onBranch, onLink 
     { key: tree.id, kind: "tree" as const, tree },
     ...(open.has(tree.id) ? [
       ...tree.branches.map((branch) => ({ key: branch, kind: "branch" as const, branch, tree })),
-      ...(tree.link ? [{ key: `${tree.id}:link`, kind: "link" as const, tree }] : []),
+      ...(tree.links ?? []).map((link) => ({ key: `${tree.id}:${link.to}`, kind: "link" as const, link, tree })),
     ] : []),
   ]), [trees, open]);
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export function SettingsTreeNav({ trees, current, currentTree, onBranch, onLink 
   const activate = (item: NavItem) => {
     if (item.kind === "tree") toggle(item.tree.id);
     else if (item.kind === "branch") onBranch(item.branch);
-    else if (item.tree.link) onLink(item.tree.link.to);
+    else onLink(item.link.to);
   };
   function onKeyDown(e: KeyboardEvent<HTMLElement>, item: NavItem) {
     const i = items.indexOf(item);
@@ -119,12 +120,12 @@ export function SettingsTreeNav({ trees, current, currentTree, onBranch, onLink 
                     {BRANCH_LABEL[b]}
                   </li>
                 ))}
-                {expanded && tree.link && (
-                  <li role="treeitem" className="stree-branch stree-link"
-                      onClick={(e) => { e.stopPropagation(); onLink(tree.link!.to); }} {...props(items.find((i) => i.kind === "link" && i.tree.id === tree.id))}>
-                    {tree.link.label} <Icon name="arrow-right" size={14} />
+                {expanded && tree.links?.map((link) => (
+                  <li key={link.to} role="treeitem" className="stree-branch stree-link"
+                      onClick={(e) => { e.stopPropagation(); onLink(link.to); }} {...props(items.find((i) => i.key === `${tree.id}:${link.to}`))}>
+                    {link.label} <Icon name="arrow-right" size={14} />
                   </li>
-                )}
+                ))}
               </ul>
             </li>
           );
@@ -172,9 +173,9 @@ export function SettingsField({ trees, apples, visible, onTree, onBranch, onLeaf
               {tree.branches.map((b) => (
                 <li key={b}><button type="button" className="stree-card-branch" data-stree-from={b} onClick={() => onBranch(b)}>{BRANCH_LABEL[b]}</button></li>
               ))}
-              {tree.link && (
-                <li><button type="button" className="stree-card-branch" onClick={() => onLink(tree.link!.to)}>{tree.link.label} <Icon name="arrow-right" size={14} /></button></li>
-              )}
+              {tree.links?.map((link) => (
+                <li key={link.to}><button type="button" className="stree-card-branch" onClick={() => onLink(link.to)}>{link.label} <Icon name="arrow-right" size={14} /></button></li>
+              ))}
             </ul>
           </section>
         ))}
@@ -204,9 +205,9 @@ export function SettingsTreePage({ tree, apples, onField, onBranch, onLink }: {
         {tree.branches.map((b) => (
           <li key={b}><button type="button" className="stree-rowbtn" data-stree-from={b} onClick={() => onBranch(b)}><span>{BRANCH_LABEL[b]}</span><Chevron dir="right" /></button></li>
         ))}
-        {tree.link && (
-          <li><button type="button" className="stree-rowbtn" onClick={() => onLink(tree.link!.to)}><span>{tree.link.label}</span><Icon name="arrow-right" size={16} /></button></li>
-        )}
+        {tree.links?.map((link) => (
+          <li key={link.to}><button type="button" className="stree-rowbtn" onClick={() => onLink(link.to)}><span>{link.label}</span><Icon name="arrow-right" size={16} /></button></li>
+        ))}
       </ul>
     </div>
   );
@@ -282,7 +283,7 @@ function LeafSearch({ visible, onLeaf }: { visible: (b: BranchId) => boolean; on
             <div key={`${leaf.branch}:${leaf.label}`} id={`${id}-o${i}`} role="option" aria-selected={i === current}
                  className="stree-result" onMouseMove={() => i !== current && setActive(i)} onClick={() => onLeaf(leaf)}>
               <span className="stree-result-label">{leaf.label}</span>
-              <span className="stree-result-path">{treeOf(leaf.branch).label} › {BRANCH_LABEL[leaf.branch]}</span>
+              <span className="stree-result-path">{leafPath(leaf).join(" › ")}</span>
             </div>
           ))}
         </div>
