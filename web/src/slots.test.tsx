@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./features/site-builder/SiteBuilderSection", () => ({
-  default: ({ tenantId }: { tenantId: string }) => <p>site builder for {tenantId}</p>,
+vi.mock("./features/google-business/GoogleBusinessTenantSection", () => ({
+  default: ({ tenantId }: { tenantId: string }) => <p>google profile for {tenantId}</p>,
 }));
 vi.mock("./features/personalliggare/ExportLedgerSection", () => ({ default: () => <p>ledger export</p> }));
 
@@ -15,14 +15,14 @@ describe("console slots", () => {
   });
 
   it("renders nothing while the feature is off", () => {
-    const { container } = render(<Slot id="tenant.website.siteBuilder" features={{ siteBuilder: false }} props={{ tenantId: "t1" }} />);
+    const { container } = render(<Slot id="tenant.integrations.googleBusiness" features={{ googleBusiness: false }} props={{ tenantId: "t1" }} />);
     expect(container).toBeEmptyDOMElement();
     expect(slotOn("tenant.integrations.metaAds", {})).toBe(false);
   });
 
   it("loads the feature's component with its props when on", async () => {
-    render(<Slot id="tenant.website.siteBuilder" features={{ siteBuilder: true }} props={{ tenantId: "t1" }} />);
-    expect(await screen.findByText("site builder for t1")).toBeInTheDocument();
+    render(<Slot id="tenant.integrations.googleBusiness" features={{ googleBusiness: true }} props={{ tenantId: "t1" }} />);
+    expect(await screen.findByText("google profile for t1")).toBeInTheDocument();
   });
 
   it("always shows a slot without a feature", async () => {

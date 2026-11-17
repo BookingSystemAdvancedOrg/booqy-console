@@ -27,10 +27,12 @@ export const featureKeys = (): string[] => [...FEATURE_KEYS];
 /** Only the contract's keys of a feature map (drops retired ones). */
 export const contractFeatures = (m: Features): Features =>
   Object.fromEntries(Object.entries(m).filter(([k]) => (FEATURE_KEYS as readonly string[]).includes(k)));
+/** Only the contract's limits (drops a retired one, e.g. the removed site builder's AI edits). */
+export const contractLimits = (m: Limits): Limits =>
+  Object.fromEntries(Object.entries(m).filter(([k]) => (LIMIT_KEYS as readonly string[]).includes(k)));
 export const featureLabel = (k: string) => (FEATURE_LABELS as Record<string, { en: string }>)[k]?.en ?? k;
 /** The input label of each contract limit (CONTRACTS.md 8.3); a new limit without one fails typecheck. */
 export const LIMIT_LABELS: Record<LimitKey, string> = {
-  siteBuilderAiEditsPerMonth: "AI site edits per month",
   phoneAgentMinutesPerMonth: "Phone agent minutes per month",
 };
 /** A plan's or tenant's value of a limit (else the contract default), as input text. */

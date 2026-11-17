@@ -5,7 +5,6 @@ import { Card, ErrorNotice, Field, Notice, Reason, Status, fmtDate, useAction, u
 import { SaveButton, useDirty } from "./save";
 import { CopyButton } from "./CopyButton";
 import { SkelCard, SkelPage } from "./Skeleton";
-import { Slot } from "../slots";
 import { InfoTip } from "./InfoTip";
 
 const ENV_LABEL: Record<string, string> = { dev: "Dev", prod: "Production", main: "Main" };
@@ -43,16 +42,12 @@ export default function WebsiteTab({ tenant, refreshed = 0 }: { tenant: Tenant; 
     </SkelPage>
   );
   if (!data) return <ErrorNotice error={error ?? "Not found"} onRetry={() => void retry()} />;
-  const builder = <Slot id="tenant.website.siteBuilder" features={tenant.entitlements?.features} props={{ tenantId: tenant.tenantId }} />;
   if (!data.enabled) {
     return (
-      <>
       <Notice kind="info">
         Site repos aren't switched on in this environment yet: this environment's GitHub App key has to be stored first
         (CUSTOMER-SITE-RUNBOOK.md). Until then the restaurant uses the shared site.
       </Notice>
-      {builder}
-      </>
     );
   }
   const test = data.kind === "test";
@@ -69,7 +64,6 @@ export default function WebsiteTab({ tenant, refreshed = 0 }: { tenant: Tenant; 
           {!readOnly && <Archive site={data} tenant={tenant} onChanged={reload} />}
         </>
       )}
-      {builder}
     </div>
   );
 }

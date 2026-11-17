@@ -13,7 +13,7 @@ import { CopyButton } from "../components/CopyButton";
 import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_LABELS, contractFeatures, contractLimits, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
@@ -390,7 +390,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
       await api.setPlan(tenant.tenantId, {
         planId: tenant.planId,
         overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: contractFeatures(tenant.entitlements.features),
-                     ...(tenant.entitlements.limits ? { limits: tenant.entitlements.limits } : {}) },
+                     ...(tenant.entitlements.limits ? { limits: contractLimits(tenant.entitlements.limits) } : {}) },
       });
       return api.createLocation(tenant.tenantId, compact(f) as LocationInput);
     });

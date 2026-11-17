@@ -40,10 +40,10 @@ def test_create_drops_unknown_feature_keys(aws, terminal_retired):
     assert sorted(_ever(body["tenantId"])) == ["reservations", "waitlist"]
 
 
-@pytest.mark.parametrize("value", [-1, 1001, 2.5, True, "3"])
+@pytest.mark.parametrize("value", [-1, 100001, 2.5, True, "3"])
 def test_limit_bounds(aws, tenant, value):
-    status, body = _plan(tenant, {"planId": "starter", "overrides": {"limits": {"siteBuilderAiEditsPerMonth": value}}})
-    assert status == 400 and "overrides.limits.siteBuilderAiEditsPerMonth" in body["fields"]
+    status, body = _plan(tenant, {"planId": "starter", "overrides": {"limits": {"phoneAgentMinutesPerMonth": value}}})
+    assert status == 400 and "overrides.limits.phoneAgentMinutesPerMonth" in body["fields"]
 
 
 def test_unknown_limit_and_bad_shape(aws, tenant):
@@ -54,14 +54,35 @@ def test_unknown_limit_and_bad_shape(aws, tenant):
 def test_plan_limits_copied_and_overridden(aws, tenant):
     aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": "PLAN#starter"}, "SK": {"S": "PLAN"}},
                            UpdateExpression="SET limits = :l",
-                           ExpressionAttributeValues={":l": {"M": {"siteBuilderAiEditsPerMonth": {"N": "10"}}}})
+                           ExpressionAttributeValues={":l": {"M": {"phoneAgentMinutesPerMonth": {"N": "10"}}}})
     plans = {p["planId"]: p for p in call("GET /platform/plans")[1]["plans"]}
-    assert plans["starter"]["limits"] == {"siteBuilderAiEditsPerMonth": 10} and plans["growth"]["limits"] == {}
-    assert _plan(tenant, {"planId": "starter"})[1]["tenant"]["entitlements"]["limits"] == {"siteBuilderAiEditsPerMonth": 10}
-    body = _plan(tenant, {"planId": "starter", "overrides": {"limits": {"siteBuilderAiEditsPerMonth": 1000}}})[1]
-    assert body["tenant"]["entitlements"]["limits"] == {"siteBuilderAiEditsPerMonth": 1000}
-    body = _plan(tenant, {"planId": "growth", "overrides": {"limits": {"siteBuilderAiEditsPerMonth": 0}}})[1]
-    assert body["tenant"]["entitlements"]["limits"] == {"siteBuilderAiEditsPerMonth": 0}
+    assert plans["starter"]["limits"] == {"phoneAgentMinutesPerMonth": 10} and plans["growth"]["limits"] == {}
+    assert _plan(tenant, {"planId": "starter"})[1]["tenant"]["entitlements"]["limits"] == {"phoneAgentMinutesPerMonth": 10}
+    body = _plan(tenant, {"planId": "starter", "overrides": {"limits": {"phoneAgentMinutesPerMonth": 100000}}})[1]
+    assert body["tenant"]["entitlements"]["limits"] == {"phoneAgentMinutesPerMonth": 100000}
+    body = _plan(tenant, {"planId": "growth", "overrides": {"limits": {"phoneAgentMinutesPerMonth": 0}}})[1]
+    assert body["tenant"]["entitlements"]["limits"] == {"phoneAgentMinutesPerMonth": 0}
+
+
+def test_removed_site_builder_keys_on_plans_are_ignored(aws, tenant):
+    """The site builder was removed: a stored PLAN row that still has the
+    siteBuilder feature or its AI edit limit is shown and copied without
+    them, and an older console tab that sends the limit is not refused."""
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": "PLAN#starter"}, "SK": {"S": "PLAN"}},
+                           UpdateExpression="SET limits = :l, features.siteBuilder = :t",
+                           ExpressionAttributeValues={":l": {"M": {"siteBuilderAiEditsPerMonth": {"N": "10"},
+                                                                   "phoneAgentMinutesPerMonth": {"N": "5"}}},
+                                                      ":t": {"BOOL": True}})
+    plans = {p["planId"]: p for p in call("GET /platform/plans")[1]["plans"]}
+    assert plans["starter"]["limits"] == {"phoneAgentMinutesPerMonth": 5}
+    assert "siteBuilder" not in plans["starter"]["features"]
+    status, body = _plan(tenant, {"planId": "starter",
+                                  "overrides": {"features": {"siteBuilder": True},
+                                                "limits": {"siteBuilderAiEditsPerMonth": 25}}})
+    assert status == 200, body
+    ent = body["tenant"]["entitlements"]
+    assert ent["limits"] == {"phoneAgentMinutesPerMonth": 5} and "siteBuilder" not in ent["features"]
+    assert "siteBuilder" not in ent.get("featuresEver", [])
 
 
 def test_feature_routes_merge_and_refuse_duplicates():
@@ -151,7 +172,7 @@ def test_forward_maps_errors(fwd, aws, tenant, monkeypatch):
 def test_forward_refuses_wrong_target():
     from app.features import _forward
     with pytest.raises(ValueError):
-        _forward.forward("site-builder", "meta-ads.tenant.get")
+        _forward.forward("phone-agent", "meta-ads.tenant.get")
 
 
 def _ever(tenant_id):

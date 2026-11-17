@@ -34,11 +34,6 @@ export const FEATURE_HELP: Record<FeatureKey, FeatureHelp> = {
     about: "The restaurant connects its Meta account and creates ad campaigns in Booqy Admin, with help writing the text. Every campaign has an end date and a budget, and spend per month has a cap, so costs never run away.",
     example: "A pizzeria spends 1 500 SEK over two weeks on an Instagram ad for its new lunch deal.",
   },
-  siteBuilder: {
-    line: "Build and publish the restaurant's own website.",
-    about: "The restaurant edits its site in Booqy Admin: pages, texts, pictures and colours, with booking and ordering built in. Changes stay a draft until they press publish, and an older version can be put back.",
-    example: "The owner adds a photo of the summer terrace and new opening hours, checks the draft, then publishes.",
-  },
   guestCrm: {
     line: "One profile per guest, built from bookings and orders.",
     about: "Booqy joins each guest's bookings and orders into one profile under Gäster in Booqy Admin, so the restaurant sees who comes often and who has not been back. Guests can be grouped by rules and a group used for email offers.",
