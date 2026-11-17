@@ -15,8 +15,8 @@ export const FEATURE_HELP: Record<FeatureKey, FeatureHelp> = {
     example: "A couple books a table for two on Friday at 19:00 from their phone while the restaurant is closed. It is in the bookings list the next morning.",
   },
   ordering: {
-    line: "Guests order food online, for pickup or at the table.",
-    about: "Guests order from the menu on the restaurant's site and pay online, then get an SMS when the food is ready to pick up. At the table, guests scan the table's QR code and order from their phone; staff bring the food.",
+    line: "Guests order food online for pickup.",
+    about: "Guests order from the menu on the restaurant's site and pay online, then get an SMS when the food is ready to pick up. There is no ordering or paying by QR code at the table: guests at the restaurant pay in its own till.",
     example: "A guest orders two pizzas at 17:30 on the way home, pays by card and collects them when the \"ready\" SMS arrives.",
   },
   catering: {

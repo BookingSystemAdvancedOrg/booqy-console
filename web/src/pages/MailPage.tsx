@@ -25,7 +25,7 @@ const BODY_HINT =
 
 const SAMPLE_SUBJECT = "Nyheter från Booqy";
 const SAMPLE_BODY =
-  "Hej!\n\nHär är ett exempel på hur ett utskick ser ut med er mall.\n\n# Nytt den här månaden\n\n- Bordsbokning i 3D\n- Beställning vid bordet med QR-kod\n\nLäs mer på https://booqy.se";
+  "Hej!\n\nHär är ett exempel på hur ett utskick ser ut med er mall.\n\n# Nytt den här månaden\n\n- Bordsbokning i 3D\n- Presentkort på hemsidan\n\nLäs mer på https://booqy.se";
 
 /** Calls fn 400 ms after the last change of deps. */
 function useDebounced<T>(fn: () => Promise<T>, deps: unknown[], wait = 400) {
