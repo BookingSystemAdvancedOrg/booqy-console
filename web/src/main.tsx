@@ -1,4 +1,4 @@
-import { BRANCHES, BRANCH_LABEL, LEAVES, branchVisible, treeOf } from "./settingsTree";
+import { BRANCHES, BRANCH_LABEL, LEAVES, branchVisible, leafPath, treeOf } from "./settingsTree";
 import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -152,6 +152,13 @@ function ConsolePalette({ onSignOut }: { onSignOut: () => void }) {
           run: () => { if (confirmLeave()) navigate(`/settings#${b}`, { state: { leaf: l.label } }); },
         })),
       ]),
+      // Settings that link to their own page (Profile picture, Email brand template).
+      ...LEAVES.flatMap((l): PaletteItem[] => {
+        if (!l.to) return [];
+        const to = l.to;
+        const [tree, place] = leafPath(l);
+        return [{ id: `s-${to}`, group: "Settings", label: l.label, hint: place === l.label ? tree : place, icon: "gear", searchOnly: true, keywords: l.keywords, run: () => go(to) }];
+      }),
       ...recent
         .filter((p) => p !== here)
         .map(navFor)
