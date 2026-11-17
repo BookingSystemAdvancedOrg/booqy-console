@@ -1,7 +1,9 @@
 /// <reference types="vitest/config" />
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { helpCorpusPlugin } from "./scripts/help-corpus.mjs";
+import { devBadgePlugin, isDevBuild } from "./scripts/dev-badge.mjs";
 import { WHATS_NEW, latestN } from "./src/whatsNew.ts";
 
 /**
@@ -27,8 +29,22 @@ function whatsNewPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), helpCorpusPlugin(), whatsNewPlugin()],
+const root = fileURLToPath(new URL(".", import.meta.url));
+
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    react(),
+    helpCorpusPlugin(),
+    whatsNewPlugin(),
+    // DEV badge on the app icons, dev only: the dev server or a deploy with
+    // VITE_ENVIRONMENT=dev. Prod and anything unknown stay untouched.
+    devBadgePlugin({
+      root,
+      devIconPath: `${root}../desktop/dev-icon.cjs`,
+      decide: (command, m) =>
+        isDevBuild({ command, mode: m, environment: loadEnv(mode, root, "").VITE_ENVIRONMENT }),
+    }),
+  ],
   server: { port: 5173, strictPort: true }, // 5173 is an allowed sign-in callback outside prod
   build: { sourcemap: false },
   test: {
@@ -36,4 +52,4 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     include: ["src/**/*.test.{ts,tsx}"],
   },
-});
+}));
