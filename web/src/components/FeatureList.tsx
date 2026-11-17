@@ -66,6 +66,9 @@ export function FeatureList({ keys, checked, onToggle, changed }: {
   );
 }
 
+/** The phone layout (phoneTargets.css, Select.tsx): the details open as a bottom sheet. */
+const isPhone = () => { try { return window.matchMedia("(max-width: 640px)").matches; } catch { return false; } };
+
 function FeaturePopover({ id, title, about, example, anchor, onClose }: {
   id: string; title: string; about: string; example: string;
   anchor: HTMLButtonElement | null;
@@ -73,21 +76,18 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
 }) {
   const pop = useRef<HTMLDivElement>(null);
   const titleId = `${id}-t`;
+  const sheet = isPhone();
   useLayoutEffect(() => {
     const el = pop.current;
-    if (!el || !anchor) return;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    if (sheet || !anchor) return;   // phones: a bottom sheet, placed by CSS
     const place = () => {
       const b = anchor.getBoundingClientRect();
-      const row = anchor.closest(".feat")?.getBoundingClientRect() ?? b;
-      const edge = 12, gap = 6, vw = document.documentElement.clientWidth || window.innerWidth;
-      // Phones: stop above the bottom navigation, so it never covers the text.
-      const bar = document.querySelector(".tabbar")?.getBoundingClientRect();
-      const vh = bar && bar.height > 0 && bar.top < window.innerHeight ? bar.top : window.innerHeight;
-      // Phones: as wide as the row (inside the window). Larger screens: up to 360 px, right edge at the "?".
-      const width = vw <= 640 ? Math.min(row.width, vw - 2 * edge) : Math.min(360, vw - 2 * edge);
-      const left = vw <= 640
-        ? Math.min(Math.max(edge, row.left), vw - width - edge)
-        : Math.min(Math.max(edge, b.right - width), vw - width - edge);
+      const edge = 12, gap = 6, vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+      // Up to 360 px, right edge at the "?", always inside the window.
+      const width = Math.min(360, vw - 2 * edge);
+      const left = Math.min(Math.max(edge, b.right - width), vw - width - edge);
       el.style.width = `${Math.round(width)}px`;
       el.style.left = `${Math.round(left)}px`;
       el.style.maxHeight = "";
@@ -102,15 +102,16 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
       el.dataset.side = top >= b.bottom ? "below" : "above";
     };
     place();
-    el.focus({ preventScroll: true });
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
-  }, [anchor]);
+  }, [anchor, sheet]);
   useEffect(() => {
     const down = (e: PointerEvent) => {
       const t = e.target as Node;
       if (pop.current?.contains(t) || anchor?.contains(t)) return;
+      // The scrim closes on its own click, so the tap never lands on a checkbox under it.
+      if (t instanceof Element && t.classList.contains("feat-scrim")) return;
       onClose(false);
     };
     const key = (e: KeyboardEvent) => {
@@ -123,7 +124,10 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
     return () => { document.removeEventListener("pointerdown", down, true); document.removeEventListener("keydown", key, true); };
   }, [anchor, onClose]);
   return createPortal(
-    <div ref={pop} id={id} role="dialog" aria-modal="false" aria-labelledby={titleId} tabIndex={-1} className="feat-pop"
+    <>
+    {sheet && <div className="feat-scrim" aria-hidden="true" onClick={() => onClose(false)} />}
+    <div ref={pop} id={id} role="dialog" aria-modal="false" aria-labelledby={titleId} tabIndex={-1}
+         className={`feat-pop${sheet ? " feat-pop--sheet" : ""}`}
          onKeyDown={(e) => {
            // Nothing to tab to inside: Tab goes back to the "?" and closes.
            if (e.key === "Tab") { e.preventDefault(); onClose(true); }
@@ -132,10 +136,12 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
            const to = e.relatedTarget as Node | null;
            if (to && !pop.current?.contains(to) && !anchor?.contains(to)) onClose(false);
          }}>
+      {sheet && <div className="feat-pop__grip" aria-hidden="true" />}
       <p id={titleId} className="feat-pop__title">{title}</p>
       <p className="feat-pop__about">{about}</p>
       <p className="feat-pop__example"><span className="feat-pop__label">Example:</span> {example}</p>
-    </div>,
+    </div>
+    </>,
     document.body,
   );
 }

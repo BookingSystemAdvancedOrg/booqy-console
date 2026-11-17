@@ -26,7 +26,7 @@ export const FEATURE_HELP: Record<FeatureKey, FeatureHelp> = {
   },
   marketing: {
     line: "See site visits and send email offers to guests.",
-    about: "Counts visits to the restaurant's site without cookies and shows which campaign brought them. Sends email campaigns only to guests who said yes to offers when they booked, with a one click unsubscribe in every email.",
+    about: "Counts visits to the restaurant's site without cookies and shows which campaign brought them. Sends email campaigns only to guests who said yes to offers when they booked or ordered, with a one click unsubscribe in every email.",
     example: "Before Mother's Day the restaurant emails its brunch menu to every guest who said yes to offers.",
   },
   metaAds: {
@@ -36,7 +36,7 @@ export const FEATURE_HELP: Record<FeatureKey, FeatureHelp> = {
   },
   siteBuilder: {
     line: "Build and publish the restaurant's own website.",
-    about: "The restaurant edits its site in Booqy Admin: pages, texts, pictures and colours, with booking and ordering built in. Changes stay a draft until they press publish, and AI can help with edits (a set number per month).",
+    about: "The restaurant edits its site in Booqy Admin: pages, texts, pictures and colours, with booking and ordering built in. Changes stay a draft until they press publish, and an older version can be put back.",
     example: "The owner adds a photo of the summer terrace and new opening hours, checks the draft, then publishes.",
   },
   guestCrm: {
@@ -81,7 +81,7 @@ export const FEATURE_HELP: Record<FeatureKey, FeatureHelp> = {
   },
   events: {
     line: "Sell tickets to events, like a quiz or jazz night.",
-    about: "The restaurant creates an event with dates, ticket types and prices, and guests buy tickets online. Each ticket has a QR code that staff scan at the door. Guests can give a ticket away or resell it at the price they paid.",
+    about: "The restaurant creates an event with dates, ticket types and prices, and guests buy tickets online. Each ticket has a QR code that staff scan at the door. Guests can give a ticket away, and if the restaurant allows it, resell it at the price they paid.",
     example: "A bar sells 60 tickets at 150 SEK for a jazz evening, and staff scan each ticket at the door.",
   },
   phoneAgent: {

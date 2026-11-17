@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FEATURE_KEYS, FEATURE_LABELS } from "../contracts";
 import { FEATURE_HELP } from "../featureHelp";
 import { FeatureList } from "./FeatureList";
@@ -108,5 +108,24 @@ describe("FeatureList", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Gäster");
     fireEvent.click(screen.getByRole("button", { name: "About Online ordering" }));
     expect(screen.getByRole("dialog")).toHaveTextContent('"ready" SMS');
+  });
+  describe("on a phone", () => {
+    afterEach(() => { vi.unstubAllGlobals(); });
+    it("opens the details as a bottom sheet over a scrim, and a tap on the scrim closes it without reaching the list", () => {
+      vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("640"), media: q, addEventListener() {}, removeEventListener() {} }));
+      render(<Harness />);
+      fireEvent.click(screen.getByRole("button", { name: "About Catering" }));
+      const dialog = screen.getByRole("dialog", { name: "Catering" });
+      expect(dialog).toHaveClass("feat-pop--sheet");
+      expect(dialog.style.top).toBe("");
+      const scrim = document.querySelector(".feat-scrim")!;
+      expect(scrim).not.toBeNull();
+      fireEvent.pointerDown(scrim);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();   // stays until the click, so no tap falls through
+      fireEvent.click(scrim);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.querySelector(".feat-scrim")).toBeNull();
+      expect(screen.getByLabelText("Catering")).not.toBeChecked();
+    });
   });
 });

@@ -34,7 +34,21 @@
 .feat-pop p + p { margin-top: 8px; }
 .feat-pop__title { font-weight: 600; font-size: 14px; }
 .feat-pop__label { font-weight: 600; }
+/* Phones: a sheet from the bottom over a dim scrim, as the dropdown (select.css). */
+.feat-scrim { position: fixed; inset: 0; z-index: 399; background: var(--dim, rgb(26 18 14 / 0.38)); }
+.feat-pop--sheet {
+  left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: min(70vh, 560px);
+  padding: 8px 18px max(18px, env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0; font-size: 15px;
+  background: var(--liquid-sheen, none), rgb(var(--bq-snow-rgb) / 0.97);
+}
+:root[data-theme="dark"] .feat-pop--sheet { background: var(--liquid-sheen, none), rgb(36 25 19 / 0.97); }
+.feat-pop--sheet .feat-pop__title { font-size: 16px; }
+.feat-pop__grip { width: 40px; height: 4px; margin: 2px auto 12px; border-radius: 2px; background: var(--print-2); opacity: 0.4; }
 @media (prefers-reduced-motion: no-preference) {
   .feat-pop { animation: feat-pop-in 140ms var(--ease) both; }
+  .feat-scrim { animation: feat-pop-in 200ms var(--ease) both; }
+  .feat-pop--sheet { animation: feat-sheet-in 280ms var(--ease) both; }
 }
 @keyframes feat-pop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes feat-sheet-in { from { transform: translateY(100%); } }
