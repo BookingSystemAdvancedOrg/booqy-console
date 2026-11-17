@@ -330,7 +330,7 @@ describe("BillingTab refunds and credits", () => {
     await user.click(screen.getByRole("button", { name: /Refund or credit \(1\)/ }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("radio", { name: "Back to the card" })).toBeDisabled();
-    expect(within(dialog).getByRole("radio", { name: "Credit next invoice" })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByRole("radio", { name: "Lower what is owed" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("shows a Booqy fault on one invoice with Copy details, a Stripe refusal without", async () => {

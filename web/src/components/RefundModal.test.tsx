@@ -30,4 +30,17 @@ describe("RefundModal", () => {
     resolve({ results: [{ invoiceId: "in_1", ok: true }], ok: 1, failed: 0 });
     await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
+
+  it("words the credit by the invoice's state: an open invoice lowers what is owed", () => {
+    const open = { ...invoice, invoiceId: "in_2", number: "B-2", status: "open", amountPaidSek: 0, amountRemainingSek: 500, refundable: false } as Invoice;
+    const { unmount } = render(<RefundModal tenantId="t-1" invoices={[open]} onClose={() => {}} onDone={() => {}} />);
+    expect(screen.getByRole("radio", { name: "Lower what is owed" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("radio", { name: "Credit next invoice" })).toBeNull();
+    unmount();
+    const paid = render(<RefundModal tenantId="t-1" invoices={[invoice]} onClose={() => {}} onDone={() => {}} />);
+    expect(screen.getByRole("radio", { name: "Credit next invoice" })).toBeInTheDocument();
+    paid.unmount();
+    render(<RefundModal tenantId="t-1" invoices={[invoice, open]} onClose={() => {}} onDone={() => {}} />);
+    expect(screen.getByRole("radio", { name: "Lower owed or next invoice" })).toBeInTheDocument();
+  });
 });
