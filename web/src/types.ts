@@ -836,3 +836,21 @@ export type SupportReport = {
   handledAt: string | null;
   handledBy: string | null;
 };
+
+// ---------------------------------------------------------------- printers
+/** A location's kitchen printer (application shared/printing.py, Print table). */
+export type PrinterKind = "kok" | "dryck" | "annat";
+export type Printer = {
+  deviceId: string; name: string; kind: PrinterKind; protocol: "star" | "epson" | "sim";
+  online: boolean; lastSeenAt?: string; createdAt?: string; simulated?: boolean;
+};
+/** ok: every printer connected; offline: one or more not; none: no printer;
+ * skipped: no printer, the owner chose "Inga skrivare än". */
+export type PrinterStatus = "ok" | "offline" | "none" | "skipped";
+export type LocationPrinters = {
+  locationId: string; status: PrinterStatus; setupSkipped: boolean; autoPrint: boolean; printers: Printer[];
+};
+export type PrinterSummary = { status: PrinterStatus | null; printers: number; offline: number; locations: number };
+/** A new printer: the connection details are returned once. */
+export type AddedPrinter = { printer: Printer; username?: string; secret?: string; serverUrl?: string | null };
+

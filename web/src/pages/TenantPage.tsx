@@ -25,6 +25,7 @@ import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
+import { PrintersCard } from "../components/PrintersCard";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -124,7 +125,10 @@ export default function TenantPage() {
       </nav>
 
       {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
-      {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />}
+      {tab === "Locations" && <>
+        <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
+        <PrintersCard tenant={t} locations={data.locations} />
+      </>}
       {tab === "Users" && <Users tenant={t} refreshed={refreshed} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} refreshed={refreshed} />}

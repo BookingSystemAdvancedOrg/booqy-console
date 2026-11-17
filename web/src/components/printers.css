@@ -1,0 +1,43 @@
+/* Printers card (Locations tab) and the Printers badge in Customers. */
+.status--printers-ok { color: var(--ok); }
+.status--printers-offline { color: var(--ink-red); }
+.status--printers-none { color: var(--warn); }
+.status--printers-skipped { color: var(--print-2); }
+
+.printers { display: grid; gap: 18px; }
+.printers__loc + .printers__loc { padding-top: 14px; border-top: 1.5px dashed var(--line-soft); }
+.printers__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
+.printers__name { font-size: 15px; }
+.printers__add { margin-left: auto; }
+.printers__empty { margin: 4px 0 0; }
+.printers__no { color: var(--ink-red); font-weight: 650; }
+/* One column grid for every location's table, so they line up. */
+@media (min-width: 641px) {
+  .printers__table { table-layout: fixed; width: 100%; }
+  .printers__table th:nth-child(1) { width: 22%; }
+  .printers__table th:nth-child(2) { width: 14%; }
+  .printers__table th:nth-child(3) { width: 13%; }
+  .printers__table th:nth-child(4) { width: 14%; }
+  .printers__table td:first-child { overflow-wrap: anywhere; }
+}
+.printers__actions { white-space: normal; }
+.printers__actions .btn { margin-left: 4px; }
+.printers__test { display: inline-flex; flex-direction: column; align-items: flex-end; vertical-align: top; }
+.printers__test .save-hint { display: none; }
+.printers__test .notice { margin: 6px 0 0; white-space: normal; text-align: left; max-width: 260px; }
+.printers__creds dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.printers__creds .mono { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .printers__add { margin-left: 0; }
+  .table.table > tbody > tr > td.printers__actions { white-space: normal; text-align: left !important; }
+  .printers__actions .btn { margin: 4px 6px 0 0; }
+  .printers__test { align-items: flex-start; }
+}
+
+/* The compact phone list (name and status only): an offline printer shows too. */
+@media (max-width: 640px) {
+  .table.table.table--slim > tbody > tr.row-link.row-link > td.cell-printers--alert { display: flex; flex: none; order: 0; padding: 0 !important; }
+  .table.table--slim > tbody > tr > td.cell-printers--alert::before { content: none; }
+  .table.table--slim > tbody > tr > td.cell-printers--alert .status { font-size: 9.5px; padding: 2px 6px 1px; border-width: 1.5px; }
+}
