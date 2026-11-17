@@ -12,7 +12,7 @@
 //           BOOQY_AZURE_SIGN_PROFILE (+ AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET)
 import { build } from 'electron-builder'
 import devIcon from './dev-icon.cjs'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 
 const { values } = parseArgs({
@@ -43,13 +43,18 @@ const productName = (isProd ? config.productName : `${config.productName} Dev`) 
 const appId = (isProd ? config.appId : `${config.appId}.dev`) + (testSuffix ? `.${testSuffix.toLowerCase()}` : '')
 const fileBase = (isProd ? config.fileName : `${config.fileName}-dev`) + (testSuffix ? `-${testSuffix.toLowerCase()}` : '')
 
-// Adressen bakas in i appen; main.cjs läser den här filen.
-writeFileSync(new URL('./env.json', import.meta.url), JSON.stringify({ env, url }, null, 2) + '\n')
+// Adressen bakas in i appen; main.cjs läser den här filen. appId behövs på
+// Windows (setAppUserModelId), så att aktivitetsfältet och notiserna hör till
+// genvägen med appens ikon.
+writeFileSync(new URL('./env.json', import.meta.url), JSON.stringify({ env, url, appId }, null, 2) + '\n')
 
 // Ikonen: produktion får logotypen som den är. Utvecklingsbygget får samma
 // ikon med en DEV-bricka uppe till höger (ritas nu, till build/dev/), så att
 // de två apparna går att skilja åt i Dock och aktivitetsfält. Se dev-icon.cjs.
 const icons = devIcon.iconsFor(env)
+// Fönstrets ikon på Linux (aktivitetsfält, Alt-Tab): samma som appikonen,
+// med DEV-brickan i dev. main.cjs läser app-icon.png.
+copyFileSync(new URL(`./${icons.window}`, import.meta.url), new URL('./app-icon.png', import.meta.url))
 
 const env_ = process.env
 const macIdentity = env_.BOOQY_MAC_IDENTITY || null
@@ -78,8 +83,12 @@ const builderConfig = {
   copyright: 'Booqy',
   artifactName: `${fileBase}-\${version}-\${os}-\${arch}.\${ext}`,
   directories: { output: `release/${env}`, buildResources: 'build' },
-  files: ['main.cjs', 'shell-core.cjs', 'updates.cjs', 'update-core.cjs', 'desktop.config.json', 'env.json', 'package.json'],
-  extraMetadata: { name: fileBase, productName, ...(process.env.BOOQY_TEST_VERSION ? { version: process.env.BOOQY_TEST_VERSION } : {}) },
+  files: ['main.cjs', 'shell-core.cjs', 'updates.cjs', 'update-core.cjs', 'linux-menu.cjs', 'desktop.config.json', 'env.json', 'app-icon.png', 'package.json'],
+  // desktopName: Electron gör app_id (Wayland) och WM_CLASS (X11) av den, utan
+  // ".desktop". Då heter fönstret som .desktop-filen (fileBase, både från
+  // deb/AppImage och install.sh) och StartupWMClass blir samma namn, så att
+  // skrivbordet visar menypostens ikon på fönstret. Se linux.syncDesktopName.
+  extraMetadata: { name: fileBase, productName, desktopName: `${fileBase}.desktop`, ...(process.env.BOOQY_TEST_VERSION ? { version: process.env.BOOQY_TEST_VERSION } : {}) },
   asar: true,
   // Härdning av själva Electron-binären.
   electronFuses: {
@@ -100,7 +109,8 @@ const builderConfig = {
       { target: 'dmg', arch: ['arm64', 'x64'] },
       { target: 'zip', arch: ['arm64', 'x64'] },
     ],
-    icon: icons.app,
+    // Dev: en färdig .icns med pixelbrickan i 16 och 32 (dev-icon.cjs).
+    icon: icons.mac,
     // Utan certifikat: ad hoc-signerad ("-"), kör lokalt men Gatekeeper
     // varnar på andra datorer. Se README.md, "Signering".
     identity: macIdentity ?? '-',
@@ -140,6 +150,7 @@ const builderConfig = {
     maintainer: 'Booqy <ops@booqy.se>',
     synopsis: config.description,
     executableName: fileBase,
+    syncDesktopName: true,
   },
   // Uppdateringskanalen (latest.yml, latest-linux.yml) för electron-updater på
   // Windows och AppImage. Inget laddas upp härifrån: publish.mjs gör det i CI.

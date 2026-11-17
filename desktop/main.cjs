@@ -13,6 +13,7 @@ const path = require('node:path')
 const config = require('./desktop.config.json')
 const { setUpUpdates } = require('./updates.cjs')
 const { offlineHtml, forgetOnClose } = require('./shell-core.cjs')
+const { refreshMenuEntry, readIconSet } = require('./linux-menu.cjs')
 const target = readTarget()
 const START_URL = new URL(target.url)
 const ORIGIN = START_URL.origin
@@ -43,7 +44,33 @@ function readTarget() {
   // bara i opackade körningar så att en installerad app aldrig kan pekas om.
   if (!app.isPackaged && process.env.BOOQY_URL) url = process.env.BOOQY_URL
   if (!url) throw new Error(`Ingen adress för miljön "${env}" i desktop.config.json`)
-  return { env, url }
+  return { env, url, appId: built?.appId ?? null }
+}
+
+/**
+ * Fönstrets ikon på Linux: app-icon.png, som build.mjs packar (med DEV-brickan
+ * i dev). macOS tar ikonen från appen och Windows från .exe-filen, båda redan
+ * rätt per miljö. Saknas filen (npm start) gäller Electrons egen.
+ */
+function windowIcon() {
+  if (process.platform !== 'linux') return {}
+  const file = path.join(__dirname, 'app-icon.png')
+  return fs.existsSync(file) ? { icon: file } : {}
+}
+
+/** Linux-AppImage från install.sh: menyns ikon följer appens. Se linux-menu.cjs. */
+function refreshLinuxMenu() {
+  if (process.platform !== 'linux' || !process.env.APPIMAGE) return
+  try {
+    const icon = fs.readFileSync(path.join(__dirname, 'app-icon.png'))
+    // Filnamnet är också fönstrets WM_CLASS och app_id (desktopName, build.mjs).
+    const slug = require('./package.json').name
+    // Storlekarna i AppImagen (APPDIR sätts av AppImagens körning).
+    const iconSet = readIconSet(process.env.APPDIR, slug)
+    refreshMenuEntry({ home: os.homedir(), slug, wmClass: slug, icon, iconSet })
+  } catch {
+    /* menyn är bara kosmetik: får aldrig stoppa appen */
+  }
 }
 
 function isAppUrl(raw) {
@@ -254,6 +281,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     title: APP_NAME,
+    ...windowIcon(),
     ...glassWindowOptions(),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: secureWebPreferences,
@@ -326,6 +354,7 @@ app.on('web-contents-created', (_e, contents) => {
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
           backgroundColor: '#fdfaf6',
+          ...windowIcon(),
           webPreferences: secureWebPreferences,
         },
       }
@@ -419,6 +448,9 @@ function buildMenu() {
 
 // ---- Start ----------------------------------------------------------------
 app.enableSandbox()
+// Windows: samma id som genvägen installationsprogrammet skapar (appId), så
+// att aktivitetsfältet och notiserna visar genvägens ikon (Dev-ikonen i dev).
+if (process.platform === 'win32' && target.appId) app.setAppUserModelId(target.appId)
 app.setAboutPanelOptions({ applicationName: APP_NAME, copyright: 'Booqy' })
 
 if (!app.requestSingleInstanceLock()) {
@@ -435,6 +467,7 @@ if (!app.requestSingleInstanceLock()) {
     keepSessionOnDisk()
     buildMenu()
     mainWindow = createWindow()
+    refreshLinuxMenu()
     // Nya versioner av skalet (latest.json bredvid installationsfilerna).
     updates = setUpUpdates({ baseUrl: config.downloads?.[target.env], getWindow: () => mainWindow, flush: flushCookies })
     app.on('activate', () => {

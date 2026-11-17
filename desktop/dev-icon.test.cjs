@@ -62,7 +62,7 @@ test('the production icon is a square tile with two clearly different colours', 
 test('production builds use the committed icon and nothing is generated', () => {
   const dir = sandbox()
   try {
-    assert.deepEqual(icon.iconsFor('prod', dir), { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons' })
+    assert.deepEqual(icon.iconsFor('prod', dir), { app: 'build/icon.png', mac: 'build/icon.png', win: 'build/icon.png', set: 'build/icons', window: 'build/icons/512x512.png' })
     assert.equal(fs.existsSync(path.join(dir, 'build', 'dev')), false)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -126,26 +126,145 @@ test('the badge sits on plain tile, clear of the logo and of the rounded corner'
   assert.doesNotThrow(() => icon.devIcon(base))
 })
 
-test('small sizes get a plain pill, larger sizes the letters', () => {
-  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+test('64 px and up get the drawn pill with its letters', () => {
+  for (const size of [64, 128, 256, 512]) {
     const dev = icon.devIcon(base, size)
     assert.equal(dev.width, size)
     assert.equal(dev.data.length, size * size * 4)
     const k = size / base.width
     const shape = icon.badgeShape({ x: tile.x * k, y: tile.y * k, size: tile.size * k })
-    // Count pixels inside the pill that are closer to the tile's colour than to the mark's: the letters.
+    // Pixels inside the pill that are closer to the tile's colour than to the mark's: the letters.
     let ink = 0
     for (let y = Math.floor(shape.box.y0); y <= Math.ceil(shape.box.y1); y++) {
       for (let x = Math.ceil(shape.pill.ax); x < Math.floor(shape.pill.bx); x++) {
         if (Math.abs(y + 0.5 - shape.pill.y) > shape.pill.r * 0.6) continue
         const p = rgb(dev, x, y)
-        const toTile = Math.abs(p[0] - colours.tile[0])
-        const toMark = Math.abs(p[0] - colours.mark[0])
-        if (toTile < toMark) ink++
+        if (Math.abs(p[0] - colours.tile[0]) < Math.abs(p[0] - colours.mark[0])) ink++
       }
     }
-    if (size < 64) assert.equal(ink, 0, `${size} px should be a plain pill`)
-    else assert.ok(ink > 0, `${size} px should show the letters`)
+    assert.ok(ink > 0, `${size} px should show the letters`)
+  }
+})
+
+test('the pixel letters are hand drawn on a whole-pixel grid', () => {
+  for (const [name, font] of Object.entries(icon.PIXEL_FONTS)) {
+    const rows = font.glyphs[0].length
+    for (const glyph of font.glyphs) {
+      assert.equal(glyph.length, rows, `${name}: every letter has the same height`)
+      for (const row of glyph) assert.match(row, new RegExp(`^[#.]{${glyph[0].length}}$`), `${name}: rows of one letter have one width`)
+    }
+  }
+  // What the owner sees at 24 and 32 px, pixel for pixel.
+  assert.deepEqual(icon.pixelBadge(icon.PIXEL_FONTS.small), [
+    ' ........... ',
+    '.##..###.#.#.',
+    '.#.#.#...#.#.',
+    '.#.#.##..#.#.',
+    '.#.#.#...#.#.',
+    '.##..###..#..',
+    ' ........... ',
+  ])
+  assert.deepEqual(icon.pixelBadge(icon.PIXEL_FONTS.tiny), [' ... ', '.##..', '.#.#.', '.#.#.', '.#.#.', '.##..', ' ... '])
+  assert.equal(icon.pixelFontFor(tile.size * (48 / base.width)), icon.PIXEL_FONTS.large)
+  assert.equal(icon.pixelFontFor(tile.size * (32 / base.width)), icon.PIXEL_FONTS.small)
+  assert.equal(icon.pixelFontFor(tile.size * (24 / base.width)), icon.PIXEL_FONTS.small)
+  assert.equal(icon.pixelFontFor(tile.size * (16 / base.width)), icon.PIXEL_FONTS.tiny)
+})
+
+test('below 64 px the badge is the pixel badge: crisp, top right, on the tile', () => {
+  for (const size of [16, 24, 32, 48]) {
+    const dev = icon.devIcon(base, size)
+    const plain = icon.resize(base, size)
+    const k = size / base.width
+    const scaled = { x: tile.x * k, y: tile.y * k, size: tile.size * k }
+    const grid = icon.pixelBadge(icon.pixelFontFor(scaled.size))
+    const at = icon.placePixelBadge(plain, scaled, grid)
+    assert.ok(at, `${size} px: the badge fits`)
+    // Top right: its right edge in the right quarter of the tile, its top in the upper quarter.
+    assert.ok(at.x + at.width > scaled.x + scaled.size * 0.75, `${size} px: not on the right`)
+    assert.ok(at.y < scaled.y + scaled.size * 0.25, `${size} px: not at the top`)
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = (y * size + x) * 4
+        const inside = x >= at.x && x < at.x + at.width && y >= at.y && y < at.y + at.height
+        const cell = inside ? grid[y - at.y][x - at.x] : ' '
+        // Alpha never changes; outside the badge the icon is the plain downscaled icon.
+        assert.equal(dev.data[i + 3], plain.data[i + 3])
+        if (cell === ' ') {
+          assert.deepEqual([...dev.data.subarray(i, i + 3)], [...plain.data.subarray(i, i + 3)], `${size} px: ${x},${y} changed outside the badge`)
+          continue
+        }
+        // Every badge pixel is fully opaque and exactly one of the two colours: no blur.
+        assert.equal(dev.data[i + 3], 255, `${size} px: badge pixel ${x},${y} is not on solid tile`)
+        assert.deepEqual([...dev.data.subarray(i, i + 3)], cell === '#' ? colours.tile : colours.mark, `${size} px: ${x},${y}`)
+      }
+    }
+  }
+})
+
+test('the macOS icon packs every size, the small ones as ARGB', () => {
+  const icns = icon.encodeIcns((size) => icon.devIcon(base, size))
+  assert.equal(icns.toString('latin1', 0, 4), 'icns')
+  assert.equal(icns.readUInt32BE(4), icns.length)
+  const seen = []
+  for (let at = 8; at < icns.length; ) {
+    const type = icns.toString('latin1', at, at + 4)
+    const length = icns.readUInt32BE(at + 4)
+    const body = icns.subarray(at + 8, at + length)
+    const [, size, format] = icon.ICNS_TYPES.find(([t]) => t === type)
+    const want = icon.devIcon(base, size)
+    if (format === 'png') {
+      assert.ok(Buffer.from(icon.decodePng(body).data).equals(Buffer.from(want.data)), `${type} is not the badged icon`)
+    } else {
+      assert.equal(body.toString('latin1', 0, 4), 'ARGB')
+      // Unpack the four planes (alpha, then premultiplied red, green, blue).
+      const n = size * size
+      const planes = []
+      let i = 4
+      for (let c = 0; c < 4; c++) {
+        const plane = []
+        while (plane.length < n) {
+          const ctl = body[i++]
+          if (ctl < 0x80) for (let k = 0; k <= ctl; k++) plane.push(body[i++])
+          else for (let k = 0, v = body[i++]; k < ctl - 0x80 + 3; k++) plane.push(v)
+        }
+        assert.equal(plane.length, n, `${type} plane ${c}`)
+        planes.push(plane)
+      }
+      assert.equal(i, body.length, `${type}: nothing left over`)
+      for (let p = 0; p < n; p++) {
+        const a = want.data[p * 4 + 3]
+        assert.equal(planes[0][p], a)
+        for (let c = 0; c < 3; c++) assert.equal(planes[c + 1][p], Math.round((want.data[p * 4 + c] * a) / 255))
+      }
+    }
+    seen.push(type)
+    at += length
+  }
+  assert.deepEqual(seen, icon.ICNS_TYPES.map(([t]) => t))
+})
+
+test('packBits round trips runs, literals and their limits', () => {
+  const unpack = (buf, n) => {
+    const out = []
+    let i = 0
+    while (out.length < n) {
+      const ctl = buf[i++]
+      if (ctl < 0x80) for (let k = 0; k <= ctl; k++) out.push(buf[i++])
+      else for (let k = 0, v = buf[i++]; k < ctl - 0x80 + 3; k++) out.push(v)
+    }
+    assert.equal(i, buf.length)
+    return out
+  }
+  for (const input of [
+    new Uint8Array(0),
+    Uint8Array.from([7]),
+    Uint8Array.from([1, 2]),
+    new Uint8Array(1000).fill(9),
+    Uint8Array.from({ length: 700 }, (_, k) => (k * 37) & 0xff),
+    Uint8Array.from({ length: 999 }, (_, k) => (k % 11 < 4 ? 5 : (k * 13) & 0xff)),
+  ]) {
+    assert.deepEqual(unpack(icon.packBits(input), input.length), [...input])
   }
 })
 
@@ -168,7 +287,7 @@ test('dev builds get the icon and the whole Linux set, with the badge', () => {
   const dir = sandbox()
   try {
     const icons = icon.iconsFor('dev', dir)
-    assert.deepEqual(icons, { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons' })
+    assert.deepEqual(icons, { app: 'build/dev/icon.png', mac: 'build/dev/icon.icns', win: 'build/dev/icon.ico', set: 'build/dev/icons', window: 'build/dev/icons/512x512.png' })
     const made = fs.readdirSync(path.join(dir, 'build', 'dev', 'icons')).sort()
     assert.deepEqual(made, setNames())
     for (const name of made) {
@@ -180,6 +299,11 @@ test('dev builds get the icon and the whole Linux set, with the badge', () => {
     }
     const app = icon.decodePng(fs.readFileSync(path.join(dir, icons.app)))
     assert.ok(Buffer.from(app.data).equals(Buffer.from(icon.devIcon(base).data)), 'build/dev/icon.png is not the badged icon')
+    // The Linux window icon is one of the badged set, never the plain one.
+    const win = icon.decodePng(fs.readFileSync(path.join(dir, icons.window)))
+    assert.ok(Buffer.from(win.data).equals(Buffer.from(icon.devIcon(base, 512).data)), 'the window icon is not the badged icon')
+    // macOS: the .icns written next to it is the one encodeIcns makes from the badged sizes.
+    assert.ok(fs.readFileSync(path.join(dir, icons.mac)).equals(icon.encodeIcns((size) => icon.devIcon(base, size))), 'icon.icns')
     // The production files in the same folder are untouched.
     for (const rel of ['icon.png', ...setNames().map((n) => path.join('icons', n))]) {
       assert.ok(fs.readFileSync(path.join(dir, 'build', rel)).equals(fs.readFileSync(path.join(BUILD, rel))), `${rel} changed`)
@@ -276,7 +400,7 @@ test('the pill keeps clear of the rounder corner macOS draws', () => {
 test('build.mjs and publish.mjs take every icon from iconsFor', () => {
   const build = fs.readFileSync(path.join(__dirname, 'build.mjs'), 'utf8')
   assert.ok(build.includes('const icons = devIcon.iconsFor(env)'))
-  assert.deepEqual(build.match(/^ *icon: .*$/gm).map((l) => l.trim()), ['icon: icons.app,', 'icon: icons.win,', 'icon: icons.set,'])
+  assert.deepEqual(build.match(/^ *icon: .*$/gm).map((l) => l.trim()), ['icon: icons.mac,', 'icon: icons.win,', 'icon: icons.set,'])
   const publish = fs.readFileSync(path.join(__dirname, 'publish.mjs'), 'utf8')
   assert.match(publish, /devIcon\.iconsFor\(values\.env\)\.set\}\/256x256\.png/)
   assert.ok(!publish.includes("'./build/icons/"))

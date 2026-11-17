@@ -274,7 +274,12 @@ function coloursOf(img) {
 /** Brickans mått som delar av rutans sida: avstånd till kanten, bredd, höjd. */
 // Avståndet räcker också till det rundare hörn macOS 26 och senare ritar i Dock.
 const BADGE = { inset: 0.065, width: 0.48, height: 0.2136 }
-/** Under den här storleken (px) ritas brickan utan bokstäver: de blir bara grus (Linux-uppsättningen och Windows .ico; macOS .icns skalas av electron-builder ur 1024-bilden). */
+/**
+ * Från den här storleken (px) ritas brickan som ovan: en pill med rundade
+ * bokstäver, kantutjämnad. Under den blir de streckade bokstäverna bara grus,
+ * så de små storlekarna (Windows .ico 16 till 48, Linux 16 till 48, macOS
+ * .icns 16 och 32) får en egen bricka ritad pixel för pixel: se PIXEL_FONTS.
+ */
 const LETTERS_FROM = 64
 
 /**
@@ -382,13 +387,142 @@ function stamp(img, tile, colours, { letters, strict }) {
   return img
 }
 
+// ------------------------------------------------- brickan i små storlekar
+
+/**
+ * Handritade pixelbokstäver för de små storlekarna, där varje bokstav är en
+ * hel pixel bred i varje streck: inga halvtäckta pixlar, alltså skarpt.
+ * '#' är bokstav (rutans färg), '.' är brickan (märkets färg).
+ *  - 7 rader (48 px): D och E 4 breda, V 5, en pixel mellan.
+ *  - 5 rader (24 och 32 px): 3 breda, en pixel mellan. Minsta storlek där
+ *    D, E och V går att läsa och skilja från varandra.
+ *  - 16 px: rutan är 12 pixlar bred, och "DEV" i 5 rader behöver 13 med
+ *    kanten. Där står bara ett D på brickan (samma D som i 24 och 32), så
+ *    ikonen ser ut som DEV-ikonen i större storlekar men ändå läses som "D".
+ * `pad` är brickans kant runt bokstäverna, `corner` hörnens radie: 2 tar
+ * bort en pixel i varje hörn, 3,5 tre.
+ */
+const PIXEL_FONTS = {
+  large: {
+    gap: 1,
+    pad: [2, 2],
+    corner: 3.5,
+    glyphs: [
+      ['###.', '#..#', '#..#', '#..#', '#..#', '#..#', '###.'],
+      ['####', '#...', '#...', '###.', '#...', '#...', '####'],
+      ['#...#', '#...#', '#...#', '#...#', '.#.#.', '.#.#.', '..#..'],
+    ],
+  },
+  small: {
+    gap: 1,
+    pad: [1, 1],
+    corner: 2,
+    glyphs: [
+      ['##.', '#.#', '#.#', '#.#', '##.'],
+      ['###', '#..', '##.', '#..', '###'],
+      ['#.#', '#.#', '#.#', '#.#', '.#.'],
+    ],
+  },
+  tiny: {
+    gap: 1,
+    pad: [1, 1],
+    corner: 2,
+    glyphs: [['##.', '#.#', '#.#', '#.#', '##.']],
+  },
+}
+
+/** Vilken pixelbricka en ruta på `tileSize` pixlar får (under LETTERS_FROM). */
+function pixelFontFor(tileSize) {
+  if (tileSize >= 36) return PIXEL_FONTS.large
+  if (tileSize >= 17) return PIXEL_FONTS.small
+  return PIXEL_FONTS.tiny
+}
+
+/**
+ * Pixelbrickan som rader av tecken: ' ' utanför (hörnen), '.' bricka, '#' bokstav.
+ * Hörnen rundas med en kvartscirkel med radien `corner`, mätt i pixlarnas mitt.
+ */
+function pixelBadge(font) {
+  const rows = font.glyphs[0].length
+  const textWidth = font.glyphs.reduce((w, g) => w + g[0].length, 0) + font.gap * (font.glyphs.length - 1)
+  const [padX, padY] = font.pad
+  const width = textWidth + 2 * padX
+  const height = rows + 2 * padY
+  const grid = []
+  for (let y = 0; y < height; y++) {
+    let line = ''
+    for (let x = 0; x < width; x++) {
+      const r = font.corner
+      const cx = Math.min(Math.max(x + 0.5, r), width - r)
+      const cy = Math.min(Math.max(y + 0.5, r), height - r)
+      const outside = r > 0 && (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > r * r
+      line += outside ? ' ' : '.'
+    }
+    grid.push(line.split(''))
+  }
+  let at = padX
+  for (const glyph of font.glyphs) {
+    glyph.forEach((row, gy) => {
+      for (let gx = 0; gx < row.length; gx++) if (row[gx] === '#') grid[padY + gy][at + gx] = '#'
+    })
+    at += glyph[0].length + font.gap
+  }
+  return grid.map((row) => row.join(''))
+}
+
+/**
+ * Var pixelbrickan hamnar: så nära rutans övre högra hörn som går, på hela
+ * pixlar, med brickan och en pixel runt den helt på rutan (täckt, alfa 255).
+ * Då kantutjämnas ingenting och brickan flyter aldrig ihop med det som ligger
+ * bakom ikonen. Returnerar null om den inte får plats.
+ */
+function placePixelBadge(img, tile, grid) {
+  const h = grid.length
+  const w = grid[0].length
+  const solid = (x, y) => x >= 0 && y >= 0 && x < img.width && y < img.height && img.data[(y * img.width + x) * 4 + 3] === 255
+  const fits = (px, py) => {
+    for (let y = -1; y <= h; y++) {
+      for (let x = -1; x <= w; x++) {
+        if (!solid(px + x, py + y)) return false
+      }
+    }
+    return true
+  }
+  const right = tile.x + tile.size
+  let best = null
+  for (let py = Math.floor(tile.y); py + h <= tile.y + tile.size; py++) {
+    for (let px = Math.floor(tile.x); px + w <= right; px++) {
+      if (!fits(px, py)) continue
+      const score = right - (px + w) + (py - tile.y)
+      if (!best || score < best.score || (score === best.score && py < best.y)) best = { x: px, y: py, score }
+    }
+  }
+  return best && { x: best.x, y: best.y, width: w, height: h }
+}
+
+/** Ritar pixelbrickan (se PIXEL_FONTS) på en förminskad ikon. */
+function stampPixels(img, tile, colours) {
+  const grid = pixelBadge(pixelFontFor(tile.size))
+  const at = placePixelBadge(img, tile, grid)
+  if (!at) throw new Error(`The DEV badge does not fit on the ${img.width} px icon`)
+  grid.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === ' ') continue
+      const colour = row[x] === '#' ? colours.tile : colours.mark
+      img.data.set(colour, ((at.y + y) * img.width + at.x + x) * 4)
+    }
+  })
+  return img
+}
+
 /** Utvecklingsikonen i en viss storlek: produktionsikonen förminskad, med brickan ritad i den storleken. */
 function devIcon(base, size = base.width) {
   const tile = tileOf(base)
   const colours = coloursOf(base)
   const k = size / base.width
   const scaled = { x: tile.x * k, y: tile.y * k, size: tile.size * k }
-  return stamp(resize(base, size), scaled, colours, { letters: size >= LETTERS_FROM, strict: size === base.width })
+  if (size < LETTERS_FROM) return stampPixels(resize(base, size), scaled, colours)
+  return stamp(resize(base, size), scaled, colours, { letters: true, strict: size === base.width })
 }
 
 /** Storlekarna i Linux-uppsättningen (build/icons/16x16.png ...). */
@@ -424,12 +558,86 @@ function encodeIco(frames) {
 }
 
 /**
+ * macOS-ikonens delar: typ, storlek i pixlar och format, i den ordning
+ * iconutil skriver dem. 16 och 32 (ic04, ic05) som ARGB, som iconutil gör,
+ * resten som PNG. "@2x" i Finder tar nästa storlek (ic11 = 16 pt på Retina).
+ */
+const ICNS_TYPES = [
+  ['ic12', 64, 'png'],
+  ['ic07', 128, 'png'],
+  ['ic13', 256, 'png'],
+  ['ic08', 256, 'png'],
+  ['ic04', 16, 'argb'],
+  ['ic14', 512, 'png'],
+  ['ic09', 512, 'png'],
+  ['ic05', 32, 'argb'],
+  ['ic10', 1024, 'png'],
+  ['ic11', 32, 'png'],
+]
+
+/** Apples RLE för ARGB-delarna: en kanal i taget, upprepningar (3 till 130) eller rena bytes (1 till 128). */
+function packBits(bytes) {
+  const out = []
+  let i = 0
+  while (i < bytes.length) {
+    let run = 1
+    while (i + run < bytes.length && run < 130 && bytes[i + run] === bytes[i]) run++
+    if (run >= 3) {
+      out.push(0x80 + run - 3, bytes[i])
+      i += run
+      continue
+    }
+    const start = i
+    while (i < bytes.length && i - start < 128) {
+      if (i + 2 < bytes.length && bytes[i] === bytes[i + 1] && bytes[i] === bytes[i + 2]) break
+      i++
+    }
+    out.push(i - start - 1, ...bytes.subarray(start, i))
+  }
+  return Buffer.from(out)
+}
+
+/** ARGB-delen: färgerna förmultiplicerade med alfa (så läser macOS dem), sedan packBits per kanal. */
+function argb(img) {
+  const n = img.width * img.height
+  const parts = [3, 0, 1, 2].map((c) => {
+    const plane = new Uint8Array(n)
+    for (let p = 0; p < n; p++) {
+      const a = img.data[p * 4 + 3]
+      plane[p] = c === 3 ? a : Math.round((img.data[p * 4 + c] * a) / 255)
+    }
+    return packBits(plane)
+  })
+  return Buffer.concat([Buffer.from('ARGB', 'latin1'), ...parts])
+}
+
+/** En .icns med alla storlekar ur `iconAt(size)` (samma format som iconutil skriver). */
+function encodeIcns(iconAt) {
+  const entries = ICNS_TYPES.map(([type, size, format]) => {
+    const img = iconAt(size)
+    const data = format === 'png' ? encodePng(img) : argb(img)
+    const head = Buffer.alloc(8)
+    head.write(type, 0, 'latin1')
+    head.writeUInt32BE(data.length + 8, 4)
+    return Buffer.concat([head, data])
+  })
+  const head = Buffer.alloc(8)
+  head.write('icns', 0, 'latin1')
+  head.writeUInt32BE(8 + entries.reduce((n, e) => n + e.length, 0), 4)
+  return Buffer.concat([head, ...entries])
+}
+
+/**
  * Ikonerna för ett bygge, som sökvägar från desktop/ (det electron-builder
  * vill ha). Produktion: de incheckade filerna, orörda. Alla andra miljöer:
  * samma ikon med DEV-brickan, skriven till build/dev/ i samma storlekar.
+ * `window` är fönstrets egen ikon på Linux (build.mjs packar den som
+ * app-icon.png, main.cjs sätter den på fönstren). `mac` är macOS-ikonen:
+ * i dev en färdig .icns, så att de små storlekarna får pixelbrickan i
+ * stället för en förminskning av 1024-bilden.
  */
 function iconsFor(env, desktopDir = __dirname) {
-  if (env === 'prod') return { app: 'build/icon.png', win: 'build/icon.png', set: 'build/icons' }
+  if (env === 'prod') return { app: 'build/icon.png', mac: 'build/icon.png', win: 'build/icon.png', set: 'build/icons', window: 'build/icons/512x512.png' }
   const build = path.join(desktopDir, 'build')
   const out = path.join(build, 'dev')
   const base = decodePng(fs.readFileSync(path.join(build, 'icon.png')))
@@ -439,9 +647,32 @@ function iconsFor(env, desktopDir = __dirname) {
     fs.writeFileSync(path.join(out, 'icons', `${size}x${size}.png`), encodePng(devIcon(base, size)))
   }
   fs.writeFileSync(path.join(out, 'icon.png'), encodePng(devIcon(base)))
-  // Windows: en färdig .ico, så att små storlekar får den rena brickan.
+  // Windows: en färdig .ico, så att de små storlekarna får pixelbrickan.
   fs.writeFileSync(path.join(out, 'icon.ico'), encodeIco(ICO_SIZES.map((size) => ({ size, png: encodePng(devIcon(base, size)) }))))
-  return { app: 'build/dev/icon.png', win: 'build/dev/icon.ico', set: 'build/dev/icons' }
+  // macOS: en färdig .icns av samma skäl.
+  fs.writeFileSync(path.join(out, 'icon.icns'), encodeIcns((size) => devIcon(base, size)))
+  return { app: 'build/dev/icon.png', mac: 'build/dev/icon.icns', win: 'build/dev/icon.ico', set: 'build/dev/icons', window: 'build/dev/icons/512x512.png' }
 }
 
-module.exports = { decodePng, encodePng, encodeIco, ICO_SIZES, resize, tileOf, coloursOf, BADGE, badgeShape, stamp, devIcon, iconsFor, LETTERS_FROM }
+module.exports = {
+  decodePng,
+  encodePng,
+  encodeIco,
+  encodeIcns,
+  packBits,
+  ICO_SIZES,
+  ICNS_TYPES,
+  resize,
+  tileOf,
+  coloursOf,
+  BADGE,
+  badgeShape,
+  stamp,
+  devIcon,
+  iconsFor,
+  LETTERS_FROM,
+  PIXEL_FONTS,
+  pixelFontFor,
+  pixelBadge,
+  placePixelBadge,
+}

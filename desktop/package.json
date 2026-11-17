@@ -1,6 +1,6 @@
 {
   "name": "booqy-console-desktop",
-  "version": "1.4.2",
+  "version": "1.4.6",
   "private": true,
   "license": "UNLICENSED",
   "description": "Booqy Console som skrivbordsapp",
@@ -13,7 +13,7 @@
     "dist:prod": "node build.mjs --env prod",
     "dist:all:dev": "node build.mjs --env dev --mac --win --linux",
     "dist:all:prod": "node build.mjs --env prod --mac --win --linux",
-    "test": "node --test update-core.test.cjs shell-core.test.cjs dev-icon.test.cjs"
+    "test": "node --test update-core.test.cjs shell-core.test.cjs dev-icon.test.cjs linux-menu.test.cjs"
   },
   "dependencies": {
     "electron-updater": "6.8.12"
