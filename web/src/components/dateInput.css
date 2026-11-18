@@ -106,7 +106,7 @@
 .date-cal__day:hover:not(:disabled),
 .date-cal__today:hover:not(:disabled) { background: var(--dcal-hover); }
 
-.date-cal__day.is-today { box-shadow: inset 0 0 0 1.5px var(--field-border); }
+.date-cal__day.is-today { background: var(--dcal-hover); font-weight: 700; }
 .date-cal__day.is-selected,
 .date-cal__day.is-selected:hover { background: var(--slip); color: var(--on-slip); font-weight: 600; }
 

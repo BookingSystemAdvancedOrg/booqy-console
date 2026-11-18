@@ -120,7 +120,7 @@
 }
 
 .help-icon-btn:hover {
-  background: var(--hairline);
+  background: var(--wall-tint);
   color: var(--ink);
 }
 
@@ -168,7 +168,7 @@
 }
 
 .help-chip:hover {
-  background: var(--hairline);
+  background: var(--wall-tint);
 }
 
 .help-msg {
@@ -356,22 +356,23 @@
   }
 }
 
-/* What the assistant points at: a ring that fades (spotlight.ts). */
+/* What the assistant points at: a soft glow that fades (spotlight.ts). No
+   frame: the ring is transparent, only the blurred glow shows. */
 .help-spotlight {
   position: relative;
   z-index: 5;
-  box-shadow: 0 0 0 3px var(--print), 0 0 0 10px var(--focus) !important;
+  box-shadow: 0 0 0 3px transparent, 0 0 22px 6px var(--focus) !important;
   animation: help-spot-pulse 1.3s var(--ease-out) 2;
   transition: box-shadow 420ms var(--ease-out);
 }
 
 .help-spotlight.help-spotlight--fade {
-  box-shadow: 0 0 0 3px transparent, 0 0 0 10px transparent !important;
+  box-shadow: 0 0 0 3px transparent, 0 0 22px 6px transparent !important;
 }
 
 @keyframes help-spot-pulse {
   50% {
-    box-shadow: 0 0 0 3px var(--print), 0 0 0 16px transparent;
+    box-shadow: 0 0 0 3px transparent, 0 0 30px 10px transparent;
   }
 }
 

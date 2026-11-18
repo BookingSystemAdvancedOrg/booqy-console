@@ -27,6 +27,8 @@ import "./styles.css";
 import "./ds.css";
 import "./phoneTables.css";
 import "./phoneTargets.css";
+// Last: every edge transparent (no-edges rule, see the file).
+import "./noEdges.css";
 import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem } from "./components/ds";
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";

@@ -19,7 +19,7 @@
 }
 .flow-progress__track {
   grid-area: track; position: relative; height: 12px; border-radius: var(--r-pill); overflow: hidden;
-  background: color-mix(in srgb, var(--paper-line) 55%, transparent); box-shadow: inset 0 1px 2px rgb(58 36 24 / 0.18);
+  background: color-mix(in srgb, var(--paper-shade) 55%, transparent); box-shadow: inset 0 1px 2px rgb(58 36 24 / 0.18);
 }
 .flow-progress__fill {
   position: absolute; inset: 0; transform-origin: left center; border-radius: inherit;
@@ -85,7 +85,7 @@
 .step__head h2 { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
 .step__num {
   flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  font: 760 12px/1 var(--mono); background: var(--glass-fill); color: var(--print); box-shadow: inset 0 0 0 1.5px var(--paper-line);
+  font: 760 12px/1 var(--mono); background: var(--glass-fill); color: var(--print); box-shadow: inset 0 0 0 1.5px transparent;
 }
 .step--done .step__num { background: var(--ok); color: var(--bq-snow, #fff); box-shadow: none; animation: save-pop 420ms var(--flow-spring) both; }
 .drawn-tick path { stroke-dasharray: 1; stroke-dashoffset: 0; }
