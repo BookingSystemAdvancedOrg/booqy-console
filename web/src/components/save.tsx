@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import "./saveBar.css";
 
 /**
  * Unsaved changes and save feedback, the same on every form.
@@ -8,7 +9,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
  * highlighted with a dot and "Unsaved changes" while dirty, keeps its busy
  * label while saving and shows a check and "Saved" for a moment after. A
  * dirty form registers here, so leaving the page (or a customer tab) asks
- * first.
+ * first. SaveBar is the row every editable form ends with: it follows the
+ * screen (sticky) while something is unsaved, with "Discard changes".
  */
 
 export const SAVED_MS = 1600;
@@ -64,7 +66,8 @@ export function hasUnsaved(): boolean {
 /**
  * `current` is what the form holds now, `saved` what the server has. After a
  * successful save call markSaved() so the form is clean even before the
- * reload brings the new saved values.
+ * reload brings the new saved values. `base` is the saved state the form is
+ * compared with (a copy): Discard is `setF(dirty.base)`.
  */
 export function useDirty<T>(current: T, saved: T, opts: { guard?: boolean } = {}) {
   const guard = opts.guard ?? true;
@@ -91,7 +94,7 @@ export function useDirty<T>(current: T, saved: T, opts: { guard?: boolean } = {}
     [current, base],
   );
   const markSaved = useCallback(() => setMark({ base: savedKey, value: currentKey }), [savedKey, currentKey]);
-  return { dirty, changed, markSaved };
+  return { dirty, changed, markSaved, base };
 }
 
 /** A flag that is on for a moment: the "Saved" check, a card's flash. */
@@ -136,6 +139,7 @@ export function SaveButton(props: {
   type?: "submit" | "button";
   title?: string;
   autoFocus?: boolean;
+  form?: string;
   onClick?: () => void;
 }) {
   const { busy, done, dirty, kind = "primary" } = props;
@@ -145,7 +149,7 @@ export function SaveButton(props: {
   return (
     <span className="save">
       <button type={props.type ?? "submit"} className={`btn${variant}${props.small ? " btn--small" : ""} save-btn save-btn--${state}`}
-              disabled={disabled} title={props.title} autoFocus={props.autoFocus}
+              disabled={disabled} title={props.title} autoFocus={props.autoFocus} form={props.form}
               onClick={done ? (e) => e.preventDefault() : props.onClick}>
         {done ? <><CheckMark />{props.doneLabel ?? "Saved"}</>
           : busy ? props.busyLabel ?? "Saving…"
@@ -169,5 +173,73 @@ export function RefreshButton({ reload }: { reload: () => Promise<boolean> }) {
                   const ok = await reload().finally(() => setBusy(false));
                   if (ok) flash();
                 }} />
+  );
+}
+
+/**
+ * The save row every editable form ends with (owner 2026-11-18, the same as
+ * the admin app's SaveBar):
+ *
+ * - Clean: rests in place at the end of the form, Save disabled.
+ * - Dirty: follows the screen at the bottom of its form or card (sticky glass
+ *   pill, above the phone's bottom bar; Ask Booqy lifts itself above it,
+ *   features/help/dodge.ts) with "Unsaved changes" and "Discard changes".
+ *   Changing everything back makes it clean again.
+ * - Failed (`failed`): the changes stay, the page goes to the field marked
+ *   invalid (or the error note) and Save reads "Save and retry".
+ *
+ * Without `onSave` the button submits the enclosing form (or `form`).
+ * `onCancel` (a form opened with Edit): a Cancel that shows while clean;
+ * while dirty "Discard changes" takes its place.
+ */
+export function SaveBar(props: {
+  dirty: boolean;
+  label?: string;
+  busy?: boolean;
+  done?: boolean;
+  busyLabel?: string;
+  doneLabel?: string;
+  onSave?: () => void;
+  onDiscard?: () => void;
+  onCancel?: () => void;
+  failed?: boolean;
+  disabled?: boolean;
+  allowClean?: boolean;
+  title?: string;
+  form?: string;
+  /** More buttons at the start of the row (secondary, ghost). */
+  children?: ReactNode;
+}) {
+  const { dirty, busy, failed } = props;
+  const ref = useRef<HTMLDivElement>(null);
+
+  // A failed save: to the field marked invalid, else to the error note.
+  useEffect(() => {
+    if (!failed) return;
+    const scope: ParentNode = (props.form && document.getElementById(props.form)) || ref.current?.closest("form, .card, .modal__panel") || document;
+    const field = scope.querySelector<HTMLElement>('[aria-invalid="true"]');
+    const target = field ?? scope.querySelector<HTMLElement>(".notice--error, .field__msg, [role=alert]");
+    if (!target) return;
+    target.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    if (field) field.focus({ preventScroll: true });
+  }, [failed, props.form]);
+
+  return (
+    <div ref={ref} className={`save-bar${dirty ? " save-bar--dirty" : ""}`} data-testid="save-bar">
+      <span className="save-bar__status" role="status" aria-live="polite">
+        {dirty && !busy && <><i className="save-bar__dot" aria-hidden="true" />Unsaved changes</>}
+      </span>
+      {props.children}
+      {dirty && props.onDiscard && (
+        <button type="button" className="btn btn--ghost" disabled={busy} onClick={props.onDiscard}>Discard changes</button>
+      )}
+      {!dirty && props.onCancel && (
+        <button type="button" className="btn btn--ghost" disabled={busy} onClick={props.onCancel}>Cancel</button>
+      )}
+      <SaveButton label={failed && dirty ? "Save and retry" : props.label ?? "Save"} busy={busy} done={props.done}
+                  busyLabel={props.busyLabel} doneLabel={props.doneLabel} dirty={dirty} disabled={props.disabled}
+                  allowClean={props.allowClean} hint={false} title={props.title}
+                  type={props.onSave ? "button" : "submit"} onClick={props.onSave} form={props.form} />
+    </div>
   );
 }

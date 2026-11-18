@@ -67,6 +67,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 55, text: "Mac icon in dark mode" },
   { n: 56, text: "Customer staff accounts" },
   { n: 57, text: "Back buttons" },
+  { n: 58, text: "Save bar on forms" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

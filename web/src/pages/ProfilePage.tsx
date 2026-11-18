@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { Operator } from "../auth";
 import { AvatarSetting } from "../components/AvatarSetting";
 import { EmailField } from "../components/EmailField";
-import { SaveButton, useDirty } from "../components/save";
+import { SaveBar, useDirty } from "../components/save";
 import { SkelCard, SkelPage } from "../components/Skeleton";
 import { InfoTip } from "../components/StepFlow";
 import { ErrorNotice, Field, Notice, useAction, useLoad } from "../components/ui";
@@ -74,9 +74,8 @@ export default function ProfilePage({ me, onSaved }: { me: Operator; onSaved: ()
                 </span>
                 <span className={`tag${mine?.role === "owner" ? " tag--owner" : ""}`}>{mine?.role === "owner" ? "Owner" : "Operator"}</span>
               </div>
-              <div className="row">
-                <SaveButton label="Save" busy={a.busy} dirty={dirty} />
-              </div>
+              <SaveBar busy={a.busy} dirty={dirty} failed={!!a.error}
+                       onDiscard={() => { setName(savedName); setEmail(savedEmail); a.setError(null); }} />
             </form>
           </div>
         </section>

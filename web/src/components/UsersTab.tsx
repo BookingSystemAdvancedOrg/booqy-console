@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Card, ErrorNotice, Field, Modal, Notice, useAction, useLoad } from "./ui";
 import type { Location, StaffAccess, Tenant, TenantUser, UserRole } from "../types";
 import { RowActions } from "./RowActions";
-import { SaveButton, useDirty } from "./save";
+import { SaveBar, useDirty } from "./save";
 import { SkelPage, SkelRows } from "./Skeleton";
 import { Select } from "./Select";
 import { PhoneInput } from "./PhoneInput";
@@ -219,9 +219,11 @@ function InviteCard({ tenant, locations, access, onInvited }: {
   const [f, setF] = useState(empty);
   const [areas, setAreas] = useState<string[] | null>(null);
   const a = useAction();
-  const dirty = useDirty(f, empty);
   const staff = f.role === "staff_user";
-  const chosen = areas ?? (access ? areasOf(access) : []);
+  const defaults = access ? areasOf(access) : [];
+  const chosen = areas ?? defaults;
+  // The ticked areas count too (as a set): ticking one back is clean again.
+  const dirty = useDirty({ f, areas: [...chosen].sort() }, { f: empty, areas: [...defaults].sort() });
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const body = staff
@@ -258,8 +260,9 @@ function InviteCard({ tenant, locations, access, onInvited }: {
           </Field>
           <Permissions tenant={tenant} access={access} value={chosen} onChange={setAreas} />
         </>}
-        <SaveButton label="Send invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invite sent"
-                    dirty={dirty.dirty} disabled={!ready} />
+        <SaveBar label="Send invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invite sent"
+                 dirty={dirty.dirty} disabled={!ready} failed={!!a.error}
+                 onDiscard={() => { setF(dirty.base.f); setAreas(null); a.setError(null); }} />
       </form>
     </Card>
   );
@@ -319,11 +322,10 @@ function EditUser({ tenant, user, locations, access, lastOwner, onClose, onSaved
           </Field>
           <Permissions tenant={tenant} access={access} value={areas} onChange={setAreas} saved={savedAreas} />
         </>}
-        <div className="row">
-          <SaveButton label="Save" busy={a.busy} dirty={changed}
-                      disabled={!changed || !f.name.trim() || !f.email.trim() || (staff && !f.locationId)} />
+        <SaveBar busy={a.busy} dirty={changed} failed={!!a.error}
+                 disabled={!changed || !f.name.trim() || !f.email.trim() || (staff && !f.locationId)}>
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );

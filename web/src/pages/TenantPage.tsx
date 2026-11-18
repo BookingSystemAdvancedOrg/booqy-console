@@ -17,7 +17,7 @@ import WebsiteTab from "../components/WebsiteTab";
 import { LIMIT_LABELS, contractFeatures, contractLimits, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
-import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
+import { RefreshButton, SaveBar, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
 import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
@@ -293,11 +293,9 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
               <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]} note={note("city")}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
               <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes} note={note("notes")}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
-            <div className="row">
-              <SaveButton label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
-                          dirty={dirty.dirty} allowClean={t.status === "provisioning_failed"} />
-              <button type="button" className="btn btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
-            </div>
+            <SaveBar label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
+                     dirty={dirty.dirty} allowClean={t.status === "provisioning_failed"} failed={!!a.error}
+                     onDiscard={() => { setF(dirty.base); a.setError(null); }} onCancel={() => setEditing(false)} />
           </form>
         )}
       </Card>
@@ -427,10 +425,9 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
             <input className="input mono" value={f.stripeAccountId} onChange={(e) => setF({ ...f, stripeAccountId: e.target.value })} placeholder="acct_…" />
           </Field>
         </div>
-        <div className="row">
-          <SaveButton label={location ? "Save" : "Add location"} busy={a.busy} dirty={dirty.dirty} />
+        <SaveBar label={location ? "Save" : "Add location"} busy={a.busy} dirty={dirty.dirty} failed={!!a.error && !needsRaise}>
           <button type="button" className="btn btn--ghost" onClick={close}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );
@@ -528,6 +525,17 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
+  /** Back to what is saved: the plan, its limits, price and Free period. */
+  function discard() {
+    setPlanId(tenant.planId);
+    setMax(tenant.entitlements.maxLocations);
+    setFeatures(contractFeatures(tenant.entitlements.features));
+    setLimits(limitsOf(tenant.entitlements));
+    setPrice(savedPrice);
+    setFree(savedFree ?? newFreeForm());
+    setTried(false);
+    a.setError(null);
+  }
 
   return (
     <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise Locations, then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
@@ -581,7 +589,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
           <div className="row"><SaveButton kind="danger" small type="button" label="Apply anyway" busy={a.busy} onClick={() => void save(true)} /></div>
         </Notice>
       ) : <ErrorNotice error={a.error} />}
-      <SaveButton type="button" label="Save plan" busy={a.busy} done={a.done} dirty={dirty.dirty} disabled={!plan} onClick={() => void save()} />
+      <SaveBar label="Save plan" busy={a.busy} done={a.done} dirty={dirty.dirty} disabled={!plan} failed={!!a.error && !belowCount}
+               onSave={() => void save()} onDiscard={discard} />
     </Card>
   );
 }

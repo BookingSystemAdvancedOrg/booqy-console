@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Field, useAction } from "./ui";
-import { SaveButton, confirmLeave, discardUnsaved, hasUnsaved, restoreUnsaved, useDirty } from "./save";
+import { SaveBar, SaveButton, confirmLeave, discardUnsaved, hasUnsaved, restoreUnsaved, useDirty } from "./save";
 
 function Form({ saved = { name: "Pizza", city: "Malmö" }, onSave = async () => true }: { saved?: { name: string; city: string }; onSave?: () => Promise<boolean> }) {
   const [f, setF] = useState(saved);
@@ -85,5 +85,87 @@ describe("useDirty and SaveButton", () => {
     expect(confirmLeave()).toBe(true);
     expect(ask).toHaveBeenCalledOnce();
     expect(hasUnsaved()).toBe(true);
+  });
+});
+
+function BarForm({ onSave = async () => true }: { onSave?: () => Promise<boolean> }) {
+  const saved = { name: "Pizza", city: "Malmö" };
+  const [f, setF] = useState(saved);
+  const a = useAction();
+  const dirty = useDirty(f, saved);
+  return (
+    <form noValidate onSubmit={async (e) => { e.preventDefault(); if (await a.run(onSave)) dirty.markSaved(); }}>
+      <Field label="Name" error={a.fields.name}>
+        <input aria-label="name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+      </Field>
+      <SaveBar dirty={dirty.dirty} busy={a.busy} done={a.done} failed={!!a.error}
+               onDiscard={() => { setF(dirty.base); a.setError(null); }} />
+    </form>
+  );
+}
+
+describe("SaveBar", () => {
+  const save = () => screen.getByRole("button", { name: /save/i });
+  const bar = () => screen.getByTestId("save-bar");
+
+  it("rests in place with Save disabled while clean", () => {
+    render(<BarForm />);
+    expect(save()).toBeDisabled();
+    expect(bar()).not.toHaveClass("save-bar--dirty");
+    expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
+  });
+
+  it("follows the screen with Save enabled after a change, and is clean again after reverting", () => {
+    render(<BarForm />);
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "Pizza!" } });
+    expect(save()).toBeEnabled();
+    expect(bar()).toHaveClass("save-bar--dirty");
+    expect(bar()).toHaveTextContent("Unsaved changes");
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "Pizza" } });
+    expect(save()).toBeDisabled();
+    expect(bar()).not.toHaveClass("save-bar--dirty");
+  });
+
+  it("Discard changes puts the saved values back", () => {
+    render(<BarForm />);
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "Burger" } });
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.getByLabelText("name")).toHaveValue("Pizza");
+    expect(save()).toBeDisabled();
+    expect(hasUnsaved()).toBe(false);
+  });
+
+  it("is sticky (the CSS hook) only while dirty", () => {
+    render(<BarForm />);
+    expect(bar().className).toBe("save-bar");
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "x" } });
+    expect(bar().className).toBe("save-bar save-bar--dirty");
+  });
+
+  it("after a failed save keeps the changes, goes to the error and reads Save and retry", async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    render(<BarForm onSave={async () => { throw new Error("nope"); }} />);
+    fireEvent.change(screen.getByLabelText("name"), { target: { value: "Pizza 4" } });
+    await act(async () => { fireEvent.submit(save().closest("form")!); });
+    expect(screen.getByLabelText("name")).toHaveValue("Pizza 4");
+    expect(save()).toHaveTextContent("Save and retry");
+    expect(save()).toBeEnabled();
+    expect(focus).not.toHaveBeenCalled(); // no field marked: the error note is scrolled to instead
+  });
+
+  it("a Cancel shows while clean and gives way to Discard once dirty", () => {
+    const cancel = vi.fn();
+    function Edit() {
+      const [v, setV] = useState("a");
+      const dirty = useDirty(v, "a");
+      return (<><input aria-label="v" value={v} onChange={(e) => setV(e.target.value)} />
+        <SaveBar dirty={dirty.dirty} onSave={() => undefined} onCancel={cancel} onDiscard={() => setV(dirty.base)} /></>);
+    }
+    render(<Edit />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(cancel).toHaveBeenCalledOnce();
+    fireEvent.change(screen.getByLabelText("v"), { target: { value: "b" } });
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeInTheDocument();
   });
 });

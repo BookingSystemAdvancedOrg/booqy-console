@@ -1,0 +1,61 @@
+/* The save row (save.tsx SaveBar). Clean: rests at the end of the form, Save
+   disabled. Dirty: glass pill that follows the screen at the bottom of its
+   form or card, above the phone's bottom bar (--tabbar-room). Ask Booqy lifts
+   itself above it (features/help/dodge.ts). Same as the admin app's. */
+
+.save-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: 8px 10px; min-width: 0; margin-top: 14px;
+}
+.save-bar__status {
+  display: inline-flex; align-items: center; gap: 8px; margin-right: auto; min-width: 0;
+  font: 500 11px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-red);
+}
+.save-bar__status:empty { display: none; }
+.save-bar__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-red); }
+.save-bar .save { flex-wrap: nowrap; }
+.save-bar .btn { white-space: nowrap; }
+
+.save-bar--dirty {
+  position: sticky; bottom: max(12px, env(safe-area-inset-bottom, 0px)); z-index: 20;
+  padding: 8px 8px 8px 18px; border-radius: var(--r-pill, 9999px);
+  background: var(--glass-modal) var(--liquid-sheen);
+  box-shadow: var(--liquid-edge), var(--liquid-depth);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  animation: save-bar-in 220ms var(--ease) both;
+}
+/* a card clips (rounded corners) and its body scrolls sideways: both would
+   hold the bar in place, so while it is out they clip without scrolling */
+.card:has(.save-bar--dirty), .card__body:has(.save-bar--dirty) { overflow: clip; }
+@keyframes save-bar-in { from { opacity: 0; transform: translateY(8px); } }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .save-bar--dirty { background: var(--paper); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .save-bar--dirty { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .save-bar--dirty { animation: none; }
+}
+
+/* phones: the status on its own line, the buttons share the row */
+@media (max-width: 600px) {
+  .save-bar--dirty { border-radius: var(--r-lg, 22px); padding: 10px; }
+  .save-bar--dirty .save-bar__status { flex-basis: 100%; padding-left: 6px; }
+  .save-bar--dirty > .btn, .save-bar--dirty > .save { flex: 1 1 0; min-width: 0; }
+  .save-bar--dirty > .save > .btn { width: 100%; justify-content: center; }
+  /* long labels ("Save and retry setup") wrap inside the button, never past it */
+  .save-bar--dirty .btn { padding-inline: 12px; white-space: normal; line-height: 1.2; min-height: 44px; text-align: center; }
+  .save-bar--dirty .save-btn__dot { display: none; }
+}
+/* above the phone's bottom bar; with the keyboard open the bar is hidden */
+@media (max-width: 760px) {
+  /* clear of the round + that rises above the bottom bar */
+  html.has-tabbar .save-bar--dirty { bottom: calc(var(--tabbar-room) + 24px); }
+  html.has-tabbar.kb-open .save-bar--dirty { bottom: 8px; }
+}
+/* in a dialog the panel scrolls: the bar stays at its bottom */
+.modal__panel .save-bar--dirty { bottom: 0; }
+/* a quiet line at the start of a resting bar ("Last saved ...") */
+.save-bar__meta { margin-right: auto; min-width: 0; }

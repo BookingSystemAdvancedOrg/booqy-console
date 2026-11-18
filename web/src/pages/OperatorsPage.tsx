@@ -8,7 +8,7 @@ import { FormEvent, useState, useSyncExternalStore } from "react";
 import { api } from "../api";
 import { ErrorNotice, Field, Modal, Notice, fmtDate, useAction, useLoad } from "../components/ui";
 import type { OperatorAccount } from "../types";
-import { RefreshButton, SaveButton, useDirty } from "../components/save";
+import { RefreshButton, SaveBar, useDirty } from "../components/save";
 import { SkelPage, SkelTable } from "../components/Skeleton";
 import { InfoTip } from "../components/StepFlow";
 import { EmailField } from "../components/EmailField";
@@ -180,10 +180,9 @@ function AddOperator({ onClose, onAdded }: { onClose: () => void; onAdded: (emai
         <Field label="Email" required error={a.fields.email}>
           <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
-        <div className="row">
-          <SaveButton label="Send invite" busy={a.busy} busyLabel="Sending invite…" dirty={dirty.dirty} />
+        <SaveBar label="Send invite" busy={a.busy} busyLabel="Sending invite…" dirty={dirty.dirty} failed={!!a.error}>
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );
@@ -211,10 +210,9 @@ function EditOperator({ op, canChangeEmail, onClose, onSaved }: { op: OperatorAc
         </Field>
         <EmailField value={email} onChange={setEmail} editable={canChangeEmail}
                     changed={canChangeEmail && emailDirty.dirty} error={a.fields.email} />
-        <div className="row">
-          <SaveButton label="Save" busy={a.busy} dirty={dirty.dirty || (canChangeEmail && emailDirty.dirty)} />
+        <SaveBar busy={a.busy} dirty={dirty.dirty || (canChangeEmail && emailDirty.dirty)} failed={!!a.error}>
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );

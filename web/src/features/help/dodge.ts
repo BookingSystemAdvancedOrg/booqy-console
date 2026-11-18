@@ -58,7 +58,8 @@ export function useDodge(ref: RefObject<HTMLElement | null>, active: boolean): v
       const top = bottom - el.offsetHeight
       const right = vw - (parseFloat(cs.right) || 0)
       const left = right - el.offsetWidth
-      const xs = [left + 6, left + el.offsetWidth / 2, right - 6]
+      // Near the edges: a save bar that ends just inside the round button still lifts it.
+      const xs = [left + 2, left + el.offsetWidth / 2, right - 2]
       const ys = [top + 6, top + el.offsetHeight / 2, bottom - 6]
       let obstacle: Element | null = null
       let obstacleTop = Infinity
