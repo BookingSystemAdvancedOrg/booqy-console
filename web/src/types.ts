@@ -104,6 +104,9 @@ export interface Tenant {
   purgeAt?: string;
   purgeStartedAt?: string;
   purgedAt?: string;
+  /** Kom igång (application tenant-setup): each step's state, and when it was first finished. */
+  setupState?: SetupState;
+  setupCompletedAt?: string;
   billing?: Omit<Partial<Billing>, "free"> & { customerId?: string; freeUntil?: string; freeThenPlanId?: string;
                                                          freeSince?: string; freePreset?: string };
 }
@@ -126,6 +129,45 @@ export interface TenantSummary {
   createdAt?: string;
   /** On the Free plan: the last free day, null = no end date. */
   freeUntil?: string | null;
+  /** Kom igång progress (application tenant-setup); null until evaluated once. */
+  setup?: SetupSummary | null;
+}
+
+/** Kom igång progress: finished = done + skipped steps. */
+export interface SetupSummary {
+  finished: number;
+  total: number;
+  complete: boolean;
+  completedAt?: string | null;
+}
+
+export type SetupStepState = "done" | "skipped" | "open";
+
+/** PROFILE.setupState, written by the application's tenant-setup function. */
+export interface SetupState {
+  complete: boolean;
+  total: number;
+  done: number;
+  skipped: number;
+  open: number;
+  evaluatedAt?: string;
+  steps: {
+    id: string;
+    labelEn: string;
+    scope: "tenant" | "location";
+    state: SetupStepState;
+    locations?: { locationId: string; name: string; state: SetupStepState }[];
+  }[];
+}
+
+/** An operator notice (the bell): today only "a restaurant finished Kom igång". */
+export interface OperatorNotice {
+  id: string;
+  kind: "setup_completed";
+  tenantId: string;
+  tenantName?: string | null;
+  at: string;
+  seenAt?: string | null;
 }
 
 export interface Location {

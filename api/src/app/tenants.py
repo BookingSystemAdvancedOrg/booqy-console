@@ -341,6 +341,21 @@ def _start_date_input(f: v.Fields) -> str | None:
 
 
 # -------------------------------------------------------------------- tenants
+def setup_summary(profile: dict) -> dict | None:
+    """Kom igång progress for the customer list (application
+    functions/tenant-setup writes setupState and setupCompletedAt on PROFILE).
+    None until the restaurant's checklist has been evaluated once."""
+    state = profile.get("setupState")
+    if not isinstance(state, dict):
+        return None
+    return {
+        "finished": int(state.get("done") or 0) + int(state.get("skipped") or 0),
+        "total": int(state.get("total") or 0),
+        "complete": bool(state.get("complete")),
+        "completedAt": profile.get("setupCompletedAt"),
+    }
+
+
 def list_tenants(req) -> tuple[int, dict]:
     items = query_all(TableName=tenant_table(), IndexName="GSI1",
                       KeyConditionExpression="GSI1PK = :t", ExpressionAttributeValues={":t": {"S": "TENANT"}})
@@ -361,6 +376,7 @@ def list_tenants(req) -> tuple[int, dict]:
             "createdAt": t.get("createdAt"),
             # Dev: "twin" (a prod customer's dev twin) or "test" (a dev test customer)
             **({"devKind": _dev_kind(t)} if env("ENVIRONMENT") != "prod" and _dev_kind(t) else {}),
+            "setup": setup_summary(t),
             "freeUntil": (t.get("billing") or {}).get("freeUntil") if t.get("planId") == FREE_PLAN_ID
             and isinstance(t.get("billing"), dict) else None,
         })

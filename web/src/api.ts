@@ -6,7 +6,7 @@ import type { HelpAnswer } from "./features/help/kb";
 import type {
   DevTwin,
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
-  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
+  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OperatorNotice, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
@@ -300,6 +300,9 @@ export const api = {
   outbox: (after?: string) =>
     request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  // Notifications (the bell): a restaurant finished Kom igång, newest first.
+  notices: () => request<{ notices: OperatorNotice[]; unseen: number }>("GET", "/platform/notices"),
+  markNoticesSeen: () => request<{ marked: number; unseen: number }>("POST", "/platform/notices/seen", {}),
   // Error reports from Booqy Admin ("Rapportera till Booqy"), newest first.
   supportReports: (status: "all" | "open" | "handled" = "all", cursor?: string | null) =>
     request<{ items: SupportReport[]; cursor: string | null }>(

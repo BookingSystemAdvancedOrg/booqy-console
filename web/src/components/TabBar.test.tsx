@@ -2,11 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const reports = vi.hoisted(() => ({ items: [] as unknown[] }));
+const reports = vi.hoisted(() => ({ items: [] as unknown[], unseen: 0 }));
 vi.mock("../api", () => ({
   api: {
     myAvatar: vi.fn(async () => ({ url: null })),
     supportReports: vi.fn(async () => ({ items: reports.items, cursor: null })),
+    notices: vi.fn(async () => ({ notices: [], unseen: reports.unseen })),
   },
 }));
 
@@ -42,7 +43,7 @@ function setup(path: string, hidden?: TabSlot[], name?: string) {
 const current = (bar: HTMLElement) => [...bar.querySelectorAll('[aria-current="page"]')].map((e) => e.getAttribute("aria-label"));
 
 describe("TabBar (phones)", () => {
-  beforeEach(() => { phone(true); reports.items = []; });
+  beforeEach(() => { phone(true); reports.items = []; reports.unseen = 0; });
   afterEach(() => { vi.clearAllMocks(); document.documentElement.classList.remove("has-tabbar", "kb-open"); });
 
   it("has five targets, icons only, each with a name", () => {
@@ -138,6 +139,15 @@ describe("TabBar (phones)", () => {
     setup("/");
     await waitFor(() => expect(screen.getByRole("link", { name: "Inbox, open reports" })).toBeInTheDocument());
     expect(api.supportReports).toHaveBeenCalledWith("open");
+  });
+
+  it("shows a dot on Inbox and opens Notifications when a restaurant finished setup", async () => {
+    reports.items = [];
+    reports.unseen = 2;
+    setup("/");
+    const inbox = await screen.findByRole("link", { name: "Inbox, new notifications" });
+    expect(inbox).toHaveAttribute("href", "/notifications");
+    reports.unseen = 0;
   });
 
   it("no dot and no report calls on wide screens", async () => {

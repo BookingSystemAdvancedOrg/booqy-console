@@ -1784,6 +1784,25 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 .reports-row--handled td { color: var(--muted, inherit); }
 .reports-table .btn { white-space: nowrap; }
 
+/* Notifications (pages/NotificationsPage) and the badge on the side menu link. */
+.nav-badge { margin-left: auto; min-width: 20px; padding: 2px 6px; border-radius: var(--r-pill); background: #350001; color: #fff; font: 600 11px/16px var(--mono); text-align: center; }
+:root[data-theme="dark"] .nav-badge { background: #f6f1ea; color: #350001; }
+/* on the chosen (lacquered) link the pill turns over, so it never melts into the fill */
+.topbar__nav a.active .nav-badge { background: #f6f1ea; color: #350001; }
+:root[data-theme="dark"] .topbar__nav a.active .nav-badge { background: #350001; color: #fff; }
+.notices-new { margin-left: 8px; }
+.notices-row--new td { font-weight: 600; }
+
+/* Kom igång progress: the customer list cell and the Setup card on the customer page. */
+.setup-cell { white-space: nowrap; }
+.setup-cell .ring-text { font-variant-numeric: tabular-nums; }
+.setup-steps { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.setup-steps li { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.setup-steps .setup-where { display: block; }
+.setup-state--done { color: var(--ok); }
+.setup-state--skipped { color: var(--warn, var(--fg-2)); }
+.setup-state--open { color: var(--fg-2); }
+
 /* Customers toolbar: the chip bar while it fits; narrower (phones, tablets,
    a narrow window) one Status filter pill beside the search, which takes
    the rest of the row. A container query, so it follows the room the page

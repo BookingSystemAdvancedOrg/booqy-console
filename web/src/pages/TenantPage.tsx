@@ -29,6 +29,7 @@ import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
 import { DevKindBadge, DevTwinCard, devKind, devTwinBusy } from "../components/DevTwinCard";
 import { BackButton } from "../components/ds";
+import { SetupCard } from "../components/SetupCard";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -321,6 +322,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
             <Row label="Created" value={`${fmtDate(t.createdAt)}`} />
           </dl>
         </Card>
+        <SetupCard tenant={t} />
       </div>
     </div>
   );

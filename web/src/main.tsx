@@ -31,6 +31,7 @@ import { CommandPalette, Icon, PaletteTrigger, type IconName, type PaletteItem }
 import { SkelCard, SkelKpis, SkelPage, SkelShell } from "./components/Skeleton";
 import { HelpChat } from "./features/help/HelpChat";
 import { TabBar } from "./components/TabBar";
+import { badgeText, useUnseenNotices } from "./notices";
 import { helpChatEnabled, openHelpChat } from "./features/help/chatState";
 
 // Each page loads when it is opened, so the first load only fetches the shell
@@ -44,6 +45,7 @@ const pages = {
   finance: () => import("./pages/FinancePage"),
   website: () => import("./pages/WebsitePage"),
   reports: () => import("./pages/ReportsPage"),
+  notifications: () => import("./pages/NotificationsPage"),
   settings: () => import("./pages/SettingsPage"),
   profile: () => import("./pages/ProfilePage"),
 };
@@ -55,6 +57,7 @@ const MailPage = lazy(pages.mail);
 const FinancePage = lazy(pages.finance);
 const WebsitePage = lazy(pages.website);
 const ReportsPage = lazy(pages.reports);
+const NotificationsPage = lazy(pages.notifications);
 const SettingsPage = lazy(pages.settings);
 const ProfilePage = lazy(pages.profile);
 
@@ -105,6 +108,7 @@ const NAV: { label: string; items: NavItem[] }[] = [
     { to: "/operators", label: "Operators", icon: "staff" },
     { to: "/mail", label: "Mail", icon: "mail" },
     { to: "/reports", label: "Reports", icon: "flag" },
+    { to: "/notifications", label: "Notifications", icon: "bell" },
   ] },
   { label: "Numbers", items: [
     { to: "/finance", label: "Finance", icon: "chart" },
@@ -175,6 +179,8 @@ function Shell() {
   const [user, setUser] = useState<Operator | null | undefined>(undefined);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [appHint, closeAppHint] = useDesktopHint();
+  // Unseen notifications: the badge on Notifications in the side menu.
+  const unseen = useUnseenNotices(Boolean(user));
   // Cognito unreachable (offline, waking from sleep, an outage): still signed
   // in, the current page stays and the check runs again until it answers.
   const [offline, setOffline] = useState(false);
@@ -231,9 +237,11 @@ function Shell() {
             <Fragment key={group.label}>
               <p className="topbar__heading" aria-hidden="true">{group.label}</p>
               {group.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end} data-help={`nav:${item.to}`}>
+                <NavLink key={item.to} to={item.to} end={item.end} data-help={`nav:${item.to}`}
+                         aria-label={item.to === "/notifications" && unseen > 0 ? `${item.label}, ${unseen} new` : undefined}>
                   <Icon name={item.icon} className="nav-icon" />
                   {item.label}
+                  {item.to === "/notifications" && unseen > 0 && <span className="nav-badge" aria-hidden="true">{badgeText(unseen)}</span>}
                 </NavLink>
               ))}
             </Fragment>
@@ -289,6 +297,7 @@ function Shell() {
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/website" element={<WebsitePage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<SettingsPage email={user.email} />} />
           <Route path="/profile" element={<ProfilePage me={user} onSaved={saveProfile} />} />
           <Route path="/download" element={<DownloadRedirect />} />
