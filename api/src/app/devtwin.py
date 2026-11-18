@@ -15,6 +15,12 @@ How a twin comes about:
   - Booqy Console in dev, "Create or refresh dev twin" on a customer
     (POST /platform/tenants/{tenantId}/dev-twin).
 
+When the restaurant finishes its Kom igång setup in prod, the twin copies the
+restaurant's PUBLIC content from prod's public API (devtwin_content.py); the
+same on demand with "Copy public content now". Rules (one way only, markers,
+slug clashes, reserved slugs, separate deletes): BooqyCustomers/site-template
+docs/DATA-RULES.md.
+
 The seed sets up every Kom igång step through the admin's own functions,
 invoked directly as an owner of the twin (application
 shared/console_invoke.py, dev only): the DPA, location contact details,
@@ -43,7 +49,7 @@ from .core import (ApiError, client, env, location_table, log, now_iso, query_al
 from .tenants import get_profile, tkey
 
 OPERATOR = "dev-twin"                       # who the twin's functions see (createdBy operator:dev-twin)
-DEFAULT_OWNER_EMAIL = "dev+{slug}@booqy.se"
+DEFAULT_OWNER_EMAIL = "aws+{slug}@ithjalparna.se"
 ACTIVE_WAIT_SECONDS = 150                   # per run; then it hands itself the rest
 MAX_RUNS = 4
 LOCKED = ("offboarding", "offboarded", "purged")
@@ -101,6 +107,110 @@ def owner_email(slug: str, suffix: str = "") -> str:
     return template.replace("{slug}", f"{slug}{suffix}")
 
 
+# ------------------------------------------------- twins versus test customers
+# Rules: BooqyCustomers/site-template docs/DATA-RULES.md. A twin is born from a
+# prod customer only (site task "mirror") and carries twinOf {env, tenantId};
+# a customer created in this console is a dev test customer (siteKind
+# "test") and never becomes a twin.
+LEGACY_TWINS = ("anar",)   # owner 2026-11-18: Anar's manual dev tenant is Anar's twin
+
+
+def is_twin(profile: dict) -> bool:
+    return bool(profile.get("twinOf")) or profile.get("siteKind") == "prod-link" \
+        or profile.get("slug") in LEGACY_TWINS and profile.get("siteKind") != "test"
+
+
+def clash(profile: dict, prod_tenant_id: str | None) -> tuple[str, str] | None:
+    """(code, operator message) when prod's customer may not take this dev
+    customer as its twin, else None. Never merged, never written over."""
+    slug = profile.get("slug")
+    if profile.get("siteKind") == "test":
+        return ("slug_used_by_test_customer",
+                f"A dev test customer already uses the slug {slug}. Rename or delete it in Booqy Console Dev, "
+                "then create the twin.")
+    twin_of = (profile.get("twinOf") or {}).get("tenantId")
+    if twin_of and prod_tenant_id and twin_of != prod_tenant_id:
+        return ("slug_used_by_other_twin",
+                f"The slug {slug} is the dev twin of another prod customer. Delete that twin in Booqy Console Dev, "
+                "then create this one.")
+    if not is_twin(profile):
+        return ("slug_used_by_dev_customer",
+                f"A dev customer that is not a twin already uses the slug {slug}. Rename or delete it in Booqy "
+                "Console Dev, then create the twin.")
+    return None
+
+
+def mark_twin(tenant_id: str, prod_tenant_id: str | None) -> None:
+    """siteKind prod-link and twinOf {env: prod, tenantId}; clears an old clash."""
+    values = {":k": {"S": "prod-link"}}
+    expr = "SET siteKind = :k"
+    if prod_tenant_id:
+        expr += ", twinOf = :t"
+        values[":t"] = to_ddb_value({"env": "prod", "tenantId": prod_tenant_id, "linkedAt": now_iso()})
+    client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression=expr + " REMOVE twinClash",
+                                   ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues=values)
+
+
+def record_clash(tenant_id: str, prod_tenant_id: str | None, code: str, message: str, actor: str) -> None:
+    """Shown on that dev customer in Booqy Console Dev until it is resolved."""
+    client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression="SET twinClash = :c",
+                                   ConditionExpression="attribute_exists(PK)", ExpressionAttributeValues={
+                                       ":c": to_ddb_value({"code": code, "message": message, "at": now_iso(),
+                                                           **({"prodTenantId": prod_tenant_id} if prod_tenant_id else {})})})
+    write_audit(tenant_id, "twin_refused_slug_clash", actor, {"code": code, "prodTenantId": prod_tenant_id})
+
+
+def flag_prod_offboarded(tenant_id: str, actor: str) -> None:
+    """Prod offboarded the customer: the twin is only flagged. Nothing is
+    deleted without an operator (Suspend or offboard on the twin)."""
+    client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id),
+                                   UpdateExpression="SET twinProdOffboardedAt = :n",
+                                   ConditionExpression="attribute_exists(PK)",
+                                   ExpressionAttributeValues={":n": {"S": now_iso()}})
+    write_audit(tenant_id, "twin_prod_offboarded", actor, {})
+
+
+# ---------------------------------------------- prod's public API (read only)
+def prod_public(path: str, *, timeout: float = 10.0):
+    """GET on prod's PUBLIC API (what any guest's browser reads). None on 404."""
+    import urllib.error
+    import urllib.request
+    base = env("DEV_TWIN_PROD_API_URL", "").rstrip("/")
+    if not base:
+        raise StepFailed("Prod's public API isn't configured here (dev_twin_prod_api_url).")
+    request = urllib.request.Request(f"{base}{path}", headers={"Accept": "application/json",
+                                                              "User-Agent": "booqy-dev-twin/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise StepFailed(f"Prod's public API answered {e.code} for {path.split('?')[0]}") from None
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        raise StepFailed(f"Prod's public API didn't answer ({type(e).__name__}). Try again.") from None
+
+
+def prod_site(slug: str) -> dict | None:
+    """Prod's public site config for <slug>.<prod domain>, or None."""
+    from urllib.parse import quote
+    domain = env("DEV_TWIN_PROD_DOMAIN", "") or "booqy.se"
+    return prod_public(f"/site-config?host={quote(f'{slug}.{domain}')}")
+
+
+def prod_slug_taken(slug: str) -> bool:
+    """A prod customer uses this slug (its slug address answers). A prod API
+    that can't be reached never blocks: False, logged."""
+    if env("ENVIRONMENT", "prod") == "prod" or not env("DEV_TWIN_PROD_API_URL", ""):
+        return False
+    try:
+        site = prod_site(slug)
+    except StepFailed as e:
+        log.warning(json.dumps({"prodSlugCheck": slug, "error": str(e)}))
+        return False
+    return bool(site and (site.get("tenant") or {}).get("slug") == slug)
+
+
 # ------------------------------------------------------------------- state
 def _save(tenant_id: str, state: dict) -> None:
     client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(tenant_id), UpdateExpression="SET devTwin = :d",
@@ -133,14 +243,40 @@ def start(req) -> tuple[int, dict]:
         raise ApiError(404, "not_found", "Dev twins exist in the dev console only.")
     tenant_id = req.path["tenantId"]
     profile = get_profile(tenant_id)
-    if profile.get("status") in LOCKED or profile.get("status") == "suspended":
-        raise ApiError(409, "invalid_status", f"This customer is {profile.get('status')}. Restore or resume it "
-                                              "first, then refresh the dev twin.")
+    _twin_only(profile)
     if (profile.get("devTwin") or {}).get("status") in ("queued", "running"):
         return 202, {"devTwin": profile["devTwin"]}
     state = kick(tenant_id, req.actor, req.function_arn)
     write_audit(tenant_id, "dev_twin_requested", req.actor, {})
     return 202, {"devTwin": state}
+
+
+def _twin_only(profile: dict) -> None:
+    if profile.get("siteKind") == "test":
+        raise ApiError(409, "not_a_twin", "This is a dev test customer: it lives in dev only and has no twin. "
+                                          "Twins come from prod customers.")
+    if not is_twin(profile):
+        raise ApiError(409, "not_a_twin", "This dev customer is not a twin of a prod customer. Twins are created "
+                                          "from prod Booqy Console.")
+    if profile.get("status") in LOCKED or profile.get("status") == "suspended":
+        raise ApiError(409, "invalid_status", f"This customer is {profile.get('status')}. Restore or resume it "
+                                              "first, then refresh the dev twin.")
+
+
+def start_content(req) -> tuple[int, dict]:
+    """POST /platform/tenants/{tenantId}/dev-twin/content: copy the real
+    restaurant's public content from prod's public API now."""
+    from .devtwin_content import kick_content
+    if not enabled():
+        raise ApiError(404, "not_found", "Dev twins exist in the dev console only.")
+    tenant_id = req.path["tenantId"]
+    profile = get_profile(tenant_id)
+    _twin_only(profile)
+    if (profile.get("devTwinContent") or {}).get("status") in ("queued", "running"):
+        return 202, {"devTwinContent": profile["devTwinContent"]}
+    state = kick_content(tenant_id, req.actor, req.function_arn)
+    write_audit(tenant_id, "dev_twin_content_requested", req.actor, {})
+    return 202, {"devTwinContent": state}
 
 
 def twin_task(event: dict, context) -> dict:
@@ -151,6 +287,9 @@ def twin_task(event: dict, context) -> dict:
     tenant_id = task.get("tenantId")
     if not isinstance(tenant_id, str) or not tenant_id:
         return {"status": "invalid"}
+    if task.get("mode") == "content":
+        from .devtwin_content import ContentCopy
+        return ContentCopy(tenant_id, task.get("requestedBy") or OPERATOR, 1, context).run()
     return Seeder(tenant_id, task.get("requestedBy") or OPERATOR, int(task.get("run") or 1), context).run()
 
 
@@ -167,11 +306,13 @@ class Seeder:
 
     # -- plumbing ---------------------------------------------------------
     def call(self, name: str, method: str, path: str, route: str | None = None, body: dict | None = None,
-             ok=(200, 201, 204)) -> tuple[int, dict]:
+             ok=(200, 201, 204), query: dict | None = None) -> tuple[int, dict]:
         """One of the admin's functions as the twin's owner (console_invoke)."""
         call = {"operator": OPERATOR, "tenantId": self.tenant_id, "method": method, "path": path}
         if route:
             call["route"] = route
+        if query:
+            call["query"] = query
         if body is not None:
             call["body"] = body
         response = client("lambda").invoke(FunctionName=f"{env('DEV_TWIN_FUNCTION_PREFIX')}{name}:live",
@@ -203,7 +344,10 @@ class Seeder:
         profile = get_profile(self.tenant_id, required=False)
         if not profile or profile.get("status") in LOCKED:
             return {"status": "gone"}
+        if not is_twin(profile):
+            return {"status": "not_a_twin"}
         self.profile = profile
+        self._learn_twin_of()
         self.state = {"status": "running", "requestedBy": self.requested_by, "startedAt": now_iso(),
                       "ownerEmail": owner_email(profile["slug"]), "steps": {}}
         if not self._wait_active():
@@ -231,6 +375,20 @@ class Seeder:
         _save(self.tenant_id, self.state)
         write_audit(self.tenant_id, "dev_twin_seeded", OPERATOR, {"status": self.state["status"], "failed": failed})
         return {"status": self.state["status"], "failed": failed}
+
+    def _learn_twin_of(self) -> None:
+        """A twin from before the marker (Anar's manual one): its prod tenant
+        id from prod's public site config, best effort."""
+        if self.profile.get("twinOf") or not env("DEV_TWIN_PROD_API_URL", ""):
+            return
+        try:
+            site = prod_site(self.profile["slug"])
+        except StepFailed:
+            return
+        prod_id = ((site or {}).get("tenant") or {}).get("tenantId")
+        if prod_id and (site["tenant"].get("slug") == self.profile["slug"]):
+            mark_twin(self.tenant_id, prod_id)
+            self.profile["twinOf"] = {"env": "prod", "tenantId": prod_id}
 
     def _wait_active(self) -> bool:
         import time

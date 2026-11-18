@@ -123,7 +123,7 @@ def test_prod_link_never_copies_the_restaurants_own_details(site_repo, aws, tena
     out = _task({"action": "mirror", **PROD_PROFILE, "slug": "test-release", "ownerName": ""})
     assert out["status"] == "created"
     created = call("GET /platform/tenants/{tenantId}", {"tenantId": out["tenantId"]})[1]["tenant"]
-    assert created["ownerEmail"] == "dev+test-release@booqy.se" and created["ownerName"] == "Booqy utvecklare"
+    assert created["ownerEmail"] == "aws+test-release@ithjalparna.se" and created["ownerName"] == "Booqy utvecklare"
     assert created["name"] == "Pizzeria Roma" and created["planId"] == "growth"
     for personal in ("legalName", "orgNumber", "contactEmail", "contactPhone", "address"):
         assert personal not in created
@@ -133,8 +133,15 @@ REPO = {"name": "site-pizzeria-roma", "id": 9001, "html_url": "https://github.co
         "owner": {"login": "BooqyCustomers", "id": 356944191}}
 
 
+def _make_link(aws, tenant):
+    """The prod customer's dev twin made earlier by the link (siteKind prod-link)."""
+    aws["ddb"].update_item(TableName="dev-tenant", Key={"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}},
+                           UpdateExpression="SET siteKind = :k", ExpressionAttributeValues={":k": {"S": "prod-link"}})
+
+
 def test_prod_link_adopts_an_active_dev_tenant_and_writes_its_dev_role_for_the_repo_prod_names(site_repo, aws, tenant):
     _activate(aws, tenant)
+    _make_link(aws, tenant)
     site_repo.answer = {"tenantId": tenant, "roleArn": "arn:aws:iam::1:role/booqy-sites/dev-site-pizzeria-roma",
                         "variables": {"DEV_TENANT_ID": tenant}, "config": {"tenantId": tenant}}
     out = _task({"action": "mirror", **PROD_PROFILE, "planId": "unknown-in-dev", "repo": REPO})
@@ -156,6 +163,7 @@ def test_prod_link_creates_the_dev_tenant_then_its_role(site_repo, aws):
 
 def test_a_dev_side_site_repo_refusal_reaches_prod(site_repo, aws, tenant):
     _activate(aws, tenant)
+    _make_link(aws, tenant)
     site_repo.error = "refused: 'site-pizzeria-roma' owner id is not 356944191 (1)"
     out = _task({"action": "mirror", **PROD_PROFILE, "repo": REPO})
     assert out["error"] == "site_repo_failed" and "owner id" in out["message"]
@@ -261,6 +269,7 @@ def test_a_refused_repo_delete_is_logged_and_the_data_still_goes(site_repo, aws,
 def test_prod_link_restores_an_offboarded_dev_tenant(site_repo, aws, tenant):
     from test_api import _offboarded
     _offboarded(aws, tenant)
+    _make_link(aws, tenant)
     site_repo.answer = {"roleArn": "arn:aws:iam::1:role/booqy-sites/dev-site-pizzeria-roma"}
     out = _task({"action": "mirror", **PROD_PROFILE, "repo": REPO})
     assert out == {"tenantId": tenant, "status": "restored", "site": site_repo.answer}
@@ -316,14 +325,16 @@ def test_prod_cannot_link_to_a_dev_test_customer_with_the_same_slug(site_repo, a
     tenant_id = call("POST /platform/tenants", body=NEW_TENANT)[1]["tenantId"]
     _activate(aws, tenant_id)
     out = _task({"action": "mirror", **PROD_PROFILE, "slug": NEW_TENANT["slug"]})
-    assert out["error"] == "slug_used_by_test_customer" and "delete it there first" in out["message"]
+    assert out["error"] == "slug_used_by_test_customer" and "Rename or delete it" in out["message"]
     assert site_repo.calls == []
 
 
-def test_an_adopted_dev_tenant_becomes_a_prod_link(site_repo, aws, tenant):
+def test_a_dev_customer_that_is_not_a_twin_is_never_adopted(site_repo, aws, tenant):
+    # DATA-RULES.md, no collisions: never merged into or written over.
     _activate(aws, tenant)
-    assert _task({"action": "mirror", **PROD_PROFILE})["status"] == "adopted"
-    assert _profile(aws, tenant)["siteKind"] == "prod-link"
+    out = _task({"action": "mirror", **PROD_PROFILE})
+    assert out["error"] == "slug_used_by_dev_customer"
+    assert "siteKind" not in _profile(aws, tenant) and site_repo.calls == []
 
 
 def _make_test(aws, tenant):

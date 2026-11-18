@@ -327,12 +327,16 @@ def site_task(event: dict, function_arn: str | None = None) -> dict:
     creates or adopts the restaurant's dev twin and starts its seed
     (devtwin.py; function_arn: this function, for the async seed)."""
     out = _site_task(event)
-    if (isinstance(out, dict) and out.get("status") in ("created", "adopted", "restored")
-            and devtwin.enabled() and function_arn):
-        try:
+    if not (isinstance(out, dict) and devtwin.enabled() and function_arn):
+        return out
+    try:
+        if out.get("status") in ("created", "adopted", "restored"):
             devtwin.kick(out["tenantId"], LINK_ACTOR, function_arn)
-        except Exception:  # noqa: BLE001 - the site link must not fail on the seed; Refresh in the console
-            log.exception("dev twin seed for %s not started", out.get("tenantId"))
+        elif out.get("status") == "content_queued":
+            from .devtwin_content import kick_content
+            kick_content(out["tenantId"], LINK_ACTOR, function_arn)
+    except Exception:  # noqa: BLE001 - the site link must not fail on the seed; Refresh in the console
+        log.exception("dev twin work for %s not started", out.get("tenantId"))
     return out
 
 
@@ -345,47 +349,67 @@ def _site_task(event: dict) -> dict:
         return {"error": "validation_failed", "message": "slug missing or invalid"}
     tenant_id = _tenant_by_slug(slug)
     try:
+        prod_id = task.get("prodTenantId") if isinstance(task.get("prodTenantId"), str) else None
+        existing = get_profile(tenant_id) if tenant_id else {}
+        status = existing.get("status") if tenant_id else None
         if task.get("action") == "archive":
+            # Prod offboarded the customer: its twin is only flagged (never
+            # deleted without an operator); the archived repo's dev deploy
+            # role goes, as before.
             if not tenant_id:
                 return {"status": "none"}
+            if devtwin.is_twin(existing):
+                devtwin.flag_prod_offboarded(tenant_id, LINK_ACTOR)
             return {"tenantId": tenant_id, **invoke({"action": "archive", "tenantId": tenant_id})}
         if task.get("action") == "domain":
             return _domain_task(tenant_id, task)
+        if task.get("action") == "content":
+            return _content_task(tenant_id, existing, prod_id, slug)
         if task.get("action") != "mirror":
             return {"error": "validation_failed", "message": "unknown site task"}
-        existing = get_profile(tenant_id) if tenant_id else {}
-        status = existing.get("status") if tenant_id else None
-        if tenant_id and status != "purged" and existing.get("siteKind") == "test":
-            return {"error": "slug_used_by_test_customer",
-                    "message": f"{slug} is a test customer in the dev console: delete it there first, then Run setup again"}
+        if tenant_id and status != "purged":
+            # Never merged into or written over a dev customer that is not
+            # this prod customer's twin (DATA-RULES.md, no collisions).
+            problem = devtwin.clash(existing, prod_id)
+            if problem:
+                devtwin.record_clash(tenant_id, prod_id, problem[0], problem[1], LINK_ACTOR)
+                return {"error": problem[0], "message": problem[1]}
         if status == "offboarded":
             restore_tenant(tenant_id, LINK_ACTOR)
-            _mark_linked(tenant_id, existing)
+            devtwin.mark_twin(tenant_id, prod_id)
             return _with_dev_side({"tenantId": tenant_id, "status": "restored"}, task)
         if tenant_id and status != "purged":
-            # The same restaurant already has a dev tenant: keep its test data,
-            # set up the dev side of the repo now (idempotent).
+            # The restaurant's twin already exists: keep its test data, set up
+            # the dev side of the repo now (idempotent).
             if status == "offboarding":
                 return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
-            _mark_linked(tenant_id, existing)
-            write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
+            devtwin.mark_twin(tenant_id, prod_id)
+            write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": prod_id})
             return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
         body.update(planId=_dev_plan(task.get("planId")), ownerEmail=devtwin.owner_email(slug),
                     ownerName="Booqy utvecklare")
-        return _with_dev_side(_create_mirror(body, slug), task)
+        out = _create_mirror(body, slug)
+        devtwin.mark_twin(out["tenantId"], prod_id)
+        return _with_dev_side(out, task)
     except ApiError as e:
         fields = e.extra.get("fields") or {}
         detail = "; ".join(f"{k}: {msg}" for k, msg in fields.items())
         return {"error": e.code, "message": f"{e} ({detail})" if detail else str(e)}
 
 
-def _mark_linked(tenant_id: str, existing: dict) -> None:
-    if existing.get("siteKind") != "prod-link":
-        client("dynamodb").update_item(
-            TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
-            UpdateExpression="SET siteKind = :k", ConditionExpression="attribute_exists(PK)",
-            ExpressionAttributeValues={":k": {"S": "prod-link"}})
+def _content_task(tenant_id: str | None, existing: dict, prod_id: str | None, slug: str) -> dict:
+    """Prod: the restaurant finished its setup. Its twin copies the public
+    content from prod's public API (devtwin_content.py); started by
+    site_task once this answers "content_queued"."""
+    if not tenant_id or existing.get("status") != "active":
+        return {"error": "no_twin", "message": f"There is no active dev twin for {slug}"}
+    problem = devtwin.clash(existing, prod_id)
+    if problem:
+        return {"error": problem[0], "message": problem[1]}
+    if prod_id and not existing.get("twinOf"):
+        devtwin.mark_twin(tenant_id, prod_id)
+    return {"tenantId": tenant_id, "status": "content_queued"}
 
 
 def _with_dev_side(out: dict, task: dict) -> dict:

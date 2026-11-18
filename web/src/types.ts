@@ -67,6 +67,14 @@ export interface Tenant {
   siteKind?: "test" | "prod-link";
   /** Dev console: the customer's dev twin (API devtwin.py, docs/DEV-TWINS.md). */
   devTwin?: DevTwin;
+  /** Dev console: the prod customer this is the twin of. */
+  twinOf?: { env: "prod"; tenantId: string; linkedAt?: string };
+  /** Dev console: a prod customer's twin was refused here (slug clash). */
+  twinClash?: { code: string; message: string; at: string; prodTenantId?: string };
+  /** Dev console: prod offboarded the real customer (the twin is only flagged). */
+  twinProdOffboardedAt?: string;
+  /** Dev console: the last copy of the real restaurant's public content. */
+  devTwinContent?: DevTwin & { copiedAt?: string };
   /** featuresEver: every feature key ever turned on (read-only; only grows, CONTRACTS.md 9.2). */
   entitlements: { maxLocations: number; features: Features; limits?: Limits; featuresEver?: string[] };
   locationCount: number;
@@ -113,6 +121,8 @@ export interface TenantSummary {
   chargesEnabled: boolean;
   primaryDomain?: string;
   ownerEmail?: string;
+  /** Dev console: "twin" = a prod customer's dev twin, "test" = a dev test customer. */
+  devKind?: "twin" | "test";
   createdAt?: string;
   /** On the Free plan: the last free day, null = no end date. */
   freeUntil?: string | null;
@@ -904,7 +914,7 @@ export type AddedPrinter = { printer: Printer; username?: string; secret?: strin
 
 /** A dev twin's seed: every Kom igång step set up with test data (dev only). */
 export interface DevTwin {
-  status: "queued" | "running" | "ready" | "partial" | "failed";
+  status: "queued" | "running" | "ready" | "partial" | "failed" | "skipped";
   requestedAt?: string;
   requestedBy?: string;
   startedAt?: string;

@@ -359,6 +359,8 @@ def list_tenants(req) -> tuple[int, dict]:
             "chargesEnabled": bool(stripe.get("chargesEnabled")),
             "primaryDomain": t.get("primaryDomain"), "ownerEmail": t.get("ownerEmail"),
             "createdAt": t.get("createdAt"),
+            # Dev: "twin" (a prod customer's dev twin) or "test" (a dev test customer)
+            **({"devKind": _dev_kind(t)} if env("ENVIRONMENT") != "prod" and _dev_kind(t) else {}),
             "freeUntil": (t.get("billing") or {}).get("freeUntil") if t.get("planId") == FREE_PLAN_ID
             and isinstance(t.get("billing"), dict) else None,
         })
@@ -378,10 +380,23 @@ def _site_kind(actor: str) -> dict:
     return {"siteKind": "test"} if env("TEST_SITES_ENABLED", "false") == "true" else {}
 
 
+def _dev_kind(t: dict) -> str | None:
+    from .devtwin import is_twin
+    if t.get("siteKind") == "test":
+        return "test"
+    return "twin" if is_twin(t) else None
+
+
 def create_tenant(req) -> tuple[int, dict]:
     f = v.Fields(req.body)
     name = f.text("name", required=True, max_len=100)
     slug = v.slug(f)
+    if slug and req.actor != "prod-site-repo":
+        # Dev: a slug a prod customer uses is its twin's; a dev test customer
+        # may not take it (BooqyCustomers/site-template docs/DATA-RULES.md).
+        from .devtwin import prod_slug_taken
+        if prod_slug_taken(slug):
+            f.fail("slug", "A prod customer uses this slug. Pick another one, so its dev twin can't clash.")
     owner_email = f.email("ownerEmail", required=True)
     owner_name = f.text("ownerName", required=True, max_len=100)
     owner_phone = f.phone("ownerPhone")

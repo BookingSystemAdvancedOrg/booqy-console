@@ -152,6 +152,8 @@ export const api = {
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
   // Dev only: create or refresh the customer's dev twin (test data in every Kom igång step)
   devTwin: (id: string) => request<{ devTwin: DevTwin }>("POST", `${t(id)}/dev-twin`, {}),
+  // Dev only: copy the real restaurant's public content from prod's public API now
+  devTwinContent: (id: string) => request<{ devTwinContent: DevTwin }>("POST", `${t(id)}/dev-twin/content`, {}),
   // Website tab: the restaurant's own site repo (site-repo function)
   site: (id: string) => request<SiteStatus | { enabled: false }>("GET", `${t(id)}/site`),
   retrySite: (id: string) => request<{ status: string }>("POST", `${t(id)}/site/retry`, {}),

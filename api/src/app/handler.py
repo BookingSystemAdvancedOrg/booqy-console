@@ -29,6 +29,7 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
     # Dev twin (dev only): create or refresh the customer's twin with test data
     "POST /platform/tenants/{tenantId}/dev-twin": devtwin.start,
+    "POST /platform/tenants/{tenantId}/dev-twin/content": devtwin.start_content,
     # Website tab: the restaurant's own site repo (site-repo function)
     "GET /platform/tenants/{tenantId}/site": site.get_site,
     "POST /platform/tenants/{tenantId}/site/retry": site.retry,

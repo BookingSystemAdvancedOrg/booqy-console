@@ -27,7 +27,7 @@ import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
-import { DevTwinCard, devTwinBusy } from "../components/DevTwinCard";
+import { DevKindBadge, DevTwinCard, devKind, devTwinBusy } from "../components/DevTwinCard";
 import { BackButton } from "../components/ds";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -93,7 +93,8 @@ export default function TenantPage() {
       <div className="back-row"><BackButton to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</BackButton></div>
       <div className="page-head">
         <div>
-          <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}</h1>
+          <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}
+            {!isProd() && <> <DevKindBadge kind={devKind(t)} /></>}</h1>
           <p className="muted mono small">{t.slug} · {t.tenantId}</p>
         </div>
         <RefreshButton reload={refresh} />
@@ -112,6 +113,9 @@ export default function TenantPage() {
           <button className="link" onClick={() => goTab("Suspend or offboard")}>Restore or delete</button>
         </Notice>
       )}
+      {!isProd() && t.twinClash && (
+        <Notice kind="warn"><strong>A prod customer's twin was refused here.</strong> {t.twinClash.message}</Notice>
+      )}
       {t.status === "provisioning_failed" && (
         <RetryBanner tenant={t} onDone={reload} onFix={(field) => { if (confirmLeave()) { setTab("Overview"); setFixField(field); } }} />
       )}
@@ -129,7 +133,7 @@ export default function TenantPage() {
 
       {tab === "Overview" && <>
         <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />
-        {!isProd() && <DevTwinCard tenant={t} onChanged={reload} />}
+        {!isProd() && devKind(t) === "twin" && <DevTwinCard tenant={t} onChanged={reload} />}
       </>}
       {tab === "Locations" && <>
         <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
