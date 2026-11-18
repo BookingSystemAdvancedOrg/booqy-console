@@ -74,7 +74,8 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((parseDay(to).getTime() - parseDay(from).getTime()) / 86_400_000) + 1;
 }
 
-// --- formatting (numbers sv-SE: space thousands, comma decimals, "kr"; dates en-GB, the console's language) ---
+// --- formatting: revenue in SEK (sv-SE: space thousands, comma decimals, "kr"); every cost in USD
+// (en-US: "$1,234.56", as AWS Billing shows it); dates en-GB, the console's language ---
 const sek0 = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 const sek2 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const int = new Intl.NumberFormat("sv-SE");
@@ -83,6 +84,23 @@ export function fmtSek(value: number | null | undefined, opts: { decimals?: bool
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   const n = Number(value);
   return `${(opts.decimals || (Math.abs(n) < 100 && n !== 0) ? sek2 : sek0).format(n)} kr`;
+}
+
+const usd2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd4 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+/** A cost in USD, cents like AWS Billing; `precise` keeps up to four decimals under one dollar
+ * (cost per booking, an SMS share), where cents would read as $0.00. */
+export function fmtUsd(value: number | null | undefined, opts: { precise?: boolean } = {}): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  const n = Number(value);
+  return (opts.precise && Math.abs(n) < 1 && n !== 0 ? usd4 : usd2).format(n);
+}
+
+/** "10.11 SEK per USD" for the rate behind the margin. */
+export function fmtRate(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(value))} SEK per USD`;
 }
 
 export function fmtInt(value: number | null | undefined): string {
@@ -129,6 +147,7 @@ export interface Bucket {
   key: string;
   revenue: number;
   collected: number;
+  /** USD */
   cost: number;
   mrr: number;
   bookings: number;
@@ -142,7 +161,7 @@ export function bucketSeries(series: FinancePoint[], grain: Grain): Bucket[] {
     const b = map.get(key) ?? { key, revenue: 0, collected: 0, cost: 0, mrr: 0, bookings: 0, orders: 0 };
     b.revenue += Number(p.invoicedSek) || 0;
     b.collected += Number(p.paidSek) || 0;
-    b.cost += Number(p.costSek) || 0;
+    b.cost += Number(p.costUsd) || 0;
     b.mrr = Number(p.mrrSek) || 0;            // a snapshot: the last day of the bucket wins
     b.bookings += Number(p.bookings) || 0;
     b.orders += Number(p.orders) || 0;
@@ -151,20 +170,22 @@ export function bucketSeries(series: FinancePoint[], grain: Grain): Bucket[] {
   return [...map.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
-export function topAndBottom<T extends { marginSek: number }>(rows: T[], n: number): { top: T[]; bottom: T[] } {
-  const sorted = [...rows].sort((a, b) => b.marginSek - a.marginSek);
+export function topAndBottom<T extends { marginSek: number | null }>(rows: T[], n: number): { top: T[]; bottom: T[] } {
+  const sorted = rows.filter((r) => r.marginSek !== null).sort((a, b) => (b.marginSek ?? 0) - (a.marginSek ?? 0));
   if (sorted.length <= n * 2) return { top: sorted, bottom: [] };
   return { top: sorted.slice(0, n), bottom: sorted.slice(-n).reverse() };
 }
 
 export type SortKey = keyof Pick<FinanceTenantRow,
-  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costSek" | "mrrSek" | "bookings" | "orders" | "requests" | "smsParts" | "smsCostSek">;
+  "name" | "marginSek" | "marginPct" | "revenueSek" | "collectedSek" | "outstandingSek" | "costUsd" | "mrrSek" | "bookings" | "orders" | "requests" | "smsParts" | "smsCostUsd">;
 
 export function sortRows(rows: FinanceTenantRow[], key: SortKey, dir: "asc" | "desc"): FinanceTenantRow[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
     const va = a[key], vb = b[key];
     if (typeof va === "string" || typeof vb === "string") return sign * String(va ?? "").localeCompare(String(vb ?? ""), "sv");
+    if (va === null && vb !== null) return 1;          // no margin yet (no rate): last either way
+    if (vb === null && va !== null) return -1;
     return sign * ((Number(va) || 0) - (Number(vb) || 0));
   });
 }
@@ -202,11 +223,11 @@ export function previousRange(from: string, to: string): { from: string; to: str
   return { from: addDays(from, -n), to: addDays(from, -1) };
 }
 
-/** AWS cost summed per allocation bucket over the customer rows. */
-export function costSplitTotals(rows: { costSplitSek: { baseline: number; requests: number; email: number; sms: number } }[]) {
+/** AWS cost (USD) summed per allocation bucket over the customer rows. */
+export function costSplitTotals(rows: { costSplitUsd: { baseline: number; requests: number; email: number; sms: number } }[]) {
   const out = { requests: 0, baseline: 0, email: 0, sms: 0 };
   for (const r of rows) {
-    for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] += Number(r.costSplitSek?.[k]) || 0;
+    for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] += Number(r.costSplitUsd?.[k]) || 0;
   }
   return out;
 }
@@ -276,25 +297,26 @@ const csvNumber = (v: number | null | undefined, digits = 2) =>
 const csvEscape = (c: string) => (/[;"\n\r]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
 const toCsvText = (rows: string[][]) => "﻿" + rows.map((r) => r.map(csvEscape).join(";")).join("\r\n") + "\r\n";
 
-/** One row per customer for the chosen period, amounts in SEK excluding VAT. */
+/** One row per customer for the chosen period: revenue in SEK excluding VAT, cost in USD (four decimals,
+ * so a month adds up to the AWS bill), margin in SEK at the day rates. */
 export function customersCsv(rows: FinanceTenantRow[]): string {
   const head = ["Customer", "Legal name", "Org number", "Status", "Billing", "MRR SEK", "Revenue SEK", "Collected SEK", "Credited SEK", "Refunded SEK",
-    "Outstanding SEK", "Cost SEK", "Cost baseline SEK", "Cost requests SEK", "Cost email SEK", "Cost SMS SEK", "Margin SEK", "Margin %",
-    "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS cost SEK", "Free until",
-    "Cost per booking SEK", "Cost per order SEK", "Active days", "Invoices"];
+    "Outstanding SEK", "Cost USD", "Cost baseline USD", "Cost requests USD", "Cost email USD", "Cost SMS USD", "Margin SEK", "Margin %",
+    "Bookings", "Orders", "Requests", "Emails", "Marketing emails", "SMS", "SMS parts", "SMS cost USD", "Free until",
+    "Cost per booking USD", "Cost per order USD", "Active days", "Invoices"];
   const body = rows.map((t) => [t.name, t.legalName ?? "", t.orgNumber ?? "", t.status, t.billingStatus, csvNumber(t.mrrSek), csvNumber(t.revenueSek),
-    csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.refundedSek ?? 0), csvNumber(t.outstandingSek), csvNumber(t.costSek), csvNumber(t.costSplitSek?.baseline),
-    csvNumber(t.costSplitSek?.requests), csvNumber(t.costSplitSek?.email), csvNumber(t.costSplitSek?.sms), csvNumber(t.marginSek),
+    csvNumber(t.collectedSek), csvNumber(t.creditedSek), csvNumber(t.refundedSek ?? 0), csvNumber(t.outstandingSek), csvNumber(t.costUsd, 4), csvNumber(t.costSplitUsd?.baseline, 4),
+    csvNumber(t.costSplitUsd?.requests, 4), csvNumber(t.costSplitUsd?.email, 4), csvNumber(t.costSplitUsd?.sms, 4), csvNumber(t.marginSek),
     csvNumber(t.marginPct, 1), csvNumber(t.bookings, 0), csvNumber(t.orders, 0), csvNumber(t.requests, 0), csvNumber(t.emails, 0),
-    csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsCostSek),
-    t.free ? t.freeUntil ?? "no end date" : "", csvNumber(t.costPerBookingSek), csvNumber(t.costPerOrderSek), csvNumber(t.activeDays, 0), csvNumber(t.invoiceCount, 0)]);
+    csvNumber(t.marketingEmails, 0), csvNumber(t.sms, 0), csvNumber(t.smsParts, 0), csvNumber(t.smsCostUsd, 4),
+    t.free ? t.freeUntil ?? "no end date" : "", csvNumber(t.costPerBookingUsd, 4), csvNumber(t.costPerOrderUsd, 4), csvNumber(t.activeDays, 0), csvNumber(t.invoiceCount, 0)]);
   return toCsvText([head, ...body]);
 }
 
 /** One row per day for the chosen period (the chart data). */
 export function dailyCsv(series: FinancePoint[]): string {
-  const head = ["Day", "Invoiced SEK", "Paid SEK", "Cost SEK", "MRR SEK", "Bookings", "Orders", "Requests", "Active customers", "SMS parts"];
-  const body = series.map((p) => [p.day, csvNumber(p.invoicedSek), csvNumber(p.paidSek), csvNumber(p.costSek), csvNumber(p.mrrSek),
+  const head = ["Day", "Invoiced SEK", "Paid SEK", "Cost USD", "MRR SEK", "Bookings", "Orders", "Requests", "Active customers", "SMS parts"];
+  const body = series.map((p) => [p.day, csvNumber(p.invoicedSek), csvNumber(p.paidSek), csvNumber(p.costUsd, 4), csvNumber(p.mrrSek),
     csvNumber(p.bookings, 0), csvNumber(p.orders, 0), csvNumber(p.requests, 0), csvNumber(p.activeTenants, 0), csvNumber(p.smsParts, 0)]);
   return toCsvText([head, ...body]);
 }

@@ -27,26 +27,28 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
   return {
     period: { from: "2026-10-01", to: "2026-10-21", days: 21, includeInactive: false, tenantId: null },
     kpis: {
-      mrrSek: 2980, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costSek: 100, marginSek: 2780, marginPct: 96.5,
+      // cost in USD (10 USD at 10 SEK per USD is the 100 kr between revenue and margin)
+      mrrSek: 2980, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costUsd: 10, marginSek: 2780, marginPct: 96.5,
       customers: 2, activeCustomers: 2, payingCustomers: 2, newCustomers: 0, churnedCustomers: 0, churnPct: 0, arpuSek: 1490,
-      bookings: 23, orders: 11, costPerBookingSek: 4.35, costPerOrderSek: 9.09, requests: 650, emails: 5, sms: 0,
-      smsParts: 412, smsCostSek: 61.5, freeCustomers: 1,
+      bookings: 23, orders: 11, costPerBookingUsd: 0.4348, costPerOrderUsd: 0.9091, requests: 650, emails: 5, sms: 0,
+      smsParts: 412, smsCostUsd: 6.15, freeCustomers: 1,
     },
+    fx: { source: "Riksbank SEKUSDPMI", from: "2026-10-01", to: "2026-10-02", min: 10, max: 10.11, latest: 10.11, latestDate: "2026-10-02", days: 2 },
     series: [
-      { day: "2026-10-01", invoicedSek: 2980, paidSek: 0, costSek: 60, mrrSek: 2980, bookings: 14, orders: 7, requests: 400, activeTenants: 2 },
-      { day: "2026-10-02", invoicedSek: -100, paidSek: 990, costSek: 40, mrrSek: 2980, bookings: 9, orders: 4, requests: 250, activeTenants: 2 },
+      { day: "2026-10-01", invoicedSek: 2980, paidSek: 0, costUsd: 6, mrrSek: 2980, bookings: 14, orders: 7, requests: 400, activeTenants: 2 },
+      { day: "2026-10-02", invoicedSek: -100, paidSek: 990, costUsd: 4, mrrSek: 2980, bookings: 9, orders: 4, requests: 250, activeTenants: 2 },
     ],
     tenants: [
       { tenantId: "t2", name: "Bistro Linnea", slug: "linnea", orgNumber: "556000-0001", status: "active", planId: "growth", billingStatus: "active",
-        mrrSek: 1990, revenueSek: 1890, collectedSek: 0, creditedSek: 100, outstandingSek: 1990, costSek: 70,
-        costSplitSek: { baseline: 10, requests: 60, email: 0, sms: 0 }, marginSek: 1820, marginPct: 96.3, bookings: 18, orders: 9,
-        requests: 500, emails: 0, sms: 0, marketingEmails: 0, costPerBookingSek: 3.89, costPerOrderSek: 7.78, activeDays: 2, invoiceCount: 1,
-        smsParts: 300, smsCostSek: 45 },
+        mrrSek: 1990, revenueSek: 1890, collectedSek: 0, creditedSek: 100, outstandingSek: 1990, costUsd: 7,
+        costSplitUsd: { baseline: 1, requests: 6, email: 0, sms: 0 }, marginSek: 1820, marginPct: 96.3, bookings: 18, orders: 9,
+        requests: 500, emails: 0, sms: 0, marketingEmails: 0, costPerBookingUsd: 0.3889, costPerOrderUsd: 0.7778, activeDays: 2, invoiceCount: 1,
+        smsParts: 300, smsCostUsd: 0.0045 },
       { tenantId: "t1", name: "Pizzeria Roma", slug: "pizzeria-roma", orgNumber: "556677-8899", status: "active", planId: "starter", billingStatus: "past_due",
-        pastDueSince: "2026-10-10T00:00:00Z", mrrSek: 990, revenueSek: 990, collectedSek: 990, creditedSek: 0, outstandingSek: 0, costSek: 30,
-        costSplitSek: { baseline: 10, requests: 15, email: 5, sms: 0 }, marginSek: 960, marginPct: 97, bookings: 5, orders: 2,
-        requests: 150, emails: 5, sms: 0, marketingEmails: 0, costPerBookingSek: 6, costPerOrderSek: 15, activeDays: 2, invoiceCount: 1,
-        smsParts: 112, smsCostSek: 16.5, free: true, freeUntil: "2027-02-14" },
+        pastDueSince: "2026-10-10T00:00:00Z", mrrSek: 990, revenueSek: 990, collectedSek: 990, creditedSek: 0, outstandingSek: 0, costUsd: 3,
+        costSplitUsd: { baseline: 1, requests: 1.5, email: 0.5, sms: 0 }, marginSek: 960, marginPct: 97, bookings: 5, orders: 2,
+        requests: 150, emails: 5, sms: 0, marketingEmails: 0, costPerBookingUsd: 0.6, costPerOrderUsd: 1.5, activeDays: 2, invoiceCount: 1,
+        smsParts: 112, smsCostUsd: 1.65, free: true, freeUntil: "2027-02-14" },
     ],
     attention: { pastDue: [{ tenantId: "t1", name: "Pizzeria Roma", since: "2026-10-10T00:00:00Z", status: "active" }], noSubscription: [] },
     job: { finishedAt: "2026-10-21T04:35:00Z", warnings: [] },
@@ -70,13 +72,44 @@ describe("FinancePage", () => {
     const base = overview();
     mocks.financeOverview.mockResolvedValue({
       ...base, costAsOf: "2026-10-20",
-      kpis: { ...base.kpis, costSek: 140, costScope: "platform", allocatedCostSek: 100, unallocatedSek: 40,
-              costSplitSek: { baseline: 60, requests: 80, email: 0, sms: 0 } },
+      kpis: { ...base.kpis, costUsd: 14, costScope: "platform", allocatedCostUsd: 10, unallocatedUsd: 4,
+              costSplitUsd: { baseline: 6, requests: 8, email: 0, sms: 0 } },
     });
     renderPage();
     expect(await screen.findByText(/AWS cost known up to 20 Oct/)).toBeInTheDocument();
     expect(screen.getAllByText("AWS bill").length).toBe(1);                       // the tile: label and number only
     expect(screen.queryByText(/allocated to customers/i)).not.toBeInTheDocument();
+  });
+
+  it("shows every cost in USD, as AWS bills it, and revenue in SEK", async () => {
+    renderPage();
+    expect(await screen.findByText(/Revenue SEK ex VAT · Cost USD/)).toBeInTheDocument();
+    const units = screen.getByRole("region", { name: "Revenue and unit economics" });
+    await waitFor(() => expect(units).toHaveTextContent("$10.00"));                   // AWS cost, en-US like AWS Billing
+    expect(units).toHaveTextContent("$0.4348");                                       // cost per booking, a fraction of a dollar
+    expect(units).toHaveTextContent("$6.15");                                         // SMS
+    expect(units).not.toHaveTextContent(/AWS (bill|cost)\s*[\d\s,]+ kr/);
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    await waitFor(() => expect(within(rows[0]).getByText("$7.00")).toBeInTheDocument());
+    expect(within(rows[0]).getByText("1 820 kr")).toBeInTheDocument();               // margin stays SEK
+    expect(within(rows[0]).getByText("$0.0045 cost")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /AWS cost \(USD\)/ })).toBeInTheDocument();
+    // the ring shares the revenue at the day rates; each amount in its own currency
+    const ring = screen.getByRole("img", { name: /Where the revenue goes/ }).closest("figure")!;
+    expect(ring).toHaveTextContent("$10.00");
+    // the margin names the rate and its date
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "About the margin" }));
+    expect(await screen.findByText(/10\.00 SEK per USD to 10\.11 SEK per USD, latest 10\.11 SEK per USD on 2 Oct/)).toBeInTheDocument();
+  });
+
+  it("leaves the margin empty without a USD/SEK rate", async () => {
+    const base = overview();
+    mocks.financeOverview.mockResolvedValue({ ...base, fx: null, kpis: { ...base.kpis, marginSek: null, marginPct: null },
+      tenants: base.tenants.map((t) => ({ ...t, marginSek: null, marginPct: null })) });
+    renderPage();
+    expect(await screen.findByText("No USD/SEK rate yet")).toBeInTheDocument();
+    expect(screen.queryByText(/of revenue/)).not.toBeInTheDocument();
   });
 
   it("puts MRR, paying customers and cash first, with the past due count", async () => {
@@ -101,7 +134,9 @@ describe("FinancePage", () => {
     expect(screen.queryByText(/SMS revenue|parts charged/)).not.toBeInTheDocument();
     expect(screen.getByText("Free until 14 Feb 2027")).toBeInTheDocument();
     expect(mocks.financeOverview).toHaveBeenCalledTimes(2);                        // this period and the one before
-    expect(screen.getByRole("img", { name: /Revenue and AWS cost per day/ })).toBeInTheDocument();
+    // revenue (SEK) and AWS cost (USD) never share an axis
+    expect(screen.getByRole("img", { name: /Revenue in SEK per day/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /AWS cost in USD per day/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Monthly recurring revenue/ })).toBeInTheDocument();
     const table = screen.getByRole("table");
     const rows = within(table).getAllByRole("row").slice(1);
@@ -182,7 +217,7 @@ describe("FinancePage", () => {
     mocks.financeOverview.mockResolvedValue(overview({
       tenants: [], series: [], attention: { pastDue: [], noSubscription: [] },
       job: { finishedAt: "2026-10-21T04:35:00Z", warnings: ["Cost Explorer: not enabled"] },
-      kpis: { ...overview().kpis, mrrSek: 0, revenueSek: 0, costSek: 0, marginSek: 0, marginPct: null, customers: 0, payingCustomers: 0 },
+      kpis: { ...overview().kpis, mrrSek: 0, revenueSek: 0, costUsd: 0, marginSek: 0, marginPct: null, customers: 0, payingCustomers: 0 },
     }));
     renderPage();
     expect(await screen.findByText("Nothing to add up yet")).toBeInTheDocument();

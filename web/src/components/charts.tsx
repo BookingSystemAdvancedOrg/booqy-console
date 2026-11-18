@@ -3,7 +3,7 @@
  * (viewBox + width 100%), names its values for screen readers and shows a
  * tooltip per point on hover, tap and keyboard (ChartTip). */
 import { CSSProperties, useEffect, useId, useRef, useState } from "react";
-import { fmtSek, shortDay } from "../finance";
+import { fmtSek, fmtUsd, shortDay } from "../finance";
 import { ChartTip } from "./ChartTip";
 import { useChartTip } from "./chartTipState";
 
@@ -46,11 +46,18 @@ function tickLabel(v: number): string {
   return `${v.toLocaleString("sv-SE", { maximumFractionDigits: 0 })} kr`;
 }
 
-export interface BarLinePoint { key: string; bar: number; line: number; }
+/** Axis label for a cost in USD: "$0.25", "$12", "$1.2k". */
+export function usdTick(v: number): string {
+  if (Math.abs(v) >= 1000) return `$${(v / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })}k`;
+  return fmtUsd(v).replace(/\.00$/, "");
+}
 
-/** Bars (revenue) with a line (cost) over the same buckets. */
+export interface BarLinePoint { key: string; bar: number; line?: number; }
+
+/** Bars (revenue) with an optional line over the same buckets, in one currency: without a
+ * `lineLabel` only the bars are drawn. */
 export function BarLineChart({ points, barLabel, lineLabel, ariaLabel, format = fmtSek, tick = tickLabel }: {
-  points: BarLinePoint[]; barLabel: string; lineLabel: string; ariaLabel: string;
+  points: BarLinePoint[]; barLabel: string; lineLabel?: string; ariaLabel: string;
   /** How a value reads in the tooltip and on the axis (SEK by default). */
   format?: (n: number) => string;
   tick?: (n: number) => string;
@@ -59,7 +66,8 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel, format = 
   const [ref, W] = useWidth();
   const tip = useChartTip(points.length);
   if (points.length === 0) return <ChartEmpty />;
-  const max = niceMax(Math.max(...points.map((p) => Math.max(p.bar, p.line)), 1));
+  const hasLine = !!lineLabel;
+  const max = niceMax(Math.max(...points.map((p) => Math.max(p.bar, hasLine ? p.line ?? 0 : 0)), 1));
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
   const slot = innerW / points.length;
@@ -68,7 +76,7 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel, format = 
   const x = (i: number) => PAD.left + slot * i + slot / 2;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
   const labelEvery = Math.ceil(points.length / Math.max(3, Math.floor(innerW / 80)));
-  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.line).toFixed(1)}`).join(" ");
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.line ?? 0).toFixed(1)}`).join(" ");
   const a = tip.active;
   const ap = a !== null ? points[a] : null;
   return (
@@ -92,25 +100,32 @@ export function BarLineChart({ points, barLabel, lineLabel, ariaLabel, format = 
             )}
           </g>
         ))}
-        <path d={line} pathLength={1} className="chart__line chart__line--draw" />
-        {points.map((p, i) => <circle key={p.key} cx={x(i)} cy={y(p.line)} r={2.6} className={`chart__dot chart__dot--in${a === i ? " chart__dot--on" : ""}`} style={{ "--i": i } as CSSProperties} />)}
+        {hasLine && <path d={line} pathLength={1} className="chart__line chart__line--draw" />}
+        {hasLine && points.map((p, i) => <circle key={p.key} cx={x(i)} cy={y(p.line ?? 0)} r={2.6} className={`chart__dot chart__dot--in${a === i ? " chart__dot--on" : ""}`} style={{ "--i": i } as CSSProperties} />)}
         {points.map((p, i) => <rect key={p.key} x={PAD.left + slot * i} y={PAD.top} width={slot} height={innerH + PAD.bottom} className="chart-hit" {...tip.hit(i)} />)}
       </svg>
-      <ChartTip tip={tip} at={ap ? { x: x(a!), y: Math.min(y(ap.bar), y(ap.line)) } : null}
+      <ChartTip tip={tip} at={ap ? { x: x(a!), y: Math.min(y(ap.bar), hasLine ? y(ap.line ?? 0) : Infinity) } : null}
                 content={ap ? { heading: shortDay(ap.key), rows: [
                   { label: barLabel, value: format(ap.bar), tone: "ink" },
-                  { label: lineLabel, value: format(ap.line), tone: "red", line: true },
+                  ...(hasLine ? [{ label: lineLabel!, value: format(ap.line ?? 0), tone: "red" as const, line: true }] : []),
                 ] } : null} />
       <figcaption className="legend">
         <span><i className="legend__bar" />{barLabel}</span>
-        <span><i className="legend__line" />{lineLabel}</span>
+        {hasLine && <span><i className="legend__line" />{lineLabel}</span>}
       </figcaption>
     </figure>
   );
 }
 
-/** A single line (MRR over time), filled underneath. */
-export function LineChart({ points, label, ariaLabel }: { points: { key: string; value: number }[]; label: string; ariaLabel: string }) {
+/** A single line (MRR over time, AWS cost in USD), filled underneath. */
+export function LineChart({ points, label, ariaLabel, format = fmtSek, tick = tickLabel, tone = "ink" }: {
+  points: { key: string; value: number }[]; label: string; ariaLabel: string;
+  /** How a value reads in the tooltip and on the axis (SEK by default). */
+  format?: (n: number) => string;
+  tick?: (n: number) => string;
+  /** ink for revenue, red for cost. */
+  tone?: "ink" | "red";
+}) {
   const id = useId();
   const [ref, W] = useWidth();
   const tip = useChartTip(points.length);
@@ -136,14 +151,14 @@ export function LineChart({ points, label, ariaLabel }: { points: { key: string;
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="chart__grid" />
-            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" className="chart__tick">{tickLabel(t)}</text>
+            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" className="chart__tick">{tick(t)}</text>
           </g>
         ))}
-        <path d={area} className="chart__area chart__area--in" />
-        <path d={path} pathLength={1} className="chart__line chart__line--ink chart__line--draw" />
+        <path d={area} className={`chart__area chart__area--in${tone === "red" ? " chart__area--red" : ""}`} />
+        <path d={path} pathLength={1} className={`chart__line${tone === "ink" ? " chart__line--ink" : ""} chart__line--draw`} />
         {points.map((p, i) => (
           <g key={p.key}>
-            <circle cx={x(i)} cy={y(p.value)} r={2.6} className={`chart__dot chart__dot--ink chart__dot--in${a === i ? " chart__dot--on" : ""}`} style={{ "--i": i } as CSSProperties} />
+            <circle cx={x(i)} cy={y(p.value)} r={2.6} className={`chart__dot${tone === "ink" ? " chart__dot--ink" : ""} chart__dot--in${a === i ? " chart__dot--on" : ""}`} style={{ "--i": i } as CSSProperties} />
             {/* the last point sits on the right edge: its label ends there instead of being cut ("7 Oc") */}
             {i % labelEvery === 0 && <text x={x(i)} y={H - 10} textAnchor={i > 0 && i === points.length - 1 ? "end" : "middle"} className="chart__tick">{shortDay(p.key)}</text>}
           </g>
@@ -152,8 +167,8 @@ export function LineChart({ points, label, ariaLabel }: { points: { key: string;
         {points.map((p, i) => <rect key={p.key} x={Math.max(PAD.left, x(i) - half)} y={PAD.top} width={Math.min(x(i) + half, W - PAD.right) - Math.max(PAD.left, x(i) - half)} height={innerH + PAD.bottom} className="chart-hit" {...tip.hit(i)} />)}
       </svg>
       <ChartTip tip={tip} at={ap ? { x: x(a!), y: y(ap.value) - 4 } : null}
-                content={ap ? { heading: shortDay(ap.key), rows: [{ label, value: fmtSek(ap.value), tone: "ink" }] } : null} />
-      <figcaption className="legend"><span><i className="legend__line legend__line--ink" />{label}</span></figcaption>
+                content={ap ? { heading: shortDay(ap.key), rows: [{ label, value: format(ap.value), tone: tone === "red" ? "red" : "ink", line: tone === "red" }] } : null} />
+      <figcaption className="legend"><span><i className={`legend__line${tone === "ink" ? " legend__line--ink" : ""}`} />{label}</span></figcaption>
     </figure>
   );
 }

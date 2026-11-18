@@ -649,16 +649,18 @@ export interface FinanceKpis {
   collectedSek: number;
   refundedSek?: number;
   outstandingSek: number;
-  /** The whole AWS bill ("platform") without a customer filter, else the customer's allocated share. */
-  costSek: number;
+  /** USD, as AWS Billing and Cost Explorer report it: the whole AWS bill ("platform") without a
+   * customer filter, else the customer's allocated share. Costs are never converted. */
+  costUsd: number;
   costScope?: "platform" | "allocated";
-  /** The part of costSek allocated to the customers shown. */
-  allocatedCostSek?: number;
+  /** The part of costUsd allocated to the customers shown. */
+  allocatedCostUsd?: number;
   /** Bill not allocated to the customers shown: days nobody was active, customers left out by the filter. */
-  unallocatedSek?: number;
+  unallocatedUsd?: number;
   /** The whole bill per bucket (platform scope only). */
-  costSplitSek?: { baseline: number; requests: number; email: number; sms: number } | null;
-  marginSek: number;
+  costSplitUsd?: CostSplit | null;
+  /** SEK: revenue minus the cost at each day's USD/SEK rate (FinanceOverview.fx); null without a rate. */
+  marginSek: number | null;
   marginPct: number | null;
   customers: number;
   activeCustomers: number;
@@ -669,23 +671,39 @@ export interface FinanceKpis {
   arpuSek: number | null;
   bookings: number;
   orders: number;
-  costPerBookingSek: number | null;
-  costPerOrderSek: number | null;
+  costPerBookingUsd: number | null;
+  costPerOrderUsd: number | null;
   requests: number;
   emails: number;
   sms: number;
   /** Customers on the Free plan (0 kr MRR). */
   freeCustomers?: number;
-  /** SMS are included in the price: the parts sent and their share of the AWS bill (our cost). */
+  /** SMS are included in the price: the parts sent and their share of the AWS bill (our cost, USD). */
   smsParts: number;
-  smsCostSek: number;
+  smsCostUsd: number;
+}
+
+export interface CostSplit { baseline: number; requests: number; email: number; sms: number }
+
+/** The Riksbank USD/SEK rates the margin used (cost itself stays USD). */
+export interface FinanceFx {
+  source: string;
+  from: string;
+  to: string;
+  min: number;
+  max: number;
+  latest: number;
+  latestDate: string;
+  days: number;
 }
 
 export interface FinancePoint {
   day: string;
   invoicedSek: number;
   paidSek: number;
-  costSek: number;
+  /** USD */
+  costUsd: number;
+  allocatedCostUsd?: number;
   mrrSek: number;
   bookings: number;
   orders: number;
@@ -710,9 +728,9 @@ export interface FinanceTenantRow {
   creditedSek: number;
   refundedSek?: number;
   outstandingSek: number;
-  costSek: number;
-  costSplitSek: { baseline: number; requests: number; email: number; sms: number };
-  marginSek: number;
+  costUsd: number;
+  costSplitUsd: CostSplit;
+  marginSek: number | null;
   marginPct: number | null;
   bookings: number;
   orders: number;
@@ -721,13 +739,13 @@ export interface FinanceTenantRow {
   sms: number;
   marketingEmails: number;
   smsParts: number;
-  smsCostSek: number;
+  smsCostUsd: number;
   /** On the Free plan (MRR 0), with its last free day. */
   free?: boolean;
   freeUntil?: string | null;
   smsByType?: { booking: number; reminder: number; order: number; catering: number };
-  costPerBookingSek: number | null;
-  costPerOrderSek: number | null;
+  costPerBookingUsd: number | null;
+  costPerOrderUsd: number | null;
   activeDays: number;
   invoiceCount: number;
   createdAt?: string;
@@ -758,11 +776,14 @@ export interface FinanceOverview {
   asOf: string | null;
   /** Newest day the AWS cost is known for (Cost Explorer lags about a day). */
   costAsOf?: string | null;
+  /** The USD/SEK rates behind the margin; null when none is known yet. */
+  fx?: FinanceFx | null;
 }
 
 export interface FinanceTenantDetail {
   period: { from: string; to: string };
   tenant: FinanceTenantRow;
+  fx?: FinanceFx | null;
   series: FinancePoint[];
   days: Record<string, unknown>[];
   invoices: Invoice[];

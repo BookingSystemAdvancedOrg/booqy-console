@@ -16,7 +16,9 @@ export type TrendMetric =
   | "margin"
   | "mrr"
   | "cost"
+  | "costUsd"
   | "unitCost"
+  | "unitCostUsd"
   | "sms"
   | "customers"
   | "arpu"
@@ -31,7 +33,7 @@ interface MetricRule {
   better: "up" | "down";
   /** Smallest change in percent that counts (anything smaller is noise). */
   minPct: number;
-  /** Smallest change in the metric's unit (SEK or count). */
+  /** Smallest change in the metric's unit (SEK, USD or count). */
   minAbs: number;
   /** Show the change as a percentage or as a difference ("+2"). */
   show: "pct" | "abs";
@@ -43,6 +45,9 @@ const RULES: Record<TrendMetric, MetricRule> = {
   mrr: { better: "up", minPct: 1, minAbs: 50, show: "pct" },
   cost: { better: "down", minPct: 2, minAbs: 10, show: "pct" },
   unitCost: { better: "down", minPct: 3, minAbs: 0.05, show: "pct" },
+  // AWS cost is USD (as AWS bills it): a dollar, and half a cent per unit, are the noise floors.
+  costUsd: { better: "down", minPct: 2, minAbs: 1, show: "pct" },
+  unitCostUsd: { better: "down", minPct: 3, minAbs: 0.005, show: "pct" },
   sms: { better: "up", minPct: 2, minAbs: 10, show: "pct" },
   customers: { better: "up", minPct: 0, minAbs: 1, show: "abs" },
   arpu: { better: "up", minPct: 2, minAbs: 5, show: "pct" },

@@ -2,15 +2,15 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "reac
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CtaButton, Disclosure } from "../components/ds";
-import { BarLineChart, HBarChart, LineChart } from "../components/charts";
+import { BarLineChart, HBarChart, LineChart, usdTick } from "../components/charts";
 import { CountUp, Delta, deltaPct, useTrendPop } from "../components/motion";
 import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Status, fmtDate, useAction, useLoad } from "../components/ui";
-import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtSek, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
+import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtRate, fmtSek, fmtUsd, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
 import { toneClass, trendOf } from "../trend";
 import type { Trend, TrendTone } from "../trend";
-import type { FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
+import type { FinanceFx, FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 import { RefreshButton, SaveButton } from "../components/save";
 import { SkelCard, SkelKpis, SkelPage, SkelTable } from "../components/Skeleton";
 import { useRowOpen } from "../components/rowLink";
@@ -66,7 +66,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     [tenants.data, needle],
   );
   const k = data?.kpis;
-  const split = useMemo(() => data?.kpis.costSplitSek ?? costSplitTotals(data?.tenants ?? []), [data]);
+  const split = useMemo(() => data?.kpis.costSplitUsd ?? costSplitTotals(data?.tenants ?? []), [data]);
   const wholeBill = k?.costScope === "platform";
   const mrrStart = data?.series.length ? Number(data.series[0].mrrSek) : null;
   const mrrEnd = data?.series.length ? Number(data.series[data.series.length - 1].mrrSek) : null;
@@ -76,15 +76,17 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     margin: trendOf(k.marginSek, before?.marginSek, "margin", prev),
     revenue: trendOf(k.revenueSek, before?.revenueSek, "revenue", prev),
     mrr: trendOf(mrrEnd, mrrStart, "mrr", "the start of the period"),
-    cost: trendOf(k.costSek, before?.costSek, "cost", prev),
+    cost: trendOf(k.costUsd, before?.costUsd, "costUsd", prev),
     customers: trendOf(k.payingCustomers, before?.payingCustomers, "customers", prev),
     arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
-    costPerBooking: trendOf(k.costPerBookingSek, before?.costPerBookingSek, "unitCost", prev),
-    costPerOrder: trendOf(k.costPerOrderSek, before?.costPerOrderSek, "unitCost", prev),
-    sms: trendOf(k.smsCostSek, before?.smsCostSek, "cost", prev),
+    costPerBooking: trendOf(k.costPerBookingUsd, before?.costPerBookingUsd, "unitCostUsd", prev),
+    costPerOrder: trendOf(k.costPerOrderUsd, before?.costPerOrderUsd, "unitCostUsd", prev),
+    sms: trendOf(k.smsCostUsd, before?.smsCostUsd, "unitCostUsd", prev),
   };
   // A loss is red whatever the period before was.
-  const marginTone: TrendTone = k && k.marginSek < 0 ? "bad" : trends?.margin.tone ?? "neutral";
+  const marginTone: TrendTone = k && (k.marginSek ?? 0) < 0 ? "bad" : trends?.margin.tone ?? "neutral";
+  // The AWS cost in SEK at the day rates, only to share the revenue between profit and cost.
+  const costAtRate = k && k.marginSek !== null ? k.revenueSek - k.marginSek : null;
   const heroRef = useTrendPop<HTMLElement>(marginTone);
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const pastDue = data?.attention.pastDue.length ?? 0;
@@ -96,17 +98,19 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
         <div>
           <h1>Finance</h1>
           <p className="muted">
-            {data?.asOf ? `As of ${fmtDate(data.asOf)} · SEK ex VAT` : data ? "No nightly figures yet" : "SEK ex VAT"}{" "}
+            {data?.asOf ? `As of ${fmtDate(data.asOf)} · ` : data ? "No nightly figures yet · " : ""}Revenue SEK ex VAT · Cost USD{" "}
             <InfoTip label="About the figures">
               {data?.costAsOf ? `AWS cost known up to ${fmtDay(data.costAsOf)} (Cost Explorer lags about a day). ` : ""}
-              Revenue and cost in SEK excluding VAT. The figures come from the nightly job (Cost Explorer plus each
+              Revenue in SEK excluding VAT, as invoiced. Every cost in USD, exactly as AWS Billing and Cost Explorer
+              show it for this account (all charges: usage, tax, credits). The margin converts each day's cost at
+              Riksbank's USD/SEK rate of that day. The figures come from the nightly job (Cost Explorer plus each
               customer's usage) and from Stripe when invoices are created and paid.
             </InfoTip>
           </p>
         </div>
         <div className="row">
           <button className="btn btn--ghost" disabled={!data || data.tenants.length === 0}
-                  title="One row per customer for the chosen period (SEK ex VAT)"
+                  title="One row per customer for the chosen period (revenue SEK ex VAT, cost USD)"
                   onClick={() => data && downloadCsv(csvName("customers", data.period), customersCsv(rows))}>
             Export customers (CSV)
           </button>
@@ -236,16 +240,23 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           {/* 2. Is it profitable: gross margin, AWS cost against revenue. */}
           <section className="hero" aria-label="The period at a glance">
             <div className="kpi kpi--hero">
-              <span className="kpi__head"><span className="kpi__label">Gross margin</span><Delta trend={trends.margin} /></span>
+              <span className="kpi__head">
+                <span className="kpi__label">Gross margin{" "}
+                  <InfoTip label="About the margin"><FxNote fx={data.fx ?? null} /></InfoTip>
+                </span>
+                <Delta trend={trends.margin} />
+              </span>
               <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
             </div>
             <div className="kpi kpi--rings">
-              <Ring title="Where the revenue goes" total={Math.max(k.revenueSek, k.costSek, 0)} centerLabel="profit" empty="No revenue yet"
+              {/* Shares of the revenue at the day rates; each amount in its own currency. */}
+              <Ring title="Where the revenue goes" total={costAtRate === null ? 0 : Math.max(k.revenueSek, costAtRate, 0)} centerLabel="profit"
+                    empty={k.revenueSek > 0 ? "No USD/SEK rate yet" : "No revenue yet"}
                     segments={[
-                      { key: "margin", label: "Profit", value: Math.max(0, k.marginSek), tone: "ink" },
-                      { key: "cost", label: "AWS cost", value: k.costSek, tone: "red" },
+                      { key: "margin", label: "Profit", value: Math.max(0, k.marginSek ?? 0), tone: "ink", display: fmtSek(k.marginSek) },
+                      { key: "cost", label: "AWS cost", value: costAtRate ?? 0, tone: "red", display: fmtUsd(k.costUsd) },
                     ]} />
-              <Ring title="What the AWS cost is for" total={k.costSek} centerLabel="requests" empty="No cost yet"
+              <Ring title="What the AWS cost is for" total={k.costUsd} centerLabel="requests" empty="No cost yet" format={(n) => fmtUsd(n)}
                     segments={[
                       { key: "requests", label: "Requests", value: split.requests, tone: "ink" },
                       { key: "baseline", label: "Baseline", value: split.baseline, tone: "steel" },
@@ -291,13 +302,15 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           <Disclosure title="Revenue and unit economics" meta="ARPU, cost per booking and order, SMS">
             <section className="kpis kpis--units" aria-label="Revenue and unit economics">
               <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} trend={trends.revenue} />
-              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costSek} format={fmtSek} />} trend={trends.cost} />
+              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costUsd} format={(n) => fmtUsd(n)} />} trend={trends.cost}
+                   info={wholeBill ? <>The account's whole bill in USD, as AWS Billing and Cost Explorer show it
+                     {(k.unallocatedUsd ?? 0) > 0 ? <>; {fmtUsd(k.unallocatedUsd)} of it is not on the customers shown</> : null}.</> : undefined} />
               <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} trend={trends.arpu} />
-              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingSek} format={(n) => fmtSek(n, { decimals: true })} />}
+              <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingUsd} format={(n) => fmtUsd(n, { precise: true })} />}
                    trend={trends.costPerBooking} />
-              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderSek} format={(n) => fmtSek(n, { decimals: true })} />}
+              <Kpi label="Cost per order" value={<CountUp value={k.costPerOrderUsd} format={(n) => fmtUsd(n, { precise: true })} />}
                    trend={trends.costPerOrder} />
-              <Kpi label="SMS" value={<CountUp value={k.smsCostSek} format={(n) => fmtSek(n, { decimals: true })} />} trend={trends.sms} />
+              <Kpi label="SMS" value={<CountUp value={k.smsCostUsd} format={(n) => fmtUsd(n, { precise: true })} />} trend={trends.sms} />
             </section>
           </Disclosure>
 
@@ -306,20 +319,26 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
             <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
-              {k.revenueSek > 0 && <p className="insight">AWS cost {fmtPct((k.costSek / k.revenueSek) * 100)} of revenue</p>}
-              <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue, line: b.cost }))}
-                            barLabel="Revenue" lineLabel="AWS cost" ariaLabel={`Revenue and AWS cost per ${grain}`} />
+              {k.revenueSek > 0 && costAtRate !== null && <p className="insight">AWS cost {fmtPct((costAtRate / k.revenueSek) * 100)} of revenue</p>}
+              <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue }))}
+                            barLabel="Revenue (SEK)" ariaLabel={`Revenue in SEK per ${grain}`} />
+            </Card>
+          </div>
+          <div className="charts">
+            <Card title={insightTitle("AWS cost", deltaPct(k.costUsd, before?.costUsd ?? NaN))}>
+              <LineChart points={buckets.map((b) => ({ key: b.key, value: b.cost }))} label="AWS cost (USD)" tone="red"
+                         format={(n) => fmtUsd(n)} tick={usdTick} ariaLabel={`AWS cost in USD per ${grain}`} />
             </Card>
           </div>
 
           {data.tenants.length > 1 && (
             <div className="charts">
               <Card title="Best margin">
-                <HBarChart rows={top.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the best margin" valueLabel="Margin" />
+                <HBarChart rows={top.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek ?? 0 }))} ariaLabel="Customers with the best margin" valueLabel="Margin" />
               </Card>
               {bottom.length > 0 && (
                 <Card title="Weakest margin">
-                  <HBarChart rows={bottom.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek }))} ariaLabel="Customers with the weakest margin" valueLabel="Margin" />
+                  <HBarChart rows={bottom.map((t) => ({ key: t.tenantId, label: t.name, value: t.marginSek ?? 0 }))} ariaLabel="Customers with the weakest margin" valueLabel="Margin" />
                 </Card>
               )}
             </div>
@@ -336,7 +355,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                   <Th k="revenueSek" sort={sort} setSort={setSort}>Revenue</Th>
                   <Th k="collectedSek" sort={sort} setSort={setSort}>Collected</Th>
                   <Th k="outstandingSek" sort={sort} setSort={setSort}>Outstanding</Th>
-                  <Th k="costSek" sort={sort} setSort={setSort}>AWS cost</Th>
+                  <Th k="costUsd" sort={sort} setSort={setSort}>AWS cost (USD)</Th>
                   <Th k="marginSek" sort={sort} setSort={setSort}>Margin</Th>
                   <Th k="bookings" sort={sort} setSort={setSort}>Bookings</Th>
                   <Th k="orders" sort={sort} setSort={setSort}>Orders</Th>
@@ -356,6 +375,18 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
       </>}
 
       {rebuild && <RebuildModal range={range} onClose={() => setRebuild(false)} onStarted={() => { setRebuild(false); }} />}
+    </>
+  );
+}
+
+/** Which USD/SEK rate turned the AWS cost into the SEK margin. */
+function FxNote({ fx }: { fx: FinanceFx | null }) {
+  if (!fx) return <>Revenue (SEK) minus the AWS cost (USD). No USD/SEK rate is known yet, so there is no margin until the nightly job has run.</>;
+  const range = fx.min === fx.max ? fmtRate(fx.latest) : `${fmtRate(fx.min)} to ${fmtRate(fx.max)}`;
+  return (
+    <>
+      Revenue (SEK) minus the AWS cost (USD) converted at Riksbank's USD/SEK rate of each day: {range}, latest{" "}
+      {fmtRate(fx.latest)} on {fmtDay(fx.latestDate)}. The cost itself stays in USD.
     </>
   );
 }
@@ -405,13 +436,13 @@ function TenantRow({ t }: { t: FinanceTenantRow }) {
       <td className="num" data-label="Revenue">{fmtSek(t.revenueSek)}</td>
       <td className="num" data-label="Collected">{fmtSek(t.collectedSek)}</td>
       <td className={`num${t.outstandingSek > 0 ? " warn" : ""}`} data-label="Outstanding">{fmtSek(t.outstandingSek)}</td>
-      <td className="num" data-label="AWS cost">{fmtSek(t.costSek)}</td>
-      <td className={`num${t.marginSek < 0 ? " bad" : ""}`} data-label="Margin">
+      <td className="num" data-label="AWS cost">{fmtUsd(t.costUsd)}</td>
+      <td className={`num${(t.marginSek ?? 0) < 0 ? " bad" : ""}`} data-label="Margin">
         {fmtSek(t.marginSek)}<div className="muted small">{t.marginPct === null ? "-" : fmtPct(t.marginPct)}</div>
       </td>
       <td className="num" data-label="Bookings">{fmtInt(t.bookings)}</td>
       <td className="num" data-label="Orders">{fmtInt(t.orders)}</td>
-      <td className="num" data-label="SMS">{fmtInt(t.smsParts)}<div className="muted small">{fmtSek(t.smsCostSek, { decimals: true })} cost</div></td>
+      <td className="num" data-label="SMS">{fmtInt(t.smsParts)}<div className="muted small">{fmtUsd(t.smsCostUsd, { precise: true })} cost</div></td>
     </tr>
   );
 }
@@ -434,8 +465,8 @@ function RebuildModal({ range, onClose, onStarted }: { range: { from: string; to
         <p className="small">
           Up to 92 days, yesterday at the latest.{" "}
           <InfoTip label="About Rebuild">
-            Recomputes the AWS cost, usage and allocation for a date range. Use it after changing the exchange rate or
-            the cost allocation, or when a night was missed. The run takes a few minutes; refresh the page afterwards.
+            Recomputes the AWS cost (USD, from Cost Explorer), usage and allocation for a date range. Use it after
+            changing the cost allocation, or when a night was missed. The run takes a few minutes; refresh the page afterwards.
             Request counts exist for the last 30 days only (log retention).
           </InfoTip>
         </p>

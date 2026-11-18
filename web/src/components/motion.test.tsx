@@ -13,7 +13,7 @@ describe("deltas and periods", () => {
     expect(easeOutExpo(1)).toBe(1);
     expect(easeOutExpo(0.5)).toBeGreaterThan(0.9);
     expect(previousRange("2026-10-01", "2026-10-21")).toEqual({ from: "2026-09-10", to: "2026-09-30" });
-    expect(costSplitTotals([{ costSplitSek: { baseline: 1, requests: 2, email: 3, sms: 4 } }, { costSplitSek: { baseline: 1, requests: 1, email: 0, sms: 0 } }]))
+    expect(costSplitTotals([{ costSplitUsd: { baseline: 1, requests: 2, email: 3, sms: 4 } }, { costSplitUsd: { baseline: 1, requests: 1, email: 0, sms: 0 } }]))
       .toEqual({ requests: 3, baseline: 2, email: 3, sms: 4 });
     expect(insightTitle("Revenue", 12.34)).toBe("Revenue: 12,3 % up");
     expect(insightTitle("Revenue", -3)).toBe("Revenue: 3 % down");

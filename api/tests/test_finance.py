@@ -29,15 +29,21 @@ def two_tenants(finance, stripe, aws, tenant):  # noqa: F811
                                ExpressionAttributeValues={":a": {"S": "active"}, ":c": {"S": "2026-09-01T10:00:00Z"}})
     for t in (tenant, other):
         call("POST /platform/tenants/{tenantId}/billing/subscription", {"tenantId": t}, body={})
-    _day(finance, tenant, "2026-10-01", requests=100, bookings=4, orders=2, emails=5, costSek=Decimal("20"),
-         costSplitSek={"requests": Decimal("15"), "baseline": Decimal("5")}, invoicedSek=Decimal("990"), mrrSek=Decimal("990"))
-    _day(finance, tenant, "2026-10-02", requests=50, bookings=1, orders=0, costSek=Decimal("10"), paidSek=Decimal("990"),
+    # cost in USD as AWS bills it; revenue in SEK as Booqy invoices it
+    _day(finance, tenant, "2026-10-01", requests=100, bookings=4, orders=2, emails=5, costUsd=Decimal("2"),
+         costSplitUsd={"requests": Decimal("1.5"), "baseline": Decimal("0.5")}, invoicedSek=Decimal("990"), mrrSek=Decimal("990"))
+    _day(finance, tenant, "2026-10-02", requests=50, bookings=1, orders=0, costUsd=Decimal("1"), paidSek=Decimal("990"),
          mrrSek=Decimal("990"))
-    _day(finance, other, "2026-10-01", requests=300, bookings=10, orders=5, costSek=Decimal("40"), invoicedSek=Decimal("1990"),
+    _day(finance, other, "2026-10-01", requests=300, bookings=10, orders=5, costUsd=Decimal("4"), invoicedSek=Decimal("1990"),
          mrrSek=Decimal("1990"))
-    _day(finance, other, "2026-10-02", requests=200, bookings=8, orders=4, costSek=Decimal("30"), creditedSek=Decimal("100"),
+    _day(finance, other, "2026-10-02", requests=200, bookings=8, orders=4, costUsd=Decimal("3"), creditedSek=Decimal("100"),
          mrrSek=Decimal("1990"))
-    _day(finance, other, "2026-09-30", requests=1, costSek=Decimal("999"))   # outside the range
+    _day(finance, other, "2026-09-30", requests=1, costUsd=Decimal("999"))   # outside the range
+    # the whole bill per day, with that day's Riksbank USD/SEK rate (for the margin only)
+    for day, usd, split, rate in (("2026-10-01", "6", {"requests": Decimal("5.5"), "baseline": Decimal("0.5")}, "10"),
+                                  ("2026-10-02", "4", {"requests": Decimal("4")}, "11")):
+        finance.put_item(Item={"PK": "PLATFORM", "SK": f"DAY#{day}", "costUsd": Decimal(usd), "costSplitUsd": split,
+                               "unallocatedUsd": Decimal(0), "usdSek": Decimal(rate), "usdSekDate": day})
     _invoice(finance, tenant, "2026-10-01", "in_1", status="paid", totalSek=Decimal("1237.50"), subtotalSek=Decimal("990"),
              amountRemainingSek=Decimal(0))
     _invoice(finance, other, "2026-10-01", "in_2", status="open", totalSek=Decimal("2487.50"), subtotalSek=Decimal("1990"),
@@ -53,20 +59,25 @@ def test_overview_sums_the_range_for_active_customers(two_tenants):
     assert status == 200, body
     k = body["kpis"]
     assert k["revenueSek"] == 2880 and k["collectedSek"] == 990 and k["outstandingSek"] == 1990
-    assert k["costSek"] == 100 and k["marginSek"] == 2780 and k["marginPct"] == 96.5
+    # cost stays USD; the margin is SEK with each day's cost at that day's rate: 6 x 10 + 4 x 11 = 104 kr
+    assert k["costUsd"] == 10 and k["marginSek"] == 2776 and k["marginPct"] == 96.4
+    assert "costSek" not in k and "costPerBookingSek" not in k and "smsCostSek" not in k
     assert k["mrrSek"] == 2980 and k["payingCustomers"] == 2 and k["arpuSek"] == 1490
-    assert k["bookings"] == 23 and k["orders"] == 11 and k["costPerBookingSek"] == 4.35 and k["costPerOrderSek"] == 9.09
+    assert k["bookings"] == 23 and k["orders"] == 11 and k["costPerBookingUsd"] == 0.4348 and k["costPerOrderUsd"] == 0.9091
+    assert body["fx"] == {"source": "Riksbank SEKUSDPMI", "from": "2026-10-01", "to": "2026-10-02", "min": 10, "max": 11,
+                          "latest": 11, "latestDate": "2026-10-02", "days": 2}
     assert k["customers"] == 2 and k["activeCustomers"] == 2 and k["churnedCustomers"] == 0
     assert body["period"] == {"from": "2026-10-01", "to": "2026-10-02", "days": 2, "includeInactive": False, "tenantId": None,
                               "locationId": None, "revenueScope": None}
     rows = {t["tenantId"]: t for t in body["tenants"]}
-    assert rows[tenant]["revenueSek"] == 990 and rows[tenant]["costSek"] == 30 and rows[tenant]["marginSek"] == 960
-    assert rows[tenant]["costSplitSek"]["requests"] == 15 and rows[tenant]["emails"] == 5
+    # 2 USD at 10 + 1 USD at 11 = 31 kr
+    assert rows[tenant]["revenueSek"] == 990 and rows[tenant]["costUsd"] == 3 and rows[tenant]["marginSek"] == 959
+    assert rows[tenant]["costSplitUsd"]["requests"] == 1.5 and rows[tenant]["emails"] == 5
     assert rows[other]["revenueSek"] == 1890 and rows[other]["creditedSek"] == 100 and rows[other]["outstandingSek"] == 1990
     assert rows[other]["orgNumber"] == "556000-0001" and rows[other]["billingStatus"] == "active"
     assert body["tenants"][0]["tenantId"] == other        # sorted by margin, best first
     assert [p["day"] for p in body["series"]] == ["2026-10-01", "2026-10-02"]
-    assert body["series"][0]["invoicedSek"] == 2980 and body["series"][1]["costSek"] == 40 and body["series"][1]["mrrSek"] == 2980
+    assert body["series"][0]["invoicedSek"] == 2980 and body["series"][1]["costUsd"] == 4 and body["series"][1]["mrrSek"] == 2980
     assert body["asOf"] == "2026-10-03T04:35:00Z" and body["job"]["warnings"] == ["Cost Explorer: not enabled"]
     assert body["attention"]["noSubscription"] == [] and body["attention"]["pastDue"] == []
 
@@ -123,6 +134,8 @@ def test_tenant_detail(two_tenants):
     assert status == 200, body
     assert body["tenant"]["revenueSek"] == 1890 and [d["day"] for d in body["days"]] == ["2026-10-01", "2026-10-02"]
     assert body["days"][1]["creditedSek"] == 100 and len(body["invoices"]) == 1
+    assert body["tenant"]["costUsd"] == 7 and body["days"][0]["costUsd"] == 4 and body["tenant"]["marginSek"] == 1890 - 73
+    assert body["fx"]["latest"] == 11
 
 
 def test_rebuild_invokes_the_rollup(two_tenants, monkeypatch):
@@ -192,44 +205,65 @@ def test_overview_scoped_to_one_location(two_tenants, finance, aws):  # noqa: F8
     status, body = call("GET /platform/tenants/{tenantId}", {"tenantId": other})
     loc = body["locations"][0]["locationId"]
     finance.put_item(Item={"PK": f"TENANT#{other}", "SK": f"LOC#{loc}#DAY#2026-10-01", "requests": 120, "bookings": 6,
-                           "orders": 3, "emails": 2, "costSek": Decimal("25"), "locationId": loc})
+                           "orders": 3, "emails": 2, "costUsd": Decimal("2.5"), "locationId": loc})
     finance.put_item(Item={"PK": f"TENANT#{other}", "SK": f"LOC#{loc}#DAY#2026-10-02", "requests": 80, "bookings": 2,
-                           "orders": 1, "costSek": Decimal("15"), "locationId": loc})
+                           "orders": 1, "costUsd": Decimal("1.5"), "locationId": loc})
     status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-02", "tenantId": other,
                                                                  "locationId": loc})
     assert status == 200, body
     k = body["kpis"]
-    assert k["costSek"] == 40 and k["bookings"] == 8 and k["orders"] == 4 and k["requests"] == 200 and k["emails"] == 2
+    assert k["costUsd"] == 4 and k["bookings"] == 8 and k["orders"] == 4 and k["requests"] == 200 and k["emails"] == 2
     assert k["revenueSek"] == 1890 and k["mrrSek"] == 1990           # the restaurant's, not the location's
     assert body["period"]["locationId"] == loc and body["period"]["revenueScope"] == "tenant"
     assert body["locations"] == [{"locationId": loc, "name": "Roma Södermalm"}]
-    assert body["series"][0]["costSek"] == 25 and body["series"][0]["invoicedSek"] == 1990
+    assert body["series"][0]["costUsd"] == 2.5 and body["series"][0]["invoicedSek"] == 1990
     status, body = call("GET /platform/finance/overview", query={"locationId": loc})
     assert status == 400
 
 
 def test_overview_shows_the_whole_aws_bill_with_the_allocated_part(two_tenants, finance):  # noqa: F811
     tenant, other = two_tenants
-    # 2026-10-01 and -02 as allocated; 2026-09-30's 999 kr belongs to a customer outside the range anyway.
-    # The bill also has a day nobody was active (all unallocated) and a share left to a customer the
+    # 2026-10-01 and -02 as allocated (10 USD); 2026-09-30's 999 USD belongs to a customer outside the range anyway.
+    # The bill also has a day nobody was active (all unallocated, no rate yet) and a share left to a customer the
     # active-only filter hides.
-    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-01", "costSek": Decimal("75"), "unallocatedSek": Decimal(0),
-                           "costSplitSek": {"baseline": Decimal("25"), "requests": Decimal("50"), "email": Decimal(0), "sms": Decimal(0)}})
-    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-02", "costSek": Decimal("40"), "unallocatedSek": Decimal(0),
-                           "costSplitSek": {"baseline": Decimal("10"), "requests": Decimal("30"), "email": Decimal(0), "sms": Decimal(0)}})
-    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-03", "costSek": Decimal("25"), "unallocatedSek": Decimal("25"),
-                           "costSplitSek": {"baseline": Decimal("25"), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-01", "costUsd": Decimal("7.5"), "unallocatedUsd": Decimal(0),
+                           "usdSek": Decimal("10"), "usdSekDate": "2026-10-01",
+                           "costSplitUsd": {"baseline": Decimal("2.5"), "requests": Decimal("5"), "email": Decimal(0), "sms": Decimal(0)}})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-02", "costUsd": Decimal("4"), "unallocatedUsd": Decimal(0),
+                           "usdSek": Decimal("11"), "usdSekDate": "2026-10-02",
+                           "costSplitUsd": {"baseline": Decimal("1"), "requests": Decimal("3"), "email": Decimal(0), "sms": Decimal(0)}})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-10-03", "costUsd": Decimal("2.5"), "unallocatedUsd": Decimal("2.5"),
+                           "costSplitUsd": {"baseline": Decimal("2.5"), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}})
     for day in ("2026-10-02", "2026-10-03"):
         finance.put_item(Item={"PK": "PLATFORM", "SK": f"COST#{day}", "day": day})
     status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-03"})
     assert status == 200, body
     k = body["kpis"]
-    assert k["costScope"] == "platform" and k["costSek"] == 140 and k["allocatedCostSek"] == 100 and k["unallocatedSek"] == 40
-    assert k["costSplitSek"] == {"baseline": 60, "requests": 80, "email": 0, "sms": 0}
-    assert k["marginSek"] == 2880 - 140 and k["costPerBookingSek"] == round(140 / 23, 2)
+    assert k["costScope"] == "platform" and k["costUsd"] == 14 and k["allocatedCostUsd"] == 10 and k["unallocatedUsd"] == 4
+    assert k["costSplitUsd"] == {"baseline": 6, "requests": 8, "email": 0, "sms": 0}
+    # the 3rd has no rate yet: it takes the 2nd's. 75 + 44 + 27.5 = 146.5 kr
+    assert k["marginSek"] == 2733.5 and k["costPerBookingUsd"] == round(14 / 23, 4)
     assert [p["day"] for p in body["series"]] == ["2026-10-01", "2026-10-02", "2026-10-03"]
-    assert body["series"][2]["costSek"] == 25 and body["series"][0]["allocatedCostSek"] == 60
+    assert body["series"][2]["costUsd"] == 2.5 and body["series"][0]["allocatedCostUsd"] == 6
     assert body["costAsOf"] == "2026-10-03"
     # one customer: its allocated share, as before
     status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-03", "tenantId": other})
-    assert body["kpis"]["costScope"] == "allocated" and body["kpis"]["costSek"] == 70 and body["kpis"]["unallocatedSek"] == 0
+    assert body["kpis"]["costScope"] == "allocated" and body["kpis"]["costUsd"] == 7 and body["kpis"]["unallocatedUsd"] == 0
+    assert body["kpis"]["marginSek"] == 1890 - 73
+
+
+def test_rows_from_before_the_usd_migration_read_back_in_usd(two_tenants, finance):  # noqa: F811
+    tenant, other = two_tenants
+    # written in SEK at the old fixed 10.5, not yet rewritten by finance-rollup
+    _day(finance, tenant, "2026-09-15", costSek=Decimal("21"), costSplitSek={"requests": Decimal("21")})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "DAY#2026-09-15", "costSek": Decimal("31.50"),
+                           "costSplitSek": {"requests": Decimal("31.50")}})
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-09-15", "to": "2026-09-15"})
+    k = body["kpis"]
+    assert k["costUsd"] == 3 and k["allocatedCostUsd"] == 2 and k["costSplitUsd"]["requests"] == 3
+    # no rate for that day: the nearest stored one (here the 1st and 2nd of October are in another range,
+    # so none is known) leaves the margin empty instead of guessing
+    assert k["marginSek"] is None and k["marginPct"] is None and body["fx"] is None
+    finance.put_item(Item={"PK": "PLATFORM", "SK": "COST#2026-11-17", "usdSek": Decimal("10.11"), "usdSekDate": "2026-11-17"})
+    status, body = call("GET /platform/finance/overview", query={"from": "2026-09-15", "to": "2026-09-15"})
+    assert body["kpis"]["marginSek"] == round(-3 * 10.11, 2) and body["fx"]["latestDate"] == "2026-11-17"

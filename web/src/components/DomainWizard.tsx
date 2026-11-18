@@ -16,7 +16,7 @@ type Path = "choose" | "buy" | "move" | "keep" | "map";
 
 export function money(m?: Money | null) {
   if (!m) return "-";
-  return new Intl.NumberFormat("sv-SE", { style: "currency", currency: m.currency }).format(Number(m.amount));
+  return new Intl.NumberFormat(m.currency === "SEK" ? "sv-SE" : "en-US", { style: "currency", currency: m.currency }).format(Number(m.amount));
 }
 
 /** Add domain (owner 2026-11-15): the three ways in, each ending in the same pipeline (site on the domain,

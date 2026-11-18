@@ -700,6 +700,7 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .chart__dot { fill: var(--ink-red); }
 .chart__dot--ink { fill: var(--print); }
 .chart__area { fill: var(--print); opacity: 0.08; }
+.chart__area--red { fill: var(--ink-red); }
 .chart__empty { margin: 0; padding: 36px 0; text-align: center; color: var(--print-2); font: 760 10.5px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .legend { display: flex; gap: 16px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--print-2); }
 .legend span { display: inline-flex; gap: 6px; align-items: center; }

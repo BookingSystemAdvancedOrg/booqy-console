@@ -813,7 +813,7 @@
         "profit",
         "export csv"
       ],
-      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (a calendar month), in SEK ex VAT. Pick a customer to see just them, and export the rows as CSV.",
+      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (a calendar month). Revenue is in SEK ex VAT; every cost is in USD, exactly as AWS Billing shows it, and the margin converts it at Riksbank's USD/SEK rate of each day. Pick a customer to see just them, and export the rows as CSV.",
       "steps": [
         "Open Finance in the menu.",
         "Pick the Billing period and how many periods.",
