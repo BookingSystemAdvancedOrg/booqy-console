@@ -180,22 +180,22 @@ for (const theme of ['light', 'dark'] as const) {
   })
 }
 
-/** Users tab: owner actions (Edit, Resend invite, Remove) and their dialogs, phone, tablet and desktop. */
+/** Users tab: every account's actions (Edit, Remove) and their dialogs, phone, tablet and desktop. */
 for (const vp of VIEWPORTS.filter((v) => ['390', '820p', '1440'].includes(v.name))) {
   for (const theme of ['light', 'dark'] as const) {
     const phone = vp.kind === 'phone'
-    test(`owners on the Users tab ${vp.name} ${theme}`, async ({ page }, info) => {
+    test(`accounts on the Users tab ${vp.name} ${theme}`, async ({ page }, info) => {
       await open(page, '/tenants/t1', vp as (typeof SIZES)[number], theme)
       await page.getByRole('button', { name: 'Users', exact: true }).first().click()
-      await page.getByText('Karin Delägare').waitFor()
+      await page.getByText('Sara Servis').first().waitFor()
       await page.waitForTimeout(300)
       const issues: Issue[] = [...(await fullAudit(page, opts(phone))).filter((i) => i.kind !== 'tap-target')]
       await page.screenshot({ path: info.outputPath('users.png'), fullPage: true })
-      for (const [action, title] of [['Edit', 'Edit owner'], ['Remove', 'Remove owner']] as const) {
-        const inline = page.locator('.row-actions--inline').nth(1).getByRole('button', { name: action })
+      for (const [row, who, action, title] of [[2, 'Sara Servis', 'Edit', 'Edit staff'], [1, 'Karin Delägare', 'Edit', 'Edit owner'], [2, 'Sara Servis', 'Remove', 'Remove staff']] as const) {
+        const inline = page.locator('.row-actions--inline').nth(row).getByRole('button', { name: action })
         if (await inline.isVisible()) await inline.click()
         else {
-          await page.getByRole('button', { name: 'Actions for karin.delagare.med.langt.namn@example.test' }).click()
+          await page.getByRole('button', { name: `Actions for ${who}` }).click()
           await page.locator('.row-menu__list').getByRole('button', { name: action }).click()
         }
         const dlg = page.getByRole('dialog', { name: title })
@@ -203,11 +203,11 @@ for (const vp of VIEWPORTS.filter((v) => ['390', '820p', '1440'].includes(v.name
         await page.waitForTimeout(300)
         issues.push(...(await layoutAudit(page, { ...opts(phone), atBottom: false })).filter((i) => i.kind !== 'tap-target'))
         issues.push(...(await axeIssues(page)))
-        await page.screenshot({ path: info.outputPath(`${action.toLowerCase()}.png`) })
+        await page.screenshot({ path: info.outputPath(`${title.toLowerCase().replace(' ', '-')}.png`) })
         await page.keyboard.press('Escape')
         await expect(dlg).toHaveCount(0)
       }
-      record(info, 'console', 'interaction:owners', vp.name, theme, issues)
+      record(info, 'console', 'interaction:users', vp.name, theme, issues)
       assertNoIssues(issues)
     })
   }

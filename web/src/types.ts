@@ -298,16 +298,29 @@ export interface TenantDetail {
   audit: AuditEntry[];
 }
 
+export type UserRole = "owner_user" | "staff_user";
+
 export interface TenantUser {
   cognitoSub: string;
   email: string;
   name?: string;
-  role: "owner_user" | "staff_user";
+  phone?: string;
+  role: UserRole;
   status?: string;
   locationId?: string;
   createdAt?: string;
-  /** Owners only: never signed in yet (temporary password unused). */
+  /** Never signed in yet (temporary password unused). */
   invited?: boolean;
+  /** A feature's own account (the phone assistant): no sign-in, nothing to change. */
+  system?: boolean;
+}
+
+/** Staff permissions as the owner edits them (application shared/staff_access.py owner_view). */
+export interface StaffAccess {
+  areas: string[];
+  defaults: string[];
+  users: Record<string, { add: string[]; remove: string[] }>;
+  version: number;
 }
 
 export interface NewTenantInput {

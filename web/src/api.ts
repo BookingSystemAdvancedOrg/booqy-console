@@ -5,7 +5,7 @@ import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
-  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
@@ -160,13 +160,16 @@ export const api = {
     request<{ hosting: SiteStatus["hosting"] }>("POST", `${t(id)}/site/mount`, { environment }),
   archiveSite: (id: string, confirmSlug: string) =>
     request<{ repo: string; repoArchived: boolean }>("POST", `${t(id)}/site/archive`, { confirmSlug }),
-  users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
+  users: (id: string) => request<{ users: TenantUser[]; access: StaffAccess | null }>("GET", `${t(id)}/users`),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
-  updateOwner: (id: string, userId: string, patch: { name?: string; email?: string }) =>
-    request<{ user: TenantUser; inviteResent: boolean }>("PATCH", `${t(id)}/owners/${encodeURIComponent(userId)}`, patch),
-  deleteOwner: (id: string, userId: string) => request("DELETE", `${t(id)}/owners/${encodeURIComponent(userId)}`),
-  resendOwnerInvite: (id: string, userId: string) =>
-    request("POST", `${t(id)}/owners/${encodeURIComponent(userId)}/resend-invite`, {}),
+  createUser: (id: string, body: Record<string, unknown>) => request<{ user: TenantUser }>("POST", `${t(id)}/users`, body),
+  updateUser: (id: string, userId: string, patch: Record<string, unknown>) =>
+    request<{ user: TenantUser; inviteResent: boolean }>("PATCH", `${t(id)}/users/${encodeURIComponent(userId)}`, patch),
+  deleteUser: (id: string, userId: string) => request("DELETE", `${t(id)}/users/${encodeURIComponent(userId)}`),
+  disableUser: (id: string, userId: string) => request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/disable`, {}),
+  enableUser: (id: string, userId: string) => request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/enable`, {}),
+  resendUserInvite: (id: string, userId: string) =>
+    request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/resend-invite`, {}),
   createLocation: (id: string, loc: LocationInput) =>
     request<{ location: Location }>("POST", `${t(id)}/locations`, loc),
   updateLocation: (id: string, locationId: string, patch: Partial<LocationInput>) =>

@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useRef, useState, useLayoutEffect } from "react";
+import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
   Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Reason, Status, compact, errorMessage, fmtDate, useAction, useLoad } from "../components/ui";
-import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, TenantUser, Zone } from "../types";
-import { RowActions } from "../components/RowActions";
+import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone } from "../types";
+import { UsersTab } from "../components/UsersTab";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
@@ -18,7 +18,7 @@ import { LIMIT_LABELS, contractFeatures, contractLimits, featureKeys, featureLab
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
-import { SkelBlock, SkelCard, SkelPage, SkelRows } from "../components/Skeleton";
+import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
@@ -130,7 +130,7 @@ export default function TenantPage() {
         <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
         <PrintersCard tenant={t} locations={data.locations} />
       </>}
-      {tab === "Users" && <Users tenant={t} refreshed={refreshed} />}
+      {tab === "Users" && <UsersTab tenant={t} locations={data.locations} refreshed={refreshed} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} refreshed={refreshed} />}
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
@@ -449,181 +449,6 @@ function DeleteLocationModal({ tenant, location, onClose, onDone }: { tenant: Te
                     onClick={async () => { if (await a.run(() => api.deleteLocation(tenant.tenantId, location.locationId))) onDone(); }} />
         <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
       </div>
-    </Modal>
-  );
-}
-
-// --------------------------------------------------------------------- users
-function Users({ tenant, refreshed = 0 }: { tenant: Tenant; refreshed?: number }) {
-  const users = useLoad(() => api.users(tenant.tenantId), [tenant.tenantId]);
-  const [retrying, setRetrying] = useState(false);
-  const retry = async () => { setRetrying(true); await users.reload(); setRetrying(false); };
-  // Only a Refresh pressed after this tab opened, and only after a failed load.
-  const seenRefresh = useRef(refreshed);
-  useEffect(() => {
-    if (refreshed === seenRefresh.current) return;
-    seenRefresh.current = refreshed;
-    if (!users.data && users.error) void retry();
-  }, [refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [f, setF] = useState({ email: "", name: "" });
-  const a = useAction();
-  const row = useAction();
-  const dirty = useDirty(f, { email: "", name: "" });
-  const [editing, setEditing] = useState<TenantUser | null>(null);
-  const [removing, setRemoving] = useState<TenantUser | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const locked = tenant.status === "offboarding" || tenant.status === "offboarded";
-  const activeOwners = (users.data ?? []).filter((u) => u.role === "owner_user" && (u.status ?? "active") === "active").length;
-  const resend = async (u: TenantUser) => {
-    setDone(null);
-    if (await row.run(() => api.resendOwnerInvite(tenant.tenantId, u.cognitoSub)) !== undefined) {
-      setDone(`Invite sent again to ${u.email}.`);
-      void users.reload();
-    }
-  };
-  return (
-    <div className="cols">
-      <Card title="Sign-in accounts">
-        <ErrorNotice error={users.error} onRetry={() => void retry()} />
-        <ErrorNotice error={row.error} />
-        {done && <Notice kind="ok">{done}</Notice>}
-        {(users.loading || retrying) && !users.data ? <SkelPage label="Loading users"><SkelRows n={3} cols={4} /></SkelPage> : users.data && (
-        <div className="table-wrap">
-        <table className="table users-table">
-          <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Since</th><th className="right"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>
-            {users.data.map((u) => {
-              const owner = u.role === "owner_user";
-              const s = userState(u);
-              const lastOwner = owner && (u.status ?? "active") === "active" && activeOwners <= 1;
-              return (
-              <tr key={u.cognitoSub}>
-                <td className="cell-title">{u.name}<div className="muted small users-table__email">{u.email}</div></td>
-                <td className="cell-fact" data-label="Role">{owner ? "Owner" : "Staff"}</td>
-                <td className="cell-badge" data-label="Status"><span className={`status status--${s.cls}`}>{s.label}</span></td>
-                <td className="small cell-fact users-table__since" data-label="Since">{fmtDay(u.createdAt)}</td>
-                <td className="right">
-                  {owner && !locked && (
-                    <RowActions label={`Actions for ${u.email}`}>
-                      <button type="button" className="row-action" onClick={() => { setDone(null); setEditing(u); }}>Edit</button>
-                      {u.invited && (
-                        <button type="button" className="row-action" disabled={row.busy} onClick={() => void resend(u)}>Resend invite</button>
-                      )}
-                      <button type="button" className="row-action row-action--danger" disabled={row.busy || lastOwner}
-                              title={lastOwner ? "The only active owner. Invite another owner first." : undefined}
-                              onClick={() => { setDone(null); setRemoving(u); }}>
-                        Remove
-                      </button>
-                    </RowActions>
-                  )}
-                </td>
-              </tr>
-              );
-            })}
-            {users.data.length === 0 && <tr><td colSpan={5} className="empty">No users yet.</td></tr>}
-          </tbody>
-        </table>
-        </div>
-        )}
-        <p className="muted small">Staff are invited from the admin app.</p>
-      </Card>
-      <Card title="Invite another owner">
-        <form noValidate onSubmit={async (e) => {
-          e.preventDefault();
-          if (await a.run(() => api.inviteOwner(tenant.tenantId, f.email, f.name))) { setF({ email: "", name: "" }); void users.reload(); }
-        }}>
-          <ErrorNotice error={a.error} />
-          <Field label="Name" required error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <Field label="Business email" required error={a.fields.email} hint="Gets a temporary password by email">
-            <input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-          </Field>
-          <SaveButton label="Send invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invite sent"
-                      dirty={dirty.dirty} disabled={!f.email || !f.name} />
-        </form>
-      </Card>
-      {editing && (
-        <EditOwner tenantId={tenant.tenantId} user={editing} onClose={() => setEditing(null)}
-                   onSaved={(msg) => { setEditing(null); setDone(msg); void users.reload(); }} />
-      )}
-      {removing && (
-        <RemoveOwner tenantId={tenant.tenantId} user={removing} onClose={() => setRemoving(null)}
-                     onRemoved={() => { const e = removing.email; setRemoving(null); setDone(`${e} was removed.`); void users.reload(); }} />
-      )}
-    </div>
-  );
-}
-
-/** The day only ("1 Sept 2026"): the table sits in a half-width card. */
-function fmtDay(iso?: string) {
-  return iso ? new Date(iso).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "-";
-}
-
-function userState(u: TenantUser): { label: string; cls: string } {
-  if ((u.status ?? "active") !== "active") return { label: "Disabled", cls: "suspended" };
-  if (u.invited) return { label: "Invited", cls: "provisioning" };
-  return { label: "Active", cls: "active" };
-}
-
-function EditOwner({ tenantId, user, onClose, onSaved }: { tenantId: string; user: TenantUser; onClose: () => void; onSaved: (msg: string) => void }) {
-  const [name, setName] = useState(user.name ?? "");
-  const [email, setEmail] = useState(user.email);
-  const a = useAction();
-  const nameDirty = useDirty(name.trim(), (user.name ?? "").trim());
-  const emailDirty = useDirty(email.trim().toLowerCase(), user.email.toLowerCase());
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const patch = { ...(nameDirty.dirty ? { name: name.trim() } : {}), ...(emailDirty.dirty ? { email: email.trim() } : {}) };
-    const r = await a.run(() => api.updateOwner(tenantId, user.cognitoSub, patch));
-    if (r) onSaved(r.inviteResent ? `Saved. Invite sent again to ${r.user.email}.` : "Saved.");
-  };
-  return (
-    <Modal title="Edit owner" onClose={onClose}>
-      <form noValidate onSubmit={submit} className="stack">
-        <ErrorNotice error={a.error && !Object.keys(a.fields).length ? a.error : null} />
-        <Field label="Name" required changed={nameDirty.dirty} error={a.fields.name}>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100} />
-        </Field>
-        <Field label={<>Business email <InfoTip label="About changing the email">
-                 Sign-in moves to the new address at once, with no code to confirm. The old address stops working and the
-                 owner stays signed in. An owner who hasn't signed in yet gets the invite again at the new address.
-               </InfoTip></>} required changed={emailDirty.dirty} error={a.fields.email}>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" maxLength={254} />
-        </Field>
-        <div className="row">
-          <SaveButton label="Save" busy={a.busy} dirty={nameDirty.dirty || emailDirty.dirty}
-                      disabled={!name.trim() || !email.trim() || !(nameDirty.dirty || emailDirty.dirty)} />
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function RemoveOwner({ tenantId, user, onClose, onRemoved }: { tenantId: string; user: TenantUser; onClose: () => void; onRemoved: () => void }) {
-  const [confirm, setConfirm] = useState("");
-  const a = useAction();
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (await a.run(() => api.deleteOwner(tenantId, user.cognitoSub)) !== undefined) onRemoved();
-  };
-  return (
-    <Modal title="Remove owner" onClose={onClose}>
-      <form onSubmit={submit} className="stack">
-        <Notice kind="warn">
-          <strong>{user.email}</strong> is signed out and can't sign in to the admin app again. This can't be undone: to
-          give access back, invite them again.
-        </Notice>
-        <ErrorNotice error={a.error} />
-        <Field label={`Type ${user.email} to confirm`}>
-          <input className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoFocus />
-        </Field>
-        <div className="row">
-          <button className="btn btn--danger" disabled={a.busy || confirm.trim().toLowerCase() !== user.email.toLowerCase()}>
-            {a.busy ? "Removing…" : "Remove owner"}
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        </div>
-      </form>
     </Modal>
   );
 }
