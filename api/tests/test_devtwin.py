@@ -297,6 +297,8 @@ def test_special_days_are_ahead():
     days = devtwin.special_days(date(2026, 12, 28))
     assert [d["date"] for d in days] == ["2026-12-31", "2027-01-11", "2027-12-24"]
     assert all(len(d["note"]) <= 80 for d in days)
+    # special-day hours may not run past midnight (create-location refuses them)
+    assert all(i["opensAt"] < i["closesAt"] for d in days for i in d.get("intervals", []))
 
 
 # ------------------------------------------------- twins versus test customers

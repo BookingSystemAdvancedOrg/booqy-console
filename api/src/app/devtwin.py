@@ -324,8 +324,9 @@ class Seeder:
         status = int(result.get("statusCode") or 500)
         out = json.loads(result.get("body") or "null") if result.get("body") else {}
         if status not in ok:
-            detail = out.get("code") or out.get("error") or out.get("message") if isinstance(out, dict) else None
-            raise StepFailed(f"{name} {method} {path}: {status} {str(detail or '')[:160]}".strip())
+            detail = " ".join(str(out[k]) for k in ("code", "error", "message") if out.get(k)) \
+                if isinstance(out, dict) else ""
+            raise StepFailed(f"{name} {method} {path}: {status} {detail[:200]}".strip())
         return status, out if isinstance(out, (dict, list)) else {}
 
     def req(self, path: dict, body: dict | None = None):
@@ -663,7 +664,7 @@ def special_days(today: date) -> list[dict]:
 
     days = {
         next_day(12, 24): {"kind": "closed", "note": "Julafton, vi har stängt"},
-        next_day(12, 31): {"kind": "hours", "intervals": [{"opensAt": "18:00", "closesAt": "01:00"}],
+        next_day(12, 31): {"kind": "hours", "intervals": [{"opensAt": "18:00", "closesAt": "23:30"}],
                            "note": "Nyårsmeny, sittning 18:00"},
         today + timedelta(days=14): {"kind": "no_online", "note": "Privat sällskap, ring oss för bord"},
     }
