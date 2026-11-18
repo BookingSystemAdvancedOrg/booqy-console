@@ -10,6 +10,7 @@ import { Select } from "./Select";
 import { isProd, testMapping } from "../testSites";
 import { InfoTip } from "./StepFlow";
 import { CopyButton } from "./CopyButton";
+import { BackButton } from "./ds";
 
 type Path = "choose" | "buy" | "move" | "keep" | "map";
 
@@ -67,7 +68,7 @@ export default function DomainWizard({ tenant, onClose, onChanged, initial }: {
 }
 
 function Back({ onClick }: { onClick: () => void }) {
-  return <button type="button" className="link back" onClick={onClick}>← Other ways</button>;
+  return <div className="back-row"><BackButton onClick={onClick}>Other ways</BackButton></div>;
 }
 
 /** What the restaurant reads, in Swedish (it also gets it by e-mail): shown for copying. */
@@ -200,7 +201,7 @@ function Order({ tenant, offer, onBack, onDone }: {
   }
   return (
     <form onSubmit={onBuy} noValidate>
-      <button type="button" className="link back" onClick={onBack}>← Search again</button>
+      <div className="back-row"><BackButton onClick={onBack}>Search again</BackButton></div>
       <h4 className="mono">{offer.domain}</h4>
       <p className="small">{money(offer.price)} the first year, then {money(offer.renewalPrice)} per year (auto-renews, billed to the platform's AWS account).</p>
       <ErrorNotice error={buy.error} />

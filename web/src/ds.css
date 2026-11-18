@@ -252,6 +252,19 @@
 }
 
 
+/* --- buttons: back (BackButton in components/ds.tsx) ----------------------- */
+.btn.back-btn { align-self: flex-start; width: fit-content; max-width: 100%; min-height: 44px; padding-inline: 12px 16px; text-decoration: none; }
+.btn.back-btn > span { overflow: hidden; text-overflow: ellipsis; }
+.back-btn__icon { flex: none; transition: translate 160ms var(--ease); }
+.btn.back-btn:hover:not(:disabled) .back-btn__icon { translate: -3px 0; }
+.btn.back-btn:active:not(:disabled) { translate: 0 1px; }
+.btn.back-btn:focus-visible { outline: none; box-shadow: var(--pearl-rim, inset 0 0 0 1px var(--fg-line)), 0 0 0 3px var(--focus); }
+.back-row { display: flex; margin: 0 0 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .back-btn__icon { transition: none; }
+  .btn.back-btn:hover:not(:disabled) .back-btn__icon { translate: none; }
+}
+
 /* --- buttons: the primary CTA -------------------------------------------- */
 .btn.cta {
   display: inline-flex;

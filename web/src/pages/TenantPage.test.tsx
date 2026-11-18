@@ -20,7 +20,7 @@ describe("Customer page when it fails to load", () => {
     );
     expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Customer" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Customers" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("button", { name: /Refresh/ })).toBeInTheDocument();
   });
 });

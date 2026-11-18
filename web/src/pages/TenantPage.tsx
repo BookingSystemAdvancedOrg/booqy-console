@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
   Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Reason, Status, compact, errorMessage, fmtDate, useAction, useLoad } from "../components/ui";
@@ -27,6 +27,7 @@ import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
+import { BackButton } from "../components/ds";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -75,20 +76,19 @@ export default function TenantPage() {
   // A failed load keeps the way back and a retry: never a page with only the error box.
   if (!data) return (
     <>
-      <p className="crumbs"><Link to="/">Customers</Link> / Customer</p>
+      <div className="back-row"><BackButton to="/">Customers</BackButton></div>
       <div className="page-head">
         <div><h1>Customer</h1></div>
         <RefreshButton reload={reload} />
       </div>
       <ErrorNotice error={error ?? "Not found"} onRetry={() => void reload()} />
-      <p><Link className="btn btn--ghost" to="/">Back to Customers</Link></p>
     </>
   );
   const t = data.tenant;
 
   return (
     <>
-      <p className="crumbs"><Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</Link> / {t.name}</p>
+      <div className="back-row"><BackButton to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</BackButton></div>
       <div className="page-head">
         <div>
           <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}</h1>

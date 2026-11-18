@@ -9,6 +9,7 @@ import QRCode from "qrcode";
 import {
   confirmResetPassword, confirmSignIn, resetPassword, signIn, signOut, type SignInOutput,
 } from "aws-amplify/auth";
+import { BackButton } from "../components/ds";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -223,7 +224,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
               <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for Booqy Console."
                     error={error} busy={busy} submit="Sign in"
                     onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}
-                    footer={<button type="button" className="link" onClick={back}>Back</button>}>
+                    back={back} backLabel="Back">
                 <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
               </Form>
             )}
@@ -235,13 +236,14 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                       await resetPassword({ username: email.trim().toLowerCase() });
                       setStep({ kind: "forgotSent" });
                     }, true)}
-                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                    back={back}>
                 <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
               </Form>
             )}
 
             {step.kind === "forgotSent" && (
               <div className="auth__form">
+                <div className="back-row"><BackButton onClick={back}>Sign in</BackButton></div>
                 <h1>Check your email</h1>
                 {info && <div className="notice notice--ok" role="status">{info}</div>}
                 <p className="muted auth__lead-text">
@@ -254,8 +256,6 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                   {" · "}
                   <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgot" }); }}>
                     Send again</button>
-                  {" · "}
-                  <button type="button" className="link" onClick={back}>Back to sign in</button>
                 </div>
               </div>
             )}
@@ -269,7 +269,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                                                    newPassword: v.password });
                       await passwordChanged();
                     }, true)}
-                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                    back={back}>
                 <Input label="Code from the email" name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus />
                 <Input label="New password" name="password" type="password" autoComplete="new-password" />
                 <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
@@ -284,12 +284,9 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                       await confirmResetPassword({ username: email, confirmationCode: step.code, newPassword: v.password });
                       await passwordChanged();
                     }, true)}
-                    footer={<>
-                      <button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
-                        Request a new link</button>
-                      {" · "}
-                      <button type="button" className="link" onClick={back}>Back to sign in</button>
-                    </>}>
+                    back={back}
+                    footer={<button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
+                      Request a new link</button>}>
                 <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
                 <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
               </Form>
@@ -322,6 +319,9 @@ function Form(props: {
   submit: string;
   onSubmit: (values: Record<string, string>) => void;
   footer?: ReactNode;
+  /** Back control above the heading. */
+  back?: () => void;
+  backLabel?: string;
   children: ReactNode;
 }) {
   const handle = (e: FormEvent<HTMLFormElement>) => {
@@ -333,6 +333,7 @@ function Form(props: {
   };
   return (
     <form className="auth__form" onSubmit={handle} noValidate={false}>
+      {props.back && <div className="back-row"><BackButton onClick={props.back}>{props.backLabel ?? "Sign in"}</BackButton></div>}
       <h1>{props.title}</h1>
       {props.lead && <p className="muted auth__lead-text">{props.lead}</p>}
       {props.info && <div className="notice notice--ok" role="status">{props.info}</div>}
