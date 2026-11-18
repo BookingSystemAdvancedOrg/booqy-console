@@ -70,7 +70,7 @@ function body(method: string, path: string): unknown {
     const s = tenants.find((t) => t.tenantId === id) ?? tenants[0]
     return { tenant: { ...s, entitlements: { maxLocations: s.maxLocations ?? 1, features: { booking: true } }, ownerName: 'Olle Ägare', ownerEmail: s.ownerEmail ?? 'o@example.test', billing: { ...billing }, address: { street: 'Storgatan 1', postalCode: '111 22', city: 'Stockholm' }, createdAt: s.createdAt }, domains: [{ domain: `${s.slug}.dev.booqy.se`, kind: 'platform', status: 'active', primary: true }], zones: [], locations: [{ locationId: 'l1', tenantId: s.tenantId, name: 'Huvudkrogen', address: 'Storgatan 1, Stockholm' }], userCount: 2, onboarding: null, audit: [{ action: 'tenant.created', by: 'anna', at: '2026-09-01T10:00:00Z' }] }
   }
-  if (/\/users$/.test(path)) return { users: [{ cognitoSub: 'u1', email: 'owner@example.test', name: 'Olle Ägare', role: 'owner_user', status: 'CONFIRMED' }, { cognitoSub: 'u2', email: 'staff@example.test', role: 'staff_user', status: 'CONFIRMED' }] }
+  if (/\/users$/.test(path)) return { users: [{ cognitoSub: 'u1', email: 'owner@example.test', name: 'Olle Ägare', role: 'owner_user', status: 'active', invited: false, createdAt: '2026-09-01T10:00:00Z' }, { cognitoSub: 'u3', email: 'karin.delagare.med.langt.namn@example.test', name: 'Karin Delägare', role: 'owner_user', status: 'active', invited: true, createdAt: '2026-11-10T09:00:00Z' }, { cognitoSub: 'u2', email: 'staff@example.test', role: 'staff_user', status: 'active', createdAt: '2026-10-01T10:00:00Z' }] }
   if (/\/billing$/.test(path)) return { billing, invoices: [invoice(1, 'paid'), invoice(2, 'open')] }
   if (/\/site$/.test(path)) return { enabled: false }
   if (path === '/platform/finance/overview') return overview

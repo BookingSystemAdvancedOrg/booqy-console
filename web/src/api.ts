@@ -162,6 +162,11 @@ export const api = {
     request<{ repo: string; repoArchived: boolean }>("POST", `${t(id)}/site/archive`, { confirmSlug }),
   users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
+  updateOwner: (id: string, userId: string, patch: { name?: string; email?: string }) =>
+    request<{ user: TenantUser; inviteResent: boolean }>("PATCH", `${t(id)}/owners/${encodeURIComponent(userId)}`, patch),
+  deleteOwner: (id: string, userId: string) => request("DELETE", `${t(id)}/owners/${encodeURIComponent(userId)}`),
+  resendOwnerInvite: (id: string, userId: string) =>
+    request("POST", `${t(id)}/owners/${encodeURIComponent(userId)}/resend-invite`, {}),
   createLocation: (id: string, loc: LocationInput) =>
     request<{ location: Location }>("POST", `${t(id)}/locations`, loc),
   updateLocation: (id: string, locationId: string, patch: Partial<LocationInput>) =>

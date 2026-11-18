@@ -77,6 +77,7 @@ const CODE_TEXT: Record<string, Known> = {
   domain_in_use: { text: "Another customer already uses this domain. Check that you typed the right one." },
   domain_unavailable: { text: "This domain can't be bought. Someone may own it already. Try another name." },
   in_progress: { text: "The domain company is still working on this. Wait until it is done, then try again." },
+  last_owner: { text: "This is the restaurant's only active owner. Invite another owner first, then remove this one." },
   last_operator: { text: "You can't do this to the last active operator. Add another operator first.", link: OPERATORS_LINK },
   limit_reached: { text: "There is no room for more pictures. Remove one first." },
   managed_from_prod: { text: "Domains are handled in the production console. Make this change there." },
@@ -97,6 +98,9 @@ const CODE_TEXT: Record<string, Known> = {
   not_retryable: { text: "This can't be tried again. Start the move again from the Domains tab." },
   not_restorable: { text: "This customer can't be restored. Only a customer who left Booqy can, before the data is deleted." },
   not_transferable: { text: "This domain can't move right now. The restaurant checks that it is unlocked, then you try again." },
+  owner_already_signed_in: {
+    text: "This owner has already signed in. They reset their password with Glömt lösenord on the admin sign-in page.",
+  },
   owner_only: { text: "Only an owner can do this. Ask an owner to do it.", link: OPERATORS_LINK },
   not_simulated: { text: "This order is real, so it can't be simulated. Simulation only works on test orders in the dev console." },
   not_subscribed: { text: "The customer has no running agreement." },

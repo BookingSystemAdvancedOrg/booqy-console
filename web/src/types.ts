@@ -306,6 +306,8 @@ export interface TenantUser {
   status?: string;
   locationId?: string;
   createdAt?: string;
+  /** Owners only: never signed in yet (temporary password unused). */
+  invited?: boolean;
 }
 
 export interface NewTenantInput {

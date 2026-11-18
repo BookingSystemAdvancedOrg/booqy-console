@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ tenant: vi.fn(), users: vi.fn(), plans: vi.fn(), billing: vi.fn(), stripeLink: vi.fn() }));
+const mocks = vi.hoisted(() => ({ tenant: vi.fn(), users: vi.fn(), plans: vi.fn(), billing: vi.fn(), stripeLink: vi.fn(),
+  updateOwner: vi.fn(), deleteOwner: vi.fn(), resendOwnerInvite: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import TenantPage from "./TenantPage";
@@ -98,5 +99,63 @@ describe("Customer page Stripe onboarding link copy (finding 204)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create onboarding link" }));
     await userEvent.click(await screen.findByRole("button", { name: "Copy" }));
     expect(await screen.findByLabelText("Copy by hand")).toHaveValue("https://connect.stripe.com/setup/abc");
+  });
+});
+
+describe("Customer page Users tab owner actions", () => {
+  const owners = [
+    { cognitoSub: "u1", name: "Anna", email: "anna@roma.se", role: "owner_user", status: "active", createdAt: "2026-10-01T10:00:00Z" },
+    { cognitoSub: "u2", name: "Luca", email: "luca@roma.se", role: "owner_user", status: "active", invited: true, createdAt: "2026-10-02T10:00:00Z" },
+  ];
+  const openUsers = async () => {
+    mocks.tenant.mockReset().mockResolvedValue(detail);
+    mocks.plans.mockReset().mockResolvedValue([]);
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Users" }));
+    await screen.findByText("Luca");
+  };
+  const inline = (name: string) => screen.getAllByRole("button", { name }).filter((b) => b.closest(".row-actions--inline"));
+
+  it("edits an owner's name and email", async () => {
+    mocks.users.mockReset().mockResolvedValue(owners);
+    mocks.updateOwner.mockReset().mockResolvedValue({ user: { ...owners[1], email: "l@roma.se" }, inviteResent: true });
+    await openUsers();
+    await userEvent.click(inline("Edit")[1]);
+    const email = screen.getByRole("dialog").querySelector<HTMLInputElement>("input[type=email]")!;
+    await userEvent.clear(email);
+    await userEvent.type(email, "l@roma.se");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.updateOwner).toHaveBeenCalledWith("t1", "u2", { email: "l@roma.se" });
+    expect(await screen.findByText("Saved. Invite sent again to l@roma.se.")).toBeInTheDocument();
+  });
+
+  it("resends the invite only to an owner who never signed in", async () => {
+    mocks.users.mockReset().mockResolvedValue(owners);
+    mocks.resendOwnerInvite.mockReset().mockResolvedValue({ resent: "u2" });
+    await openUsers();
+    expect(inline("Resend invite")).toHaveLength(1);
+    await userEvent.click(inline("Resend invite")[0]);
+    expect(mocks.resendOwnerInvite).toHaveBeenCalledWith("t1", "u2");
+    expect(await screen.findByText("Invite sent again to luca@roma.se.")).toBeInTheDocument();
+  });
+
+  it("removes an owner after typing the email", async () => {
+    mocks.users.mockReset().mockResolvedValue(owners);
+    mocks.deleteOwner.mockReset().mockResolvedValue({ deleted: "u2" });
+    await openUsers();
+    await userEvent.click(inline("Remove")[1]);
+    const go = screen.getByRole("button", { name: "Remove owner" });
+    expect(go).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: /Type luca@roma.se/ }), "luca@roma.se");
+    await userEvent.click(go);
+    expect(mocks.deleteOwner).toHaveBeenCalledWith("t1", "u2");
+    expect(await screen.findByText("luca@roma.se was removed.")).toBeInTheDocument();
+  });
+
+  it("does not offer Remove for the only active owner", async () => {
+    mocks.users.mockReset().mockResolvedValue([owners[0], { ...owners[1], status: "disabled" }]);
+    await openUsers();
+    expect(inline("Remove")[0]).toBeDisabled();
+    expect(inline("Remove")[1]).toBeEnabled();
   });
 });

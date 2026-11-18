@@ -63,6 +63,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 51, text: "Ordering pickup only" },
   { n: 52, text: "Printer status" },
   { n: 53, text: "Credit dialog wording" },
+  { n: 54, text: "Customer owners" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

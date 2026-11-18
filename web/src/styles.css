@@ -1839,3 +1839,7 @@ html.is-desktop-glass.theme-settling[data-theme="dark"], html.is-desktop-glass[d
 @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
   .refresh-compact .save-btn--busy::before { animation: none; opacity: 0.5; }
 }
+
+/* Customer page, Users tab: long emails break, the day stays on one line. */
+.users-table__email { overflow-wrap: anywhere; }
+.users-table__since { white-space: nowrap; }
