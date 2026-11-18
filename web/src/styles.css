@@ -675,6 +675,12 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .kpis--lead { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* Revenue and unit economics: six tiles as two even rows of three, no orphan. */
 .kpis--units { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Below the top row: the same figures, smaller and quieter. */
+.kpis--quiet .kpi { padding: 14px 18px 16px; gap: 4px; }
+.kpis--quiet .kpi::before { margin: -14px -18px 8px; }
+.kpis--quiet > .kpi > .kpi__value { font-size: min(24px, 20cqi); }
+.kpi__pending { font-size: 15px; font-weight: 600; color: var(--print-2); letter-spacing: 0; }
+.kpi__pct { margin-left: 0.45em; font-size: 0.42em; font-weight: 600; letter-spacing: 0; color: var(--print-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Only a label and a number: every tile in a grid as tall as the tallest, the number at the bottom so the figures line up. */
 .kpis--lead, .kpis--units, .kpis--row { grid-auto-rows: 1fr; }
 .kpis--lead .kpi, .kpis--units .kpi, .kpis--row .kpi { align-content: space-between; }

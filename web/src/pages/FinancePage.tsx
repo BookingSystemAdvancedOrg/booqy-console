@@ -8,7 +8,7 @@ import PaymentsView from "../components/PaymentsView";
 import { Ring } from "../components/Ring";
 import { Card, ErrorNotice, Modal, Notice, Status, fmtDate, useAction, useLoad } from "../components/ui";
 import { SPANS, Span, SortKey, addDays, bucketSeries, costSplitTotals, daysBetween, fmtDay, fmtInt, fmtPct, fmtRate, fmtSek, fmtUsd, grainFor, insightTitle, isoDay, matchesCustomer, periodChoices, periodLabel, previousSpanRange, sortRows, spanRange, topAndBottom, customersCsv, dailyCsv, csvName } from "../finance";
-import { toneClass, trendOf } from "../trend";
+import { NO_TREND, toneClass, trendOf } from "../trend";
 import type { Trend, TrendTone } from "../trend";
 import type { FinanceFx, FinanceOverview, FinanceTenantRow, TenantSummary } from "../types";
 import { RefreshButton, SaveButton } from "../components/save";
@@ -76,7 +76,7 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
     margin: trendOf(k.marginSek, before?.marginSek, "margin", prev),
     revenue: trendOf(k.revenueSek, before?.revenueSek, "revenue", prev),
     mrr: trendOf(mrrEnd, mrrStart, "mrr", "the start of the period"),
-    cost: trendOf(k.costUsd, before?.costUsd, "costUsd", prev),
+    cost: k.costLoaded === false ? NO_TREND : trendOf(k.costUsd, before?.costLoaded === false ? null : before?.costUsd, "costUsd", prev),
     customers: trendOf(k.payingCustomers, before?.payingCustomers, "customers", prev),
     arpu: trendOf(k.arpuSek, before?.arpuSek, "arpu", prev),
     costPerBooking: trendOf(k.costPerBookingUsd, before?.costPerBookingUsd, "unitCostUsd", prev),
@@ -85,9 +85,10 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   };
   // A loss is red whatever the period before was.
   const marginTone: TrendTone = k && (k.marginSek ?? 0) < 0 ? "bad" : trends?.margin.tone ?? "neutral";
-  // The AWS cost in SEK at the day rates, only to share the revenue between profit and cost.
-  const costAtRate = k && k.marginSek !== null ? k.revenueSek - k.marginSek : null;
-  const heroRef = useTrendPop<HTMLElement>(marginTone);
+  // MRR over the period and the AWS cost in SEK at the day rates, only to share the MRR between profit and cost.
+  const recurring = k ? k.recurringSek ?? k.mrrSek : 0;
+  const costAtRate = k && k.marginSek !== null ? recurring - k.marginSek : null;
+  const costMissing = k?.costLoaded === false;
   const empty = !!data && data.tenants.length === 0 && data.series.length === 0;
   const pastDue = data?.attention.pastDue.length ?? 0;
   const noFigures = !!data && !empty && data.series.length === 0;
@@ -226,37 +227,35 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
             </Notice>
           )}
 
-          {/* 1. Recurring revenue, customers and cash: what the founder checks first (docs/DASHBOARD.md). */}
-          <section className="kpis kpis--lead" aria-label="Recurring revenue and cash">
+          {/* 1. What the founder checks first (owner 2026-11-18): MRR, what AWS costs, the gross margin
+              (MRR minus AWS cost) and paying customers, for the period picked. */}
+          <section className="kpis kpis--lead" aria-label="MRR, AWS cost and gross margin">
             <Kpi label="MRR" value={<CountUp value={k.mrrSek} format={fmtSek} />} trend={trends.mrr} />
+            <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} trend={trends.cost}
+                 value={costMissing ? <span className="kpi__pending">Not loaded yet</span> : <CountUp value={k.costUsd} format={(n) => fmtUsd(n)} />}
+                 info={costMissing
+                   ? <>The nightly job has not loaded this period's AWS cost from Cost Explorer yet. It runs every morning.</>
+                   : wholeBill ? <>The account's whole bill in USD, as AWS Billing and Cost Explorer show it
+                     {(k.unallocatedUsd ?? 0) > 0 ? <>; {fmtUsd(k.unallocatedUsd)} of it is not on the customers shown</> : null}.</> : undefined} />
+            <Kpi label="Gross margin" trend={costMissing ? undefined : trends.margin} tone={marginTone === "bad" ? "bad" : undefined}
+                 value={costMissing ? <span className="kpi__pending">AWS cost not loaded yet</span> : <CountUp value={k.marginSek} format={fmtSek} />}
+                 sub={!costMissing && k.marginPct !== null ? fmtPct(k.marginPct) : undefined}
+                 info={<MarginNote fx={data.fx ?? null} recurring={recurring} months={recurringMonths(data.period)} />} />
             <Kpi label="Paying customers" value={<CountUp value={k.payingCustomers} format={(n) => fmtInt(Math.round(n))} />}
                  trend={trends.customers} />
-            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
-                 info={(k.refundedSek ?? 0) > 0 ? <>After {fmtSek(k.refundedSek)} refunded to cards (ex VAT).</> : undefined} />
-            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
-                 tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
           </section>
 
-          {/* 2. Is it profitable: gross margin, AWS cost against revenue. */}
+          {/* 2. Where the money goes. */}
           <section className="hero" aria-label="The period at a glance">
-            <div className="kpi kpi--hero">
-              <span className="kpi__head">
-                <span className="kpi__label">Gross margin{" "}
-                  <InfoTip label="About the margin"><FxNote fx={data.fx ?? null} /></InfoTip>
-                </span>
-                <Delta trend={trends.margin} />
-              </span>
-              <strong ref={heroRef} className={`kpi__value${toneClass(marginTone)}`}><CountUp value={k.marginSek} format={fmtSek} /></strong>
-            </div>
             <div className="kpi kpi--rings">
-              {/* Shares of the revenue at the day rates; each amount in its own currency. */}
-              <Ring title="Where the revenue goes" total={costAtRate === null ? 0 : Math.max(k.revenueSek, costAtRate, 0)} centerLabel="profit"
-                    empty={k.revenueSek > 0 ? "No USD/SEK rate yet" : "No revenue yet"}
+              {/* Shares of the MRR at the day rates; each amount in its own currency. */}
+              <Ring title="Where the MRR goes" total={costAtRate === null ? 0 : Math.max(recurring, costAtRate, 0)} centerLabel="profit"
+                    empty={costMissing ? "AWS cost not loaded yet" : recurring > 0 ? "No USD/SEK rate yet" : "No MRR yet"}
                     segments={[
                       { key: "margin", label: "Profit", value: Math.max(0, k.marginSek ?? 0), tone: "ink", display: fmtSek(k.marginSek) },
                       { key: "cost", label: "AWS cost", value: costAtRate ?? 0, tone: "red", display: fmtUsd(k.costUsd) },
                     ]} />
-              <Ring title="What the AWS cost is for" total={k.costUsd} centerLabel="requests" empty="No cost yet" format={(n) => fmtUsd(n)}
+              <Ring title="What the AWS cost is for" total={k.costUsd ?? 0} centerLabel="requests" empty={costMissing ? "Not loaded yet" : "No cost yet"} format={(n) => fmtUsd(n)}
                     segments={[
                       { key: "requests", label: "Requests", value: split.requests, tone: "ink" },
                       { key: "baseline", label: "Baseline", value: split.baseline, tone: "steel" },
@@ -269,6 +268,15 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
                       { key: "outstanding", label: "Outstanding", value: k.outstandingSek, tone: "warn" },
                     ]} />
             </div>
+          </section>
+
+          {/* Cash: invoiced, collected and still owed. */}
+          <section className="kpis kpis--units kpis--quiet" aria-label="Cash">
+            <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} trend={trends.revenue} />
+            <Kpi label="Collected" value={<CountUp value={k.collectedSek} format={fmtSek} />}
+                 info={(k.refundedSek ?? 0) > 0 ? <>After {fmtSek(k.refundedSek)} refunded to cards (ex VAT).</> : undefined} />
+            <Kpi label="Outstanding" value={<CountUp value={k.outstandingSek} format={fmtSek} />}
+                 tone={k.outstandingSek > 0 || pastDue > 0 ? "warn" : undefined} />
           </section>
 
           {/* 3. What needs action: unpaid customers, customers without a subscription, the nightly job. */}
@@ -299,12 +307,8 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
           ) : null}
 
           {/* 4. Revenue and unit economics, then the charts and the per-customer detail. */}
-          <Disclosure title="Revenue and unit economics" meta="ARPU, cost per booking and order, SMS">
-            <section className="kpis kpis--units" aria-label="Revenue and unit economics">
-              <Kpi label="Revenue" value={<CountUp value={k.revenueSek} format={fmtSek} />} trend={trends.revenue} />
-              <Kpi label={wholeBill ? "AWS bill" : "AWS cost"} value={<CountUp value={k.costUsd} format={(n) => fmtUsd(n)} />} trend={trends.cost}
-                   info={wholeBill ? <>The account's whole bill in USD, as AWS Billing and Cost Explorer show it
-                     {(k.unallocatedUsd ?? 0) > 0 ? <>; {fmtUsd(k.unallocatedUsd)} of it is not on the customers shown</> : null}.</> : undefined} />
+          <Disclosure title="Unit economics" meta="ARPU, cost per booking and order, SMS">
+            <section className="kpis kpis--quiet" aria-label="Unit economics">
               <Kpi label="ARPU" value={<CountUp value={k.arpuSek} format={fmtSek} />} trend={trends.arpu} />
               <Kpi label="Cost per booking" value={<CountUp value={k.costPerBookingUsd} format={(n) => fmtUsd(n, { precise: true })} />}
                    trend={trends.costPerBooking} />
@@ -319,13 +323,13 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.mrr }))} label="MRR" ariaLabel="Monthly recurring revenue over time" />
             </Card>
             <Card title={insightTitle("Revenue", deltaPct(k.revenueSek, before?.revenueSek ?? NaN))}>
-              {k.revenueSek > 0 && costAtRate !== null && <p className="insight">AWS cost {fmtPct((costAtRate / k.revenueSek) * 100)} of revenue</p>}
+              {recurring > 0 && costAtRate !== null && <p className="insight">AWS cost {fmtPct((costAtRate / recurring) * 100)} of MRR</p>}
               <BarLineChart points={buckets.map((b) => ({ key: b.key, bar: b.revenue }))}
                             barLabel="Revenue (SEK)" ariaLabel={`Revenue in SEK per ${grain}`} />
             </Card>
           </div>
           <div className="charts">
-            <Card title={insightTitle("AWS cost", deltaPct(k.costUsd, before?.costUsd ?? NaN))}>
+            <Card title={insightTitle("AWS cost", deltaPct(k.costUsd ?? NaN, before?.costUsd ?? NaN))}>
               <LineChart points={buckets.map((b) => ({ key: b.key, value: b.cost }))} label="AWS cost (USD)" tone="red"
                          format={(n) => fmtUsd(n)} tick={usdTick} ariaLabel={`AWS cost in USD per ${grain}`} />
             </Card>
@@ -379,29 +383,39 @@ export default function FinancePage({ view: initialView = "Overview" }: { view?:
   );
 }
 
-/** Which USD/SEK rate turned the AWS cost into the SEK margin. */
-function FxNote({ fx }: { fx: FinanceFx | null }) {
-  if (!fx) return <>Revenue (SEK) minus the AWS cost (USD). No USD/SEK rate is known yet, so there is no margin until the nightly job has run.</>;
+/** Calendar months the period covers (each counts one month's MRR). */
+function recurringMonths(p: { from: string; to: string }): number {
+  return (Number(p.to.slice(0, 4)) - Number(p.from.slice(0, 4))) * 12 + Number(p.to.slice(5, 7)) - Number(p.from.slice(5, 7)) + 1;
+}
+
+/** What the gross margin is and which USD/SEK rate turned the AWS cost into SEK. */
+function MarginNote({ fx, recurring, months }: { fx: FinanceFx | null; recurring: number; months: number }) {
+  const what = <>MRR{months > 1 ? ` for ${months} months (${fmtSek(recurring)})` : ""} minus the AWS cost (USD). </>;
+  if (!fx) return <>{what}No USD/SEK rate is known yet.</>;
   const range = fx.min === fx.max ? fmtRate(fx.latest) : `${fmtRate(fx.min)} to ${fmtRate(fx.max)}`;
   return (
     <>
-      Revenue (SEK) minus the AWS cost (USD) converted at Riksbank's USD/SEK rate of each day: {range}, latest{" "}
-      {fmtRate(fx.latest)} on {fmtDay(fx.latestDate)}. The cost itself stays in USD.
+      {what}The cost is converted at Riksbank's USD/SEK rate of each day: {range}, latest {fmtRate(fx.latest)} on{" "}
+      {fmtDay(fx.latestDate)}. The cost itself stays in USD.
     </>
   );
 }
 
 /** A key figure: only its label and number. With a `trend` the figure turns
  * green or red by how it is doing (src/trend.ts) and the change is a chip by the label. */
-function Kpi({ label, value, tone, trend, info }: {
-  label: string; value: ReactNode; tone?: "warn"; trend?: Trend; info?: ReactNode;
+function Kpi({ label, value, tone, trend, info, sub }: {
+  label: string; value: ReactNode; tone?: "warn" | "bad"; trend?: Trend; info?: ReactNode;
+  /** A second number under the value (the margin's percent). */
+  sub?: string;
 }) {
   const shade: TrendTone = trend?.tone ?? "neutral";
   const ref = useTrendPop<HTMLElement>(shade);
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ""}`} data-help={`kpi:${helpSlug(label)}`}>
       <span className="kpi__head"><span className="kpi__label">{label}{info && <> <InfoTip label={`About ${label}`}>{info}</InfoTip></>}</span>{trend && <Delta trend={trend} />}</span>
-      <strong ref={ref} className={`kpi__value${toneClass(shade)}`}>{value}</strong>
+      <strong ref={ref} className={`kpi__value${toneClass(tone === "bad" ? "bad" : shade)}`}>
+        {value}{sub && <small className="kpi__pct">{sub}</small>}
+      </strong>
     </div>
   );
 }

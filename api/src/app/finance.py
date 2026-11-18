@@ -19,9 +19,14 @@ custom range are the same code path.
 Currencies (owner, 2026-11-18): every COST is USD, exactly as AWS Billing
 and Cost Explorer report it (fields ending in Usd); revenue is SEK
 excluding VAT, as Booqy invoices it (fields ending in Sek). Nothing is
-mixed silently: the margin (SEK) converts each day's cost at that day's
-Riksbank USD/SEK rate, and `fx` says which rates were used. Without a rate
-the margin is null rather than a guess.
+mixed silently.
+
+Gross margin (owner, 2026-11-18) is MRR minus AWS cost: per calendar month in
+the range the month's MRR (live for the month in progress, invoiced in
+advance on the 1st; else the month's last day snapshot), minus the cost
+converted at each day's Riksbank USD/SEK rate. `fx` says which rates were used.
+No AWS cost loaded for the range yet: `costLoaded` is false and the margin
+null, never a guess.
 
 By default only ACTIVE customers count (includeInactive=1 adds suspended,
 offboarding, offboarded and purged customers, whose rows are kept forever).
@@ -35,6 +40,8 @@ filter, cost is that customer's allocated share.
 """
 
 import json
+import time
+import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -53,6 +60,25 @@ BUCKETS = ("baseline", "requests", "email", "sms")
 # until finance-rollup's one-time migration rewrites them in USD.
 LEGACY_USD_TO_SEK = Decimal("10.5")
 FX_SOURCE = "Riksbank SEKUSDPMI"
+FX_LATEST_URL = "https://api.riksbank.se/swea/v1/Observations/Latest/SEKUSDPMI"
+_live_rate: dict = {}
+
+
+def _riksbank_latest():
+    """(rate, rate_day) of Riksbank's newest USD/SEK, cached 6 h per warm
+    Lambda: only for a range no nightly run has recorded a rate for yet."""
+    if _live_rate.get("until", 0) > time.time():
+        return _live_rate.get("value")
+    value = None
+    try:
+        req = urllib.request.Request(FX_LATEST_URL, headers={"Accept": "application/json", "User-Agent": "booqy-console"})
+        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310 - fixed https URL
+            row = json.loads(resp.read().decode("utf-8"))
+        value = (Decimal(str(row["value"])), str(row["date"])[:10])
+    except Exception as e:  # noqa: BLE001 - no rate is a null margin, not an error page
+        log.warning("Riksbank USD/SEK unavailable: %s", e)
+    _live_rate.update({"value": value, "until": time.time() + (6 * 3600 if value else 300)})
+    return value
 
 
 def _finance_table() -> str:
@@ -91,7 +117,7 @@ class Rates:
     """USD/SEK per day for the margin: the rate finance-rollup recorded on
     the PLATFORM day rows (Riksbank, the banking day before on weekends);
     a day without one takes the nearest day before it in the range, else
-    after it, else the newest rate stored at all."""
+    after it, else the newest rate stored at all, else Riksbank's latest."""
 
     def __init__(self, platform_rows: list[dict]):
         self.by_day = {r["SK"][4:]: (Decimal(r["usdSek"]), r.get("usdSekDate") or r["SK"][4:])
@@ -108,7 +134,7 @@ class Rates:
                 ScanIndexForward=False, Limit=40).get("Items", [])
             rows = [from_ddb(i) for i in items]
             hit = next((r for r in rows if r.get("usdSek")), None)
-            self._latest = (Decimal(hit["usdSek"]), hit.get("usdSekDate") or hit["SK"][5:]) if hit else None
+            self._latest = (Decimal(hit["usdSek"]), hit.get("usdSekDate") or hit["SK"][5:]) if hit else _riksbank_latest()
         return self._latest
 
     def get(self, day: str):
@@ -267,6 +293,25 @@ def _new_point(day: str) -> dict:
             "mrrSek": Decimal(0), "bookings": 0, "orders": 0, "requests": 0, "activeTenants": 0}
 
 
+def _months(first: str, last: str) -> list[str]:
+    out, y, m = [], int(first[:4]), int(first[5:7])
+    while f"{y:04d}-{m:02d}" <= last[:7]:
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _recurring(first: str, last: str, month_mrr: dict, mrr_now: Decimal) -> Decimal:
+    """MRR over the range: one month's MRR per calendar month in it. The
+    month in progress counts today's MRR (invoiced in advance on the 1st),
+    an earlier month its last day snapshot."""
+    this_month = datetime.now(timezone.utc).date().isoformat()[:7]
+    total = Decimal(0)
+    for month in _months(first, last):
+        total += mrr_now if month == this_month else month_mrr.get(month, ("", Decimal(0)))[1]
+    return _q(total)
+
+
 def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_id: str | None = None,
                    plans: dict | None = None, rates: Rates | None = None) -> dict:
     """One customer's sums over the range. With a location: that location's
@@ -277,6 +322,7 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
     sums = {k: Decimal(0) for k in SUM_FIELDS}
     split = {k: Decimal(0) for k in BUCKETS}
     cost_usd, cost_sek = Decimal(0), Decimal(0)
+    month_mrr: dict = {}          # yyyy-mm -> (day, mrr) of the month's last day row
     active_days = 0
     revenue_rows = {r["SK"][4:]: r for r in _days(tenant_id, first, last)} if location_id else {}
     for row in _days(tenant_id, first, last, location_id):
@@ -304,6 +350,8 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         point["paidSek"] += Decimal(row.get("paidSek") or 0) - Decimal(row.get("refundedSek") or 0)
         point["costUsd"] += day_usd
         point["mrrSek"] += Decimal(row.get("mrrSek") or 0)
+        if day >= month_mrr.get(day[:7], ("", 0))[0]:
+            month_mrr[day[:7]] = (day, Decimal(row.get("mrrSek") or 0))
         point["bookings"] += int(row.get("bookings") or 0)
         point["orders"] += int(row.get("orders") or 0)
         point["requests"] += int(row.get("requests") or 0)
@@ -315,7 +363,9 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
     overdue_since = min((due_iso(i) for i in invoices if is_overdue(i) and due_iso(i)), default=None)
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
     cost = _usd(cost_usd)
-    margin = None if cost_sek is None else _q(revenue - cost_sek)
+    mrr_now = _mrr(profile, plans)
+    recurring = _recurring(first, last, month_mrr, mrr_now)
+    margin = None if cost_sek is None else _q(recurring - cost_sek)
     return {
         "tenantId": tenant_id, "name": profile.get("name"), "slug": profile.get("slug"),
         "orgNumber": profile.get("orgNumber"), "legalName": profile.get("legalName"),
@@ -323,10 +373,10 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "billingStatus": _billing_status(profile, invoices),
         "pastDueSince": ((profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None)
         or overdue_since,
-        "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"] - sums["refundedSek"]),
+        "mrrSek": mrr_now, "recurringSek": recurring, "revenueSek": revenue, "collectedSek": _q(sums["paidSek"] - sums["refundedSek"]),
         "creditedSek": _q(sums["creditedSek"]), "refundedSek": _q(sums["refundedSek"]), "outstandingSek": _outstanding(invoices),
         "costUsd": cost, "costSplitUsd": {k: _usd(val) for k, val in split.items()},
-        "marginSek": margin, "marginPct": _pct(margin, revenue) if margin is not None else None,
+        "marginSek": margin, "marginPct": _pct(margin, recurring) if margin is not None else None,
         "bookings": int(sums["bookings"]), "orders": int(sums["orders"]), "requests": int(sums["requests"]),
         "emails": int(sums["emails"]), "sms": int(sums["sms"]), "marketingEmails": int(sums["marketingEmails"]),
         "smsParts": int(sums["smsParts"]), "smsCostUsd": _usd(split["sms"]),
@@ -369,7 +419,7 @@ def overview(req) -> tuple[int, dict]:
     allocated = _usd(sum((t["costUsd"] for t in tenants), Decimal(0)))
     cost, cost_split, cost_scope = allocated, None, "allocated"
     cost_sek = None if any(t["marginSek"] is None for t in tenants) else \
-        sum((t["revenueSek"] - t["marginSek"] for t in tenants), Decimal(0))
+        sum((t["recurringSek"] - t["marginSek"] for t in tenants), Decimal(0))
     if platform_rows and not only:   # none before the rollup's first run: fall back to the allocated sum
         bill = {k: Decimal(0) for k in BUCKETS}
         total, cost_sek = Decimal(0), Decimal(0)
@@ -392,7 +442,11 @@ def overview(req) -> tuple[int, dict]:
             point["allocatedCostUsd"] = _usd(point["allocatedCostUsd"])
     bookings = sum(t["bookings"] for t in tenants)
     orders = sum(t["orders"] for t in tenants)
-    margin = None if cost_sek is None else _q(revenue - cost_sek)
+    recurring = _q(sum((t["recurringSek"] for t in tenants), Decimal(0)))
+    cost_as_of = _cost_as_of()
+    # AWS cost is loaded once Cost Explorer has a day in (or after) the range's start.
+    cost_loaded = bool(cost_as_of) and cost_as_of >= first
+    margin = None if cost_sek is None or not cost_loaded else _q(recurring - cost_sek)
     mrr = _q(sum((t["mrrSek"] for t in tenants), Decimal(0)))
     paying = sum(1 for t in tenants if t["mrrSek"] > 0)
     active_now = sum(1 for t in tenants if t["status"] == "active")
@@ -422,7 +476,9 @@ def overview(req) -> tuple[int, dict]:
         "kpis": {
             "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "refundedSek": refunded,
             "outstandingSek": outstanding,
-            "costUsd": cost, "marginSek": margin, "marginPct": _pct(margin, revenue) if margin is not None else None,
+            "costUsd": cost if cost_loaded else None, "costLoaded": cost_loaded, "recurringSek": recurring,
+            "marginSek": margin, "marginPct": _pct(margin, recurring) if margin is not None else None,
+            "costAtRateSek": _q(cost_sek) if cost_sek is not None and cost_loaded else None,
             "costScope": cost_scope, "allocatedCostUsd": allocated,
             "unallocatedUsd": max(_usd(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
             "costSplitUsd": cost_split,
@@ -445,7 +501,7 @@ def overview(req) -> tuple[int, dict]:
         "attention": attention,
         "job": job,
         "asOf": (job or {}).get("finishedAt"),
-        "costAsOf": _cost_as_of(),
+        "costAsOf": cost_as_of,
     }
 
 

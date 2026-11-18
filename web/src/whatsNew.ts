@@ -69,6 +69,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 57, text: "Back buttons" },
   { n: 58, text: "Save bar on forms" },
   { n: 59, text: "Finance costs in USD" },
+  { n: 60, text: "Finance top row" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

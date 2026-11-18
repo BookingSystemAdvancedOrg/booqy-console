@@ -650,8 +650,15 @@ export interface FinanceKpis {
   refundedSek?: number;
   outstandingSek: number;
   /** USD, as AWS Billing and Cost Explorer report it: the whole AWS bill ("platform") without a
-   * customer filter, else the customer's allocated share. Costs are never converted. */
-  costUsd: number;
+   * customer filter, else the customer's allocated share. Costs are never converted.
+   * null while Cost Explorer has no day in the range yet (costLoaded false). */
+  costUsd: number | null;
+  /** Cost Explorer has a day in (or after) the range's start: the nightly run has loaded it. */
+  costLoaded?: boolean;
+  /** MRR over the range: one month's MRR per calendar month in it (this month: today's MRR). */
+  recurringSek?: number;
+  /** The AWS cost in SEK at each day's rate: only to share the MRR between profit and cost. */
+  costAtRateSek?: number | null;
   costScope?: "platform" | "allocated";
   /** The part of costUsd allocated to the customers shown. */
   allocatedCostUsd?: number;
@@ -659,7 +666,8 @@ export interface FinanceKpis {
   unallocatedUsd?: number;
   /** The whole bill per bucket (platform scope only). */
   costSplitUsd?: CostSplit | null;
-  /** SEK: revenue minus the cost at each day's USD/SEK rate (FinanceOverview.fx); null without a rate. */
+  /** SEK: gross margin, MRR over the range minus the AWS cost at each day's USD/SEK rate
+   * (FinanceOverview.fx); null without a rate or before the cost is loaded. Percent of recurringSek. */
   marginSek: number | null;
   marginPct: number | null;
   customers: number;
@@ -728,6 +736,8 @@ export interface FinanceTenantRow {
   creditedSek: number;
   refundedSek?: number;
   outstandingSek: number;
+  /** MRR over the range (see FinanceKpis.recurringSek); the margin is this minus the cost. */
+  recurringSek?: number;
   costUsd: number;
   costSplitUsd: CostSplit;
   marginSek: number | null;

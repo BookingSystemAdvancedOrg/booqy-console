@@ -27,8 +27,9 @@ function overview(extra: Partial<FinanceOverview> = {}): FinanceOverview {
   return {
     period: { from: "2026-10-01", to: "2026-10-21", days: 21, includeInactive: false, tenantId: null },
     kpis: {
-      // cost in USD (10 USD at 10 SEK per USD is the 100 kr between revenue and margin)
-      mrrSek: 2980, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costUsd: 10, marginSek: 2780, marginPct: 96.5,
+      // cost in USD; gross margin is the period's MRR (recurringSek) minus the cost at the day rates (10 USD = 100 kr)
+      mrrSek: 2980, recurringSek: 2880, costLoaded: true, revenueSek: 2880, collectedSek: 990, outstandingSek: 1990, costUsd: 10,
+      marginSek: 2780, marginPct: 96.5,
       customers: 2, activeCustomers: 2, payingCustomers: 2, newCustomers: 0, churnedCustomers: 0, churnPct: 0, arpuSek: 1490,
       bookings: 23, orders: 11, costPerBookingUsd: 0.4348, costPerOrderUsd: 0.9091, requests: 650, emails: 5, sms: 0,
       smsParts: 412, smsCostUsd: 6.15, freeCustomers: 1,
@@ -84,8 +85,9 @@ describe("FinancePage", () => {
   it("shows every cost in USD, as AWS bills it, and revenue in SEK", async () => {
     renderPage();
     expect(await screen.findByText(/Revenue SEK ex VAT · Cost USD/)).toBeInTheDocument();
-    const units = screen.getByRole("region", { name: "Revenue and unit economics" });
-    await waitFor(() => expect(units).toHaveTextContent("$10.00"));                   // AWS cost, en-US like AWS Billing
+    const lead = screen.getByRole("region", { name: "MRR, AWS cost and gross margin" });
+    await waitFor(() => expect(lead).toHaveTextContent("$10.00"));                    // AWS cost, en-US like AWS Billing
+    const units = screen.getByRole("region", { name: "Unit economics" });
     expect(units).toHaveTextContent("$0.4348");                                       // cost per booking, a fraction of a dollar
     expect(units).toHaveTextContent("$6.15");                                         // SMS
     expect(units).not.toHaveTextContent(/AWS (bill|cost)\s*[\d\s,]+ kr/);
@@ -95,11 +97,11 @@ describe("FinancePage", () => {
     expect(within(rows[0]).getByText("$0.0045 cost")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /AWS cost \(USD\)/ })).toBeInTheDocument();
     // the ring shares the revenue at the day rates; each amount in its own currency
-    const ring = screen.getByRole("img", { name: /Where the revenue goes/ }).closest("figure")!;
+    const ring = screen.getByRole("img", { name: /Where the MRR goes/ }).closest("figure")!;
     expect(ring).toHaveTextContent("$10.00");
     // the margin names the rate and its date
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "About the margin" }));
+    await user.click(screen.getByRole("button", { name: "About Gross margin" }));
     expect(await screen.findByText(/10\.00 SEK per USD to 10\.11 SEK per USD, latest 10\.11 SEK per USD on 2 Oct/)).toBeInTheDocument();
   });
 
@@ -109,14 +111,30 @@ describe("FinancePage", () => {
       tenants: base.tenants.map((t) => ({ ...t, marginSek: null, marginPct: null })) });
     renderPage();
     expect(await screen.findByText("No USD/SEK rate yet")).toBeInTheDocument();
-    expect(screen.queryByText(/of revenue/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/of MRR/)).not.toBeInTheDocument();
   });
 
-  it("puts MRR, paying customers and cash first, with the past due count", async () => {
+  it("says plainly when the AWS cost is not loaded yet and still shows the MRR", async () => {
+    const base = overview();
+    mocks.financeOverview.mockResolvedValue({ ...base, fx: null,
+      kpis: { ...base.kpis, costLoaded: false, costUsd: null, marginSek: null, marginPct: null } });
     renderPage();
-    const lead = await screen.findByRole("region", { name: "Recurring revenue and cash" });
-    const labels = Array.from(lead.querySelectorAll(".kpi__label"), (el) => el.textContent);
-    expect(labels).toEqual(["MRR", "Paying customers", "Collected", "Outstanding"]);
+    const lead = await screen.findByRole("region", { name: "MRR, AWS cost and gross margin" });
+    await waitFor(() => expect(lead).toHaveTextContent("2 980 kr"));
+    expect(lead).toHaveTextContent("AWS cost not loaded yet");
+    expect(lead).toHaveTextContent("Not loaded yet");
+    expect(lead).not.toHaveTextContent(/Gross margin\s*-/);
+  });
+
+  it("puts MRR, AWS cost, gross margin and paying customers first, cash below", async () => {
+    renderPage();
+    const lead = await screen.findByRole("region", { name: "MRR, AWS cost and gross margin" });
+    const labels = Array.from(lead.querySelectorAll(".kpi__label"), (el) => el.textContent?.trim());
+    expect(labels).toEqual(["MRR", "AWS cost", "Gross margin", "Paying customers"]);
+    await waitFor(() => expect(lead).toHaveTextContent("2 780 kr"));                 // MRR minus AWS cost
+    expect(lead).toHaveTextContent("96,5 %");
+    const cash = screen.getByRole("region", { name: "Cash" });
+    expect(Array.from(cash.querySelectorAll(".kpi__label"), (el) => el.textContent?.trim())).toEqual(["Revenue", "Collected", "Outstanding"]);
     // Each tile shows only its label and number: no line under it.
     expect(lead).not.toHaveTextContent(/past due|invoiced|a year at this rate/);
   });
@@ -125,8 +143,8 @@ describe("FinancePage", () => {
     renderPage();
     expect((await screen.findAllByText("2 980 kr")).length).toBeGreaterThan(0);   // MRR
     expect(screen.getAllByText("2 880 kr").length).toBeGreaterThan(0);             // revenue (tile and hero facts)
-    expect(screen.getByText(/AWS cost 3,5 % of revenue/)).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /Where the revenue goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
+    expect(screen.getByText(/AWS cost 3,5 % of MRR/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Where the MRR goes: Profit 96,5\s%, AWS cost 3,5\s%/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /How much is collected: Collected 33,2\s%/ })).toBeInTheDocument();
     expect(document.querySelectorAll(".kpi .delta").length).toBeGreaterThan(0);   // trends are chips
     expect(document.querySelector(".delta__label")).toBeNull();                   // with no words

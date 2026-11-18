@@ -17,6 +17,13 @@ def _invoice(table, tenant_id, day, invoice_id, **fields):
     table.put_item(Item={"PK": f"TENANT#{tenant_id}", "SK": f"INVOICE#{day}#{invoice_id}", "invoiceId": invoice_id, **fields})
 
 
+@pytest.fixture(autouse=True)
+def no_live_rate(monkeypatch):
+    """No network in tests: Riksbank's live rate (the last fallback) is unknown unless a test sets it."""
+    from app import finance as fin
+    monkeypatch.setattr(fin, "_riksbank_latest", lambda: None)
+
+
 @pytest.fixture
 def two_tenants(finance, stripe, aws, tenant):  # noqa: F811
     status, body = call("POST /platform/tenants", body={**NEW_TENANT, "name": "Bistro Linnea", "slug": "linnea",
@@ -44,6 +51,7 @@ def two_tenants(finance, stripe, aws, tenant):  # noqa: F811
                                   ("2026-10-02", "4", {"requests": Decimal("4")}, "11")):
         finance.put_item(Item={"PK": "PLATFORM", "SK": f"DAY#{day}", "costUsd": Decimal(usd), "costSplitUsd": split,
                                "unallocatedUsd": Decimal(0), "usdSek": Decimal(rate), "usdSekDate": day})
+        finance.put_item(Item={"PK": "PLATFORM", "SK": f"COST#{day}", "day": day, "usd": Decimal(usd)})   # Cost Explorer pulled
     _invoice(finance, tenant, "2026-10-01", "in_1", status="paid", totalSek=Decimal("1237.50"), subtotalSek=Decimal("990"),
              amountRemainingSek=Decimal(0))
     _invoice(finance, other, "2026-10-01", "in_2", status="open", totalSek=Decimal("2487.50"), subtotalSek=Decimal("1990"),
@@ -59,8 +67,10 @@ def test_overview_sums_the_range_for_active_customers(two_tenants):
     assert status == 200, body
     k = body["kpis"]
     assert k["revenueSek"] == 2880 and k["collectedSek"] == 990 and k["outstandingSek"] == 1990
-    # cost stays USD; the margin is SEK with each day's cost at that day's rate: 6 x 10 + 4 x 11 = 104 kr
-    assert k["costUsd"] == 10 and k["marginSek"] == 2776 and k["marginPct"] == 96.4
+    # cost stays USD; gross margin is MRR minus AWS cost: October's MRR (its last day, 990 + 1990) minus
+    # each day's cost at that day's rate (6 x 10 + 4 x 11 = 104 kr)
+    assert k["costUsd"] == 10 and k["costLoaded"] is True and k["recurringSek"] == 2980
+    assert k["marginSek"] == 2876 and k["marginPct"] == 96.5 and k["costAtRateSek"] == 104
     assert "costSek" not in k and "costPerBookingSek" not in k and "smsCostSek" not in k
     assert k["mrrSek"] == 2980 and k["payingCustomers"] == 2 and k["arpuSek"] == 1490
     assert k["bookings"] == 23 and k["orders"] == 11 and k["costPerBookingUsd"] == 0.4348 and k["costPerOrderUsd"] == 0.9091
@@ -71,7 +81,7 @@ def test_overview_sums_the_range_for_active_customers(two_tenants):
                               "locationId": None, "revenueScope": None}
     rows = {t["tenantId"]: t for t in body["tenants"]}
     # 2 USD at 10 + 1 USD at 11 = 31 kr
-    assert rows[tenant]["revenueSek"] == 990 and rows[tenant]["costUsd"] == 3 and rows[tenant]["marginSek"] == 959
+    assert rows[tenant]["revenueSek"] == 990 and rows[tenant]["costUsd"] == 3 and rows[tenant]["marginSek"] == 990 - 31
     assert rows[tenant]["costSplitUsd"]["requests"] == 1.5 and rows[tenant]["emails"] == 5
     assert rows[other]["revenueSek"] == 1890 and rows[other]["creditedSek"] == 100 and rows[other]["outstandingSek"] == 1990
     assert rows[other]["orgNumber"] == "556000-0001" and rows[other]["billingStatus"] == "active"
@@ -134,7 +144,7 @@ def test_tenant_detail(two_tenants):
     assert status == 200, body
     assert body["tenant"]["revenueSek"] == 1890 and [d["day"] for d in body["days"]] == ["2026-10-01", "2026-10-02"]
     assert body["days"][1]["creditedSek"] == 100 and len(body["invoices"]) == 1
-    assert body["tenant"]["costUsd"] == 7 and body["days"][0]["costUsd"] == 4 and body["tenant"]["marginSek"] == 1890 - 73
+    assert body["tenant"]["costUsd"] == 7 and body["days"][0]["costUsd"] == 4 and body["tenant"]["marginSek"] == 1990 - 73
     assert body["fx"]["latest"] == 11
 
 
@@ -242,14 +252,32 @@ def test_overview_shows_the_whole_aws_bill_with_the_allocated_part(two_tenants, 
     assert k["costScope"] == "platform" and k["costUsd"] == 14 and k["allocatedCostUsd"] == 10 and k["unallocatedUsd"] == 4
     assert k["costSplitUsd"] == {"baseline": 6, "requests": 8, "email": 0, "sms": 0}
     # the 3rd has no rate yet: it takes the 2nd's. 75 + 44 + 27.5 = 146.5 kr
-    assert k["marginSek"] == 2733.5 and k["costPerBookingUsd"] == round(14 / 23, 4)
+    assert k["marginSek"] == 2980 - 146.5 and k["costPerBookingUsd"] == round(14 / 23, 4)
     assert [p["day"] for p in body["series"]] == ["2026-10-01", "2026-10-02", "2026-10-03"]
     assert body["series"][2]["costUsd"] == 2.5 and body["series"][0]["allocatedCostUsd"] == 6
     assert body["costAsOf"] == "2026-10-03"
     # one customer: its allocated share, as before
     status, body = call("GET /platform/finance/overview", query={"from": "2026-10-01", "to": "2026-10-03", "tenantId": other})
     assert body["kpis"]["costScope"] == "allocated" and body["kpis"]["costUsd"] == 7 and body["kpis"]["unallocatedUsd"] == 0
-    assert body["kpis"]["marginSek"] == 1890 - 73
+    assert body["kpis"]["marginSek"] == 1990 - 73
+
+
+def test_margin_waits_for_the_aws_cost_and_counts_this_months_mrr(two_tenants, finance, monkeypatch):  # noqa: F811
+    from app import finance as fin
+    tenant, other = two_tenants
+    month = datetime.now(timezone.utc).date().isoformat()[:7]
+    # no Cost Explorer day this month yet: say so, never a made-up margin
+    status, body = call("GET /platform/finance/overview", query={"from": f"{month}-01", "to": f"{month}-01"})
+    k = body["kpis"]
+    assert k["costLoaded"] is False and k["costUsd"] is None and k["marginSek"] is None and k["mrrSek"] > 0
+    # once it is: this month's MRR is today's (invoiced in advance on the 1st), the rate Riksbank's latest
+    finance.put_item(Item={"PK": "PLATFORM", "SK": f"COST#{month}-01", "day": f"{month}-01", "usd": Decimal("2")})
+    finance.put_item(Item={"PK": "PLATFORM", "SK": f"DAY#{month}-01", "costUsd": Decimal("2")})
+    monkeypatch.setattr(fin, "_riksbank_latest", lambda: (Decimal("10"), "2026-11-17"))
+    status, body = call("GET /platform/finance/overview", query={"from": f"{month}-01", "to": f"{month}-01"})
+    k = body["kpis"]
+    assert k["costLoaded"] is True and k["costUsd"] == 2 and k["recurringSek"] == k["mrrSek"]
+    assert k["marginSek"] == k["mrrSek"] - 20 and body["fx"]["latestDate"] == "2026-11-17"
 
 
 def test_rows_from_before_the_usd_migration_read_back_in_usd(two_tenants, finance):  # noqa: F811
