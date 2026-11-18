@@ -114,20 +114,19 @@ def test_prod_link_creates_an_empty_dev_tenant(site_repo, aws):
     assert _task({"action": "mirror", **PROD_PROFILE}) == {"tenantId": out["tenantId"], "status": "adopted"}
 
 
-def test_prod_link_mirrors_an_owner_who_already_owns_a_dev_customer(site_repo, aws, tenant):
-    # test-release, 2026-10-28: the prod owner's address already signed in to
-    # another dev customer, and the dev side failed with "1 field needs fixing".
+def test_prod_link_never_copies_the_restaurants_own_details(site_repo, aws, tenant):
+    # Dev twins (docs/DEV-TWINS.md): only name, slug and plan cross; the owner
+    # login is a Booqy team address with the slug, even when an older prod
+    # build still sends the owner, contact and company details.
     from test_api import _owner_of
     _owner_of(aws, "owner@roma.se", tenant)
-    out = _task({"action": "mirror", **PROD_PROFILE, "slug": "test-release", "orgNumber": "556677-8890"})
+    out = _task({"action": "mirror", **PROD_PROFILE, "slug": "test-release", "ownerName": ""})
     assert out["status"] == "created"
     created = call("GET /platform/tenants/{tenantId}", {"tenantId": out["tenantId"]})[1]["tenant"]
-    assert created["ownerEmail"] == "owner+test-release@roma.se" and "orgNumber" not in created
-
-
-def test_prod_link_names_the_field_it_cannot_mirror(site_repo, aws):
-    out = _task({"action": "mirror", **PROD_PROFILE, "ownerName": ""})
-    assert out["error"] == "validation_failed" and "ownerName: Fill this in." in out["message"]
+    assert created["ownerEmail"] == "dev+test-release@booqy.se" and created["ownerName"] == "Booqy utvecklare"
+    assert created["name"] == "Pizzeria Roma" and created["planId"] == "growth"
+    for personal in ("legalName", "orgNumber", "contactEmail", "contactPhone", "address"):
+        assert personal not in created
 
 
 REPO = {"name": "site-pizzeria-roma", "id": 9001, "html_url": "https://github.com/BooqyCustomers/site-pizzeria-roma",

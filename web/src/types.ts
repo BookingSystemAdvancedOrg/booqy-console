@@ -65,6 +65,8 @@ export interface Tenant {
   planId: string;
   /** Dev console: "test" = a test customer (sandbox sites, simulated own domains); "prod-link" = a prod customer's dev side. */
   siteKind?: "test" | "prod-link";
+  /** Dev console: the customer's dev twin (API devtwin.py, docs/DEV-TWINS.md). */
+  devTwin?: DevTwin;
   /** featuresEver: every feature key ever turned on (read-only; only grows, CONTRACTS.md 9.2). */
   entitlements: { maxLocations: number; features: Features; limits?: Limits; featuresEver?: string[] };
   locationCount: number;
@@ -900,3 +902,14 @@ export type PrinterSummary = { status: PrinterStatus | null; printers: number; o
 /** A new printer: the connection details are returned once. */
 export type AddedPrinter = { printer: Printer; username?: string; secret?: string; serverUrl?: string | null };
 
+/** A dev twin's seed: every Kom igång step set up with test data (dev only). */
+export interface DevTwin {
+  status: "queued" | "running" | "ready" | "partial" | "failed";
+  requestedAt?: string;
+  requestedBy?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  ownerEmail?: string;
+  error?: string;
+  steps: Record<string, { ok: boolean; note?: string }>;
+}

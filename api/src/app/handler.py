@@ -9,8 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, own_domains, printers,
-               site, stripe_connect, tenants, users, website, zones)
+from . import (avatar, backdrop, billing, devtwin, domains, finance, locations, mail, operators, outbox, own_domains,
+               printers, site, stripe_connect, tenants, users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, groups, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
 
@@ -27,6 +27,8 @@ ROUTES = {
     "POST /platform/tenants/{tenantId}/purge": tenants.purge_now,
     "POST /platform/tenants/{tenantId}/restore": tenants.restore,
     "POST /platform/tenants/{tenantId}/onboarding/retry": tenants.retry_onboarding,
+    # Dev twin (dev only): create or refresh the customer's twin with test data
+    "POST /platform/tenants/{tenantId}/dev-twin": devtwin.start,
     # Website tab: the restaurant's own site repo (site-repo function)
     "GET /platform/tenants/{tenantId}/site": site.get_site,
     "POST /platform/tenants/{tenantId}/site/retry": site.retry,
@@ -152,8 +154,8 @@ def _unqualified(context) -> bool:
     return arn.count(":") == 6 or arn.endswith(":$LATEST")
 
 
-def _site_task(event: dict) -> dict:
-    result = site.site_task(event)
+def _site_task(event: dict, context=None) -> dict:
+    result = site.site_task(event, getattr(context, "invoked_function_arn", None))
     log.info(json.dumps({"siteTask": (event.get("siteTask") or {}).get("action"),
                          "slug": (event.get("siteTask") or {}).get("slug"), "result": result.get("status") or result.get("error")}))
     return result
@@ -162,7 +164,7 @@ def _site_task(event: dict) -> dict:
 def handler(event, context):
     if _unqualified(context):
         if isinstance(event, dict) and set(event) == {"siteTask"}:
-            return _site_task(event)
+            return _site_task(event, context)
         log.warning("refused a non-site-task unqualified invoke")
         return {"error": "forbidden", "message": "Site tasks only"}
     # The domain-provision workflow invokes the function directly (no
@@ -197,7 +199,13 @@ def handler(event, context):
     # (dev only): create or adopt the restaurant's dev tenant, or archive its
     # dev site. That role may invoke this function and nothing else.
     if "siteTask" in event and "routeKey" not in event:
-        return _site_task(event)
+        return _site_task(event, context)
+    # A dev twin's seed (devtwin.py, dev only), handed over by this function
+    # itself through the live alias; only its own role may invoke it this way.
+    if "twinTask" in event and "routeKey" not in event:
+        result = devtwin.twin_task(event, context)
+        log.info(json.dumps({"twinTask": (event.get("twinTask") or {}).get("tenantId"), "result": result}))
+        return result
     route = event.get("routeKey", "")
     request_id = getattr(context, "aws_request_id", "-")
     fn = ROUTES.get(route)

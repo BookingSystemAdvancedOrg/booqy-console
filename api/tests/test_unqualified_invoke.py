@@ -28,7 +28,7 @@ API_EVENT = {
 def spies(monkeypatch):
     calls = []
     monkeypatch.setitem(h.ROUTES, ROUTE, lambda req: calls.append(("route", req.actor)) or (200, {"ok": True}))
-    monkeypatch.setattr(h.site, "site_task", lambda event: calls.append(("site", event)) or {"status": "done"})
+    monkeypatch.setattr(h.site, "site_task", lambda event, function_arn=None: calls.append(("site", event)) or {"status": "done"})
     monkeypatch.setattr(h.billing, "finance_task", lambda event, ctx: calls.append(("finance", event)) or {"status": "done"})
     monkeypatch.setattr(h.own_domains, "workflow_task", lambda event: calls.append(("workflow", event)) or {"status": "done"})
     monkeypatch.setattr(h.mail, "mail_task", lambda event, ctx: calls.append(("mail", event)) or {"status": "sent"})
@@ -71,6 +71,7 @@ def test_an_unqualified_api_event_with_operator_claims_is_refused(spies):
     {"workflowTask": "mark", "domain": "x.se"},
     {"mailTask": "send", "newsletterId": "n1"},
     {"domainTask": "health"},
+    {"twinTask": {"tenantId": "t1"}},   # the dev twin seed runs only through the live alias
     {"siteTask": {"action": "status", "slug": "roma"}, "financeTask": "invoice"},
     {"siteTask": {"action": "status", "slug": "roma"}, "routeKey": ROUTE},
     {},

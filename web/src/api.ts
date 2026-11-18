@@ -4,6 +4,7 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
+  DevTwin,
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
   AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
@@ -149,6 +150,8 @@ export const api = {
   restore: (id: string) =>
     request<{ usersEnabled: number; failed: string[]; onboardingError?: string }>("POST", `${t(id)}/restore`, {}),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
+  // Dev only: create or refresh the customer's dev twin (test data in every Kom igång step)
+  devTwin: (id: string) => request<{ devTwin: DevTwin }>("POST", `${t(id)}/dev-twin`, {}),
   // Website tab: the restaurant's own site repo (site-repo function)
   site: (id: string) => request<SiteStatus | { enabled: false }>("GET", `${t(id)}/site`),
   retrySite: (id: string) => request<{ status: string }>("POST", `${t(id)}/site/retry`, {}),

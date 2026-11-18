@@ -53,11 +53,13 @@ from . import validation as v
 from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table, write_audit
 from .core import not_while
 from .tenants import create_tenant, get_plan, get_profile, restore_tenant
+from . import devtwin
 
 _SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
-_MIRROR_FIELDS = ("name", "slug", "ownerEmail", "ownerName", "legalName", "orgNumber", "contactEmail",
-                  "contactPhone", "address")
-_OPTIONAL_MIRROR_FIELDS = ("legalName", "orgNumber", "contactEmail", "contactPhone", "address")
+# Only these cross from prod: the dev tenant is the restaurant's dev twin,
+# Booqy's own test restaurant (devtwin.py), never its personal data. Older
+# prod builds send more; it is ignored here.
+_MIRROR_FIELDS = ("name", "slug")
 LINK_ACTOR = "prod-site-repo"
 
 
@@ -320,8 +322,21 @@ def _dev_plan(plan_id: str | None) -> str:
     return sorted(p["planId"] for p in plans)[-1]
 
 
-def site_task(event: dict) -> dict:
-    """Prod -> dev (the booqy-sites-prod-link role). Never in prod."""
+def site_task(event: dict, function_arn: str | None = None) -> dict:
+    """Prod -> dev (the booqy-sites-prod-link role). Never in prod. A mirror
+    creates or adopts the restaurant's dev twin and starts its seed
+    (devtwin.py; function_arn: this function, for the async seed)."""
+    out = _site_task(event)
+    if (isinstance(out, dict) and out.get("status") in ("created", "adopted", "restored")
+            and devtwin.enabled() and function_arn):
+        try:
+            devtwin.kick(out["tenantId"], LINK_ACTOR, function_arn)
+        except Exception:  # noqa: BLE001 - the site link must not fail on the seed; Refresh in the console
+            log.exception("dev twin seed for %s not started", out.get("tenantId"))
+    return out
+
+
+def _site_task(event: dict) -> dict:
     if env("ENVIRONMENT") == "prod":
         return {"error": "refused", "message": "Site tasks only run in dev"}
     task = event.get("siteTask") if isinstance(event.get("siteTask"), dict) else {}
@@ -356,7 +371,8 @@ def site_task(event: dict) -> dict:
             write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
             return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
-        body["planId"] = _dev_plan(task.get("planId"))
+        body.update(planId=_dev_plan(task.get("planId")), ownerEmail=devtwin.owner_email(slug),
+                    ownerName="Booqy utvecklare")
         return _with_dev_side(_create_mirror(body, slug), task)
     except ApiError as e:
         fields = e.extra.get("fields") or {}
@@ -383,21 +399,7 @@ def _with_dev_side(out: dict, task: dict) -> dict:
 
 
 def _create_mirror(body: dict, slug: str) -> dict:
-    """create_tenant, once more if it refuses a field: the owner's address
-    usually already signs in to another dev customer (one login, one
-    tenant), so the dev invitation goes to <local>+<slug>@<domain>, the same
-    mailbox with most providers; an optional field dev refuses is left out
-    (no data is needed in dev). A missing domain is never the problem here."""
-    try:
-        _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
-    except ApiError as e:
-        fields = {k.split(".")[0] for k in (e.extra.get("fields") or {})}
-        if e.code != "validation_failed" or not fields or fields - {"ownerEmail", *_OPTIONAL_MIRROR_FIELDS}:
-            raise
-        body = {k: val for k, val in body.items() if k not in fields - {"ownerEmail"}}
-        if "ownerEmail" in fields:
-            local, _, domain = body["ownerEmail"].partition("@")
-            body["ownerEmail"] = f"{local.split('+')[0]}+{slug}@{domain}"
-        _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
-        log.info(json.dumps({"siteTask": "mirror", "slug": slug, "adjusted": sorted(fields)}))
+    """create_tenant for the dev twin: name, slug and plan from prod, the
+    owner login a Booqy team address (devtwin.owner_email)."""
+    _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
     return {"tenantId": out["tenantId"], "status": "created"}

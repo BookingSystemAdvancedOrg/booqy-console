@@ -27,6 +27,7 @@ import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
+import { DevTwinCard, devTwinBusy } from "../components/DevTwinCard";
 import { BackButton } from "../components/ds";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
@@ -53,6 +54,7 @@ export default function TenantPage() {
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
       data.onboarding?.status === "RUNNING" ||
+      (!isProd() && devTwinBusy(data.tenant)) ||
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   const waiting = data && data.zones.some(zoneWaiting);
@@ -125,7 +127,10 @@ export default function TenantPage() {
         ))}
       </nav>
 
-      {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
+      {tab === "Overview" && <>
+        <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />
+        {!isProd() && <DevTwinCard tenant={t} onChanged={reload} />}
+      </>}
       {tab === "Locations" && <>
         <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
         <PrintersCard tenant={t} locations={data.locations} />
