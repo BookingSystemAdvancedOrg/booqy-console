@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator } from '@playwright/test'
 import { watch } from '../lib/watch'
 import { mail, RUN } from '../lib/data'
 
@@ -6,6 +6,16 @@ const PAGES: [string, RegExp][] = [
   ['/', /Customers/], ['/tenants/new', /New customer/], ['/operators', /Operators/], ['/mail', /Mail/],
   ['/finance', /Finance/], ['/website', /Website/], ['/settings', /Settings/],
 ]
+
+/** Row actions are inline on wide tables and folded into the "..." menu on narrower ones. */
+function rowAction(row: Locator, name: string | RegExp) {
+  return row.locator('.row-actions--inline, .row-menu__list').getByRole('button', { name })
+}
+async function openRowMenu(row: Locator) {
+  await expect(row).toBeVisible()
+  const toggle = row.locator('.row-menu__toggle')
+  if (await toggle.isVisible()) await toggle.click()
+}
 
 test.describe('Console: every page', () => {
   for (const [path, h] of PAGES) {
@@ -61,11 +71,14 @@ test.describe('Console: operators', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
     await page.keyboard.press('Escape')
     await expect(row).toContainText('E2E Operatör Två Ändrad', { timeout: 20000 })
-    await row.getByRole('button', { name: 'Disable' }).click()
+    await openRowMenu(row)
+    await rowAction(row, 'Disable').click()
     await expect(row.getByText('Disabled')).toBeVisible({ timeout: 20000 })
-    await row.getByRole('button', { name: 'Enable' }).click()
+    await openRowMenu(row)
+    await rowAction(row, 'Enable').click()
     await expect(row.getByRole('cell').nth(2)).toHaveText(/Invited|Active/, { timeout: 20000 })
-    await row.getByRole('button', { name: /Delete|Remove/ }).click()
+    await openRowMenu(row)
+    await rowAction(row, /Delete|Remove/).click()
     const del = page.getByRole('dialog', { name: 'Delete operator' })
     await del.getByRole('textbox').fill(email)
     await del.locator('button.btn--danger').click()
@@ -76,7 +89,8 @@ test.describe('Console: operators', () => {
   test('cannot disable or delete yourself', async ({ page }) => {
     await page.goto('/operators')
     const me = page.getByRole('row', { name: /e2e-operator/ })
-    await expect(me.getByRole('button', { name: 'Disable' })).toBeDisabled()
+    await openRowMenu(me)
+    await expect(rowAction(me, 'Disable')).toBeDisabled()
   })
 
   test('own avatar upload @mobile', async ({ page }, info) => {

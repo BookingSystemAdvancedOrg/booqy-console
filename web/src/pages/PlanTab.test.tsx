@@ -194,22 +194,23 @@ describe("Plan tab", () => {
     await screen.findByText("Starter");
     expect(screen.getByLabelText("Reservations")).toBeChecked();
     expect(screen.getByLabelText("Marketing")).not.toBeChecked();
-    for (const label of ["Meta ads", "Site builder", "Guest CRM", "Google Business Profile", "Gift cards", "Waitlist",
+    for (const label of ["Meta ads", "Guest CRM", "Google Business Profile", "Gift cards", "Waitlist",
       "Social posting", "Staff ledger (personalliggare)", "Fortnox/Visma posting", "Margin per dish"]) {
       expect(screen.getByLabelText(label)).not.toBeChecked();
     }
-    expect(screen.getByLabelText(/^AI site edits per month/)).toHaveValue(0);
+    expect(screen.queryByLabelText("Site builder")).toBeNull();
+    expect(screen.queryByLabelText(/AI site edits/)).toBeNull();
   });
 
-  it("sends a changed AI edit limit and a new feature as overrides, nothing else", async () => {
+  it("sends a changed limit and a new feature as overrides, nothing else", async () => {
     render(<PlanTab tenant={tenant} onSaved={() => {}} />);
     await screen.findByText("Starter");
-    fireEvent.change(screen.getByLabelText(/^AI site edits per month/), { target: { value: "25" } });
-    fireEvent.click(screen.getByLabelText("Site builder"));
+    fireEvent.change(screen.getByLabelText(/^Phone agent minutes per month/), { target: { value: "25" } });
+    fireEvent.click(screen.getByLabelText("Gift cards"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
-      overrides: { features: { marketing: false, siteBuilder: true }, limits: { siteBuilderAiEditsPerMonth: 25 } },
+      overrides: { features: { marketing: false, giftCards: true }, limits: { phoneAgentMinutesPerMonth: 25 } },
     });
   });
 
@@ -223,17 +224,20 @@ describe("Plan tab", () => {
   });
 
   it("sends a changed phone minutes limit as an override, keeping the tenant's other override", async () => {
-    const own = { ...tenant, entitlements: { ...tenant.entitlements, limits: { siteBuilderAiEditsPerMonth: 25 } } };
+    // A stored limit of the removed site builder is neither shown nor sent.
+    const own = { ...tenant, entitlements: { ...tenant.entitlements, features: { ...tenant.entitlements.features, siteBuilder: true },
+                                              limits: { siteBuilderAiEditsPerMonth: 25 } } } as unknown as typeof tenant;
     render(<PlanTab tenant={own} onSaved={() => {}} />);
     await screen.findByText("Starter");
-    expect(screen.getByLabelText(/^AI site edits per month/)).toHaveValue(25);
+    expect(screen.queryByLabelText(/AI site edits/)).toBeNull();
+    expect(screen.queryByLabelText("Site builder")).toBeNull();
     fireEvent.change(screen.getByLabelText(/^Phone agent minutes per month/), { target: { value: "300" } });
     fireEvent.click(screen.getByLabelText("Phone agent"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
     expect(mocks.setPlan).toHaveBeenCalledWith("t1", {
       planId: "starter", force: false, priceSek: 3950,
       overrides: { features: { marketing: false, phoneAgent: true },
-                   limits: { siteBuilderAiEditsPerMonth: 25, phoneAgentMinutesPerMonth: 300 } },
+                   limits: { phoneAgentMinutesPerMonth: 300 } },
     });
   });
 
@@ -254,9 +258,9 @@ describe("Plan tab", () => {
     await screen.findByText("Starter");
     expect(screen.queryByLabelText(/terminal/i)).toBeNull();
     expect(screen.queryByText(/terminal/i)).toBeNull();
-    fireEvent.click(screen.getByLabelText("Site builder"));
+    fireEvent.click(screen.getByLabelText("Gift cards"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save plan" })); });
-    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ marketing: false, siteBuilder: true });
+    expect(mocks.setPlan.mock.calls[0][1].overrides.features).toEqual({ marketing: false, giftCards: true });
   });
 
   it("opens clean for a tenant that still carries a retired feature key (finding 190)", async () => {
@@ -265,7 +269,7 @@ describe("Plan tab", () => {
     render(<PlanTab tenant={legacy} onSaved={() => {}} />);
     await screen.findByText("Starter");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
-    expect(document.querySelector(".check--changed")).toBeNull();
+    expect(document.querySelector(".feat--changed")).toBeNull();
   });
 
   it("sends no limit when it equals the plan's", async () => {

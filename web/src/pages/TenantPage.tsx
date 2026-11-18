@@ -13,7 +13,7 @@ import { CopyButton } from "../components/CopyButton";
 import { isProd } from "../testSites";
 import BillingTab from "../components/BillingTab";
 import WebsiteTab from "../components/WebsiteTab";
-import { LIMIT_LABELS, contractFeatures, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
+import { LIMIT_LABELS, contractFeatures, contractLimits, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
 import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
@@ -21,9 +21,11 @@ import { SkelBlock, SkelCard, SkelPage, SkelRows } from "../components/Skeleton"
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
+import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { InfoTip } from "../components/StepFlow";
 import { planName } from "../components/planName";
+import { PrintersCard } from "../components/PrintersCard";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -123,7 +125,10 @@ export default function TenantPage() {
       </nav>
 
       {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
-      {tab === "Locations" && <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />}
+      {tab === "Locations" && <>
+        <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
+        <PrintersCard tenant={t} locations={data.locations} />
+      </>}
       {tab === "Users" && <Users tenant={t} refreshed={refreshed} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} refreshed={refreshed} />}
@@ -389,7 +394,7 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
       await api.setPlan(tenant.tenantId, {
         planId: tenant.planId,
         overrides: { maxLocations: tenant.entitlements.maxLocations + 1, features: contractFeatures(tenant.entitlements.features),
-                     ...(tenant.entitlements.limits ? { limits: tenant.entitlements.limits } : {}) },
+                     ...(tenant.entitlements.limits ? { limits: contractLimits(tenant.entitlements.limits) } : {}) },
       });
       return api.createLocation(tenant.tenantId, compact(f) as LocationInput);
     });
@@ -620,13 +625,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
             <span className="field__label">Features</span>
             <SelectAllFeatures keys={featureKeys()} features={features} onChange={setFeatures} />
           </div>
-          <div className="checks">
-            {featureKeys().map((k) => (
-              <label key={k} className={`check${!!features[k] !== !!tenant.entitlements.features[k] ? " check--changed" : ""}`}>
-                <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatures({ ...features, [k]: e.target.checked })} /> {featureLabel(k)}
-              </label>
-            ))}
-          </div>
+          <FeatureList keys={featureKeys()} checked={features} onToggle={(k, on) => setFeatures({ ...features, [k]: on })}
+                       changed={(k) => !!features[k] !== !!tenant.entitlements.features[k]} />
         </div>
       </div>
       {belowCount ? (

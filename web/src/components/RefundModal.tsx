@@ -22,6 +22,14 @@ const left = (i: Invoice) => Number(i.creditableSek) || 0;
 const cardOk = (i: Invoice) => i.status === "paid" && i.refundable !== false;
 const asText = (n: number) => n.toFixed(2).replace(".", ",");
 
+/** The credit choice, worded by what it does: on an open invoice it lowers what is owed, on a paid one the next invoice. */
+export function creditLabel(invoices: Invoice[]): string {
+  const open = invoices.filter((i) => i.status === "open").length;
+  if (open === 0) return "Credit next invoice";
+  if (open === invoices.length) return "Lower what is owed";
+  return "Lower owed or next invoice";
+}
+
 function newRequestId(): string {
   try { return crypto.randomUUID(); } catch { return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }
 }
@@ -102,7 +110,7 @@ export function RefundModal({ tenantId, invoices, onClose, onDone }: {
           <button type="button" role="radio" aria-checked={method === "refund"} disabled={!allCard}
                   className={`chip${method === "refund" ? " chip--on" : ""}`} onClick={() => setMethod("refund")}>Back to the card</button>
           <button type="button" role="radio" aria-checked={method === "credit"}
-                  className={`chip${method === "credit" ? " chip--on" : ""}`} onClick={() => setMethod("credit")}>Credit next invoice</button>
+                  className={`chip${method === "credit" ? " chip--on" : ""}`} onClick={() => setMethod("credit")}>{creditLabel(rows)}</button>
           {!allCard && <InfoTip label="Why not to the card">Only invoices paid by card can go back to the card. Open ones and ones paid outside Stripe are credited.</InfoTip>}
         </div>
 

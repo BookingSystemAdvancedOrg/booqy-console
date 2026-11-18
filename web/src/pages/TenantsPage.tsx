@@ -12,6 +12,7 @@ import { useRowOpen } from "../components/rowLink";
 import { FreeBadge } from "../components/FreeFields";
 import { FREE_PLAN_ID } from "../free";
 import { planName } from "../components/planName";
+import { PrinterCell, printerAlert } from "../components/PrintersCard";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -41,6 +42,10 @@ export default function TenantsPage() {
     return api.financeInvoices({ from: addDays(to, -365), to });
   });
   const plans = useLoad(() => api.plans());
+  // Each customer's printers (worst location first); loads after the list, never holds it up.
+  const printers = useLoad(() => api.printerSummary());
+  const printerState = (tenantId: string) =>
+    printers.loading && !printers.data ? null : printers.error && !printers.data ? "unknown" as const : printers.data?.[tenantId];
   const [invoicesRetrying, setInvoicesRetrying] = useState(false);
   const retryInvoices = async () => { setInvoicesRetrying(true); await invoices.reload(); setInvoicesRetrying(false); };
   // Not loaded (null), failed ("unknown"): never "-", which reads as no invoices.
@@ -105,7 +110,7 @@ export default function TenantsPage() {
           <table className="table table--slim">
             <thead>
               <tr>
-                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
+                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:printers">Printers</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
               </tr>
             </thead>
             <tbody>
@@ -119,13 +124,16 @@ export default function TenantsPage() {
                   <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : planName(t.planId, plans.data)}</td>
                   <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoiceState(t.tenantId)} /></td>
                   <td className="cell-fact" data-label="Locations">{t.locationCount} / {t.maxLocations ?? "-"}</td>
+                  <td className={`cell-fact${printerAlert(printerState(t.tenantId)) ? " cell-printers--alert" : ""}`} data-label="Printers">
+                    <PrinterCell summary={printerState(t.tenantId)} />
+                  </td>
                   <td className="phone-hide" data-label="Payments">{t.chargesEnabled ? <span className="ok">Ready</span> : <span className="muted">Not ready</span>}</td>
                   <td className="small phone-hide" data-label="Site">{t.primaryDomain ?? <span className="muted">-</span>}</td>
                   <td className="small phone-hide" data-label="Created">{fmtDate(t.createdAt)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="empty">No customers match. <Link to="/tenants/new">Add one</Link></td></tr>
+                <tr><td colSpan={9} className="empty">No customers match. <Link to="/tenants/new">Add one</Link></td></tr>
               )}
             </tbody>
           </table>

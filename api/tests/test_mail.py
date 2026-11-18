@@ -82,7 +82,7 @@ def test_logo_colour_is_kept_and_checked(mail):
 
 def test_preview_renders_blocks(mail):
     status, body = call("POST /platform/mail/preview", body={
-        "subject": "Nyheter i oktober", "body": "Hej!\n\n# Nytt i Booqy\n\n- Bordsbokning i 3D\n- QR vid bordet\n\nLäs mer på https://booqy.se/nyheter **nu**."})
+        "subject": "Nyheter i oktober", "body": "Hej!\n\n# Nytt i Booqy\n\n- Bordsbokning i 3D\n- Presentkort online\n\nLäs mer på https://booqy.se/nyheter **nu**."})
     assert status == 200
     html = body["html"]
     assert "<h1" in html and "Nyheter i oktober" in html
@@ -90,7 +90,7 @@ def test_preview_renders_blocks(mail):
     assert '<a href="https://booqy.se/nyheter"' in html and "<strong>nu</strong>" in html
     assert 'src="data:image/png;base64,' in html
     assert "support@ithjalparna.se" in html
-    assert "NYTT I BOOQY" in body["text"] and "- QR vid bordet" in body["text"]
+    assert "NYTT I BOOQY" in body["text"] and "- Presentkort online" in body["text"]
     # Template fields passed along are used for the preview without being saved.
     status, body = call("POST /platform/mail/preview", body={"subject": "x", "body": "y", "template": {"accentColor": "#123456", "senderName": "Prov"}})
     assert status == 200 and "#123456" in body["html"] and 'alt="Prov"' in body["html"]

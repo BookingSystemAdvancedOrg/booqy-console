@@ -8,7 +8,6 @@ export const SLOT_LOADERS: Record<ConsoleSlotId, () => Promise<{ default: Compon
   "tenant.integrations.metaAds": () => import("./features/meta-ads/MetaAdsTenantSection"),
   "tenant.integrations.googleBusiness": () => import("./features/google-business/GoogleBusinessTenantSection"),
   "tenant.integrations.phoneAgent": () => import("./features/phone-agent/PhoneAgentTenantSection"),
-  "tenant.website.siteBuilder": () => import("./features/site-builder/SiteBuilderSection"),
   "tenant.offboard.personalliggare": () => import("./features/personalliggare/ExportLedgerSection"),
   "settings.metaAds": () => import("./features/meta-ads/MetaAdsSettingsCard"),
   "settings.phoneAgent": () => import("./features/phone-agent/PhoneAgentSettingsCard"),

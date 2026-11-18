@@ -14,6 +14,7 @@ os.environ.update({
     "STRIPE_API_VERSION": "2026-07-29.dahlia", "PLATFORM_DOMAIN": "",
     "TENANT_DOMAIN_CNAME_TARGET": "", "ADMIN_APP_URL": "https://app.example.se",
     "PLATFORM_ADMIN_APP_URL": "https://ops.example.se",
+    "PRINT_TABLE_NAME": "dev-print", "PRINT_SERVER_URL": "https://api.example.se/print/cloudprnt",
 })
 
 
@@ -44,6 +45,7 @@ def aws():
         _table(ddb, "dev-tenant", [("GSI1", "GSI1PK", "GSI1SK")])
         _table(ddb, "dev-location", [("byLocationId", "locationId", None)])
         _table(ddb, "dev-user", [("byTenant", "tenantId", "PK")])
+        _table(ddb, "dev-print")
         for plan_id, name, max_loc, catering in (("starter", "Starter", 1, False), ("growth", "Growth", 3, True)):
             ddb.put_item(TableName="dev-tenant", Item={
                 "PK": {"S": f"PLAN#{plan_id}"}, "SK": {"S": "PLAN"}, "GSI1PK": {"S": "PLAN"},

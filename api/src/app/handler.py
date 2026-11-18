@@ -9,8 +9,8 @@ who did what (audit rows) and dispatches on routeKey."""
 import json
 from dataclasses import dataclass, field
 
-from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, own_domains, site,
-               stripe_connect, tenants, users, website, zones)
+from . import (avatar, backdrop, billing, domains, finance, locations, mail, operators, outbox, own_domains, printers,
+               site, stripe_connect, tenants, users, website, zones)
 from .core import SAFE_MESSAGES, ApiError, error_body, groups, log, parse_body, respond
 from .features import MODULES as FEATURE_MODULES
 
@@ -99,6 +99,9 @@ ROUTES = {
     **backdrop.ROUTES,
     # The signed-in operator's profile picture
     **avatar.ROUTES,
+    # Each location's printers: status (list badge, Locations tab), add,
+    # rename, test print, remove (Print table, application shared/printing.py)
+    **printers.ROUTES,
 }
 
 

@@ -74,6 +74,6 @@ test.describe('Console: customers', () => {
 
   test('unknown customer id shows a not-found message, not a crash', async ({ page }) => {
     await page.goto('/tenants/does-not-exist-123')
-    await expect(page.getByText(/not found|doesn't exist|No such/i).first()).toBeVisible()
+    await expect(page.getByText(/can't find this|not found|doesn't exist|No such/i).first()).toBeVisible()
   })
 })

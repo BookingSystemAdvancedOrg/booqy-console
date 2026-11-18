@@ -5,7 +5,7 @@ import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
-  Location, LocationInput, MailRecipient, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
@@ -128,6 +128,7 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
 }
 
 const t = (id: string) => `/platform/tenants/${encodeURIComponent(id)}`;
+const printersPath = (id: string, locationId: string) => `${t(id)}/locations/${encodeURIComponent(locationId)}/printers`;
 const z = (id: string, domain: string) => `${t(id)}/zones/${encodeURIComponent(domain)}`;
 
 export const api = {
@@ -167,6 +168,19 @@ export const api = {
     request<{ location: Location }>("PATCH", `${t(id)}/locations/${encodeURIComponent(locationId)}`, patch),
   deleteLocation: (id: string, locationId: string) =>
     request("DELETE", `${t(id)}/locations/${encodeURIComponent(locationId)}`),
+  // Printers: each location's status (Locations tab, the badge in Customers) and the operator's changes
+  printerSummary: () =>
+    request<{ tenants: Record<string, PrinterSummary> }>("GET", "/platform/printers").then((r) => r.tenants),
+  tenantPrinters: (id: string) =>
+    request<{ locations: LocationPrinters[]; status: PrinterStatus | null }>("GET", `${t(id)}/printers`),
+  addPrinter: (id: string, locationId: string, body: { name: string; kind: PrinterKind; protocol?: "star" | "epson" | "sim" }) =>
+    request<AddedPrinter>("POST", printersPath(id, locationId), body),
+  updatePrinter: (id: string, locationId: string, deviceId: string, patch: { name?: string; kind?: PrinterKind }) =>
+    request<{ printer: Printer }>("PATCH", `${printersPath(id, locationId)}/${encodeURIComponent(deviceId)}`, patch),
+  testPrinter: (id: string, locationId: string, deviceId: string) =>
+    request<{ status: string }>("POST", `${printersPath(id, locationId)}/${encodeURIComponent(deviceId)}/test`, {}),
+  removePrinter: (id: string, locationId: string, deviceId: string) =>
+    request<LocationPrinters>("DELETE", `${printersPath(id, locationId)}/${encodeURIComponent(deviceId)}`),
   addDomain: (id: string, domain: string, makePrimary: boolean) =>
     request<{ domain: string; dns?: { type: string; name: string; value: string }[];
               test?: boolean; hosts?: { stage: "main" | "dev"; host: string }[] }>(

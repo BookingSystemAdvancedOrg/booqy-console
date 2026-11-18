@@ -65,6 +65,8 @@ sends through SES (`cognito_invites_via_ses`, on in dev) the email shows a
 | `POST .../onboarding/retry` | re-run setup (failed → retry; active → fill in what was added since, e.g. VAT rates) |
 | `GET .../users`, `POST .../owners` | list sign-in accounts / invite another owner |
 | `GET/POST .../locations`, `PATCH/DELETE .../locations/{locationId}` | location CRUD; create is blocked at the plan limit (`409 plan_limit_reached`) |
+| `GET /platform/printers`, `GET .../printers` | printer status per customer (list badge) and per location (Locations tab): printers by kind, connected (polled in the last 2 min), last seen, "Inga skrivare än" chosen; Print table, read only |
+| `POST .../locations/{locationId}/printers`, `PATCH/DELETE .../printers/{deviceId}`, `POST .../printers/{deviceId}/test` | add a printer (the connection details are returned once), rename or change its kind, remove, test print; each audited (`printer_added`, `printer_changed`, `printer_removed`, `printer_test_print`); the application's stations follow (`syncRouting`) |
 | `POST .../domains`, `DELETE .../domains/{domain}` | customer's own domain (starts the attach/detach workflows) |
 | `GET /platform/domains/search?q=` | availability + first-year/renewal price (Route 53 Domains, .se/.com/.eu/.net) |
 | `POST .../domains/documents` | presigned POST for the registreringsbevis (PDF, required to buy a .se) |

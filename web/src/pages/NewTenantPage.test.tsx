@@ -199,7 +199,7 @@ describe("NewTenantPage Free plan", () => {
 });
 
 describe("NewTenantPage plan features", () => {
-  it("labels every feature and sends an AI edit limit override", async () => {
+  it("labels every feature and sends a limit override", async () => {
     renderPage();
     company("lamo@example.se");
     done();
@@ -207,13 +207,14 @@ describe("NewTenantPage plan features", () => {
     fireEvent.click(document.getElementById("f-planId")!);
     expect(screen.getByLabelText("Meta ads")).not.toBeChecked();
     expect(screen.getByLabelText("Staff ledger (personalliggare)")).not.toBeChecked();
-    fireEvent.change(screen.getByLabelText(/AI site edits per month/), { target: { value: "10" } });
+    expect(screen.queryByLabelText(/AI site edits per month/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Phone agent minutes per month/), { target: { value: "10" } });
     fireEvent.click(screen.getByLabelText("Gift cards"));
     done(); done(); done();
     mocks.tenant.mockResolvedValue({ tenant: { status: "active" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create customer" })); });
     expect(mocks.createTenant).toHaveBeenCalledWith(expect.objectContaining({
-      overrides: { maxLocations: 1, features: { giftCards: true }, limits: { siteBuilderAiEditsPerMonth: 10 } },
+      overrides: { maxLocations: 1, features: { giftCards: true }, limits: { phoneAgentMinutesPerMonth: 10 } },
     }));
   });
 

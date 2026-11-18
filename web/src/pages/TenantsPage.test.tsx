@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ tenants: vi.fn(), financeInvoices: vi.fn(), plans: vi.fn() }));
+const mocks = vi.hoisted(() => ({ tenants: vi.fn(), financeInvoices: vi.fn(), plans: vi.fn(), printerSummary: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import TenantsPage, { matchesSearch } from "./TenantsPage";
@@ -34,6 +34,7 @@ beforeEach(() => {
   mocks.tenants.mockResolvedValue(tenants);
   mocks.financeInvoices.mockResolvedValue({ invoices: [] });
   mocks.plans.mockResolvedValue([{ planId: "starter", name: "Starter", maxLocations: 3, features: {} }]);
+  mocks.printerSummary.mockResolvedValue({ t1: { status: "offline", printers: 2, offline: 1, locations: 1 } });
 });
 
 const cardOf = async (name: string) => (await screen.findByText(name)).closest("tr") as HTMLTableRowElement;
@@ -58,7 +59,7 @@ describe("Customers list as phone cards", () => {
     expect(card.querySelector(".cell-title")).toHaveTextContent("roma@example.test");
     expect(card.querySelector(".cell-badge .status")).toBeInTheDocument();
     const facts = Object.fromEntries([...card.querySelectorAll("td.cell-fact")].map((td) => [td.getAttribute("data-label"), td.textContent]));
-    expect(facts).toEqual({ Plan: "Starter", Invoices: "-", Locations: "1 / 3" });
+    expect(facts).toEqual({ Plan: "Starter", Invoices: "-", Locations: "1 / 3", Printers: "1 offline" });
   });
 
   it("labels every other cell and leaves the details for the customer page on phones", async () => {
@@ -212,3 +213,30 @@ describe("Plan column (finding 211)", () => {
     expect((await cardOf("Krogen Norr")).querySelector('td[data-label="Plan"]')).toHaveTextContent(/^Growth$/);
   });
 });
+
+describe("Customers Printers column", () => {
+  it("shows each customer's printers, a dash without any", async () => {
+    mocks.printerSummary.mockResolvedValue({ t1: { status: "ok", printers: 1, offline: 0, locations: 1 } });
+    renderPage();
+    const roma = await cardOf("Pizzeria Roma");
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(roma.querySelector('td[data-label="Printers"]')).toHaveTextContent("Connected");
+  });
+
+  it("shows a dash for a customer without printer rows", async () => {
+    mocks.printerSummary.mockResolvedValue({});
+    renderPage();
+    const roma = await cardOf("Pizzeria Roma");
+    await vi.waitFor(() => expect(mocks.printerSummary).toHaveBeenCalled());
+    await vi.waitFor(() => expect(roma.querySelector('td[data-label="Printers"]')).toHaveTextContent(/^-$/));
+  });
+
+  it("does not hold up the list when the printers fail", async () => {
+    mocks.printerSummary.mockRejectedValue(new TypeError("Failed to fetch"));
+    renderPage();
+    const roma = await cardOf("Pizzeria Roma");
+    expect(await screen.findAllByLabelText("Printers did not load")).toHaveLength(1);
+    expect(roma).toHaveTextContent("Pizzeria Roma");
+  });
+});
+

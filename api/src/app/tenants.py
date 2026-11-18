@@ -224,20 +224,36 @@ def list_plans(req) -> tuple[int, dict]:
     free = free_plan(next((p for p in plans if p["planId"] == FREE_BASE_PLAN_ID), None))
     return 200, {"plans": [
         {"planId": p["planId"], "name": p.get("name", p["planId"]),
-         "maxLocations": p.get("maxLocations", 1), "features": p.get("features", {}),
-         "limits": p.get("limits", {}), "priceSek": p.get("priceSek"), "free": bool(p.get("free"))}
+         "maxLocations": p.get("maxLocations", 1), "features": _known_features(p.get("features")),
+         "limits": _known_limits(p.get("limits")), "priceSek": p.get("priceSek"), "free": bool(p.get("free"))}
         for p in plans + ([free] if free else [])],
         "freeDefaultUntil": default_free_until().isoformat()}
 
 
+# Limits of removed features: an older console tab may still send them; they
+# are dropped instead of refused (the site builder, removed 2026-11-17).
+RETIRED_LIMITS = frozenset({"siteBuilderAiEditsPerMonth"})
+
+
+def _known_features(features) -> dict:
+    """Only the contract's feature keys: a retired feature on a stored plan
+    (e.g. siteBuilder) is neither shown nor copied to a tenant."""
+    return {k: on for k, on in (features or {}).items() if k in FEATURE_KEYS}
+
+
+def _known_limits(limits) -> dict:
+    """Only the contract's limits (a retired limit on a stored plan is dropped)."""
+    return {k: val for k, val in (limits or {}).items() if k in LIMITS}
+
+
 def _entitlements(plan: dict, overrides: dict | None) -> dict:
-    ent = {"maxLocations": int(plan.get("maxLocations", 1)), "features": dict(plan.get("features") or {})}
+    ent = {"maxLocations": int(plan.get("maxLocations", 1)), "features": _known_features(plan.get("features"))}
     if overrides:
         if overrides.get("maxLocations") is not None:
             ent["maxLocations"] = int(overrides["maxLocations"])
         for k, val in (overrides.get("features") or {}).items():
             ent["features"][k] = bool(val)
-    ent["limits"] = {k: int(val) for k, val in (plan.get("limits") or {}).items()}
+    ent["limits"] = {k: int(val) for k, val in _known_limits(plan.get("limits")).items()}
     for k, val in ((overrides or {}).get("limits") or {}).items():
         ent["limits"][k] = int(val)
     return ent
@@ -270,6 +286,7 @@ def _overrides(f: v.Fields) -> dict | None:
         if not isinstance(lims, dict):
             sub.fail("limits", "Write each limit as a whole number, e.g. 3.")
         else:
+            lims = {k: val for k, val in lims.items() if k not in RETIRED_LIMITS}
             ls = v.Fields(lims)
             for k in lims:
                 if k not in LIMITS:

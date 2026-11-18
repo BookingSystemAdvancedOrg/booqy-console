@@ -15,6 +15,7 @@ import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, r
 import { playChime } from "../press";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
 import { FreeFields } from "../components/FreeFields";
+import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeLabel, freeProblems, newFreeForm, stockholmToday } from "../free";
 
@@ -26,10 +27,12 @@ export const featureKeys = (): string[] => [...FEATURE_KEYS];
 /** Only the contract's keys of a feature map (drops retired ones). */
 export const contractFeatures = (m: Features): Features =>
   Object.fromEntries(Object.entries(m).filter(([k]) => (FEATURE_KEYS as readonly string[]).includes(k)));
+/** Only the contract's limits (drops a retired one, e.g. the removed site builder's AI edits). */
+export const contractLimits = (m: Limits): Limits =>
+  Object.fromEntries(Object.entries(m).filter(([k]) => (LIMIT_KEYS as readonly string[]).includes(k)));
 export const featureLabel = (k: string) => (FEATURE_LABELS as Record<string, { en: string }>)[k]?.en ?? k;
 /** The input label of each contract limit (CONTRACTS.md 8.3); a new limit without one fails typecheck. */
 export const LIMIT_LABELS: Record<LimitKey, string> = {
-  siteBuilderAiEditsPerMonth: "AI site edits per month",
   phoneAgentMinutesPerMonth: "Phone agent minutes per month",
 };
 /** A plan's or tenant's value of a limit (else the contract default), as input text. */
@@ -535,13 +538,8 @@ export default function NewTenantPage() {
                   {plan && <SelectAllFeatures keys={featureKeys()} features={features} onChange={(all) => setFeatureEdits(all)} />}
                 </div>
                 {plan ? (
-                  <div className="checks">
-                    {featureKeys().map((k) => (
-                      <label key={k} className="check">
-                        <input type="checkbox" checked={!!features[k]} onChange={(e) => setFeatureEdits({ ...featureEdits, [k]: e.target.checked })} /> {featureLabel(k)}
-                      </label>
-                    ))}
-                  </div>
+                  <FeatureList keys={featureKeys()} checked={features}
+                               onToggle={(k, on) => setFeatureEdits({ ...featureEdits, [k]: on })} />
                 ) : <span className="field__hint">Pick a plan first</span>}
               </div>
             </div>
