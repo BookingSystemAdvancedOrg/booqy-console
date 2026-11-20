@@ -23,7 +23,7 @@ describe("NotificationsPage", () => {
     const link = await screen.findByRole("link", { name: "Setup finished: Bistro 8" });
     expect(link).toHaveAttribute("href", "/tenants/t8");
     const rows = screen.getAllByRole("row");
-    expect(within(rows[1]).getByText("New")).toBeInTheDocument();
+    expect(await within(rows[1]).findByText("New")).toBeInTheDocument();
     expect(within(rows[2]).queryByText("New")).toBeNull();
     expect(within(rows[1]).getByText(/18 Nov 2026/)).toBeInTheDocument();
     await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
