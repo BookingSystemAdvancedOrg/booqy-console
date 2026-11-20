@@ -9,7 +9,9 @@ import { useChartTip } from "./chartTipState";
 import { useSpring } from "./motion";
 
 export type RingTone = "ink" | "red" | "warn" | "ok" | "steel";
-export interface RingSegment { key: string; label: string; value: number; tone: RingTone }
+/** `display` shows the amount in its own currency when the segments' values are only comparable
+ * after conversion (profit in SEK next to AWS cost in USD). */
+export interface RingSegment { key: string; label: string; value: number; tone: RingTone; display?: string }
 
 const SIZE = 150;
 const R = 58;
@@ -83,7 +85,7 @@ export function Ring({ title, segments, total, centerLabel, empty, format = fmtS
       <ChartTip tip={tip} at={as ? { x: SIZE / 2 + Math.cos(mid) * R, y: SIZE / 2 + Math.sin(mid) * R - 8 } : null}
                 content={as ? { heading: as.label, rows: [
                   { label: "Share", value: fmtPct(as.share * 100), tone: as.tone },
-                  { label: valueLabel, value: format(as.value) },
+                  { label: valueLabel, value: as.display ?? format(as.value) },
                 ] } : null} />
       <ul className="ring__legend">
         {shares.map((s) => (
@@ -91,7 +93,7 @@ export function Ring({ title, segments, total, centerLabel, empty, format = fmtS
             <i className={`ring__swatch ring__swatch--${s.tone}`} aria-hidden />
             <span className="ring__legend-label">{s.label}</span>
             <span className="ring__legend-pct">{total > 0 ? fmtPct(s.share * 100) : "-"}</span>
-            <span className="ring__legend-amount">{format(s.value)}</span>
+            <span className="ring__legend-amount">{s.display ?? format(s.value)}</span>
           </li>
         ))}
       </ul>

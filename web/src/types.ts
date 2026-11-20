@@ -65,6 +65,16 @@ export interface Tenant {
   planId: string;
   /** Dev console: "test" = a test customer (sandbox sites, simulated own domains); "prod-link" = a prod customer's dev side. */
   siteKind?: "test" | "prod-link";
+  /** Dev console: the customer's dev twin (API devtwin.py, docs/DEV-TWINS.md). */
+  devTwin?: DevTwin;
+  /** Dev console: the prod customer this is the twin of. */
+  twinOf?: { env: "prod"; tenantId: string; linkedAt?: string };
+  /** Dev console: a prod customer's twin was refused here (slug clash). */
+  twinClash?: { code: string; message: string; at: string; prodTenantId?: string };
+  /** Dev console: prod offboarded the real customer (the twin is only flagged). */
+  twinProdOffboardedAt?: string;
+  /** Dev console: the last copy of the real restaurant's public content. */
+  devTwinContent?: DevTwin & { copiedAt?: string };
   /** featuresEver: every feature key ever turned on (read-only; only grows, CONTRACTS.md 9.2). */
   entitlements: { maxLocations: number; features: Features; limits?: Limits; featuresEver?: string[] };
   locationCount: number;
@@ -94,6 +104,9 @@ export interface Tenant {
   purgeAt?: string;
   purgeStartedAt?: string;
   purgedAt?: string;
+  /** Kom igång (application tenant-setup): each step's state, and when it was first finished. */
+  setupState?: SetupState;
+  setupCompletedAt?: string;
   billing?: Omit<Partial<Billing>, "free"> & { customerId?: string; freeUntil?: string; freeThenPlanId?: string;
                                                          freeSince?: string; freePreset?: string };
 }
@@ -111,9 +124,50 @@ export interface TenantSummary {
   chargesEnabled: boolean;
   primaryDomain?: string;
   ownerEmail?: string;
+  /** Dev console: "twin" = a prod customer's dev twin, "test" = a dev test customer. */
+  devKind?: "twin" | "test";
   createdAt?: string;
   /** On the Free plan: the last free day, null = no end date. */
   freeUntil?: string | null;
+  /** Kom igång progress (application tenant-setup); null until evaluated once. */
+  setup?: SetupSummary | null;
+}
+
+/** Kom igång progress: finished = done + skipped steps. */
+export interface SetupSummary {
+  finished: number;
+  total: number;
+  complete: boolean;
+  completedAt?: string | null;
+}
+
+export type SetupStepState = "done" | "skipped" | "open";
+
+/** PROFILE.setupState, written by the application's tenant-setup function. */
+export interface SetupState {
+  complete: boolean;
+  total: number;
+  done: number;
+  skipped: number;
+  open: number;
+  evaluatedAt?: string;
+  steps: {
+    id: string;
+    labelEn: string;
+    scope: "tenant" | "location";
+    state: SetupStepState;
+    locations?: { locationId: string; name: string; state: SetupStepState }[];
+  }[];
+}
+
+/** An operator notice (the bell): today only "a restaurant finished Kom igång". */
+export interface OperatorNotice {
+  id: string;
+  kind: "setup_completed";
+  tenantId: string;
+  tenantName?: string | null;
+  at: string;
+  seenAt?: string | null;
 }
 
 export interface Location {
@@ -298,14 +352,29 @@ export interface TenantDetail {
   audit: AuditEntry[];
 }
 
+export type UserRole = "owner_user" | "staff_user";
+
 export interface TenantUser {
   cognitoSub: string;
   email: string;
   name?: string;
-  role: "owner_user" | "staff_user";
+  phone?: string;
+  role: UserRole;
   status?: string;
   locationId?: string;
   createdAt?: string;
+  /** Never signed in yet (temporary password unused). */
+  invited?: boolean;
+  /** A feature's own account (the phone assistant): no sign-in, nothing to change. */
+  system?: boolean;
+}
+
+/** Staff permissions as the owner edits them (application shared/staff_access.py owner_view). */
+export interface StaffAccess {
+  areas: string[];
+  defaults: string[];
+  users: Record<string, { add: string[]; remove: string[] }>;
+  version: number;
 }
 
 export interface NewTenantInput {
@@ -634,16 +703,26 @@ export interface FinanceKpis {
   collectedSek: number;
   refundedSek?: number;
   outstandingSek: number;
-  /** The whole AWS bill ("platform") without a customer filter, else the customer's allocated share. */
-  costSek: number;
+  /** USD, as AWS Billing and Cost Explorer report it: the whole AWS bill ("platform") without a
+   * customer filter, else the customer's allocated share. Costs are never converted.
+   * null while Cost Explorer has no day in the range yet (costLoaded false). */
+  costUsd: number | null;
+  /** Cost Explorer has a day in (or after) the range's start: the nightly run has loaded it. */
+  costLoaded?: boolean;
+  /** MRR over the range: one month's MRR per calendar month in it (this month: today's MRR). */
+  recurringSek?: number;
+  /** The AWS cost in SEK at each day's rate: only to share the MRR between profit and cost. */
+  costAtRateSek?: number | null;
   costScope?: "platform" | "allocated";
-  /** The part of costSek allocated to the customers shown. */
-  allocatedCostSek?: number;
+  /** The part of costUsd allocated to the customers shown. */
+  allocatedCostUsd?: number;
   /** Bill not allocated to the customers shown: days nobody was active, customers left out by the filter. */
-  unallocatedSek?: number;
+  unallocatedUsd?: number;
   /** The whole bill per bucket (platform scope only). */
-  costSplitSek?: { baseline: number; requests: number; email: number; sms: number } | null;
-  marginSek: number;
+  costSplitUsd?: CostSplit | null;
+  /** SEK: gross margin, MRR over the range minus the AWS cost at each day's USD/SEK rate
+   * (FinanceOverview.fx); null without a rate or before the cost is loaded. Percent of recurringSek. */
+  marginSek: number | null;
   marginPct: number | null;
   customers: number;
   activeCustomers: number;
@@ -654,23 +733,39 @@ export interface FinanceKpis {
   arpuSek: number | null;
   bookings: number;
   orders: number;
-  costPerBookingSek: number | null;
-  costPerOrderSek: number | null;
+  costPerBookingUsd: number | null;
+  costPerOrderUsd: number | null;
   requests: number;
   emails: number;
   sms: number;
   /** Customers on the Free plan (0 kr MRR). */
   freeCustomers?: number;
-  /** SMS are included in the price: the parts sent and their share of the AWS bill (our cost). */
+  /** SMS are included in the price: the parts sent and their share of the AWS bill (our cost, USD). */
   smsParts: number;
-  smsCostSek: number;
+  smsCostUsd: number;
+}
+
+export interface CostSplit { baseline: number; requests: number; email: number; sms: number }
+
+/** The Riksbank USD/SEK rates the margin used (cost itself stays USD). */
+export interface FinanceFx {
+  source: string;
+  from: string;
+  to: string;
+  min: number;
+  max: number;
+  latest: number;
+  latestDate: string;
+  days: number;
 }
 
 export interface FinancePoint {
   day: string;
   invoicedSek: number;
   paidSek: number;
-  costSek: number;
+  /** USD */
+  costUsd: number;
+  allocatedCostUsd?: number;
   mrrSek: number;
   bookings: number;
   orders: number;
@@ -695,9 +790,11 @@ export interface FinanceTenantRow {
   creditedSek: number;
   refundedSek?: number;
   outstandingSek: number;
-  costSek: number;
-  costSplitSek: { baseline: number; requests: number; email: number; sms: number };
-  marginSek: number;
+  /** MRR over the range (see FinanceKpis.recurringSek); the margin is this minus the cost. */
+  recurringSek?: number;
+  costUsd: number;
+  costSplitUsd: CostSplit;
+  marginSek: number | null;
   marginPct: number | null;
   bookings: number;
   orders: number;
@@ -706,13 +803,13 @@ export interface FinanceTenantRow {
   sms: number;
   marketingEmails: number;
   smsParts: number;
-  smsCostSek: number;
+  smsCostUsd: number;
   /** On the Free plan (MRR 0), with its last free day. */
   free?: boolean;
   freeUntil?: string | null;
   smsByType?: { booking: number; reminder: number; order: number; catering: number };
-  costPerBookingSek: number | null;
-  costPerOrderSek: number | null;
+  costPerBookingUsd: number | null;
+  costPerOrderUsd: number | null;
   activeDays: number;
   invoiceCount: number;
   createdAt?: string;
@@ -743,11 +840,14 @@ export interface FinanceOverview {
   asOf: string | null;
   /** Newest day the AWS cost is known for (Cost Explorer lags about a day). */
   costAsOf?: string | null;
+  /** The USD/SEK rates behind the margin; null when none is known yet. */
+  fx?: FinanceFx | null;
 }
 
 export interface FinanceTenantDetail {
   period: { from: string; to: string };
   tenant: FinanceTenantRow;
+  fx?: FinanceFx | null;
   series: FinancePoint[];
   days: Record<string, unknown>[];
   invoices: Invoice[];
@@ -854,3 +954,14 @@ export type PrinterSummary = { status: PrinterStatus | null; printers: number; o
 /** A new printer: the connection details are returned once. */
 export type AddedPrinter = { printer: Printer; username?: string; secret?: string; serverUrl?: string | null };
 
+/** A dev twin's seed: every Kom igång step set up with test data (dev only). */
+export interface DevTwin {
+  status: "queued" | "running" | "ready" | "partial" | "failed" | "skipped";
+  requestedAt?: string;
+  requestedBy?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  ownerEmail?: string;
+  error?: string;
+  steps: Record<string, { ok: boolean; note?: string }>;
+}

@@ -177,7 +177,7 @@ function Panel({ anchor, onClose, label, className, onKeyDown, children }: {
   children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; up: boolean } | null>(null);
 
   // Fixed under the field (above it when there is no room), in a portal so modals and tables never clip it.
   useLayoutEffect(() => {
@@ -190,6 +190,7 @@ function Panel({ anchor, onClose, label, className, onKeyDown, children }: {
       setPos({
         top: below ? a.bottom + 6 : Math.max(8, a.top - 6 - h),
         left: Math.max(8, Math.min(a.left, window.innerWidth - w - 8)),
+        up: !below,
       });
     }
     place();
@@ -227,7 +228,7 @@ function Panel({ anchor, onClose, label, className, onKeyDown, children }: {
   }, [anchor, onClose]);
 
   return createPortal(
-    <div ref={panel} className={`date-cal ${className}`} role="dialog" aria-label={label}
+    <div ref={panel} className={`date-cal ${className}${pos?.up ? " date-cal--up" : ""}`} role="dialog" aria-label={label}
          style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }}
          onKeyDown={(e) => {
            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(true); return; }

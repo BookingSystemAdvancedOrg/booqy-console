@@ -212,6 +212,28 @@ taskbar. electron-builder makes the `.icns` (macOS) and `.ico` (Windows) from
 for s in 16 24 32 48 64 128 256 512 1024; do sips -z $s $s build/icon.png --out build/icons/${s}x${s}.png; done
 ```
 
+### macOS 26+: Icon Composer icon (`build/mac/`)
+
+macOS 26 and later redraw plain `.icns` icons in the "Dark" icon style: a
+light tile turns black and the black b nearly disappears. So the Mac app also
+ships an Icon Composer icon, compiled to `Assets.car`, whose tile is its own
+image layer: macOS keeps its colours in every icon style, and prod looks
+exactly like dev without the DEV pill. `mac-icon.mjs` builds
+`build/mac/<prod|dev>/AppIcon.icon` (tile, b and, in dev, the DEV pill from
+`dev-icon.cjs`) from `build/icon.svg` and `build/icon.png` and compiles it
+with `actool`. Both are checked in; `build.mjs` copies `Assets.car` into the
+app in `afterPack` (before signing) and sets `CFBundleIconName`, so CI needs no
+Xcode. `icon.icns` stays for older macOS. After changing the logo, run on a
+Mac with Xcode 26 or later:
+
+```bash
+node mac-icon.mjs
+```
+
+`npm test` fails if the checked-in icon no longer matches `icon.svg`. To see
+what the Dock draws, build the app and render
+`NSWorkspace.shared.icon(forFile:)` for it.
+
 ### Dev builds carry a DEV badge
 
 Production ("Booqy Console") shows the logo and nothing else. Every other

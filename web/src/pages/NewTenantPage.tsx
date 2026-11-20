@@ -11,8 +11,8 @@ import type { Features, Limits, LocationInput } from "../types";
 import { FEATURE_KEYS, FEATURE_LABELS, LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { SaveButton, useDirty } from "../components/save";
 import { CountUp, prefersReducedMotion } from "../components/motion";
-import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, burst, confetti, revealStep } from "../components/StepFlow";
-import { playChime } from "../press";
+import { DrawnTick, InfoTip, StepCard, StepProgress, Summary, revealStep } from "../components/StepFlow";
+import { celebrate } from "../components/Celebrate";
 import { STEPS, progressPct, stepOfField, stepProblems, type StepId } from "./newTenantSteps";
 import { FreeFields } from "../components/FreeFields";
 import { FeatureList } from "../components/FeatureList";
@@ -250,8 +250,8 @@ export default function NewTenantPage() {
     if (to !== null) setReveal({ to, n: Date.now() });
     setAnnounce(next !== null ? `Next: ${STEPS[next].title}`
       : count === STEPS.length ? "All done. Ready to create." : `${STEPS[i].title} done`);
-    playChime("chime");
-    window.requestAnimationFrame?.(() => burst(document.querySelector(`#step-${STEPS[i].id} .step__num`)));
+    // A quiet step reward: the tick draws and pops (stepFlow.css) with a chime; the peak waits for Create.
+    celebrate(null, "step");
   }
 
   function editStep(i: number) {
@@ -330,13 +330,12 @@ export default function NewTenantPage() {
     }
     const res = await run(() => api.createTenant(body as never));
     if (res) {
-      // The big one: the bar shines, confetti, the fanfare; then setup as before.
+      // The one peak: the bar shines once, confetti, the fanfare; then setup as before.
       setTenantId(res.tenantId);
       setWon(true);
       setAnnounce(`${f.name} created`);
-      playChime("fanfare");
-      const shower = confetti();
-      if (shower) celebrateTimer.current = window.setTimeout(() => { celebrateTimer.current = null; setPhase("setup"); }, CELEBRATE_MS);
+      celebrate(null, "finish", `created:${res.tenantId}`);
+      if (!prefersReducedMotion()) celebrateTimer.current = window.setTimeout(() => { celebrateTimer.current = null; setPhase("setup"); }, CELEBRATE_MS);
       else setPhase("setup");
     }
   }

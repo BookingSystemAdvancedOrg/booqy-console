@@ -45,10 +45,19 @@
 :root[data-theme="dark"] .feat-pop--sheet { background: var(--liquid-sheen, none), rgb(36 25 19 / 0.97); }
 .feat-pop--sheet .feat-pop__title { font-size: 16px; }
 .feat-pop__grip { width: 40px; height: 4px; margin: 2px auto 12px; border-radius: 2px; background: var(--print-2); opacity: 0.4; }
+/* the popover grows from its "?" at the right edge (ux-motion #11) */
+.feat-pop { transform-origin: 100% 0; }
+.feat-pop[data-side="above"] { transform-origin: 100% 100%; }
 @media (prefers-reduced-motion: no-preference) {
   .feat-pop { animation: feat-pop-in 140ms var(--ease) both; }
+  .feat-pop:not(.feat-pop--sheet) { animation-name: feat-pop-grow; }
+  .feat-pop--sheet[data-closing] { pointer-events: none; animation: feat-sheet-out 180ms var(--ease-in) both; }
+  .feat-scrim[data-closing] { pointer-events: none; animation: feat-fade-out 180ms var(--ease-in) both; }
   .feat-scrim { animation: feat-pop-in 200ms var(--ease) both; }
   .feat-pop--sheet { animation: feat-sheet-in 280ms var(--ease) both; }
 }
 @keyframes feat-pop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes feat-sheet-in { from { transform: translateY(100%); } }
+@keyframes feat-pop-grow { from { opacity: 0; transform: scale(0.96); } }
+@keyframes feat-sheet-out { to { transform: translateY(100%); } }
+@keyframes feat-fade-out { to { opacity: 0; } }

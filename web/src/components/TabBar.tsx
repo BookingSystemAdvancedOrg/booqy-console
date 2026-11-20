@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { Link, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { quietly, useLiveRefresh } from "../live";
+import { useUnseenNotices } from "../notices";
 import { Icon, type IconName } from "./ds";
 import { MyAvatar } from "./MyAvatar";
 import { confirmLeave } from "./save";
@@ -14,8 +15,8 @@ export type TabSlot = "customers" | "inbox" | "new" | "finance" | "operators" | 
 
 /** The routes behind the Workspace (avatar) slot. */
 export const WORKSPACE_PATHS = ["/operators", "/website", "/settings"];
-/** Mail and Reports are one Inbox slot. */
-export const INBOX_PATHS = ["/mail", "/reports", "/outbox"];
+/** Mail, Reports and Notifications are one Inbox slot. */
+export const INBOX_PATHS = ["/mail", "/reports", "/notifications", "/outbox"];
 
 const under = (path: string, roots: string[]) => roots.some((r) => path === r || path.startsWith(`${r}/`));
 
@@ -59,13 +60,16 @@ export function TabBar(props: {
   const [sheet, setSheet] = useState(false);
   const youRef = useRef<HTMLButtonElement>(null);
   const reports = useOpenReports(phone);
+  const notices = useUnseenNotices(phone) > 0;
   const hide = new Set(props.hidden ?? []);
   const inboxOn = under(pathname, INBOX_PATHS);
   const youOn = under(pathname, WORKSPACE_PATHS) || pathname === props.profilePath;
 
   const left: Item[] = [
     { slot: "customers", to: "/", label: "Customers", icon: "users", end: true },
-    { slot: "inbox", to: "/mail", label: reports ? "Inbox, open reports" : "Inbox", icon: "mail", active: inboxOn, dot: reports },
+    { slot: "inbox", to: notices && !reports ? "/notifications" : "/mail",
+      label: reports && notices ? "Inbox, open reports and notifications" : reports ? "Inbox, open reports" : notices ? "Inbox, new notifications" : "Inbox",
+      icon: "mail", active: inboxOn, dot: reports || notices },
   ];
   const right: Item[] = [{ slot: "finance", to: "/finance", label: "Finance", icon: "chart" }];
   const centre: Item = { slot: "new", to: "/tenants/new", label: "New customer", icon: "plus", className: "tabbar__new" };

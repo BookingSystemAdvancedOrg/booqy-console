@@ -1,0 +1,19 @@
+/* Dev twin card (Overview, dev console only). */
+.dev-twin__login { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; overflow-wrap: anywhere; }
+.dev-twin__error { color: var(--ink-red); margin: 10px 0 0; }
+.dev-twin__steps { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); }
+.dev-twin__steps li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14px; min-width: 0; }
+.dev-twin__mark { font: 800 12px/1 var(--mono); width: 14px; text-align: center; }
+.dev-twin__steps .is-ok .dev-twin__mark { color: var(--ok); }
+.dev-twin__steps .is-failed .dev-twin__mark, .dev-twin__steps .is-failed { color: var(--ink-red); }
+.dev-twin__note { flex-basis: 100%; font-size: 12.5px; color: var(--print-2); overflow-wrap: anywhere; }
+.dev-twin__content { margin-top: 16px; padding-top: 14px; border-top: 1.5px dashed var(--line-soft); }
+.dev-twin__content-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px; }
+.dev-twin__content-head h3 { margin: 0; font-size: 15px; }
+/* Dev console: a prod customer's twin versus a dev-only test customer. */
+.dev-kind { display: inline-block; vertical-align: middle; font: 700 10.5px/1.2 var(--mono); letter-spacing: .06em;
+  text-transform: uppercase; padding: 3px 7px 2px; border-radius: var(--r-md); border: 1.5px solid currentColor; white-space: nowrap; }
+.dev-kind--twin { color: var(--ok); }
+.dev-kind--test { color: var(--print-2); }
+h1 .dev-kind { font-size: 11px; }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card, ErrorNotice, Field, Notice, useAction, useLoad } from "../../components/ui";
 import { ApiError } from "../../api";
+import { SaveBar, useDirty } from "../../components/save";
 import { SkelCard, SkelPage } from "../../components/Skeleton";
 import { CAP_RANGE, phoneAgentApi } from "./api";
 
@@ -9,6 +10,8 @@ export default function PhoneAgentSettingsCard() {
   const { data, error, setData } = useLoad(() => phoneAgentApi.settings(), []);
   const action = useAction();
   const [cap, setCap] = useState<string | null>(null);
+  const savedCap = data ? String(data.maxMinutesCap) : "";
+  const dirty = useDirty(cap ?? savedCap, savedCap);
 
   // The settings route has no tenant: a 404 means the phone-agent function is not deployed here yet.
   if (error instanceof ApiError && error.status === 404) {
@@ -20,7 +23,7 @@ export default function PhoneAgentSettingsCard() {
   }
   if (error) return <Card title="Phone agent"><ErrorNotice error={error} /></Card>;
   if (!data) return <SkelPage label="Loading the phone agent"><SkelCard lines={3} /></SkelPage>;
-  const capValue = cap ?? String(data.maxMinutesCap);
+  const capValue = cap ?? savedCap;
 
   // The kill switch is an emergency stop: it sends the saved ceiling, so an unsaved or invalid cap in the field never blocks
   // it (and the field keeps what was typed). Only Save ceiling sends the field.
@@ -42,9 +45,10 @@ export default function PhoneAgentSettingsCard() {
                value={capValue} onChange={(e) => setCap(e.target.value)} />
       </Field>
       <ErrorNotice error={action.error && !Object.keys(action.fields).length ? action.error : null} />
+      <SaveBar label="Save ceiling" dirty={dirty.dirty} busy={action.busy} failed={dirty.dirty && !!action.error}
+               onSave={() => void save(data.killSwitch, Number(capValue), true)} onDiscard={() => { setCap(null); action.setError(null); }} />
       <div className="row">
-        <button className="btn" disabled={action.busy || cap === null} onClick={() => void save(data.killSwitch, Number(capValue), true)}>Save ceiling</button>
-        <button className={`btn ${data.killSwitch ? "" : "btn--danger"}`} disabled={action.busy}
+        <button className={`btn ${data.killSwitch ? "btn--ghost" : "btn--danger"}`} disabled={action.busy}
                 onClick={() => void save(!data.killSwitch, data.maxMinutesCap)}>
           {data.killSwitch ? "Turn kill switch off" : "Turn kill switch on (stop all calls)"}
         </button>

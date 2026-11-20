@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FEATURE_HELP } from "../featureHelp";
+import { exitMs } from "./motion";
 import { FEATURE_LABELS, type FeatureKey } from "../contracts";
 import "./featureList.css";
 
@@ -69,7 +70,7 @@ export function FeatureList({ keys, checked, onToggle, changed }: {
 /** The phone layout (phoneTargets.css, Select.tsx): the details open as a bottom sheet. */
 const isPhone = () => { try { return window.matchMedia("(max-width: 640px)").matches; } catch { return false; } };
 
-function FeaturePopover({ id, title, about, example, anchor, onClose }: {
+function FeaturePopover({ id, title, about, example, anchor, onClose: closeNow }: {
   id: string; title: string; about: string; example: string;
   anchor: HTMLButtonElement | null;
   onClose: (refocus: boolean) => void;
@@ -77,6 +78,17 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
   const pop = useRef<HTMLDivElement>(null);
   const titleId = `${id}-t`;
   const sheet = isPhone();
+  // The phone sheet slides away (180 ms, ease-in); the desktop popover closes at once (ux-motion #18).
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
+  const onClose = useCallback((refocus: boolean) => {
+    const wait = sheet ? exitMs(180) : 0;
+    if (wait === 0) { closeNow(refocus); return; }
+    if (leaveTimer.current) return;
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(() => closeNow(refocus), wait);
+  }, [sheet, closeNow]);
   useLayoutEffect(() => {
     const el = pop.current;
     if (!el) return;
@@ -125,9 +137,9 @@ function FeaturePopover({ id, title, about, example, anchor, onClose }: {
   }, [anchor, onClose]);
   return createPortal(
     <>
-    {sheet && <div className="feat-scrim" aria-hidden="true" onClick={() => onClose(false)} />}
+    {sheet && <div className="feat-scrim" aria-hidden="true" onClick={() => onClose(false)} data-closing={leaving || undefined} />}
     <div ref={pop} id={id} role="dialog" aria-modal="false" aria-labelledby={titleId} tabIndex={-1}
-         className={`feat-pop${sheet ? " feat-pop--sheet" : ""}`}
+         className={`feat-pop${sheet ? " feat-pop--sheet" : ""}`} data-closing={leaving || undefined}
          onKeyDown={(e) => {
            // Nothing to tab to inside: Tab goes back to the "?" and closes.
            if (e.key === "Tab") { e.preventDefault(); onClose(true); }

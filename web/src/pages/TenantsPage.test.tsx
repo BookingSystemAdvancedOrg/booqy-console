@@ -59,7 +59,7 @@ describe("Customers list as phone cards", () => {
     expect(card.querySelector(".cell-title")).toHaveTextContent("roma@example.test");
     expect(card.querySelector(".cell-badge .status")).toBeInTheDocument();
     const facts = Object.fromEntries([...card.querySelectorAll("td.cell-fact")].map((td) => [td.getAttribute("data-label"), td.textContent]));
-    expect(facts).toEqual({ Plan: "Starter", Invoices: "-", Locations: "1 / 3", Printers: "1 offline" });
+    expect(facts).toEqual({ Setup: "-", Plan: "Starter", Invoices: "-", Locations: "1 / 3", Printers: "1 offline" });
   });
 
   it("labels every other cell and leaves the details for the customer page on phones", async () => {

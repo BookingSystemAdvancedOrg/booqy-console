@@ -119,7 +119,7 @@
     border: solid var(--print-2); border-width: 2px 2px 0 0; rotate: 45deg; pointer-events: none;
   }
   .finance-table tr.overdue > td:first-child { box-shadow: none !important; }
-  .finance-table tr.overdue { box-shadow: inset 3px 0 0 var(--ink-red), var(--liquid-edge), var(--card-shadow) !important; }
+  .finance-table tr.overdue { background: color-mix(in srgb, var(--ink-red) 9%, var(--glass-text-bg)) !important; box-shadow: var(--liquid-edge), var(--card-shadow) !important; }
   .table.table .web-key { min-width: 0; max-width: none; }
 
   /* inputs in a card row (the DNS records editor) take the full width */

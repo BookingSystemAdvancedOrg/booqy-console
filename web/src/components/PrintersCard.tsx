@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Card, ErrorNotice, Field, Modal, Notice, useAction, useLoad } from "./ui";
 import { Select } from "./Select";
 import { CopyButton } from "./CopyButton";
-import { SaveButton, useDirty, useFlash } from "./save";
+import { SaveBar, SaveButton, useDirty, useFlash } from "./save";
 import { SkelPage, SkelRows } from "./Skeleton";
 import { InfoTip } from "./StepFlow";
 import { isProd } from "../testSites";
@@ -182,10 +182,9 @@ function AddPrinterModal({ tenant, location, onClose, onAdded }: { tenant: Tenan
             <Select aria-label="Printer type" value={f.protocol} options={protocols} onChange={(v) => setF({ ...f, protocol: v as typeof f.protocol })} />
           </Field>
         </div>
-        <div className="row">
-          <SaveButton label="Add printer" busyLabel="Adding…" busy={a.busy} dirty={dirty.dirty} disabled={!f.name.trim()} />
+        <SaveBar label="Add printer" busyLabel="Adding…" busy={a.busy} dirty={dirty.dirty} disabled={!f.name.trim()} failed={!!a.error}>
           <button type="button" className="btn btn--ghost" onClick={close}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );
@@ -219,10 +218,9 @@ function EditPrinterModal({ tenant, location, printer, onClose, onSaved }: {
             <Select aria-label="Kind" value={f.kind} options={KIND_OPTIONS} onChange={(v) => setF({ ...f, kind: v as PrinterKind })} />
           </Field>
         </div>
-        <div className="row">
-          <SaveButton label="Save" busy={a.busy} dirty={dirty.dirty} disabled={!f.name.trim()} />
+        <SaveBar busy={a.busy} dirty={dirty.dirty} disabled={!f.name.trim()} failed={!!a.error}>
           <button type="button" className="btn btn--ghost" onClick={close}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );

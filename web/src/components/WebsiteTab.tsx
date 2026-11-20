@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { SiteDeploy, SiteHosting, SiteStatus, Tenant } from "../types";
 import { Card, ErrorNotice, Field, Notice, Reason, Status, fmtDate, useAction, useLoad } from "./ui";
-import { SaveButton, useDirty } from "./save";
+import { SaveBar, SaveButton, useDirty } from "./save";
 import { CopyButton } from "./CopyButton";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { InfoTip } from "./InfoTip";
@@ -335,11 +335,12 @@ function Access({ site, tenant }: { site: SiteStatus; tenant: Tenant }) {
   return (
     <Card title="Give access" info={<>A developer gets write access to <span className="mono">{site.repo}</span> only, through the Booqy Customer Sites app. They accept the invitation on
         GitHub. Nothing to copy: no tokens are created or shown.</>}>
-      <form className="row" onSubmit={invite}>
+      <form onSubmit={invite} noValidate>
         <Field label="GitHub username" error={a.fields.username}>
           <input className="input mono" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="anna-dev" autoComplete="off" />
         </Field>
-        <SaveButton label="Invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invited" dirty={dirty.dirty} disabled={!username.trim()} hint={false} />
+        <SaveBar label="Invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invited" dirty={dirty.dirty} disabled={!username.trim()}
+                 failed={!!a.error} onDiscard={() => { setUsername(dirty.base); a.setError(null); }} />
       </form>
       {result && (
         <Notice kind="ok">

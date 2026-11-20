@@ -81,6 +81,7 @@ export const ROUTE_PATTERNS = [
   "/finance",
   "/website",
   "/reports",
+  "/notifications",
   "/settings",
   "/profile",
   "/download",

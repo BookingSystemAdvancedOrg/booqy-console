@@ -4,8 +4,9 @@ import { isQuiet, notifySaved } from "./live";
 import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
+  DevTwin,
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
-  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OutboxMessage, OutboxSummary, Plan, Tenant, TenantDetail, TenantSummary, TenantUser,
+  AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OperatorNotice, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
 
 export type BackdropItem = { id: string; url: string; thumbUrl: string; uploadedAt: string; width: number; height: number };
@@ -149,6 +150,10 @@ export const api = {
   restore: (id: string) =>
     request<{ usersEnabled: number; failed: string[]; onboardingError?: string }>("POST", `${t(id)}/restore`, {}),
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
+  // Dev only: create or refresh the customer's dev twin (test data in every Kom igång step)
+  devTwin: (id: string) => request<{ devTwin: DevTwin }>("POST", `${t(id)}/dev-twin`, {}),
+  // Dev only: copy the real restaurant's public content from prod's public API now
+  devTwinContent: (id: string) => request<{ devTwinContent: DevTwin }>("POST", `${t(id)}/dev-twin/content`, {}),
   // Website tab: the restaurant's own site repo (site-repo function)
   site: (id: string) => request<SiteStatus | { enabled: false }>("GET", `${t(id)}/site`),
   retrySite: (id: string) => request<{ status: string }>("POST", `${t(id)}/site/retry`, {}),
@@ -160,8 +165,16 @@ export const api = {
     request<{ hosting: SiteStatus["hosting"] }>("POST", `${t(id)}/site/mount`, { environment }),
   archiveSite: (id: string, confirmSlug: string) =>
     request<{ repo: string; repoArchived: boolean }>("POST", `${t(id)}/site/archive`, { confirmSlug }),
-  users: (id: string) => request<{ users: TenantUser[] }>("GET", `${t(id)}/users`).then((r) => r.users),
+  users: (id: string) => request<{ users: TenantUser[]; access: StaffAccess | null }>("GET", `${t(id)}/users`),
   inviteOwner: (id: string, email: string, name: string) => request("POST", `${t(id)}/owners`, { email, name }),
+  createUser: (id: string, body: Record<string, unknown>) => request<{ user: TenantUser }>("POST", `${t(id)}/users`, body),
+  updateUser: (id: string, userId: string, patch: Record<string, unknown>) =>
+    request<{ user: TenantUser; inviteResent: boolean }>("PATCH", `${t(id)}/users/${encodeURIComponent(userId)}`, patch),
+  deleteUser: (id: string, userId: string) => request("DELETE", `${t(id)}/users/${encodeURIComponent(userId)}`),
+  disableUser: (id: string, userId: string) => request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/disable`, {}),
+  enableUser: (id: string, userId: string) => request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/enable`, {}),
+  resendUserInvite: (id: string, userId: string) =>
+    request("POST", `${t(id)}/users/${encodeURIComponent(userId)}/resend-invite`, {}),
   createLocation: (id: string, loc: LocationInput) =>
     request<{ location: Location }>("POST", `${t(id)}/locations`, loc),
   updateLocation: (id: string, locationId: string, patch: Partial<LocationInput>) =>
@@ -287,6 +300,9 @@ export const api = {
   outbox: (after?: string) =>
     request<{ enabled: boolean; messages: OutboxSummary[]; next?: string | null }>(
       "GET", `/platform/outbox${after ? `?after=${encodeURIComponent(after)}` : ""}`),
+  // Notifications (the bell): a restaurant finished Kom igång, newest first.
+  notices: () => request<{ notices: OperatorNotice[]; unseen: number }>("GET", "/platform/notices"),
+  markNoticesSeen: () => request<{ marked: number; unseen: number }>("POST", "/platform/notices/seen", {}),
   // Error reports from Booqy Admin ("Rapportera till Booqy"), newest first.
   supportReports: (status: "all" | "open" | "handled" = "all", cursor?: string | null) =>
     request<{ items: SupportReport[]; cursor: string | null }>(

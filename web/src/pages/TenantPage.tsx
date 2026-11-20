@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useRef, useState, useLayoutEffect } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
   Card, ChangedNote, ErrorNotice, Field, Modal, Notice, Reason, Status, compact, errorMessage, fmtDate, useAction, useLoad } from "../components/ui";
 import type { Location, LocationInput, SimulateEvent, Tenant, TenantDetail, Zone } from "../types";
+import { UsersTab } from "../components/UsersTab";
 import { PhoneInput } from "../components/PhoneInput";
 import { POSTAL_CODE_INPUT, formatPostalCode, postalCodeDigits } from "../postalCode";
 import { formatOrgNumber, orgNumberProblem, vatFromOrgNumber, vatPreview } from "../orgNumber";
@@ -16,16 +17,20 @@ import WebsiteTab from "../components/WebsiteTab";
 import { LIMIT_LABELS, contractFeatures, contractLimits, featureKeys, featureLabel, limitValue, setupFailure } from "./NewTenantPage";
 import { LIMIT_KEYS, LIMITS, type LimitKey } from "../contracts";
 import { Slot, slotOn } from "../slots";
-import { RefreshButton, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
-import { SkelBlock, SkelCard, SkelPage, SkelRows } from "../components/Skeleton";
+import { RefreshButton, SaveBar, SaveButton, confirmLeave, useDirty, useFlash } from "../components/save";
+import { SkelBlock, SkelCard, SkelPage } from "../components/Skeleton";
 import { helpSlug } from "../features/help/helpId";
 import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
 import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
-import { InfoTip } from "../components/StepFlow";
+import { DrawnTick, InfoTip } from "../components/StepFlow";
+import { celebrate } from "../components/Celebrate";
 import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
+import { DevKindBadge, DevTwinCard, devKind, devTwinBusy } from "../components/DevTwinCard";
+import { BackButton } from "../components/ds";
+import { SetupCard } from "../components/SetupCard";
 
 const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN;
 
@@ -51,9 +56,13 @@ export default function TenantPage() {
     data &&
     (["provisioning", "offboarding"].includes(data.tenant.status) ||
       data.onboarding?.status === "RUNNING" ||
+      (!isProd() && devTwinBusy(data.tenant)) ||
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   const waiting = data && data.zones.some(zoneWaiting);
+  // Watched it set up on this visit: the moment it goes live is the end of onboarding.
+  const sawSetup = useRef(false);
+  if (data?.tenant.status === "provisioning") sawSetup.current = true;
   useEffect(() => {
     if (!busy && !waiting) return;
     const id = window.setInterval(() => void reload(), busy ? 5000 : 15000);
@@ -74,23 +83,23 @@ export default function TenantPage() {
   // A failed load keeps the way back and a retry: never a page with only the error box.
   if (!data) return (
     <>
-      <p className="crumbs"><Link to="/">Customers</Link> / Customer</p>
+      <div className="back-row"><BackButton to="/">Customers</BackButton></div>
       <div className="page-head">
         <div><h1>Customer</h1></div>
         <RefreshButton reload={reload} />
       </div>
       <ErrorNotice error={error ?? "Not found"} onRetry={() => void reload()} />
-      <p><Link className="btn btn--ghost" to="/">Back to Customers</Link></p>
     </>
   );
   const t = data.tenant;
 
   return (
     <>
-      <p className="crumbs"><Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</Link> / {t.name}</p>
+      <div className="back-row"><BackButton to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Customers</BackButton></div>
       <div className="page-head">
         <div>
-          <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}</h1>
+          <h1>{t.name} <Status value={t.status} />{t.planId === FREE_PLAN_ID && <> <FreeBadge until={t.billing?.freeUntil ?? null} /></>}
+            {!isProd() && <> <DevKindBadge kind={devKind(t)} /></>}</h1>
           <p className="muted mono small">{t.slug} · {t.tenantId}</p>
         </div>
         <RefreshButton reload={refresh} />
@@ -103,11 +112,17 @@ export default function TenantPage() {
           <button className="link" onClick={() => setSearch({})}>Dismiss</button>
         </Notice>
       )}
+      {search.get("created") && t.status === "active" && sawSetup.current && (
+        <LiveNotice tenantId={t.tenantId} name={t.name} onDismiss={() => setSearch({})} />
+      )}
       {t.status === "offboarded" && restorable(t) && (
         <Notice kind="warn">
           Offboarded. Restorable until <strong>{fmtDate(t.purgeAt)}</strong>; after that the data and the website repo are deleted.
           <button className="link" onClick={() => goTab("Suspend or offboard")}>Restore or delete</button>
         </Notice>
+      )}
+      {!isProd() && t.twinClash && (
+        <Notice kind="warn"><strong>A prod customer's twin was refused here.</strong> {t.twinClash.message}</Notice>
       )}
       {t.status === "provisioning_failed" && (
         <RetryBanner tenant={t} onDone={reload} onFix={(field) => { if (confirmLeave()) { setTab("Overview"); setFixField(field); } }} />
@@ -124,12 +139,15 @@ export default function TenantPage() {
         ))}
       </nav>
 
-      {tab === "Overview" && <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />}
+      {tab === "Overview" && <>
+        <Overview detail={data} onSaved={reload} fixField={fixField} onFixed={() => setFixField(null)} />
+        {!isProd() && devKind(t) === "twin" && <DevTwinCard tenant={t} onChanged={reload} />}
+      </>}
       {tab === "Locations" && <>
         <Locations detail={data} onChanged={reload} goPlan={() => goTab("Plan")} />
         <PrintersCard tenant={t} locations={data.locations} />
       </>}
-      {tab === "Users" && <Users tenant={t} refreshed={refreshed} />}
+      {tab === "Users" && <UsersTab tenant={t} locations={data.locations} refreshed={refreshed} />}
       {tab === "Plan" && <PlanTab tenant={t} onSaved={reload} />}
       {tab === "Billing" && <BillingTab tenant={t} cardParam={search.get("card")} onChanged={reload} refreshed={refreshed} />}
       {tab === "Payments" && <Payments tenant={t} onChanged={reload} stripeParam={search.get("stripe")} />}
@@ -292,11 +310,9 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
               <Field label="City" changed={dirty.changed("city")} error={a.fields["address.city"]} note={note("city")}><input className="input" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></Field>
               <Field label="Internal notes" wide changed={dirty.changed("notes")} error={a.fields.notes} note={note("notes")}><textarea className="input" rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
             </div>
-            <div className="row">
-              <SaveButton label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
-                          dirty={dirty.dirty} allowClean={t.status === "provisioning_failed"} />
-              <button type="button" className="btn btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
-            </div>
+            <SaveBar label={t.status === "provisioning_failed" ? "Save and retry setup" : "Save"} busy={a.busy}
+                     dirty={dirty.dirty} allowClean={t.status === "provisioning_failed"} failed={!!a.error}
+                     onDiscard={() => { setF(dirty.base); a.setError(null); }} onCancel={() => setEditing(false)} />
           </form>
         )}
       </Card>
@@ -313,6 +329,7 @@ function Overview({ detail, onSaved, fixField, onFixed }: {
             <Row label="Created" value={`${fmtDate(t.createdAt)}`} />
           </dl>
         </Card>
+        <SetupCard tenant={t} />
       </div>
     </div>
   );
@@ -426,10 +443,9 @@ function LocationModal({ tenant, location, onClose, onSaved }: { tenant: Tenant;
             <input className="input mono" value={f.stripeAccountId} onChange={(e) => setF({ ...f, stripeAccountId: e.target.value })} placeholder="acct_…" />
           </Field>
         </div>
-        <div className="row">
-          <SaveButton label={location ? "Save" : "Add location"} busy={a.busy} dirty={dirty.dirty} />
+        <SaveBar label={location ? "Save" : "Add location"} busy={a.busy} dirty={dirty.dirty} failed={!!a.error && !needsRaise}>
           <button type="button" className="btn btn--ghost" onClick={close}>Cancel</button>
-        </div>
+        </SaveBar>
       </form>
     </Modal>
   );
@@ -449,61 +465,6 @@ function DeleteLocationModal({ tenant, location, onClose, onDone }: { tenant: Te
         <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
       </div>
     </Modal>
-  );
-}
-
-// --------------------------------------------------------------------- users
-function Users({ tenant, refreshed = 0 }: { tenant: Tenant; refreshed?: number }) {
-  const users = useLoad(() => api.users(tenant.tenantId), [tenant.tenantId]);
-  const [retrying, setRetrying] = useState(false);
-  const retry = async () => { setRetrying(true); await users.reload(); setRetrying(false); };
-  // Only a Refresh pressed after this tab opened, and only after a failed load.
-  const seenRefresh = useRef(refreshed);
-  useEffect(() => {
-    if (refreshed === seenRefresh.current) return;
-    seenRefresh.current = refreshed;
-    if (!users.data && users.error) void retry();
-  }, [refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [f, setF] = useState({ email: "", name: "" });
-  const a = useAction();
-  const dirty = useDirty(f, { email: "", name: "" });
-  return (
-    <div className="cols">
-      <Card title="Sign-in accounts">
-        <ErrorNotice error={users.error} onRetry={() => void retry()} />
-        {(users.loading || retrying) && !users.data ? <SkelPage label="Loading users"><SkelRows n={3} cols={4} /></SkelPage> : users.data && (
-        <table className="table">
-          <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Since</th></tr></thead>
-          <tbody>
-            {users.data.map((u) => (
-              <tr key={u.cognitoSub}>
-                <td className="cell-title">{u.name}<div className="muted small">{u.email}</div></td>
-                <td className="cell-fact" data-label="Role">{u.role === "owner_user" ? "Owner" : "Staff"}</td>
-                <td className="cell-fact" data-label="Status">{u.status ?? "active"}</td>
-                <td className="small cell-fact" data-label="Since">{fmtDate(u.createdAt)}</td>
-              </tr>
-            ))}
-            {users.data.length === 0 && <tr><td colSpan={4} className="empty">No users yet.</td></tr>}
-          </tbody>
-        </table>
-        )}
-        <p className="muted small">Staff are invited from the admin app.</p>
-      </Card>
-      <Card title="Invite another owner">
-        <form noValidate onSubmit={async (e) => {
-          e.preventDefault();
-          if (await a.run(() => api.inviteOwner(tenant.tenantId, f.email, f.name))) { setF({ email: "", name: "" }); void users.reload(); }
-        }}>
-          <ErrorNotice error={a.error} />
-          <Field label="Name" required error={a.fields.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <Field label="Business email" required error={a.fields.email} hint="Gets a temporary password by email">
-            <input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-          </Field>
-          <SaveButton label="Send invite" busy={a.busy} busyLabel="Inviting…" done={a.done} doneLabel="Invite sent"
-                      dirty={dirty.dirty} disabled={!f.email || !f.name} />
-        </form>
-      </Card>
-    </div>
   );
 }
 
@@ -582,6 +543,17 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
     if (await a.run(() => api.setPlan(tenant.tenantId, body))) { dirty.markSaved(); onSaved(); }
   }
   const belowCount = a.error instanceof ApiError && a.error.code === "below_location_count";
+  /** Back to what is saved: the plan, its limits, price and Free period. */
+  function discard() {
+    setPlanId(tenant.planId);
+    setMax(tenant.entitlements.maxLocations);
+    setFeatures(contractFeatures(tenant.entitlements.features));
+    setLimits(limitsOf(tenant.entitlements));
+    setPrice(savedPrice);
+    setFree(savedFree ?? newFreeForm());
+    setTried(false);
+    a.setError(null);
+  }
 
   return (
     <Card title="Plan & limits" info={`Limits take effect immediately, e.g. a customer opening a second restaurant: raise Locations, then add the location. A changed plan or price is invoiced from the next month; the paid month stays as it is. Onto or off Free applies from that day.`}>
@@ -635,7 +607,8 @@ export function PlanTab({ tenant, onSaved }: { tenant: Tenant; onSaved: () => vo
           <div className="row"><SaveButton kind="danger" small type="button" label="Apply anyway" busy={a.busy} onClick={() => void save(true)} /></div>
         </Notice>
       ) : <ErrorNotice error={a.error} />}
-      <SaveButton type="button" label="Save plan" busy={a.busy} done={a.done} dirty={dirty.dirty} disabled={!plan} onClick={() => void save()} />
+      <SaveBar label="Save plan" busy={a.busy} done={a.done} dirty={dirty.dirty} disabled={!plan} failed={!!a.error && !belowCount}
+               onSave={() => void save()} onDiscard={discard} />
     </Card>
   );
 }
@@ -1058,5 +1031,20 @@ function DeleteCustomer({ tenant, onChanged }: { tenant: Tenant; onChanged: () =
         </>
       )}
     </Card>
+  );
+}
+
+/** The end of onboarding a customer, seen live: the one peak moment for it
+ * (tick, pop, confetti and the fanfare), once per customer per session. */
+function LiveNotice({ tenantId, name, onDismiss }: { tenantId: string; name: string; onDismiss: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { celebrate(ref.current, "finish", `live:${tenantId}`); }, [tenantId]);
+  return (
+    <div ref={ref} className="live-notice">
+      <Notice kind="ok">
+        <span className="submit-ready"><DrawnTick /> Live.</span> {name} is set up and ready.
+        <button className="link" onClick={onDismiss}>Dismiss</button>
+      </Notice>
+    </div>
   );
 }

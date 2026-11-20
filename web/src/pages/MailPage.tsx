@@ -7,7 +7,7 @@ import {
 } from "../components/ui";
 import type { MailTemplate, MailTemplateInput, Newsletter, NewsletterRecipient } from "../types";
 import OutboxPage from "./OutboxPage";
-import { RefreshButton, SaveButton, confirmLeave, useDirty } from "../components/save";
+import { RefreshButton, SaveBar, SaveButton, confirmLeave, useDirty } from "../components/save";
 import { SkelBlock, SkelCard, SkelLines, SkelPage, SkelTable } from "../components/Skeleton";
 import { rowAction } from "../components/rowLink";
 import { RowButton } from "../components/RowButton";
@@ -402,6 +402,19 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
     }
   }, [customColor, draw]);
 
+  /** Back to the saved template, the logo picker too. */
+  function discard() {
+    drawn.current += 1;
+    setF(dirty.base);
+    setCustomSource(template.logo.kind === "custom" ? template.logo.dataUrl : null);
+    setCustomPreview(template.logo.kind === "custom" ? template.logo.dataUrl : null);
+    setCustomName(template.logo.name ?? null);
+    setBooqyColor(template.logo.kind === "booqy" && template.logo.color ? template.logo.color : BOOQY_INK);
+    setCustomColor(template.logo.kind === "custom" ? template.logo.color ?? null : null);
+    setFileError(null);
+    a.setError(null);
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaved(false);
@@ -456,10 +469,9 @@ function TemplateForm({ template, onSaved }: { template: MailTemplate; onSaved: 
               <textarea className="input" rows={2} value={f.footer} maxLength={600} onChange={(e) => set("footer")(e.target.value)} />
             </Field>
           </div>
-          <div className="mail-actions">
-            <SaveButton label="Save template" busy={a.busy} done={a.done} dirty={dirty.dirty} />
-            {template.updatedAt && <span className="muted">Last saved {fmtDate(template.updatedAt)} by {template.updatedBy}</span>}
-          </div>
+          <SaveBar label="Save template" busy={a.busy} done={a.done} dirty={dirty.dirty} failed={!!a.error || !!fileError} onDiscard={discard}>
+            {!dirty.dirty && template.updatedAt && <span className="muted save-bar__meta">Last saved {fmtDate(template.updatedAt)} by {template.updatedBy}</span>}
+          </SaveBar>
         </Card>
       </form>
       <Preview html={preview.value?.html ?? null} error={preview.error} title="Preview with sample text" />

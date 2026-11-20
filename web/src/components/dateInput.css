@@ -64,13 +64,16 @@
   -webkit-backdrop-filter: blur(var(--blur-pop, 24px)) saturate(1.6);
   backdrop-filter: blur(var(--blur-pop, 24px)) saturate(1.6);
   font: 400 14px/1.3 var(--sans, inherit);
-  animation: date-cal-in var(--dur-base, 200ms) var(--ease-out, ease) both;
+  /* grows from the field: top left, bottom left when it opens above (ux-motion #11) */
+  transform-origin: 0 0;
+  animation: date-cal-in 150ms var(--ease-out, ease) both;
 }
+.date-cal--up { transform-origin: 0 100%; }
 :root[data-theme="dark"] .date-cal {
   --dcal-hover: rgb(213 196 174 / 0.12);
   background: var(--liquid-sheen), rgb(36 25 19 / 0.96);
 }
-@keyframes date-cal-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@keyframes date-cal-in { from { opacity: 0; transform: scale(0.96); } }
 
 .date-cal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .date-cal__title { font: 600 15px/1.2 var(--sans, inherit); }
@@ -106,7 +109,7 @@
 .date-cal__day:hover:not(:disabled),
 .date-cal__today:hover:not(:disabled) { background: var(--dcal-hover); }
 
-.date-cal__day.is-today { box-shadow: inset 0 0 0 1.5px var(--field-border); }
+.date-cal__day.is-today { background: var(--dcal-hover); font-weight: 700; }
 .date-cal__day.is-selected,
 .date-cal__day.is-selected:hover { background: var(--slip); color: var(--on-slip); font-weight: 600; }
 

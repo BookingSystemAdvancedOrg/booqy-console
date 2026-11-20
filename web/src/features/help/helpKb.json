@@ -507,6 +507,38 @@
       ]
     },
     {
+      "id": "setup-notifications",
+      "route": "/notifications",
+      "title": "Setup finished notifications",
+      "audience": "all",
+      "keywords": [
+        "notifications",
+        "bell",
+        "setup finished",
+        "setup klar",
+        "kom igång",
+        "onboarding done",
+        "website build",
+        "setup progress"
+      ],
+      "answer": "Notifications under Platform lists each restaurant that finished Kom igång in Booqy Admin: every step done or skipped at every location. That is when we build its website. Each restaurant is announced once, with an email to the operators too. The badge counts new ones; opening the page marks them seen. The Setup column on Customers shows progress such as 7/9, and the Setup card on a customer's Overview shows each step.",
+      "steps": [
+        "Open Notifications in the menu.",
+        "Press a restaurant to open its customer page.",
+        "Check the Setup card, then start the website."
+      ],
+      "actions": [
+        {
+          "id": "setup-notifications-open",
+          "label": "Open Notifications",
+          "to": "/notifications",
+          "highlight": [
+            "help:nav:/notifications"
+          ]
+        }
+      ]
+    },
+    {
       "id": "operator-add",
       "route": "/operators",
       "title": "Add an operator",
@@ -813,7 +845,7 @@
         "profit",
         "export csv"
       ],
-      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (a calendar month), in SEK ex VAT. Pick a customer to see just them, and export the rows as CSV.",
+      "answer": "Finance shows MRR, paying customers, collected and outstanding money, gross margin, revenue, AWS cost and unit economics per billing period (a calendar month). Revenue is in SEK ex VAT; every cost is in USD, exactly as AWS Billing shows it, and the margin converts it at Riksbank's USD/SEK rate of each day. Pick a customer to see just them, and export the rows as CSV.",
       "steps": [
         "Open Finance in the menu.",
         "Pick the Billing period and how many periods.",

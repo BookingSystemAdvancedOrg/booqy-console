@@ -1,0 +1,46 @@
+{
+  "fill": "none",
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "b.svg",
+          "name": "b",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "specular": false
+    },
+    {
+      "layers": [
+        {
+          "image-name": "tile.svg",
+          "name": "tile",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "specular": false
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

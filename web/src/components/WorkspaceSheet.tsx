@@ -4,7 +4,14 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { firstName } from "../avatar";
 import { Icon, openPalette, type IconName } from "./ds";
 import { MyAvatar } from "./MyAvatar";
+import { exitMs } from "./motion";
 import { confirmLeave } from "./save";
+
+/** Rubber band (ux-motion #13): past the edge the sheet moves a shrinking share of the drag. */
+export function rubberBand(drag: number, size: number): number {
+  if (drag <= 0 || size <= 0) return 0;
+  return (1 - 1 / ((drag * 0.55) / size + 1)) * size;
+}
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 /** Outside the sheet while it is open: no clicks, no focus, hidden from screen readers. */
@@ -55,8 +62,23 @@ export function WorkspaceSheet(props: {
     };
   }, [returnFocus]);
 
+  // Leaving: slides down from wherever it is (mid-drag too) in 180 ms with
+  // ease-in, then unmounts; a page change still closes at once (ux-motion #17, #18).
+  const leaving = useRef(0);
+  useEffect(() => () => window.clearTimeout(leaving.current), []);
+  const leave = () => {
+    const sheet = sheetRef.current;
+    const wait = exitMs(180);
+    if (!sheet || wait === 0) { onClose(); return; }
+    if (leaving.current) return;
+    sheet.closest(".ws-layer")?.setAttribute("data-closing", "");
+    sheet.classList.remove("is-dragging");
+    sheet.style.transform = "translateY(100%)";
+    leaving.current = window.setTimeout(() => { leaving.current = 0; onClose(); }, wait);
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+    if (e.key === "Escape") { e.preventDefault(); leave(); return; }
     if (e.key !== "Tab") return;
     const items = [...(sheetRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
     if (!items.length) return;
@@ -80,8 +102,16 @@ export function WorkspaceSheet(props: {
   const onPointerMove = (e: PointerEvent) => {
     const d = drag.current, sheet = sheetRef.current;
     if (!d || !sheet) return;
-    d.dy = Math.max(0, e.clientY - d.y);
-    if (d.dy > 4) { sheet.classList.add("is-dragging"); sheet.style.transform = `translateY(${d.dy}px)`; }
+    const raw = e.clientY - d.y;
+    d.dy = Math.max(0, raw);
+    // Up past the top: resistance instead of a hard wall, springs back on release.
+    const y = raw < 0 ? -rubberBand(-raw, sheet.offsetHeight || 400) : raw;
+    if (Math.abs(raw) > 4) {
+      // Once it is a drag, keep the pointer: a release above or below the sheet still ends it.
+      if (!sheet.classList.contains("is-dragging")) { try { sheet.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } }
+      sheet.classList.add("is-dragging");
+      sheet.style.transform = `translateY(${y}px)`;
+    }
   };
   const onPointerUp = () => {
     const d = drag.current, sheet = sheetRef.current;
@@ -89,7 +119,7 @@ export function WorkspaceSheet(props: {
     if (!d || !sheet) return;
     sheet.classList.remove("is-dragging");
     const speed = d.dy / Math.max(1, performance.now() - d.t);
-    if (d.dy > 80 || (d.dy > 24 && speed > 0.6)) onClose();
+    if (d.dy > 80 || (d.dy > 24 && speed > 0.6)) leave();
     else sheet.style.transform = "";
   };
 
@@ -104,7 +134,7 @@ export function WorkspaceSheet(props: {
 
   return createPortal(
     <div className="ws-layer">
-      <div className="ws-scrim" aria-hidden="true" onClick={onClose} />
+      <div className="ws-scrim" aria-hidden="true" onClick={leave} />
       <div
         ref={sheetRef}
         className="ws-sheet"

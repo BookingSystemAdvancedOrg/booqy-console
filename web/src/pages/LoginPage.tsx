@@ -9,6 +9,10 @@ import QRCode from "qrcode";
 import {
   confirmResetPassword, confirmSignIn, resetPassword, signIn, signOut, type SignInOutput,
 } from "aws-amplify/auth";
+import { BackButton } from "../components/ds";
+import { celebrate } from "../components/Celebrate";
+import { prefersReducedMotion } from "../components/motion";
+import { DrawnTick } from "../components/StepFlow";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -36,7 +40,11 @@ type Step =
   | { kind: "forgot" }
   | { kind: "forgotSent" }
   | { kind: "forgotConfirm" }
-  | { kind: "linkReset"; code: string };
+  | { kind: "linkReset"; code: string }
+  | { kind: "welcome" };
+
+/** How long the one-time welcome (a new operator's first sign-in) holds before the console opens. */
+const WELCOME_MS = 900;
 
 /** Password reset steps word code errors differently from the TOTP steps. */
 function message(e: unknown, reset = false): string {
@@ -124,6 +132,13 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     switch (s) {
       case "DONE":
         if (window.location.pathname === RESET_PATH) navigate("/", { replace: true });
+        // A new operator's first sign-in (they just set up two-step sign-in): one
+        // short welcome moment; every later sign-in opens the console at once.
+        if (step.kind === "totpSetup" && !prefersReducedMotion()) {
+          setStep({ kind: "welcome" });
+          window.setTimeout(onSignedIn, WELCOME_MS);
+          return;
+        }
         onSignedIn();
         return;
       case "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED":
@@ -223,10 +238,12 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
               <Form title="Enter your code" lead="Open your authenticator app and enter the 6-digit code for Booqy Console."
                     error={error} busy={busy} submit="Sign in"
                     onSubmit={(v) => run(async () => next(await confirmSignIn({ challengeResponse: v.code.trim() })))}
-                    footer={<button type="button" className="link" onClick={back}>Back</button>}>
+                    back={back} backLabel="Back">
                 <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
               </Form>
             )}
+
+            {step.kind === "welcome" && <Welcome />}
 
             {step.kind === "forgot" && (
               <Form title="Reset your password" lead="We'll email you a link to choose a new password."
@@ -235,13 +252,14 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                       await resetPassword({ username: email.trim().toLowerCase() });
                       setStep({ kind: "forgotSent" });
                     }, true)}
-                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                    back={back}>
                 <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={setEmail} autoFocus />
               </Form>
             )}
 
             {step.kind === "forgotSent" && (
               <div className="auth__form">
+                <div className="back-row"><BackButton onClick={back}>Sign in</BackButton></div>
                 <h1>Check your email</h1>
                 {info && <div className="notice notice--ok" role="status">{info}</div>}
                 <p className="muted auth__lead-text">
@@ -254,8 +272,6 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                   {" · "}
                   <button type="button" className="link" onClick={() => { setInfo(null); setStep({ kind: "forgot" }); }}>
                     Send again</button>
-                  {" · "}
-                  <button type="button" className="link" onClick={back}>Back to sign in</button>
                 </div>
               </div>
             )}
@@ -269,7 +285,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                                                    newPassword: v.password });
                       await passwordChanged();
                     }, true)}
-                    footer={<button type="button" className="link" onClick={back}>Back to sign in</button>}>
+                    back={back}>
                 <Input label="Code from the email" name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus />
                 <Input label="New password" name="password" type="password" autoComplete="new-password" />
                 <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
@@ -284,12 +300,9 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                       await confirmResetPassword({ username: email, confirmationCode: step.code, newPassword: v.password });
                       await passwordChanged();
                     }, true)}
-                    footer={<>
-                      <button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
-                        Request a new link</button>
-                      {" · "}
-                      <button type="button" className="link" onClick={back}>Back to sign in</button>
-                    </>}>
+                    back={back}
+                    footer={<button type="button" className="link" onClick={() => { setError(null); setStep({ kind: "forgot" }); }}>
+                      Request a new link</button>}>
                 <Input label="New password" name="password" type="password" autoComplete="new-password" autoFocus />
                 <Input label="Repeat new password" name="confirm" type="password" autoComplete="new-password" />
               </Form>
@@ -322,6 +335,9 @@ function Form(props: {
   submit: string;
   onSubmit: (values: Record<string, string>) => void;
   footer?: ReactNode;
+  /** Back control above the heading. */
+  back?: () => void;
+  backLabel?: string;
   children: ReactNode;
 }) {
   const handle = (e: FormEvent<HTMLFormElement>) => {
@@ -333,6 +349,7 @@ function Form(props: {
   };
   return (
     <form className="auth__form" onSubmit={handle} noValidate={false}>
+      {props.back && <div className="back-row"><BackButton onClick={props.back}>{props.backLabel ?? "Sign in"}</BackButton></div>}
       <h1>{props.title}</h1>
       {props.lead && <p className="muted auth__lead-text">{props.lead}</p>}
       {props.info && <div className="notice notice--ok" role="status">{props.info}</div>}
@@ -373,4 +390,16 @@ function Qr({ uri }: { uri: string }) {
     QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fdfaf6" } }).then(setSrc);
   }, [uri]);
   return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : <Printing inline label="Making the code" />}</div>;
+}
+
+/** The first sign-in's end: the tick draws, the card pops, a chime (ux-motion #19). */
+function Welcome() {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => { if (el) celebrate(el, "step"); }, [el]);
+  return (
+    <div ref={setEl} className="auth__form auth__welcome" role="status">
+      <DrawnTick className="auth__welcome-tick" />
+      <h1>You're in</h1>
+    </div>
+  );
 }

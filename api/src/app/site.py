@@ -53,11 +53,13 @@ from . import validation as v
 from .core import ApiError, client, env, from_ddb, log, query_all, tenant_table, write_audit
 from .core import not_while
 from .tenants import create_tenant, get_plan, get_profile, restore_tenant
+from . import devtwin
 
 _SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])")
-_MIRROR_FIELDS = ("name", "slug", "ownerEmail", "ownerName", "legalName", "orgNumber", "contactEmail",
-                  "contactPhone", "address")
-_OPTIONAL_MIRROR_FIELDS = ("legalName", "orgNumber", "contactEmail", "contactPhone", "address")
+# Only these cross from prod: the dev tenant is the restaurant's dev twin,
+# Booqy's own test restaurant (devtwin.py), never its personal data. Older
+# prod builds send more; it is ignored here.
+_MIRROR_FIELDS = ("name", "slug")
 LINK_ACTOR = "prod-site-repo"
 
 
@@ -320,8 +322,25 @@ def _dev_plan(plan_id: str | None) -> str:
     return sorted(p["planId"] for p in plans)[-1]
 
 
-def site_task(event: dict) -> dict:
-    """Prod -> dev (the booqy-sites-prod-link role). Never in prod."""
+def site_task(event: dict, function_arn: str | None = None) -> dict:
+    """Prod -> dev (the booqy-sites-prod-link role). Never in prod. A mirror
+    creates or adopts the restaurant's dev twin and starts its seed
+    (devtwin.py; function_arn: this function, for the async seed)."""
+    out = _site_task(event)
+    if not (isinstance(out, dict) and devtwin.enabled() and function_arn):
+        return out
+    try:
+        if out.get("status") in ("created", "adopted", "restored"):
+            devtwin.kick(out["tenantId"], LINK_ACTOR, function_arn)
+        elif out.get("status") == "content_queued":
+            from .devtwin_content import kick_content
+            kick_content(out["tenantId"], LINK_ACTOR, function_arn)
+    except Exception:  # noqa: BLE001 - the site link must not fail on the seed; Refresh in the console
+        log.exception("dev twin work for %s not started", out.get("tenantId"))
+    return out
+
+
+def _site_task(event: dict) -> dict:
     if env("ENVIRONMENT") == "prod":
         return {"error": "refused", "message": "Site tasks only run in dev"}
     task = event.get("siteTask") if isinstance(event.get("siteTask"), dict) else {}
@@ -330,46 +349,67 @@ def site_task(event: dict) -> dict:
         return {"error": "validation_failed", "message": "slug missing or invalid"}
     tenant_id = _tenant_by_slug(slug)
     try:
+        prod_id = task.get("prodTenantId") if isinstance(task.get("prodTenantId"), str) else None
+        existing = get_profile(tenant_id) if tenant_id else {}
+        status = existing.get("status") if tenant_id else None
         if task.get("action") == "archive":
+            # Prod offboarded the customer: its twin is only flagged (never
+            # deleted without an operator); the archived repo's dev deploy
+            # role goes, as before.
             if not tenant_id:
                 return {"status": "none"}
+            if devtwin.is_twin(existing):
+                devtwin.flag_prod_offboarded(tenant_id, LINK_ACTOR)
             return {"tenantId": tenant_id, **invoke({"action": "archive", "tenantId": tenant_id})}
         if task.get("action") == "domain":
             return _domain_task(tenant_id, task)
+        if task.get("action") == "content":
+            return _content_task(tenant_id, existing, prod_id, slug)
         if task.get("action") != "mirror":
             return {"error": "validation_failed", "message": "unknown site task"}
-        existing = get_profile(tenant_id) if tenant_id else {}
-        status = existing.get("status") if tenant_id else None
-        if tenant_id and status != "purged" and existing.get("siteKind") == "test":
-            return {"error": "slug_used_by_test_customer",
-                    "message": f"{slug} is a test customer in the dev console: delete it there first, then Run setup again"}
+        if tenant_id and status != "purged":
+            # Never merged into or written over a dev customer that is not
+            # this prod customer's twin (DATA-RULES.md, no collisions).
+            problem = devtwin.clash(existing, prod_id)
+            if problem:
+                devtwin.record_clash(tenant_id, prod_id, problem[0], problem[1], LINK_ACTOR)
+                return {"error": problem[0], "message": problem[1]}
         if status == "offboarded":
             restore_tenant(tenant_id, LINK_ACTOR)
-            _mark_linked(tenant_id, existing)
+            devtwin.mark_twin(tenant_id, prod_id)
             return _with_dev_side({"tenantId": tenant_id, "status": "restored"}, task)
         if tenant_id and status != "purged":
-            # The same restaurant already has a dev tenant: keep its test data,
-            # set up the dev side of the repo now (idempotent).
+            # The restaurant's twin already exists: keep its test data, set up
+            # the dev side of the repo now (idempotent).
             if status == "offboarding":
                 return {"error": "invalid_status", "message": f"The dev customer {slug} is {status}"}
-            _mark_linked(tenant_id, existing)
-            write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": task.get("prodTenantId")})
+            devtwin.mark_twin(tenant_id, prod_id)
+            write_audit(tenant_id, "site_linked_from_prod", LINK_ACTOR, {"prodTenantId": prod_id})
             return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
-        body["planId"] = _dev_plan(task.get("planId"))
-        return _with_dev_side(_create_mirror(body, slug), task)
+        body.update(planId=_dev_plan(task.get("planId")), ownerEmail=devtwin.owner_email(slug),
+                    ownerName="Booqy utvecklare")
+        out = _create_mirror(body, slug)
+        devtwin.mark_twin(out["tenantId"], prod_id)
+        return _with_dev_side(out, task)
     except ApiError as e:
         fields = e.extra.get("fields") or {}
         detail = "; ".join(f"{k}: {msg}" for k, msg in fields.items())
         return {"error": e.code, "message": f"{e} ({detail})" if detail else str(e)}
 
 
-def _mark_linked(tenant_id: str, existing: dict) -> None:
-    if existing.get("siteKind") != "prod-link":
-        client("dynamodb").update_item(
-            TableName=tenant_table(), Key={"PK": {"S": f"TENANT#{tenant_id}"}, "SK": {"S": "PROFILE"}},
-            UpdateExpression="SET siteKind = :k", ConditionExpression="attribute_exists(PK)",
-            ExpressionAttributeValues={":k": {"S": "prod-link"}})
+def _content_task(tenant_id: str | None, existing: dict, prod_id: str | None, slug: str) -> dict:
+    """Prod: the restaurant finished its setup. Its twin copies the public
+    content from prod's public API (devtwin_content.py); started by
+    site_task once this answers "content_queued"."""
+    if not tenant_id or existing.get("status") != "active":
+        return {"error": "no_twin", "message": f"There is no active dev twin for {slug}"}
+    problem = devtwin.clash(existing, prod_id)
+    if problem:
+        return {"error": problem[0], "message": problem[1]}
+    if prod_id and not existing.get("twinOf"):
+        devtwin.mark_twin(tenant_id, prod_id)
+    return {"tenantId": tenant_id, "status": "content_queued"}
 
 
 def _with_dev_side(out: dict, task: dict) -> dict:
@@ -383,21 +423,7 @@ def _with_dev_side(out: dict, task: dict) -> dict:
 
 
 def _create_mirror(body: dict, slug: str) -> dict:
-    """create_tenant, once more if it refuses a field: the owner's address
-    usually already signs in to another dev customer (one login, one
-    tenant), so the dev invitation goes to <local>+<slug>@<domain>, the same
-    mailbox with most providers; an optional field dev refuses is left out
-    (no data is needed in dev). A missing domain is never the problem here."""
-    try:
-        _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
-    except ApiError as e:
-        fields = {k.split(".")[0] for k in (e.extra.get("fields") or {})}
-        if e.code != "validation_failed" or not fields or fields - {"ownerEmail", *_OPTIONAL_MIRROR_FIELDS}:
-            raise
-        body = {k: val for k, val in body.items() if k not in fields - {"ownerEmail"}}
-        if "ownerEmail" in fields:
-            local, _, domain = body["ownerEmail"].partition("@")
-            body["ownerEmail"] = f"{local.split('+')[0]}+{slug}@{domain}"
-        _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
-        log.info(json.dumps({"siteTask": "mirror", "slug": slug, "adjusted": sorted(fields)}))
+    """create_tenant for the dev twin: name, slug and plan from prod, the
+    owner login a Booqy team address (devtwin.owner_email)."""
+    _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
     return {"tenantId": out["tenantId"], "status": "created"}

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { DoneMoment } from "./DoneMoment";
 import { api, ApiError, uploadToS3 } from "../api";
 import type {
   DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, RequiredRecord, SupportCase, Tenant, TransferCheck, TransferInCheck, Zone,
@@ -10,12 +11,13 @@ import { Select } from "./Select";
 import { isProd, testMapping } from "../testSites";
 import { InfoTip } from "./StepFlow";
 import { CopyButton } from "./CopyButton";
+import { BackButton } from "./ds";
 
 type Path = "choose" | "buy" | "move" | "keep" | "map";
 
 export function money(m?: Money | null) {
   if (!m) return "-";
-  return new Intl.NumberFormat("sv-SE", { style: "currency", currency: m.currency }).format(Number(m.amount));
+  return new Intl.NumberFormat(m.currency === "SEK" ? "sv-SE" : "en-US", { style: "currency", currency: m.currency }).format(Number(m.amount));
 }
 
 /** Add domain (owner 2026-11-15): the three ways in, each ending in the same pipeline (site on the domain,
@@ -67,7 +69,7 @@ export default function DomainWizard({ tenant, onClose, onChanged, initial }: {
 }
 
 function Back({ onClick }: { onClick: () => void }) {
-  return <button type="button" className="link back" onClick={onClick}>← Other ways</button>;
+  return <div className="back-row"><BackButton onClick={onClick}>Other ways</BackButton></div>;
 }
 
 /** What the restaurant reads, in Swedish (it also gets it by e-mail): shown for copying. */
@@ -192,7 +194,7 @@ function Order({ tenant, offer, onBack, onDone }: {
   if (result !== undefined) {
     return (
       <>
-        <Notice kind="ok"><strong>{offer.domain}</strong> is ordered. Its status is on the Domains tab.</Notice>
+        <DoneMoment id={`ordered:${offer.domain}`}><strong>{offer.domain}</strong> is ordered. Its status is on the Domains tab.</DoneMoment>
         {result ? <SupportCaseBox domain={offer.domain} tenantId={tenant.tenantId} supportCase={result} />
           : <p className="small muted">Live on {offer.domain} by itself <InfoTip label="What happens">Route 53 registers it (minutes to an hour), then the site goes live on {offer.domain}; www and the slug address 301 to it and dev.{offer.domain} goes on the dev site.</InfoTip></p>}
       </>
@@ -200,7 +202,7 @@ function Order({ tenant, offer, onBack, onDone }: {
   }
   return (
     <form onSubmit={onBuy} noValidate>
-      <button type="button" className="link back" onClick={onBack}>← Search again</button>
+      <div className="back-row"><BackButton onClick={onBack}>Search again</BackButton></div>
       <h4 className="mono">{offer.domain}</h4>
       <p className="small">{money(offer.price)} the first year, then {money(offer.renewalPrice)} per year (auto-renews, billed to the platform's AWS account).</p>
       <ErrorNotice error={buy.error} />
@@ -467,7 +469,7 @@ function Connect({ tenant, initialDomain, onDone }: { tenant: Tenant; initialDom
   if (done) {
     return (
       <>
-        <Notice kind="ok"><strong>{done.domain}</strong>: DNS zone ready. Steps e-mailed to the restaurant.</Notice>
+        <DoneMoment id={`zone:${done.domain}`}><strong>{done.domain}</strong>: DNS zone ready. Steps e-mailed to the restaurant.</DoneMoment>
         {done.nameServers && <NameServerBox domain={done.domain} nameServers={done.nameServers} />}
         {done.restaurantSteps && <RestaurantText text={done.restaurantSteps} />}
       </>

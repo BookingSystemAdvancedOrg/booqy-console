@@ -6,14 +6,27 @@ Reads the finance table (infrastructure storage/dynamodb/finance):
                                      that day, MRR snapshot (finance-rollup +
                                      the senders + the Stripe webhook)
     TENANT#<id> / INVOICE#...        the invoice ledger (outstanding amounts)
-    PLATFORM / DAY#<yyyy-mm-dd>      the whole AWS bill that day (costSek,
-                                     costSplitSek, unallocatedSek)
+    PLATFORM / DAY#<yyyy-mm-dd>      the whole AWS bill that day (costUsd,
+                                     costSplitUsd, unallocatedUsd) and that
+                                     day's USD/SEK rate (usdSek, usdSekDate)
     PLATFORM / COST#<yyyy-mm-dd>     the Cost Explorer pull (the newest one
                                      is the date the AWS cost is known to)
     PLATFORM / JOB#latest            when the figures were last computed
 
 Every number is a sum of day rows, so week, month, quarter, year and any
-custom range are the same code path. Amounts are SEK excluding VAT.
+custom range are the same code path.
+
+Currencies (owner, 2026-11-18): every COST is USD, exactly as AWS Billing
+and Cost Explorer report it (fields ending in Usd); revenue is SEK
+excluding VAT, as Booqy invoices it (fields ending in Sek). Nothing is
+mixed silently.
+
+Gross margin (owner, 2026-11-18) is MRR minus AWS cost: per calendar month in
+the range the month's MRR (live for the month in progress, invoiced in
+advance on the 1st; else the month's last day snapshot), minus the cost
+converted at each day's Riksbank USD/SEK rate. `fx` says which rates were used.
+No AWS cost loaded for the range yet: `costLoaded` is false and the margin
+null, never a guess.
 
 By default only ACTIVE customers count (includeInactive=1 adds suspended,
 offboarding, offboarded and purged customers, whose rows are kept forever).
@@ -27,6 +40,8 @@ filter, cost is that customer's allocated share.
 """
 
 import json
+import time
+import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -37,8 +52,33 @@ MAX_RANGE_DAYS = 400
 ACTIVE_DEFAULT = ("active",)
 SUM_FIELDS = ("requests", "bookings", "orders", "emails", "sms", "marketingEmails",
               "smsParts", "smsBooking", "smsReminder", "smsOrder", "smsCatering",
-              "costSek", "invoicedSek", "paidSek", "creditedSek", "refundedSek")
+              "invoicedSek", "paidSek", "creditedSek", "refundedSek")
 CENTS = Decimal("0.01")
+USD4 = Decimal("0.0001")        # cost per booking or SMS can be a fraction of a cent
+BUCKETS = ("baseline", "requests", "email", "sms")
+# Rows written before 2026-11-18 hold the cost in SEK at this fixed rate,
+# until finance-rollup's one-time migration rewrites them in USD.
+LEGACY_USD_TO_SEK = Decimal("10.5")
+FX_SOURCE = "Riksbank SEKUSDPMI"
+FX_LATEST_URL = "https://api.riksbank.se/swea/v1/Observations/Latest/SEKUSDPMI"
+_live_rate: dict = {}
+
+
+def _riksbank_latest():
+    """(rate, rate_day) of Riksbank's newest USD/SEK, cached 6 h per warm
+    Lambda: only for a range no nightly run has recorded a rate for yet."""
+    if _live_rate.get("until", 0) > time.time():
+        return _live_rate.get("value")
+    value = None
+    try:
+        req = urllib.request.Request(FX_LATEST_URL, headers={"Accept": "application/json", "User-Agent": "booqy-console"})
+        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310 - fixed https URL
+            row = json.loads(resp.read().decode("utf-8"))
+        value = (Decimal(str(row["value"])), str(row["date"])[:10])
+    except Exception as e:  # noqa: BLE001 - no rate is a null margin, not an error page
+        log.warning("Riksbank USD/SEK unavailable: %s", e)
+    _live_rate.update({"value": value, "until": time.time() + (6 * 3600 if value else 300)})
+    return value
 
 
 def _finance_table() -> str:
@@ -49,10 +89,79 @@ def _q(value) -> Decimal:
     return Decimal(value or 0).quantize(CENTS, rounding=ROUND_HALF_UP)
 
 
-def _ratio(a, b) -> Decimal | None:
+def _usd(value) -> Decimal:
+    return Decimal(value or 0).quantize(USD4, rounding=ROUND_HALF_UP)
+
+
+def _ratio(a, b, places=CENTS) -> Decimal | None:
     if not b:
         return None
-    return (Decimal(a or 0) / Decimal(b)).quantize(CENTS, rounding=ROUND_HALF_UP)
+    return (Decimal(a or 0) / Decimal(b)).quantize(places, rounding=ROUND_HALF_UP)
+
+
+def _cost_usd(row: dict) -> Decimal:
+    """A day row's cost in USD (a row from before the migration: its SEK back at the fixed rate)."""
+    if row.get("costUsd") is not None:
+        return Decimal(row["costUsd"])
+    return Decimal(row.get("costSek") or 0) / LEGACY_USD_TO_SEK
+
+
+def _split_usd(row: dict) -> dict:
+    if isinstance(row.get("costSplitUsd"), dict):
+        return {k: Decimal(row["costSplitUsd"].get(k) or 0) for k in BUCKETS}
+    old = row.get("costSplitSek") if isinstance(row.get("costSplitSek"), dict) else {}
+    return {k: Decimal(old.get(k) or 0) / LEGACY_USD_TO_SEK for k in BUCKETS}
+
+
+class Rates:
+    """USD/SEK per day for the margin: the rate finance-rollup recorded on
+    the PLATFORM day rows (Riksbank, the banking day before on weekends);
+    a day without one takes the nearest day before it in the range, else
+    after it, else the newest rate stored at all, else Riksbank's latest."""
+
+    def __init__(self, platform_rows: list[dict]):
+        self.by_day = {r["SK"][4:]: (Decimal(r["usdSek"]), r.get("usdSekDate") or r["SK"][4:])
+                       for r in platform_rows if r.get("usdSek")}
+        self._days = sorted(self.by_day)
+        self._latest: tuple | None | bool = False
+        self.used: dict = {}
+
+    def _newest_stored(self):
+        if self._latest is False:
+            items = client("dynamodb").query(
+                TableName=_finance_table(), KeyConditionExpression="PK = :pk AND begins_with(SK, :c)",
+                ExpressionAttributeValues={":pk": {"S": "PLATFORM"}, ":c": {"S": "COST#"}},
+                ScanIndexForward=False, Limit=40).get("Items", [])
+            rows = [from_ddb(i) for i in items]
+            hit = next((r for r in rows if r.get("usdSek")), None)
+            self._latest = (Decimal(hit["usdSek"]), hit.get("usdSekDate") or hit["SK"][5:]) if hit else _riksbank_latest()
+        return self._latest
+
+    def get(self, day: str):
+        """(rate, rate_day) or None."""
+        hit = self.by_day.get(day)
+        if hit is None and self._days:
+            before = [d for d in self._days if d <= day]
+            hit = self.by_day[before[-1] if before else self._days[0]]
+        if hit is None:
+            hit = self._newest_stored()
+        if hit:
+            self.used[hit[1]] = hit[0]
+        return hit
+
+    def to_sek(self, day: str, usd: Decimal) -> Decimal | None:
+        if not usd:
+            return Decimal(0)
+        hit = self.get(day)
+        return usd * hit[0] if hit else None
+
+    def summary(self) -> dict | None:
+        if not self.used:
+            return None
+        days = sorted(self.used)
+        values = [self.used[d] for d in days]
+        return {"source": FX_SOURCE, "from": days[0], "to": days[-1], "min": min(values), "max": max(values),
+                "latest": values[-1], "latestDate": days[-1], "days": len(days)}
 
 
 def _pct(part, whole) -> Decimal | None:
@@ -179,13 +288,41 @@ def _billing_status(profile: dict, invoices: list[dict] | None = None) -> str:
     return ph
 
 
+def _new_point(day: str) -> dict:
+    return {"day": day, "invoicedSek": Decimal(0), "paidSek": Decimal(0), "costUsd": Decimal(0),
+            "mrrSek": Decimal(0), "bookings": 0, "orders": 0, "requests": 0, "activeTenants": 0}
+
+
+def _months(first: str, last: str) -> list[str]:
+    out, y, m = [], int(first[:4]), int(first[5:7])
+    while f"{y:04d}-{m:02d}" <= last[:7]:
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _recurring(first: str, last: str, month_mrr: dict, mrr_now: Decimal) -> Decimal:
+    """MRR over the range: one month's MRR per calendar month in it. The
+    month in progress counts today's MRR (invoiced in advance on the 1st),
+    an earlier month its last day snapshot."""
+    this_month = datetime.now(timezone.utc).date().isoformat()[:7]
+    total = Decimal(0)
+    for month in _months(first, last):
+        total += mrr_now if month == this_month else month_mrr.get(month, ("", Decimal(0)))[1]
+    return _q(total)
+
+
 def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_id: str | None = None,
-                   plans: dict | None = None) -> dict:
+                   plans: dict | None = None, rates: Rates | None = None) -> dict:
     """One customer's sums over the range. With a location: that location's
-    usage and allocated cost (its LOC rows); revenue stays the customer's."""
+    usage and allocated cost (its LOC rows); revenue stays the customer's.
+    Cost in USD; the margin in SEK at each day's rate."""
     tenant_id = profile["tenantId"]
+    rates = rates if rates is not None else Rates([])
     sums = {k: Decimal(0) for k in SUM_FIELDS}
-    split = {"baseline": Decimal(0), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}
+    split = {k: Decimal(0) for k in BUCKETS}
+    cost_usd, cost_sek = Decimal(0), Decimal(0)
+    month_mrr: dict = {}          # yyyy-mm -> (day, mrr) of the month's last day row
     active_days = 0
     revenue_rows = {r["SK"][4:]: r for r in _days(tenant_id, first, last)} if location_id else {}
     for row in _days(tenant_id, first, last, location_id):
@@ -199,17 +336,22 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
                    "active": tenant_row.get("active"), "marketingEmails": 0}
         for k in SUM_FIELDS:
             sums[k] += Decimal(row.get(k) or 0)
-        for k in split:
-            split[k] += Decimal((row.get("costSplitSek") or {}).get(k) or 0)
+        day_usd = _cost_usd(row)
+        cost_usd += day_usd
+        if cost_sek is not None:
+            day_sek = rates.to_sek(day, day_usd)
+            cost_sek = None if day_sek is None else cost_sek + day_sek
+        for k, v in (_split_usd(row) if not location_id else {}).items():
+            split[k] += v
         if row.get("active"):
             active_days += 1
-        point = series.setdefault(day, {"day": day, "invoicedSek": Decimal(0), "paidSek": Decimal(0),
-                                        "costSek": Decimal(0), "mrrSek": Decimal(0), "bookings": 0, "orders": 0,
-                                        "requests": 0, "activeTenants": 0})
+        point = series.setdefault(day, _new_point(day))
         point["invoicedSek"] += Decimal(row.get("invoicedSek") or 0) - Decimal(row.get("creditedSek") or 0)
         point["paidSek"] += Decimal(row.get("paidSek") or 0) - Decimal(row.get("refundedSek") or 0)
-        point["costSek"] += Decimal(row.get("costSek") or 0)
+        point["costUsd"] += day_usd
         point["mrrSek"] += Decimal(row.get("mrrSek") or 0)
+        if day >= month_mrr.get(day[:7], ("", 0))[0]:
+            month_mrr[day[:7]] = (day, Decimal(row.get("mrrSek") or 0))
         point["bookings"] += int(row.get("bookings") or 0)
         point["orders"] += int(row.get("orders") or 0)
         point["requests"] += int(row.get("requests") or 0)
@@ -219,10 +361,11 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
     invoices = _invoices(tenant_id)
     from .billing import due_iso, is_overdue
     overdue_since = min((due_iso(i) for i in invoices if is_overdue(i) and due_iso(i)), default=None)
-    sms_cost = _q(split["sms"])
     revenue = _q(sums["invoicedSek"] - sums["creditedSek"])
-    cost = _q(sums["costSek"])
-    margin = _q(revenue - cost)
+    cost = _usd(cost_usd)
+    mrr_now = _mrr(profile, plans)
+    recurring = _recurring(first, last, month_mrr, mrr_now)
+    margin = None if cost_sek is None else _q(recurring - cost_sek)
     return {
         "tenantId": tenant_id, "name": profile.get("name"), "slug": profile.get("slug"),
         "orgNumber": profile.get("orgNumber"), "legalName": profile.get("legalName"),
@@ -230,19 +373,19 @@ def _tenant_totals(profile: dict, first: str, last: str, series: dict, location_
         "billingStatus": _billing_status(profile, invoices),
         "pastDueSince": ((profile.get("billing") or {}).get("pastDueSince") if isinstance(profile.get("billing"), dict) else None)
         or overdue_since,
-        "mrrSek": _mrr(profile, plans), "revenueSek": revenue, "collectedSek": _q(sums["paidSek"] - sums["refundedSek"]),
+        "mrrSek": mrr_now, "recurringSek": recurring, "revenueSek": revenue, "collectedSek": _q(sums["paidSek"] - sums["refundedSek"]),
         "creditedSek": _q(sums["creditedSek"]), "refundedSek": _q(sums["refundedSek"]), "outstandingSek": _outstanding(invoices),
-        "costSek": cost, "costSplitSek": {k: _q(val) for k, val in split.items()},
-        "marginSek": margin, "marginPct": _pct(margin, revenue),
+        "costUsd": cost, "costSplitUsd": {k: _usd(val) for k, val in split.items()},
+        "marginSek": margin, "marginPct": _pct(margin, recurring) if margin is not None else None,
         "bookings": int(sums["bookings"]), "orders": int(sums["orders"]), "requests": int(sums["requests"]),
         "emails": int(sums["emails"]), "sms": int(sums["sms"]), "marketingEmails": int(sums["marketingEmails"]),
-        "smsParts": int(sums["smsParts"]), "smsCostSek": sms_cost,
+        "smsParts": int(sums["smsParts"]), "smsCostUsd": _usd(split["sms"]),
         "free": profile.get("planId") == "free",
         "freeUntil": (profile.get("billing") or {}).get("freeUntil") if profile.get("planId") == "free"
         and isinstance(profile.get("billing"), dict) else None,
         "smsByType": {"booking": int(sums["smsBooking"]), "reminder": int(sums["smsReminder"]),
                       "order": int(sums["smsOrder"]), "catering": int(sums["smsCatering"])},
-        "costPerBookingSek": _ratio(cost, sums["bookings"]), "costPerOrderSek": _ratio(cost, sums["orders"]),
+        "costPerBookingUsd": _ratio(cost_usd, sums["bookings"], USD4), "costPerOrderUsd": _ratio(cost_usd, sums["orders"], USD4),
         "activeDays": active_days, "invoiceCount": len(invoices),
         "createdAt": profile.get("createdAt"), "offboardedAt": profile.get("offboardedAt"),
     }
@@ -262,35 +405,48 @@ def overview(req) -> tuple[int, dict]:
                or (not only and (include_inactive or p.get("status") in ACTIVE_DEFAULT))]
     series: dict = {}
     plans = _plans()
-    tenants = [_tenant_totals(p, first, last, series, location_id, plans) for p in counted]
-    tenants.sort(key=lambda t: (t["marginSek"], t["name"] or ""), reverse=True)
+    platform_rows = _platform_days(first, last)
+    rates = Rates(platform_rows)
+    tenants = [_tenant_totals(p, first, last, series, location_id, plans, rates) for p in counted]
+    tenants.sort(key=lambda t: (t["marginSek"] if t["marginSek"] is not None else Decimal("-Infinity"),
+                                t["name"] or ""), reverse=True)
 
     revenue = _q(sum((t["revenueSek"] for t in tenants), Decimal(0)))
     # Collected is net of refunds (paid back to the card); shown on its own too
     collected = _q(sum((t["collectedSek"] for t in tenants), Decimal(0)))
     refunded = _q(sum((t["refundedSek"] for t in tenants), Decimal(0)))
     outstanding = _q(sum((t["outstandingSek"] for t in tenants), Decimal(0)))
-    allocated = _q(sum((t["costSek"] for t in tenants), Decimal(0)))
+    allocated = _usd(sum((t["costUsd"] for t in tenants), Decimal(0)))
     cost, cost_split, cost_scope = allocated, None, "allocated"
-    platform_rows = [] if only else _platform_days(first, last)
-    if platform_rows:   # none before the rollup's first run: fall back to the allocated sum
-        bill = {"baseline": Decimal(0), "requests": Decimal(0), "email": Decimal(0), "sms": Decimal(0)}
-        total = Decimal(0)
+    cost_sek = None if any(t["marginSek"] is None for t in tenants) else \
+        sum((t["recurringSek"] - t["marginSek"] for t in tenants), Decimal(0))
+    if platform_rows and not only:   # none before the rollup's first run: fall back to the allocated sum
+        bill = {k: Decimal(0) for k in BUCKETS}
+        total, cost_sek = Decimal(0), Decimal(0)
         for row in platform_rows:
             day = row["SK"][4:]
-            day_cost = Decimal(row.get("costSek") or 0)
+            day_cost = _cost_usd(row)
             total += day_cost
-            for k in bill:
-                bill[k] += Decimal((row.get("costSplitSek") or {}).get(k) or 0)
-            point = series.setdefault(day, {"day": day, "invoicedSek": Decimal(0), "paidSek": Decimal(0),
-                                            "costSek": Decimal(0), "mrrSek": Decimal(0), "bookings": 0, "orders": 0,
-                                            "requests": 0, "activeTenants": 0})
-            point["allocatedCostSek"] = point["costSek"]
-            point["costSek"] = day_cost
-        cost, cost_split, cost_scope = _q(total), {k: _q(v) for k, v in bill.items()}, "platform"
+            if cost_sek is not None:
+                day_sek = rates.to_sek(day, day_cost)
+                cost_sek = None if day_sek is None else cost_sek + day_sek
+            for k, v in _split_usd(row).items():
+                bill[k] += v
+            point = series.setdefault(day, _new_point(day))
+            point["allocatedCostUsd"] = point["costUsd"]
+            point["costUsd"] = day_cost
+        cost, cost_split, cost_scope = _usd(total), {k: _usd(v) for k, v in bill.items()}, "platform"
+    for point in series.values():
+        point["costUsd"] = _usd(point["costUsd"])
+        if "allocatedCostUsd" in point:
+            point["allocatedCostUsd"] = _usd(point["allocatedCostUsd"])
     bookings = sum(t["bookings"] for t in tenants)
     orders = sum(t["orders"] for t in tenants)
-    margin = _q(revenue - cost)
+    recurring = _q(sum((t["recurringSek"] for t in tenants), Decimal(0)))
+    cost_as_of = _cost_as_of()
+    # AWS cost is loaded once Cost Explorer has a day in (or after) the range's start.
+    cost_loaded = bool(cost_as_of) and cost_as_of >= first
+    margin = None if cost_sek is None or not cost_loaded else _q(recurring - cost_sek)
     mrr = _q(sum((t["mrrSek"] for t in tenants), Decimal(0)))
     paying = sum(1 for t in tenants if t["mrrSek"] > 0)
     active_now = sum(1 for t in tenants if t["status"] == "active")
@@ -320,28 +476,32 @@ def overview(req) -> tuple[int, dict]:
         "kpis": {
             "mrrSek": mrr, "revenueSek": revenue, "collectedSek": collected, "refundedSek": refunded,
             "outstandingSek": outstanding,
-            "costSek": cost, "marginSek": margin, "marginPct": _pct(margin, revenue),
-            "costScope": cost_scope, "allocatedCostSek": allocated,
-            "unallocatedSek": max(_q(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
-            "costSplitSek": cost_split,
+            "costUsd": cost if cost_loaded else None, "costLoaded": cost_loaded, "recurringSek": recurring,
+            "marginSek": margin, "marginPct": _pct(margin, recurring) if margin is not None else None,
+            "costAtRateSek": _q(cost_sek) if cost_sek is not None and cost_loaded else None,
+            "costScope": cost_scope, "allocatedCostUsd": allocated,
+            "unallocatedUsd": max(_usd(cost - allocated), Decimal(0)) if cost_scope == "platform" else Decimal(0),
+            "costSplitUsd": cost_split,
             "customers": len(tenants), "activeCustomers": active_now, "payingCustomers": paying,
             "freeCustomers": sum(1 for t in tenants if t["free"] and t["status"] == "active"),
             "newCustomers": new_customers, "churnedCustomers": churned,
             "churnPct": _pct(churned, customers_at_start) if customers_at_start else None,
             "arpuSek": _ratio(mrr, paying), "bookings": bookings, "orders": orders,
-            "costPerBookingSek": _ratio(cost, bookings), "costPerOrderSek": _ratio(cost, orders),
+            "costPerBookingUsd": _ratio(cost, bookings, USD4), "costPerOrderUsd": _ratio(cost, orders, USD4),
             "requests": sum(t["requests"] for t in tenants), "emails": sum(t["emails"] for t in tenants),
             "sms": sum(t["sms"] for t in tenants),
             # SMS are included in the monthly price: the parts sent and their share of the AWS bill (our cost)
             "smsParts": sum(t["smsParts"] for t in tenants),
-            "smsCostSek": _q(cost_split["sms"]) if cost_split else _q(sum((t["smsCostSek"] for t in tenants), Decimal(0))),
+            "smsCostUsd": cost_split["sms"] if cost_split else _usd(sum((t["smsCostUsd"] for t in tenants), Decimal(0))),
         },
+        # The USD/SEK rates the margin used (cost itself stays USD).
+        "fx": rates.summary(),
         "series": [series[d] for d in sorted(series)],
         "tenants": tenants,
         "attention": attention,
         "job": job,
         "asOf": (job or {}).get("finishedAt"),
-        "costAsOf": _cost_as_of(),
+        "costAsOf": cost_as_of,
     }
 
 
@@ -350,12 +510,17 @@ def tenant_detail(req) -> tuple[int, dict]:
     first, last = _range(req.query or {})
     profile = get_profile(tenant_id)
     series: dict = {}
-    totals = _tenant_totals(profile, first, last, series)
+    rates = Rates(_platform_days(first, last))
+    totals = _tenant_totals(profile, first, last, series, rates=rates)
+    for point in series.values():
+        point["costUsd"] = _usd(point["costUsd"])
     days = [{"day": r["SK"][4:], **{k: r.get(k) for k in SUM_FIELDS}, "mrrSek": r.get("mrrSek"),
-             "costSplitSek": r.get("costSplitSek"), "active": r.get("active")}
+             "costUsd": _usd(_cost_usd(r)), "costSplitUsd": {k: _usd(v) for k, v in _split_usd(r).items()},
+             "active": r.get("active")}
             for r in sorted(_days(tenant_id, first, last), key=lambda r: r["SK"])]
     from .billing import list_invoices           # billing imports tenants, not this module
-    return 200, {"period": {"from": first, "to": last}, "tenant": totals, "series": [series[d] for d in sorted(series)],
+    return 200, {"period": {"from": first, "to": last}, "tenant": totals, "fx": rates.summary(),
+                 "series": [series[d] for d in sorted(series)],
                  "days": days, "invoices": list_invoices(tenant_id), "locations": _locations(tenant_id)}
 
 
@@ -424,7 +589,7 @@ def invoices(req) -> tuple[int, dict]:
 
 def rebuild(req) -> tuple[int, dict]:
     """Recomputes a date range (finance-rollup, asynchronously): after a
-    changed exchange rate or allocation, or when a night was missed.
+    changed allocation, or when a night was missed.
     Requests older than the Lambda logs' retention get no request counts."""
     first, last = _range(req.body or {})
     yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()

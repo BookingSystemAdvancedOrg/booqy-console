@@ -78,6 +78,14 @@ if (values.arch) platforms[values.arch] = true
 
 /** @type {import('electron-builder').Configuration} */
 const builderConfig = {
+  // macOS: Icon Composer-ikonen (build/mac/<env>/Assets.car, se mac-icon.mjs)
+  // in i appen före signeringen, så att den ljusa ikonen inte blir mörk i
+  // macOS ikonstil "Mörk" och prod ser ut som dev fast utan DEV.
+  afterPack: async (context) => {
+    if (context.electronPlatformName !== 'darwin') return
+    const app = `${context.appOutDir}/${context.packager.appInfo.productFilename}.app`
+    copyFileSync(new URL(`./build/mac/${env}/Assets.car`, import.meta.url), `${app}/Contents/Resources/Assets.car`)
+  },
   appId,
   productName,
   copyright: 'Booqy',
@@ -120,6 +128,10 @@ const builderConfig = {
     entitlementsInherit: 'build/entitlements.mac.plist',
     notarize: canNotarize,
     extendInfo: {
+      // Ikonen i Assets.car (mac-icon.mjs, kopieras in i afterPack ovan):
+      // macOS 26+ visar den med sina egna färger i alla ikonstilar.
+      // icon.icns ovan finns kvar för äldre macOS.
+      CFBundleIconName: 'AppIcon',
       NSCameraUsageDescription: 'Kameran används för att skanna biljetter och QR-koder.',
     },
   },

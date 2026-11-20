@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FocusEvent, KeyboardEvent, RefObject } from "react";
-import { Icon } from "./ds";
+import { BackButton, Icon } from "./ds";
 import { BRANCH_LABEL, leafPath, searchLeaves, treeOf } from "../settingsTree";
 import type { Apple, BranchId, Leaf, Tree, TreeId, TreeLink } from "../settingsTree";
 import "./settingsTree.css";
@@ -191,7 +191,7 @@ export function SettingsTreePage({ tree, apples, onField, onBranch, onLink }: {
   return (
     <div className="stree-view">
       <div className="stree-head">
-        <button type="button" className="stree-back" onClick={onField}><Chevron dir="left" /> Settings</button>
+        <BackButton className="stree-back" onClick={onField}>Settings</BackButton>
         <nav className="stree-crumbs" aria-label="You are here">
           <ol>
             <li><button type="button" onClick={onField}>Settings</button></li>
@@ -218,7 +218,7 @@ export function BranchHead({ branch, onField, onTree }: { branch: BranchId; onFi
   const tree = treeOf(branch);
   return (
     <div className="stree-head">
-      <button type="button" className="stree-back" onClick={() => onTree(tree.id)}><Chevron dir="left" /> {tree.label}</button>
+      <BackButton className="stree-back" onClick={() => onTree(tree.id)}>{tree.label}</BackButton>
       <nav className="stree-crumbs" aria-label="You are here">
         <ol>
           <li><button type="button" onClick={onField}>Settings</button></li>

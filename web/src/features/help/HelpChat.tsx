@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useClosing } from "../../components/motion";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../../components/ds";
@@ -77,7 +78,7 @@ export function HelpChat() {
     returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOpen(true);
   }, []);
-  const close = useCallback(() => {
+  const shut = useCallback(() => {
     setOpen(false);
     // Back where the operator was; the launcher is drawn again once the panel closes.
     requestAnimationFrame(() => {
@@ -85,6 +86,8 @@ export function HelpChat() {
       back?.focus?.();
     });
   }, []);
+  // Leaves in 130 ms with ease-in, faster than it came (ux-motion #18).
+  const [closing, close] = useClosing(shut);
 
   /** Switched off on the server: gone from this tab, focus back where the operator was. */
   const switchOff = useCallback(() => {
@@ -210,6 +213,7 @@ export function HelpChat() {
         <section
           id={panelId}
           className="help-panel"
+          data-closing={closing || undefined}
           role="dialog"
           aria-modal="false"
           aria-labelledby={titleId}

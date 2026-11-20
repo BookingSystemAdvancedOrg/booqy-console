@@ -1,0 +1,36 @@
+/* No edges (owner 2026-11-18): every edge in the console is transparent, the
+   line around a box, a divider, a table rule, a field outline, everywhere.
+   Imported last in main.tsx so it outranks every other sheet; edgesGone.test.ts
+   guards it.
+
+   - Borders keep their width (nothing moves), only the colour goes.
+   - The edge tokens in styles.css and ds.css are transparent too, and the
+     1 px rings and lit lines in box-shadows are transparent at the source.
+   - Soft drop shadows stay: they are depth, not edges.
+   - Not touched: the keyboard focus ring (outline and the 3 px focus
+     box-shadows) for accessibility, and chart lines (data).
+   - Exempt, because they are drawn with a border and would vanish: the press
+     ripple (.press-ripple, .bq-ripple), the tick in a checkbox and the row
+     chevron on phone lists (tr.row-link::after). Controls that only had an
+     edge got a soft fill; checkboxes and radios are filled boxes and dots. */
+
+:not(.press-ripple, .bq-ripple),
+:not(.press-ripple, .bq-ripple)::before,
+:not(.press-ripple, .bq-ripple)::after {
+  border-color: transparent !important;
+  column-rule-color: transparent !important;
+}
+hr { border-color: transparent !important; background: transparent !important; }
+
+/* the shared brand sheet's edge tokens (@booqy/brand, vendored, not edited) */
+:root, :root[data-theme], :root:not([data-theme]) {
+  --bq-line: transparent;
+  --bq-line-strong: transparent;
+  --bq-shadow-rim: 0 0 0 0 transparent;
+}
+
+/* exempt: the tick in a checkbox is two borders of a turned box (styles.css) */
+input[type="checkbox"]::after { border-color: var(--paper) !important; }
+
+/* exempt: the chevron on a tappable phone row is two borders of a turned square */
+.table.table > tbody > tr.row-link::after { border-color: var(--print-2) !important; }

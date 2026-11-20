@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bucketKey, bucketSeries, canCredit, customerInvoices, daysBetween, fmtDay, fmtPct, periodLabel, shortDay, fmtSek, grainFor, invoiceStatus, isOverdue, matchesCustomer, parseSek, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
+  bucketKey, bucketSeries, canCredit, customerInvoices, daysBetween, fmtDay, fmtPct, periodLabel, shortDay, fmtSek, fmtUsd, fmtRate, grainFor, invoiceStatus, isOverdue, matchesCustomer, parseSek, periodBefore, periodChoices, previousSpanRange, sortRows, spanRange, topAndBottom,
 } from "./finance";
 import type { FinancePoint, FinanceTenantRow } from "./types";
 
@@ -43,6 +43,14 @@ describe("formatting", () => {
     expect(plain(fmtSek(12345))).toBe("12 345 kr");
     expect(plain(fmtSek(4.349, { decimals: true }))).toBe("4,35 kr");
     expect(fmtSek(null)).toBe("-");
+    // costs: USD as AWS Billing shows it (en-US); four decimals under a dollar only when asked
+    expect(fmtUsd(1234.5)).toBe("$1,234.50");
+    expect(fmtUsd(0.4348)).toBe("$0.43");
+    expect(fmtUsd(0.4348, { precise: true })).toBe("$0.4348");
+    expect(fmtUsd(0, { precise: true })).toBe("$0.00");
+    expect(fmtUsd(-2)).toBe("-$2.00");
+    expect(fmtUsd(null)).toBe("-");
+    expect(fmtRate(10.11011)).toBe("10.1101 SEK per USD");
     expect(plain(fmtSek(0))).toBe("0 kr");
     expect(plain(fmtPct(96.5))).toBe("96,5 %");
   });
@@ -68,9 +76,9 @@ describe("series", () => {
   });
   it("sums revenue and cost, keeps the last MRR snapshot", () => {
     const series: FinancePoint[] = [
-      { day: "2026-10-19", invoicedSek: 100, paidSek: 50, costSek: 10, mrrSek: 900, bookings: 1, orders: 0, requests: 5, activeTenants: 1 },
-      { day: "2026-10-20", invoicedSek: 200, paidSek: 0, costSek: 15, mrrSek: 990, bookings: 2, orders: 1, requests: 5, activeTenants: 1 },
-      { day: "2026-10-26", invoicedSek: 1, paidSek: 0, costSek: 1, mrrSek: 1000, bookings: 0, orders: 0, requests: 0, activeTenants: 1 },
+      { day: "2026-10-19", invoicedSek: 100, paidSek: 50, costUsd: 10, mrrSek: 900, bookings: 1, orders: 0, requests: 5, activeTenants: 1 },
+      { day: "2026-10-20", invoicedSek: 200, paidSek: 0, costUsd: 15, mrrSek: 990, bookings: 2, orders: 1, requests: 5, activeTenants: 1 },
+      { day: "2026-10-26", invoicedSek: 1, paidSek: 0, costUsd: 1, mrrSek: 1000, bookings: 0, orders: 0, requests: 0, activeTenants: 1 },
     ];
     const weeks = bucketSeries(series, "week");
     expect(weeks.map((b) => b.key)).toEqual(["2026-10-19", "2026-10-26"]);
@@ -81,10 +89,10 @@ describe("series", () => {
 function row(name: string, marginSek: number, extra: Partial<FinanceTenantRow> = {}): FinanceTenantRow {
   return {
     tenantId: name, name, slug: name.toLowerCase(), status: "active", billingStatus: "active", mrrSek: 0, revenueSek: 0,
-    collectedSek: 0, creditedSek: 0, outstandingSek: 0, costSek: 0, costSplitSek: { baseline: 0, requests: 0, email: 0, sms: 0 },
+    collectedSek: 0, creditedSek: 0, outstandingSek: 0, costUsd: 0, costSplitUsd: { baseline: 0, requests: 0, email: 0, sms: 0 },
     marginSek, marginPct: null, bookings: 0, orders: 0, requests: 0, emails: 0, sms: 0, marketingEmails: 0,
-    smsParts: 0, smsCostSek: 0,
-    costPerBookingSek: null, costPerOrderSek: null, activeDays: 0, invoiceCount: 0, ...extra,
+    smsParts: 0, smsCostUsd: 0,
+    costPerBookingUsd: null, costPerOrderUsd: null, activeDays: 0, invoiceCount: 0, ...extra,
   };
 }
 
@@ -147,20 +155,25 @@ describe("CSV export", () => {
     const { customersCsv, dailyCsv, csvName } = await import("./finance");
     const row = {
       tenantId: "t1", name: "Roma; Södermalm", slug: "roma", legalName: 'Roma "AB"', orgNumber: "556000-0001", status: "active",
-      billingStatus: "active", mrrSek: 990, revenueSek: 1234.5, collectedSek: 1000, creditedSek: 0, outstandingSek: 234.5, costSek: 80.25,
-      costSplitSek: { baseline: 50, requests: 10.25, email: 0, sms: 20 }, marginSek: 1154.25, marginPct: 93.51, bookings: 12, orders: 3,
-      requests: 900, emails: 15, sms: 10, marketingEmails: 0, smsParts: 12, smsCostSek: 5,
-      costPerBookingSek: 6.69, costPerOrderSek: null, activeDays: 30, invoiceCount: 1,
+      billingStatus: "active", mrrSek: 990, revenueSek: 1234.5, collectedSek: 1000, creditedSek: 0, outstandingSek: 234.5, costUsd: 8.025,
+      costSplitUsd: { baseline: 5, requests: 1.025, email: 0, sms: 2 }, marginSek: 1154.25, marginPct: 93.51, bookings: 12, orders: 3,
+      requests: 900, emails: 15, sms: 10, marketingEmails: 0, smsParts: 12, smsCostUsd: 0.0123,
+      costPerBookingUsd: 0.6688, costPerOrderUsd: null, activeDays: 30, invoiceCount: 1,
     } as unknown as FinanceTenantRow;
     const csv = customersCsv([row]);
     expect(csv.startsWith("﻿Customer;Legal name;")).toBe(true);
     const line = csv.split("\r\n")[1];
     expect(line).toContain('"Roma; Södermalm";"Roma ""AB""";556000-0001;active;active;990;1234,5;');
     expect(line).toContain(";93,5;12;3;");
+    // cost in USD with four decimals (a month adds up to the AWS bill), revenue and margin in SEK
+    expect(csv.split("\r\n")[0]).toContain(";Outstanding SEK;Cost USD;Cost baseline USD;");
+    expect(line).toContain(";234,5;8,025;5;1,025;0;2;1154,25;");
+    expect(line).toContain(";0,0123;");
     expect(csv.endsWith("\r\n")).toBe(true);
-    const day = { day: "2026-10-01", invoicedSek: 0, paidSek: 0, costSek: 3.456, mrrSek: 990, bookings: 1, orders: 0, requests: 5,
+    const day = { day: "2026-10-01", invoicedSek: 0, paidSek: 0, costUsd: 3.45678, mrrSek: 990, bookings: 1, orders: 0, requests: 5,
                   activeTenants: 1 } as FinancePoint;
-    expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,46;990;1;0;5;1;");
+    expect(dailyCsv([day]).split("\r\n")[0]).toContain(";Cost USD;");
+    expect(dailyCsv([day]).split("\r\n")[1]).toBe("2026-10-01;0;0;3,4568;990;1;0;5;1;");
     expect(csvName("daily", { from: "2026-09-25", to: "2026-10-24" })).toBe("booqy-finance-daily-2026-09-25-2026-10-24.csv");
   });
 });

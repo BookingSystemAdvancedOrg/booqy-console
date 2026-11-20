@@ -1,7 +1,7 @@
 /** A long form as steps on one page (New customer): a sticky progress bar,
  * step cards that fold into a summary when done, and small rewards on the
- * way (the tick draws itself, the bar glows, a chime, a burst of sparks; a
- * confetti shower at the end). With "reduce motion" nothing moves: states
+ * way (the tick draws itself and pops with a chime; one peak at the end:
+ * the bar shines once, confetti and the fanfare, components/Celebrate.ts). With "reduce motion" nothing moves: states
  * change at once, the chime stays (as the click does). */
 import { CSSProperties, KeyboardEvent, ReactNode, useId, useLayoutEffect } from "react";
 import { CountUp, prefersReducedMotion } from "./motion";
@@ -184,8 +184,8 @@ export function burst(origin: Element | null, count = 14): HTMLElement | null {
   return layer;
 }
 
-/** The big one: a shower of brand-coloured confetti over the page (canvas, about 2 s). */
-export function confetti(pieces = 150): HTMLCanvasElement | null {
+/** The big one: a shower of brand-coloured confetti over the page (canvas, `life` ms). */
+export function confetti(pieces = 150, life = 2300): HTMLCanvasElement | null {
   if (prefersReducedMotion() || typeof document === "undefined" || typeof requestAnimationFrame !== "function") return null;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext?.("2d");
@@ -211,11 +211,11 @@ export function confetti(pieces = 150): HTMLCanvasElement | null {
     };
   });
   const start = performance.now();
-  const life = 2300;
   const frame = (now: number) => {
     const t = now - start;
     ctx.clearRect(0, 0, w, h);
-    ctx.globalAlpha = t > life - 600 ? Math.max(0, (life - t) / 600) : 1;
+    const fade = Math.min(600, life / 3);
+    ctx.globalAlpha = t > life - fade ? Math.max(0, (life - t) / fade) : 1;
     for (const p of parts) {
       p.vy += 0.32;
       p.vx *= 0.985;

@@ -63,6 +63,20 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   { n: 51, text: "Ordering pickup only" },
   { n: 52, text: "Printer status" },
   { n: 53, text: "Credit dialog wording" },
+  { n: 54, text: "Customer owners" },
+  { n: 55, text: "Mac icon in dark mode" },
+  { n: 56, text: "Customer staff accounts" },
+  { n: 57, text: "Back buttons" },
+  { n: 58, text: "Save bar on forms" },
+  { n: 59, text: "Finance costs in USD" },
+  { n: 60, text: "Finance top row" },
+  { n: 61, text: "Customer dev twin" },
+  { n: 62, text: "Twin and test badges" },
+  { n: 63, text: "Notifications" },
+  { n: 64, text: "Customers setup column" },
+  { n: 65, text: "Customer setup card" },
+  { n: 66, text: "No edges" },
+  { n: 67, text: "Faster page motion" },
 ];
 
 declare const __WHATS_NEW_N__: number | undefined;

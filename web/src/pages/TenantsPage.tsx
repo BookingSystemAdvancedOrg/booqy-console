@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DevKindBadge } from "../components/DevTwinCard";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { ErrorNotice, STATUS_TEXT, Status, fmtDate, useLoad } from "../components/ui";
@@ -13,6 +14,7 @@ import { FreeBadge } from "../components/FreeFields";
 import { FREE_PLAN_ID } from "../free";
 import { planName } from "../components/planName";
 import { PrinterCell, printerAlert } from "../components/PrintersCard";
+import { SetupCell } from "../components/SetupCard";
 
 const FILTERS = ["all", "active", "provisioning", "provisioning_failed", "suspended", "offboarded", "purged"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -110,7 +112,7 @@ export default function TenantsPage() {
           <table className="table table--slim">
             <thead>
               <tr>
-                <th>Customer</th><th>Status</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:printers">Printers</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
+                <th>Customer</th><th>Status</th><th data-help="customers:setup">Setup</th><th>Plan</th><th>Invoices</th><th>Locations</th><th data-help="customers:printers">Printers</th><th data-help="customers:payments">Payments</th><th>Site</th><th>Created</th>
               </tr>
             </thead>
             <tbody>
@@ -118,9 +120,11 @@ export default function TenantsPage() {
                 <tr key={t.tenantId} className="row-link" onClick={(e) => openRow(e, `/tenants/${t.tenantId}`)}>
                   <td className="cell-title">
                     <Link to={`/tenants/${t.tenantId}`} className="strong row-link__name">{t.name}</Link>
+                    {t.devKind && <> <DevKindBadge kind={t.devKind} /></>}
                     <div className="muted small">{t.ownerEmail ?? t.slug}</div>
                   </td>
                   <td className="cell-badge"><Status value={t.status} /></td>
+                  <td className="cell-fact" data-label="Setup"><SetupCell setup={t.setup} tenantId={t.tenantId} /></td>
                   <td className="cell-fact" data-label="Plan">{t.planId === FREE_PLAN_ID ? <FreeBadge until={t.freeUntil ?? null} /> : planName(t.planId, plans.data)}</td>
                   <td className="cell-fact" data-label="Invoices"><InvoiceCell tenantId={t.tenantId} state={invoiceState(t.tenantId)} /></td>
                   <td className="cell-fact" data-label="Locations">{t.locationCount} / {t.maxLocations ?? "-"}</td>
@@ -133,7 +137,7 @@ export default function TenantsPage() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={9} className="empty">No customers match. <Link to="/tenants/new">Add one</Link></td></tr>
+                <tr><td colSpan={10} className="empty">No customers match. <Link to="/tenants/new">Add one</Link></td></tr>
               )}
             </tbody>
           </table>
