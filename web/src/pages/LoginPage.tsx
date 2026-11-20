@@ -10,6 +10,9 @@ import {
   confirmResetPassword, confirmSignIn, resetPassword, signIn, signOut, type SignInOutput,
 } from "aws-amplify/auth";
 import { BackButton } from "../components/ds";
+import { celebrate } from "../components/Celebrate";
+import { prefersReducedMotion } from "../components/motion";
+import { DrawnTick } from "../components/StepFlow";
 
 // Production is the default and is never labelled; only dev says so.
 const IS_DEV = (import.meta.env.VITE_ENVIRONMENT ?? "dev") === "dev";
@@ -37,7 +40,11 @@ type Step =
   | { kind: "forgot" }
   | { kind: "forgotSent" }
   | { kind: "forgotConfirm" }
-  | { kind: "linkReset"; code: string };
+  | { kind: "linkReset"; code: string }
+  | { kind: "welcome" };
+
+/** How long the one-time welcome (a new operator's first sign-in) holds before the console opens. */
+const WELCOME_MS = 900;
 
 /** Password reset steps word code errors differently from the TOTP steps. */
 function message(e: unknown, reset = false): string {
@@ -125,6 +132,13 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     switch (s) {
       case "DONE":
         if (window.location.pathname === RESET_PATH) navigate("/", { replace: true });
+        // A new operator's first sign-in (they just set up two-step sign-in): one
+        // short welcome moment; every later sign-in opens the console at once.
+        if (step.kind === "totpSetup" && !prefersReducedMotion()) {
+          setStep({ kind: "welcome" });
+          window.setTimeout(onSignedIn, WELCOME_MS);
+          return;
+        }
         onSignedIn();
         return;
       case "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED":
@@ -228,6 +242,8 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
                 <Input label="6-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" autoFocus />
               </Form>
             )}
+
+            {step.kind === "welcome" && <Welcome />}
 
             {step.kind === "forgot" && (
               <Form title="Reset your password" lead="We'll email you a link to choose a new password."
@@ -374,4 +390,16 @@ function Qr({ uri }: { uri: string }) {
     QRCode.toDataURL(uri, { margin: 1, width: 200, color: { dark: "#1d2420", light: "#fdfaf6" } }).then(setSrc);
   }, [uri]);
   return <div className="auth__qr">{src ? <img src={src} alt="QR code for your authenticator app" /> : <Printing inline label="Making the code" />}</div>;
+}
+
+/** The first sign-in's end: the tick draws, the card pops, a chime (ux-motion #19). */
+function Welcome() {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => { if (el) celebrate(el, "step"); }, [el]);
+  return (
+    <div ref={setEl} className="auth__form auth__welcome" role="status">
+      <DrawnTick className="auth__welcome-tick" />
+      <h1>You're in</h1>
+    </div>
+  );
 }

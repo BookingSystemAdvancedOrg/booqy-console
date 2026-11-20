@@ -2,13 +2,91 @@
  * by how they are doing (src/trend.ts), the change against the previous
  * period, and a damped spring for the rings. With "reduce motion" on,
  * everything shows its final value at once. */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Trend, TrendTone } from "../trend";
 import { InfoTip } from "./InfoTip";
 
 export function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** How long an overlay takes to leave (ux-motion #18: about half its entry). */
+export const EXIT_MS = 130;
+
+/** The exit time to wait for: none with "reduce motion". */
+export function exitMs(ms: number = EXIT_MS): number {
+  return prefersReducedMotion() ? 0 : ms;
+}
+
+/** A capped stagger (ux-motion #3): `step` ms per item, items past `cap` come with the last. */
+export function stagger(i: number, step = 40, cap = 6): number {
+  return Math.min(Math.max(0, Math.floor(i)), cap) * step;
+}
+
+/** Where `trigger`'s centre sits inside `box`, as a CSS transform-origin in px,
+ * so an overlay grows from what opened it (ux-motion #11). Null when either is
+ * missing or the trigger is not on screen (a keyboard shortcut, a closed menu). */
+export function originIn(trigger: Element | null | undefined, box: Element | null | undefined): string | null {
+  if (!trigger || !box || !trigger.isConnected) return null;
+  const t = trigger.getBoundingClientRect();
+  if (t.width === 0 && t.height === 0) return null;
+  const b = box.getBoundingClientRect();
+  const x = Math.round(t.left + t.width / 2 - b.left);
+  const y = Math.round(t.top + t.height / 2 - b.top);
+  return `${x}px ${y}px`;
+}
+
+// The last control pressed: Safari does not focus a clicked button, so the
+// focused element alone does not say what opened an overlay.
+let lastPress: { el: Element; at: number } | null = null;
+if (typeof document !== "undefined") {
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target instanceof Element ? e.target.closest("button, a, summary, [role='button'], [role='tab']") : null;
+    if (el) lastPress = { el, at: Date.now() };
+  }, true);
+}
+
+/** The element that opened an overlay: a control pressed in the last second,
+ * else the focused one (a keyboard open). Read once, before the overlay takes focus. */
+export function useOpener(): Element | null {
+  const [opener] = useState<Element | null>(() => {
+    if (typeof document === "undefined") return null;
+    if (lastPress && Date.now() - lastPress.at < 1000 && lastPress.el.isConnected) return lastPress.el;
+    const active = document.activeElement;
+    return active instanceof HTMLElement && active !== document.body ? active : null;
+  });
+  return opener;
+}
+
+/** Sets `--origin` on the overlay box to its opener, before the first paint. */
+export function useOriginFrom<T extends HTMLElement>(opener: Element | null | undefined) {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const origin = originIn(opener, ref.current);
+    if (origin) ref.current?.style.setProperty("--origin", origin);
+  }, [opener]);
+  return ref;
+}
+
+/** Fast closing (ux-motion #18): `close()` marks the overlay as closing (put
+ * `data-closing` on it, the CSS eases it out) and calls `onClose` after `ms`,
+ * at once with "reduce motion". A second close while leaving does nothing. */
+export function useClosing(onClose: () => void, ms: number = EXIT_MS): [boolean, () => void] {
+  const [closing, setClosing] = useState(false);
+  const timer = useRef(0);
+  const latest = useRef(onClose);
+  latest.current = onClose;
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const close = useCallback(() => {
+    const wait = exitMs(ms);
+    if (wait === 0) { latest.current(); return; }
+    if (timer.current) return;
+    setClosing(true);
+    // Back to open if the owner keeps it (a confirm said no); gone otherwise.
+    timer.current = window.setTimeout(() => { timer.current = 0; latest.current(); setClosing(false); }, wait);
+  }, [ms]);
+  return [closing, close];
 }
 
 export interface SpringOptions {

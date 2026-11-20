@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { describeError, errorDetails, fieldTexts, plainReason, type ErrorInfo } from "../errors";
 import { CheckMark, useFlash } from "./save";
 import { InfoTip } from "./StepFlow";
+import { useClosing, useOpener, useOriginFrom } from "./motion";
 import { helpSlug } from "../features/help/helpId";
 import { quietly, sameData, useLiveRefresh } from "../live";
 
@@ -227,20 +228,26 @@ export function Card(props: { title: string; info?: ReactNode; actions?: ReactNo
   );
 }
 
-export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+/** A dialog. It grows from the control that opened it (`from`, else the
+ * focused button at open) and eases out in half the time when closed from
+ * inside: Esc, the backdrop or the close button (ux-motion #11, #18). */
+export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; from?: Element | null }) {
+  const opener = useOpener();
+  const panel = useOriginFrom<HTMLDivElement>(props.from ?? opener);
+  const [closing, close] = useClosing(props.onClose);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [props]);
+  }, [close]);
   // Portalled to <body>: the glass panels use backdrop-filter, which would
   // otherwise trap position: fixed and leave the backdrop as a rectangle.
   return createPortal(
-    <div className="modal" role="dialog" aria-modal aria-label={props.title} onMouseDown={props.onClose}>
-      <div className={`modal__panel${props.wide ? " modal__panel--wide" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal" role="dialog" aria-modal aria-label={props.title} onMouseDown={close} data-closing={closing || undefined}>
+      <div ref={panel} className={`modal__panel${props.wide ? " modal__panel--wide" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal__head">
           <h3>{props.title}</h3>
-          <button className="btn btn--ghost" onClick={props.onClose} aria-label="Close">✕</button>
+          <button className="btn btn--ghost" onClick={close} aria-label="Close">✕</button>
         </header>
         {props.children}
       </div>

@@ -381,6 +381,7 @@ describe("NewTenantPage steps", () => {
     const ctx = { scale() {}, clearRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, fillRect() {}, beginPath() {}, arc() {}, fill() {} };
     const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as never);
     try {
+      sessionStorage.clear();   // the finish fires once per customer per session
       mocks.tenant.mockResolvedValue({ tenant: { status: "provisioning" } });
       renderPage();
       await fillAndCreate();

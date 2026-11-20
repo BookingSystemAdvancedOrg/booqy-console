@@ -106,6 +106,17 @@
   --dur-add: 520ms;
   --ease-out: var(--bq-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   --ease-std: var(--bq-ease-std, cubic-bezier(0.2, 0, 0, 1));
+  /* motion scale (ux-motion skill): enter with ease-out, leave with ease-in
+     (faster), move across the screen with ease-in-out; the spring only for
+     rare pops. Press 100 ms, small UI 150, most UI 200, panels 280, exits 130. */
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-press: 100ms;
+  --dur-panel: 280ms;
+  --dur-exit: 130ms;
+  --dur-peak: 600ms;
+  --stagger: 40ms;
 
   --nav-w: 248px;
   --shell-gap: var(--space-3);
@@ -362,7 +373,7 @@
 }
 .cta--add .cta-add-person {
   transition:
-    transform var(--dur-slow) cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform var(--dur-slow) var(--ease-spring),
     opacity var(--dur-base) var(--ease-out);
 }
 @media (hover: hover) {
@@ -488,7 +499,8 @@
   align-items: flex-start;
   padding: min(14vh, 120px) var(--space-4) var(--space-4);
   background: var(--dim);
-  animation: palette-fade var(--dur-base) var(--ease-out);
+  /* opened many times a day: near instant, no flourish, closes at once (ux-motion #20) */
+  animation: palette-fade 100ms var(--ease-out);
 }
 
 .palette {
@@ -502,7 +514,7 @@
   -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
   backdrop-filter: blur(var(--blur-modal)) saturate(1.6);
   overflow: hidden;
-  animation: palette-in var(--dur-slow) var(--ease-out);
+  animation: palette-in 120ms var(--ease-out);
 }
 
 @keyframes palette-fade {
@@ -514,7 +526,7 @@
 @keyframes palette-in {
   from {
     opacity: 0;
-    transform: translateY(-8px) scale(0.98);
+    transform: translateY(-4px);
   }
 }
 
@@ -708,7 +720,7 @@
   border-radius: 50%;
   background: var(--bq-snow);
   box-shadow: 0 2px 6px rgba(26, 18, 14, 0.3);
-  transition: translate var(--dur-base) var(--ease-out);
+  transition: translate 150ms var(--ease-out);
 }
 .switch input:checked { background: var(--success, #2c6a3f); }
 .switch input:checked::after { translate: 16px 0; }
@@ -886,7 +898,10 @@ input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], 
 .row-menu__list {
   display: grid; justify-items: stretch; margin-top: 4px; padding: 4px; min-width: 150px;
   border-radius: var(--r-md); background: var(--glass-surface); box-shadow: var(--liquid-edge);
+  /* from its "…" toggle, quick, closes at once (ux-motion #11, #20) */
+  transform-origin: 100% 0; animation: row-menu-in 120ms var(--ease-out) both;
 }
+@keyframes row-menu-in { from { opacity: 0; transform: scale(0.96); } }
 .row-menu__list .row-action { justify-content: flex-start; width: 100%; }
 /* Four actions (Operators) need about 1180 px of table beside the other
    columns; narrower tables fold them into the menu instead of clipping them. */
@@ -1330,7 +1345,7 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
 .avatar-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--field-ring); }
 .operator-name__fallback { color: var(--print-2); font-weight: 500; }
 :root[data-theme="dark"] .operator-name__fallback { color: var(--on-ox-2); }
-.lightbox-overlay { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 24px; overflow-y: auto; background: rgb(26 18 14 / 0.36); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); animation: lightbox-fade 200ms var(--ease) both; }
+.lightbox-overlay { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 24px; overflow-y: auto; background: rgb(26 18 14 / 0.36); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); animation: lightbox-fade 160ms var(--ease) both; }
 .lightbox {
   position: relative; display: grid; place-items: center; margin: auto; max-inline-size: 100%;
   padding: 40px 32px 28px; border-radius: var(--r-lg);
@@ -1338,8 +1353,12 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
   box-shadow: var(--liquid-edge), var(--liquid-depth);
   -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(1.5);
   backdrop-filter: blur(var(--blur-modal)) saturate(1.5);
-  animation: lightbox-in 240ms var(--ease) both;
+  /* grows from the avatar that opened it (--origin, set by AvatarLightbox) */
+  transform-origin: var(--origin, 50% 50%);
+  animation: lightbox-in 200ms var(--ease) both;
 }
+.lightbox-overlay[data-closing] { animation: none; opacity: 0; transition: opacity 120ms var(--ease-in); pointer-events: none; }
+.lightbox-overlay[data-closing] .lightbox { animation: none; opacity: 0; scale: 0.96; transition: opacity var(--dur-exit) var(--ease-in), scale var(--dur-exit) var(--ease-in); }
 .avatar-lightbox { display: grid; justify-items: center; gap: var(--space-3); margin: 0; min-width: 0; }
 .avatar-lightbox figcaption { display: grid; justify-items: center; gap: 2px; max-inline-size: var(--avatar-xl); text-align: center; }
 .avatar-lightbox__name { font: 700 1.125rem/1.3 var(--sans); overflow-wrap: anywhere; }
@@ -1353,8 +1372,22 @@ html.is-desktop-glass[data-glass-backdrop="image"][data-theme="dark"] body::befo
 }
 .lightbox__close:hover { scale: 1.06; }
 .lightbox__close:focus-visible { outline: none; box-shadow: var(--liquid-edge), 0 0 0 3px var(--field-ring); }
-@keyframes lightbox-in { from { opacity: 0; scale: 0.97; } }
+@keyframes lightbox-in { from { opacity: 0; scale: 0.9; } }
 @keyframes lightbox-fade { from { opacity: 0; } }
 @media (max-width: 600px) { .lightbox-overlay { padding: 12px; } .lightbox { padding: 36px 20px 20px; } }
 @media (prefers-reduced-motion: reduce) { .lightbox, .lightbox-overlay { animation: none; } .lightbox__close { transition: none; } }
 @media (prefers-reduced-transparency: reduce) { .lightbox { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* --- reduced motion: one safety net for everything (ux-motion #20) ------------- */
+/* The per-file blocks swap movement for fades or nothing; this catches the rest:
+   any animation or transition finishes at once and loops stop. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -8,6 +8,8 @@ import { SaveButton, useFlash } from "./save";
 import { SkelCard, SkelPage } from "./Skeleton";
 import { fmtFreeDay } from "../free";
 import { Select } from "./Select";
+import { celebrate } from "./Celebrate";
+import { DrawnTick } from "./StepFlow";
 import { DateInput } from "./DateInput";
 import { CopyButton } from "./CopyButton";
 import { billingPhaseText } from "../billingPhase";
@@ -28,6 +30,11 @@ export default function BillingTab({ tenant, cardParam, onChanged, refreshed = 0
   const [url, setUrl] = useState<string | null>(null);
   const [run, setRun] = useState<InvoicingRun | null>(null);
   const [started, flashStarted] = useFlash();
+  // A billing run that created invoices without errors: a quiet step moment (tick, pop, chime).
+  const runRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (run && run.invoices.length > 0 && run.errors.length === 0) celebrate(runRef.current, "step");
+  }, [run]);
   const [retrying, setRetrying] = useState(false);
   const retry = async () => { setRetrying(true); await reload(); setRetrying(false); };
   const seenRefresh = useRef(refreshed);
@@ -107,10 +114,13 @@ export default function BillingTab({ tenant, cardParam, onChanged, refreshed = 0
           </Notice>
         )}
         {run && (
+          <div ref={runRef}>
           <Notice kind={run.errors.length ? "error" : "ok"}>
+            {run.invoices.length > 0 && run.errors.length === 0 && <><DrawnTick className="run-tick" />{" "}</>}
             {run.invoices.length === 0 ? "Nothing to invoice." : `${run.invoices.length} invoice${run.invoices.length === 1 ? "" : "s"} created, ${fmtSek(run.totalSek, { decimals: true })} ex VAT.`}
             {run.errors.map((e) => <div key={e.tenantId}><Reason text={e.error} fallback="An invoice wasn't created. This is Booqy's fault, try again." /></div>)}
           </Notice>
+          </div>
         )}
         <ErrorNotice error={invoiceNow.error} />
         {b.plan.priceSek == null && <Notice kind="warn">The plan {b.plan.name ?? tenant.planId} has no price yet (price_sek in the infrastructure tfvars).</Notice>}

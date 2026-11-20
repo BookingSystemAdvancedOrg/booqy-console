@@ -255,7 +255,7 @@ a:hover { text-decoration-thickness: 2px; }
 .theme-toggle { position: relative; display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--r-md); background: transparent; color: var(--on-ox-2); cursor: default; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
 .theme-toggle:hover { color: var(--on-ox); background: rgb(var(--bq-snow-rgb) / 7%); }
 .theme-toggle-icon { position: relative; display: inline-grid; width: 20px; height: 20px; }
-.theme-toggle-icon svg { grid-area: 1 / 1; width: 20px; height: 20px; transition: opacity 320ms var(--ease), rotate 360ms var(--ease), scale 360ms var(--ease); }
+.theme-toggle-icon svg { grid-area: 1 / 1; width: 20px; height: 20px; transition: opacity 200ms var(--ease), rotate 200ms var(--ease), scale 200ms var(--ease); }
 /* the icon not in effect is gone: faded and turned away; on a switch the sun fades out one way while the moon turns in from the other */
 .theme-toggle[data-mode="light"] .theme-toggle-moon { opacity: 0; rotate: -90deg; scale: 0.6; }
 .theme-toggle[data-mode="dark"] .theme-toggle-sun { opacity: 0; rotate: 90deg; scale: 0.6; }
@@ -265,15 +265,17 @@ a:hover { text-decoration-thickness: 2px; }
 .page-head .status { transform: rotate(-4deg); }
 .boot { min-height: 100vh; display: grid; place-items: center; background: var(--ox-800); }
 
-/* pages print in: a short drop from the rail, settling on the shared ease */
-.page { animation: page-in 520ms var(--ease) both; }
-.card, .table-wrap { animation: drop 640ms var(--ease) both; }
-.card:nth-child(2), .cols > :nth-child(2) .card { animation-delay: 60ms; }
-.card:nth-child(3) { animation-delay: 120ms; }
-.card:nth-child(n + 4) { animation-delay: 180ms; }
-@keyframes page-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+/* pages print in: a short drop from the rail. Daily screens (ux-motion #8, #20):
+   the page fades in 160 ms, cards drop 8 px in 260 ms, stagger 40 ms capped at
+   the 4th card, so every page is still by about 380 ms. */
+.page { animation: page-in 160ms var(--ease) both; }
+.card, .table-wrap { animation: drop-in 260ms var(--ease) both; }
+.card:nth-child(2), .cols > :nth-child(2) .card { animation-delay: 40ms; }
+.card:nth-child(3) { animation-delay: 80ms; }
+.card:nth-child(n + 4) { animation-delay: 120ms; }
+@keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes drop { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
-@keyframes thunk { 0% { transform: scale(1.5) rotate(-4deg); opacity: 0; } 55% { transform: scale(0.95) rotate(-4deg); opacity: 1; } 100% { transform: scale(1) rotate(-4deg); } }
 @keyframes print-line { 0%, 10% { transform: scaleX(0); } 45%, 100% { transform: scaleX(1); } }
 
 /* --- loading: a strip printing out ------------------------------------------- */
@@ -398,7 +400,6 @@ textarea.input { resize: vertical; }
 .status--slug_only, .status--not_mounted, .status--unknown,
 .status--archived, .status--none, .status--legacy, .status--cancelled, .status--skipped { color: var(--print-2); }
 .status--provisioning_failed, .status--failed, .status--validation_timeout, .status--suspended, .status--timed_out { color: var(--ink-red); }
-.page-head .status { animation: thunk 420ms var(--ease) both; }
 /* a stamp on the wall needs the lifted inks, not the paper ones */
 .page-head .status { --ok: #8fd3a5; --warn: #e8c478; --ink-red: #f4a3a8; }
 .table .status { animation: none; }
@@ -443,13 +444,19 @@ textarea.input { resize: vertical; }
 .input:disabled { color: var(--print-2); }
 
 /* --- modal: a ticket dropped on the wall ----------------------------------------------- */
-.modal { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 16px; overflow-y: auto; animation: page-in 200ms var(--ease) both;
+.modal { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 16px; overflow-y: auto; animation: fade-in 160ms var(--ease) both;
   /* one even tint and blur over the whole viewport */
   background: rgb(26 18 14 / 0.36); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); }
-.modal__panel { padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; animation: drop 480ms var(--ease) both;
+.modal__panel { padding: 20px 22px calc(22px + var(--tooth-h)); width: min(640px, 100%); max-height: 90vh; overflow: auto; transform-origin: var(--origin, 50% 50%); animation: modal-in 220ms var(--ease) both;
   -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat;
           mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth-h) repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h) + 1px) no-repeat; }
 .modal__panel--wide { width: min(980px, 100%); }
+/* the dialog grows from the button that opened it (--origin, set by Modal) and
+   leaves in half the time with ease-in (ux-motion #11, #18) */
+@keyframes modal-in { from { opacity: 0; scale: 0.96; } }
+@keyframes fade-in { from { opacity: 0; } }
+.modal[data-closing] { animation: none; opacity: 0; transition: opacity 120ms var(--ease-in); pointer-events: none; }
+.modal[data-closing] .modal__panel { animation: none; opacity: 0; scale: 0.98; transition: opacity var(--dur-exit) var(--ease-in), scale var(--dur-exit) var(--ease-in); }
 .modal__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1.5px dashed var(--paper-line); }
 .modal__head h3 { font: 760 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -487,12 +494,12 @@ textarea.input { resize: vertical; }
 .auth__sub { margin: 0; color: var(--on-ox-2); max-width: 28em; font-size: 1.05rem; line-height: 1.55; }
 .auth__brand .env { align-self: flex-start; }
 .auth__main { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; gap: 18px; }
-.auth__card { width: min(440px, 100%); animation: drop 900ms var(--ease) both; }
+.auth__card { width: min(440px, 100%); animation: drop 420ms var(--ease) both; }
 /* sign-in slip: the rail sits on the hanger, the frosted glass itself is cut
    in a zigzag (mask); no drop-shadow, it would show through the glass */
 .auth__hang {
   width: min(440px, 100%);
-  animation: drop 900ms var(--ease) both;
+  animation: drop 420ms var(--ease) both;
 }
 .auth__hang::before {
   content: ""; display: block; position: relative; z-index: 1; height: 14px; margin: 0 -6px -1px; border-radius: 3px;
@@ -514,6 +521,8 @@ textarea.input { resize: vertical; }
 }
 .auth__hang > .auth__card::before, .auth__hang > .auth__card::after { display: none; }
 .auth__form { display: grid; gap: 14px; padding: 24px 28px 30px; }
+.auth__welcome { justify-items: center; text-align: center; padding-block: 40px 44px; }
+.auth__welcome .auth__welcome-tick { width: 44px; height: 44px; color: var(--ok); }
 .auth__form h1 { margin: 0; font-size: 26px; }
 .auth__lead-text { margin: -6px 0 2px; font-size: 14px; }
 .auth__form .notice { margin: 0; }
@@ -681,7 +690,7 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .plain-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px 16px; margin: 0 0 22px; }
-.kpi { position: relative; background: var(--glass-surface); color: var(--print); padding: 14px 16px 16px; box-shadow: var(--hang); display: grid; gap: 4px; animation: drop 640ms var(--ease) both; }
+.kpi { position: relative; background: var(--glass-surface); color: var(--print); padding: 14px 16px 16px; box-shadow: var(--hang); display: grid; gap: 4px; animation: drop-in 260ms var(--ease) both; }
 .kpi::before { content: ""; display: block; height: 8px; margin: -14px -16px 8px; background: linear-gradient(var(--steel) 0 5px, var(--steel-lo) 5px 6px, var(--steel) 6px); }
 .kpi::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--tooth-h); background: conic-gradient(from -45deg at 50% 100%, var(--ground) 0deg, #0000 1deg 89deg, var(--ground) 90deg) 0 100% / var(--tooth) var(--tooth-h) repeat-x; }
 .kpi:nth-child(2) { animation-delay: 40ms; } .kpi:nth-child(3) { animation-delay: 80ms; } .kpi:nth-child(4) { animation-delay: 120ms; }
@@ -845,11 +854,12 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .insight { margin: 0 0 12px; font-size: 13.5px; color: var(--print-2); max-width: 60ch; }
 
 /* charts grow in: bars from the baseline, lines drawn, dots after */
-.chart__bar--grow { transform-box: fill-box; transform-origin: bottom; animation: bar-grow 720ms var(--ease) both; animation-delay: calc(var(--i, 0) * 14ms); }
-.chart__bar--row { transform-box: fill-box; animation: bar-row 640ms var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms); }
-.chart__line--draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: line-draw 1100ms var(--ease) 120ms forwards; }
-.chart__dot--in { opacity: 0; animation: dot-in 300ms var(--ease) forwards; animation-delay: calc(240ms + var(--i, 0) * 18ms); }
-.chart__area--in { animation: area-in 900ms var(--ease) both; }
+/* charts settle with the count-up (1.1 s), not after it: staggers are capped (ux-motion #3) */
+.chart__bar--grow { transform-box: fill-box; transform-origin: bottom; animation: bar-grow 480ms var(--ease) both; animation-delay: calc(min(var(--i, 0), 8) * 20ms); }
+.chart__bar--row { transform-box: fill-box; animation: bar-row 480ms var(--ease) both; animation-delay: calc(min(var(--i, 0), 6) * 40ms); }
+.chart__line--draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: line-draw 700ms var(--ease) 80ms forwards; }
+.chart__dot--in { opacity: 0; animation: dot-in 200ms var(--ease) forwards; animation-delay: calc(560ms + min(var(--i, 0), 8) * 20ms); }
+.chart__area--in { animation: area-in 500ms var(--ease) both; }
 @keyframes bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes bar-row { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes line-draw { to { stroke-dashoffset: 0; } }
@@ -936,7 +946,7 @@ html.is-busy .btn:disabled { opacity: .85; }
 .save { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; }
 .save-hint { font: 500 11px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-red); }
 .save-hint:not(:empty) { margin-left: 12px; }
-.save-btn--dirty { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--ink-red) 70%, transparent); animation: save-pulse 2.4s var(--ease) infinite; }
+.save-btn--dirty { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--ink-red) 70%, transparent); animation: save-pulse 2.4s var(--ease) 3; }
 .save-btn--dirty:disabled { box-shadow: none; animation: none; }   /* not ready to save yet (a required field): no call to action */
 .save-btn--dirty:hover:not(:disabled) { box-shadow: 0 8px 20px -6px color-mix(in srgb, var(--ink-red) 75%, transparent); }
 .save-btn__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-red); box-shadow: 0 0 0 1.5px transparent; flex: none; }
@@ -952,7 +962,7 @@ html.is-busy .btn:disabled { opacity: .85; }
 .plan--changed::after { position: absolute; top: 10px; right: 10px; margin: 0; }
 .saved-stamp { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ok); animation: save-pop 420ms var(--ease) both; }
 /* drop stays first in the list, so adding and removing the flash never replays it */
-.card--saved { animation: drop 640ms var(--ease) both, save-flash 1.4s var(--ease) both; }
+.card--saved { animation: drop-in 260ms var(--ease) both, save-flash 1.4s var(--ease) both; }
 @keyframes save-pulse { 0%, 100% { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--ink-red) 70%, transparent); } 50% { box-shadow: 0 8px 24px -4px color-mix(in srgb, var(--ink-red) 45%, transparent); } }
 @keyframes save-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
 @keyframes save-flash { 0%, 20% { background-color: var(--notice-ok-bg); } 100% { background-color: var(--paper); } }
@@ -1199,7 +1209,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
   pointer-events: none;
   --signal: rgba(107, 74, 46, 0.6);
   background: radial-gradient(circle, rgba(168, 132, 98, 0.4), rgba(168, 132, 98, 0) 32%);
-  animation: press-dot 420ms ease-out forwards;
+  animation: press-dot 360ms var(--ease) forwards;
 }
 .press-ripple::before,
 .press-ripple::after {
@@ -1209,11 +1219,13 @@ html.is-busy, html.is-busy * { cursor: progress; }
   border-radius: 50%;
   border: 2px solid var(--signal);
   opacity: 0;
-  animation: press-signal 820ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: press-signal 480ms var(--ease) forwards;
 }
 .press-ripple::after {
-  animation-delay: 150ms;
+  animation-delay: 120ms;
 }
+/* dense, frequent places (tables, lists, the palette): one ring, no echo (ux-motion #20) */
+.press-ripple--quiet::after { content: none; }
 :root[data-theme="dark"] .press-ripple {
   --signal: rgba(213, 196, 174, 0.65);
   background: radial-gradient(circle, rgba(213, 196, 174, 0.35), rgba(213, 196, 174, 0) 32%);
@@ -1496,7 +1508,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
   position: relative; flex: none; min-height: 32px; margin: 0; padding: 0 14px;
   border-color: transparent !important; border-radius: var(--r-pill) !important; background: transparent !important; box-shadow: none !important;
   translate: none !important; color: #3a2418 !important; font: 550 14px/1 var(--sans); white-space: nowrap;
-  transition: color 360ms var(--ease) 80ms, background-color 200ms var(--ease);
+  transition: color 150ms var(--ease), background-color 150ms var(--ease);
 }
 [data-glide] > :is(button, a):is(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"]) { color: var(--bq-snow) !important; }
 @media (hover: hover) {
@@ -1512,8 +1524,9 @@ html.is-busy, html.is-busy * { cursor: progress; }
 }
 [data-glide][data-glide-on]::before { opacity: 1; }
 [data-glide][data-glide-placed]::before {
-  transition: translate 520ms cubic-bezier(0.22, 1, 0.36, 1), width 520ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 520ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms var(--ease);
+  /* pressed many times a day: the pill lands with the content swap (ux-motion #5, #8, #20) */
+  transition: translate 240ms var(--ease-io), width 240ms var(--ease-io),
+    height 240ms var(--ease-io), opacity 150ms var(--ease);
 }
 :root[data-theme="dark"] [data-glide="track"] {
   background: rgb(var(--bq-snow-rgb) / 0.06) !important;
@@ -1523,7 +1536,7 @@ html.is-busy, html.is-busy * { cursor: progress; }
 :root[data-theme="dark"] [data-glide] > :is(button, a):is(.tab--on, .chip--on, [aria-pressed="true"], [aria-selected="true"]) { color: #1a120e !important; }
 :root[data-theme="dark"] [data-glide]::before { background: linear-gradient(180deg, var(--bq-snow), #efe7dc); box-shadow: inset 0 1px 0 transparent, 0 4px 10px -6px rgb(0 0 0 / 0.6); }
 @media (prefers-reduced-motion: reduce) {
-  [data-glide][data-glide-placed]::before { transition: translate 160ms linear, width 160ms linear, height 160ms linear; }
+  [data-glide][data-glide-placed]::before { transition: opacity 150ms linear; }
 }
 @media (prefers-reduced-transparency: reduce) {
   [data-glide="track"], .glass-refract [data-glide="track"] { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--glass-surface) !important; }

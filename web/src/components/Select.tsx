@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./ds";
+import { exitMs } from "./motion";
 import "./select.css";
 
 /* The console's dropdown: a select-only combobox (WAI-ARIA APG). The trigger
@@ -59,6 +60,10 @@ export function Select(props: SelectProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
+  // The phone sheet slides away (180 ms, ease-in) instead of vanishing; the desktop list closes at once.
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
 
   const enabled = (i: number) => i >= 0 && i < flat.length && !flat[i].disabled;
   const step = useCallback((from: number, dir: 1 | -1, count = 1) => {
@@ -85,6 +90,12 @@ export function Select(props: SelectProps) {
     if (document.activeElement !== el) el?.focus({ preventScroll: true });
   };
   const close = (focus = true) => {
+    const wait = sheet && open ? exitMs(180) : 0;
+    if (wait > 0) {
+      window.clearTimeout(leaveTimer.current);
+      setLeaving(true);
+      leaveTimer.current = window.setTimeout(() => setLeaving(false), wait);
+    }
     setOpen(false);
     typed.current.text = "";
     if (focus) trigger.current?.focus({ preventScroll: true });
@@ -240,10 +251,10 @@ export function Select(props: SelectProps) {
         <Icon name="chevron-down" size={16} className="select__chevron" />
       </button>
       {name && <input type="hidden" name={name} value={value} />}
-      {open && createPortal(
+      {(open || leaving) && createPortal(
         <>
-          {sheet && <div className="select-scrim" aria-hidden="true" onClick={() => close()} />}
-          <div ref={list} id={listId} role="listbox" aria-label={listName} tabIndex={-1}
+          {sheet && <div className="select-scrim" aria-hidden="true" onClick={() => close()} data-closing={!open || undefined} />}
+          <div ref={list} id={listId} role="listbox" aria-label={listName} tabIndex={-1} data-closing={!open || undefined}
                className={`select-list${sheet ? " select-list--sheet" : ""}${pos.bottom !== undefined ? " select-list--up" : ""}`}
                style={sheet ? undefined : pos}
                onMouseDown={(e) => e.preventDefault()}>

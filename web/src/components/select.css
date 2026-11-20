@@ -25,7 +25,8 @@
   backdrop-filter: blur(var(--blur-pop, 24px)) saturate(1.6);
   font: 400 14px/1.3 var(--sans, inherit);
   transform-origin: top center;
-  animation: select-in var(--dur-base, 200ms) var(--ease-out, ease) both;
+  /* opened many times a day: 150 ms from the trigger, closes at once (ux-motion #11, #20) */
+  animation: select-in 150ms var(--ease-out, ease) both;
 }
 :root[data-theme="dark"] .select-list { background: var(--liquid-sheen), rgb(36 25 19 / 0.96); }
 .select-list--up { transform-origin: bottom center; animation-name: select-in-up; }
@@ -51,11 +52,16 @@
   left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: min(70vh, 560px);
   padding: 8px 12px max(12px, env(safe-area-inset-bottom));
   border-radius: 20px 20px 0 0;
-  animation: select-sheet var(--dur-slow, 360ms) var(--ease-out, ease) both;
+  animation: select-sheet var(--dur-panel, 280ms) var(--ease-out, ease) both;
 }
 .select-list__grip { width: 40px; height: 4px; margin: 2px auto 8px; border-radius: 2px; background: var(--print-2); opacity: 0.4; }
 .select-list--sheet .select-option { min-height: 48px; padding: 10px 14px; font-size: 16px; }
 @keyframes select-sheet { from { transform: translateY(100%); } }
+/* the phone sheet leaves faster than it came, with ease-in (ux-motion #18) */
+.select-list--sheet[data-closing] { pointer-events: none; animation: select-sheet-out 180ms var(--ease-in, ease-in) both; }
+.select-scrim[data-closing] { pointer-events: none; animation: select-fade-out 180ms var(--ease-in, ease-in) both; }
+@keyframes select-sheet-out { to { transform: translateY(100%); } }
+@keyframes select-fade-out { to { opacity: 0; } }
 @keyframes select-fade { from { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {

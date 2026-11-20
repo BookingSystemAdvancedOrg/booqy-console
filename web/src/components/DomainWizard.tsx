@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { DoneMoment } from "./DoneMoment";
 import { api, ApiError, uploadToS3 } from "../api";
 import type {
   DnsRecord, DnsScan, DomainOffer, Money, RegistrantContact, RequiredRecord, SupportCase, Tenant, TransferCheck, TransferInCheck, Zone,
@@ -193,7 +194,7 @@ function Order({ tenant, offer, onBack, onDone }: {
   if (result !== undefined) {
     return (
       <>
-        <Notice kind="ok"><strong>{offer.domain}</strong> is ordered. Its status is on the Domains tab.</Notice>
+        <DoneMoment id={`ordered:${offer.domain}`}><strong>{offer.domain}</strong> is ordered. Its status is on the Domains tab.</DoneMoment>
         {result ? <SupportCaseBox domain={offer.domain} tenantId={tenant.tenantId} supportCase={result} />
           : <p className="small muted">Live on {offer.domain} by itself <InfoTip label="What happens">Route 53 registers it (minutes to an hour), then the site goes live on {offer.domain}; www and the slug address 301 to it and dev.{offer.domain} goes on the dev site.</InfoTip></p>}
       </>
@@ -468,7 +469,7 @@ function Connect({ tenant, initialDomain, onDone }: { tenant: Tenant; initialDom
   if (done) {
     return (
       <>
-        <Notice kind="ok"><strong>{done.domain}</strong>: DNS zone ready. Steps e-mailed to the restaurant.</Notice>
+        <DoneMoment id={`zone:${done.domain}`}><strong>{done.domain}</strong>: DNS zone ready. Steps e-mailed to the restaurant.</DoneMoment>
         {done.nameServers && <NameServerBox domain={done.domain} nameServers={done.nameServers} />}
         {done.restaurantSteps && <RestaurantText text={done.restaurantSteps} />}
       </>

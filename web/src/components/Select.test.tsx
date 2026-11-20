@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Select, type SelectProps } from "./Select";
@@ -136,7 +136,7 @@ describe("Select", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("phones get a bottom sheet with a scrim that closes it", () => {
+  it("phones get a bottom sheet with a scrim that closes it", async () => {
     vi.spyOn(window, "matchMedia").mockImplementation((q: string) => ({ matches: q.includes("max-width"), media: q } as MediaQueryList));
     render(<Harness />);
     fireEvent.click(combo());
@@ -146,7 +146,9 @@ describe("Select", () => {
     act(() => { window.dispatchEvent(new Event("scroll")); });
     expect(screen.getByRole("listbox")).toBeInTheDocument();             // the sheet does not follow the page
     fireEvent.click(document.querySelector(".select-scrim")!);
-    expect(screen.queryByRole("listbox")).toBeNull();
+    // the sheet slides away first (ux-motion #18), then it is gone
+    expect(list).toHaveAttribute("data-closing");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
   });
 
   it("posts its value in a form and shows the placeholder when nothing is chosen", () => {

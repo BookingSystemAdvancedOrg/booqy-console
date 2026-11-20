@@ -298,18 +298,21 @@ function visual(el: Element, x: number | null, y: number | null) {
   const cls = el.matches(BLOCK) ? "is-pressed" : "is-pressed-text";
   el.classList.add(cls);
   window.setTimeout(() => el.classList.remove(cls), 160);
-  if (x != null && y != null) signal(x, y);
+  if (x != null && y != null) signal(x, y, el.closest(QUIET) !== null);
 }
 
+/** Dense places pressed all day: one short ring, no echo (ux-motion #20). */
+const QUIET = ".table, .select-list, .palette, .date-cal, [data-glide]";
+
 // the signal: a dot and two rings where you press, anywhere on the page
-function signal(x: number, y: number) {
+function signal(x: number, y: number, quiet = false) {
   if (reducedMotion()) return;
   const ripple = document.createElement("span");
-  ripple.className = "press-ripple";
+  ripple.className = quiet ? "press-ripple press-ripple--quiet" : "press-ripple";
   ripple.style.left = `${x}px`;
   ripple.style.top = `${y}px`;
   document.body.appendChild(ripple);
-  window.setTimeout(() => ripple.remove(), 900);
+  window.setTimeout(() => ripple.remove(), 620);
 }
 
 let installed = false;

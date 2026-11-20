@@ -44,7 +44,7 @@
 .stree-empty { margin: 0; padding: 12px; font: 400 14px/1.4 var(--sans); color: var(--print-2); }
 
 .stree-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 22px; align-items: start; }
-.stree-card.card { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin: 0; padding: 18px 22px 12px; animation-delay: calc(var(--i, 0) * 60ms); }
+.stree-card.card { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin: 0; padding: 18px 22px 12px; animation-delay: calc(min(var(--i, 0), 6) * var(--stagger, 40ms)); }
 .stree-card .stree-icon { width: 38px; height: 38px; border-radius: 12px; background: var(--paper-2, var(--glass-fill)); color: var(--print); }
 .stree-card-heading { margin: 0; font: inherit; }
 .stree-card-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--print); text-align: left; cursor: default; }
@@ -80,7 +80,7 @@
 .stree-pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1.5px dashed var(--fg-line); }
 .stree-pager-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: transparent; font: 600 14px/1.2 var(--sans); color: var(--fg); cursor: default; transition: background-color 200ms var(--ease); }
 .stree-pager-link.next { margin-left: auto; }
-.stree-leaf-flash { border-radius: 12px; animation: stree-flash 2400ms var(--ease) both; }
+.stree-leaf-flash { border-radius: 12px; animation: stree-flash 1200ms var(--ease) both; }
 
 @media (hover: hover) {
   .stree-row:hover, .stree-branch:not(.active):hover, .stree-pager-link:hover { background: var(--glass-fill); }

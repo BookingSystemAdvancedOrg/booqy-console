@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Avatar } from "./Avatar";
+import { useClosing, useOpener, useOriginFrom } from "./motion";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -15,10 +16,13 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
  * rows: React events bubble from portals up the component tree.
  */
 export function AvatarLightbox({ url, name, email, onClose }: { url?: string | null; name?: string | null; email?: string | null; onClose: () => void }) {
-  const panel = useRef<HTMLDivElement>(null);
+  // Grows from the avatar that was pressed and eases out faster (ux-motion #11, #18).
+  const opener = useOpener();
+  const panel = useOriginFrom<HTMLDivElement>(opener);
   const closeBtn = useRef<HTMLButtonElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  const [closing, close] = useClosing(onClose);
+  const closeRef = useRef(close);
+  useEffect(() => { closeRef.current = close; }, [close]);
 
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -49,7 +53,7 @@ export function AvatarLightbox({ url, name, email, onClose }: { url?: string | n
 
   const title = name?.trim() || email || "Profile picture";
   return createPortal(
-    <div className="lightbox-overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
+    <div className="lightbox-overlay" data-closing={closing || undefined} onPointerDown={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
       <div ref={panel} className="lightbox" role="dialog" aria-modal="true" aria-label={`Profile picture: ${title}`}>
         <figure className="avatar-lightbox">
           <Avatar url={url} name={name} email={email} size="xl" />

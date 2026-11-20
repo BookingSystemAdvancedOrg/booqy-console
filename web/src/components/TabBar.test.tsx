@@ -97,17 +97,19 @@ describe("TabBar (phones)", () => {
     expect(me).toHaveAttribute("href", "/profile");
   });
 
-  it("closes on Escape and on the scrim, and focus goes back to the avatar", () => {
+  it("closes on Escape and on the scrim, and focus goes back to the avatar", async () => {
     setup("/");
     const you = screen.getByRole("button", { name: "Workspace" });
     fireEvent.click(you);
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    // the sheet slides down first (ux-motion #18), then it is gone
+    expect(document.querySelector(".ws-layer")).toHaveAttribute("data-closing");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(you).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(you);
     fireEvent.click(you);
     fireEvent.click(document.querySelector(".ws-scrim")!);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.querySelector(".tabbar")?.hasAttribute("inert")).toBe(false);
   });
 

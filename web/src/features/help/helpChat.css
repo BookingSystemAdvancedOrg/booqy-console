@@ -72,13 +72,22 @@
   backdrop-filter: blur(var(--blur-pop)) saturate(1.6);
   color: var(--ink);
   overflow: hidden;
-  animation: help-in var(--dur-slow) var(--ease-out);
+  /* grows out of the launcher in the bottom right corner (ux-motion #11) */
+  transform-origin: 100% 100%;
+  animation: help-in 240ms var(--ease-out);
+}
+.help-panel[data-closing] {
+  animation: none;
+  opacity: 0;
+  scale: 0.96;
+  pointer-events: none;
+  transition: opacity var(--dur-exit) var(--ease-in), scale var(--dur-exit) var(--ease-in);
 }
 
 @keyframes help-in {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(8px) scale(0.94);
   }
 }
 

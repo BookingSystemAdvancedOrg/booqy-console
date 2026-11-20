@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState, useLayoutEffect } from "react";
+import { FormEvent, useEffect, useRef, useState, useLayoutEffect } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
@@ -24,7 +24,8 @@ import { FreeBadge, FreeFields } from "../components/FreeFields";
 import { FREE_PLAN_ID, formUntil, freeInput, freeProblems, newFreeForm, savedFreeForm, stockholmToday } from "../free";
 import { FeatureList } from "../components/FeatureList";
 import { LocationStepper, SelectAllFeatures, defaultLocations, planLine } from "../components/PlanFields";
-import { InfoTip } from "../components/StepFlow";
+import { DrawnTick, InfoTip } from "../components/StepFlow";
+import { celebrate } from "../components/Celebrate";
 import { planName } from "../components/planName";
 import { PrintersCard } from "../components/PrintersCard";
 import { DevKindBadge, DevTwinCard, devKind, devTwinBusy } from "../components/DevTwinCard";
@@ -59,6 +60,9 @@ export default function TenantPage() {
       data.domains.some((d) => ["pending_dns", "pending_validation", "removing"].includes(d.status)) ||
       data.zones.some((z) => ZONE_BUSY.includes(z.status)));
   const waiting = data && data.zones.some(zoneWaiting);
+  // Watched it set up on this visit: the moment it goes live is the end of onboarding.
+  const sawSetup = useRef(false);
+  if (data?.tenant.status === "provisioning") sawSetup.current = true;
   useEffect(() => {
     if (!busy && !waiting) return;
     const id = window.setInterval(() => void reload(), busy ? 5000 : 15000);
@@ -107,6 +111,9 @@ export default function TenantPage() {
           {t.slug ? " and the website" : ""}… this page updates by itself.
           <button className="link" onClick={() => setSearch({})}>Dismiss</button>
         </Notice>
+      )}
+      {search.get("created") && t.status === "active" && sawSetup.current && (
+        <LiveNotice tenantId={t.tenantId} name={t.name} onDismiss={() => setSearch({})} />
       )}
       {t.status === "offboarded" && restorable(t) && (
         <Notice kind="warn">
@@ -1024,5 +1031,20 @@ function DeleteCustomer({ tenant, onChanged }: { tenant: Tenant; onChanged: () =
         </>
       )}
     </Card>
+  );
+}
+
+/** The end of onboarding a customer, seen live: the one peak moment for it
+ * (tick, pop, confetti and the fanfare), once per customer per session. */
+function LiveNotice({ tenantId, name, onDismiss }: { tenantId: string; name: string; onDismiss: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { celebrate(ref.current, "finish", `live:${tenantId}`); }, [tenantId]);
+  return (
+    <div ref={ref} className="live-notice">
+      <Notice kind="ok">
+        <span className="submit-ready"><DrawnTick /> Live.</span> {name} is set up and ready.
+        <button className="link" onClick={onDismiss}>Dismiss</button>
+      </Notice>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -111,7 +111,7 @@ describe("FeatureList", () => {
   });
   describe("on a phone", () => {
     afterEach(() => { vi.unstubAllGlobals(); });
-    it("opens the details as a bottom sheet over a scrim, and a tap on the scrim closes it without reaching the list", () => {
+    it("opens the details as a bottom sheet over a scrim, and a tap on the scrim closes it without reaching the list", async () => {
       vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("640"), media: q, addEventListener() {}, removeEventListener() {} }));
       render(<Harness />);
       fireEvent.click(screen.getByRole("button", { name: "About Catering" }));
@@ -123,7 +123,9 @@ describe("FeatureList", () => {
       fireEvent.pointerDown(scrim);
       expect(screen.getByRole("dialog")).toBeInTheDocument();   // stays until the click, so no tap falls through
       fireEvent.click(scrim);
-      expect(screen.queryByRole("dialog")).toBeNull();
+      // the sheet slides away first (ux-motion #18), then it is gone
+      expect(dialog).toHaveAttribute("data-closing");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(document.querySelector(".feat-scrim")).toBeNull();
       expect(screen.getByLabelText("Catering")).not.toBeChecked();
     });
