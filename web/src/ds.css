@@ -103,7 +103,7 @@
   --dur-base: var(--bq-duration-base, 200ms);
   --dur-slow: var(--bq-duration-slow, 360ms);
   --dur-cta: 780ms;
-  --dur-add: 520ms;
+  --dur-add: 240ms;
   --ease-out: var(--bq-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   --ease-std: var(--bq-ease-std, cubic-bezier(0.2, 0, 0, 1));
   /* motion scale (ux-motion skill): enter with ease-out, leave with ease-in
@@ -329,8 +329,9 @@
 .cta-text,
 .cta-win {
   grid-area: 1 / 1;
+  /* a hover on the page's main button, used all day: quick (ux-motion #8, #20) */
   transition:
-    transform var(--dur-slow) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
     opacity var(--dur-base) var(--ease-out);
 }
 
@@ -373,7 +374,7 @@
 }
 .cta--add .cta-add-person {
   transition:
-    transform var(--dur-slow) var(--ease-spring),
+    transform var(--dur-add) var(--ease-spring),
     opacity var(--dur-base) var(--ease-out);
 }
 @media (hover: hover) {
@@ -391,7 +392,7 @@
 
 /* The sidebar's "New customer": quieter, the "+" just turns a quarter. */
 .topbar__nav a[href="/tenants/new"] .icon {
-  transition: transform var(--dur-slow) var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 @media (hover: hover) {
   .topbar__nav a[href="/tenants/new"]:hover .icon {
