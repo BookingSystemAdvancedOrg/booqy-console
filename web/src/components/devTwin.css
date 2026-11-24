@@ -7,6 +7,7 @@
 .dev-twin__mark { font: 800 12px/1 var(--mono); width: 14px; text-align: center; }
 .dev-twin__steps .is-ok .dev-twin__mark { color: var(--ok); }
 .dev-twin__steps .is-failed .dev-twin__mark, .dev-twin__steps .is-failed { color: var(--ink-red); }
+.dev-twin__steps .is-skipped .dev-twin__mark { color: var(--print-2); }
 .dev-twin__note { flex-basis: 100%; font-size: 12.5px; color: var(--print-2); overflow-wrap: anywhere; }
 .dev-twin__content { margin-top: 16px; padding-top: 14px; border-top: 1.5px dashed var(--line-soft); }
 .dev-twin__content-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px; }

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ devTwin: vi.fn(), devTwinContent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ devTwin: vi.fn(), devTwinContent: vi.fn(), devTwinRefreshAll: vi.fn() }));
 vi.mock("../api", () => ({ api: mocks, ApiError: class extends Error {} }));
 
 import { DevKindBadge, DevTwinCard, devKind, devTwinBusy } from "./DevTwinCard";
@@ -39,6 +39,31 @@ describe("Dev twin card", () => {
     expect(screen.getByText("publish-layout: 409 invalid_layout")).toBeInTheDocument();
     expect(screen.queryByText("Added 13 dishes")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Refresh dev twin/ })).toBeEnabled();
+  });
+
+  it("shows the guest feature steps in seed order", () => {
+    const tenant = { ...base, devTwin: {
+      status: "ready", steps: { legal: { ok: true }, catering: { ok: true }, features: { ok: true },
+        events: { ok: true }, giftCards: { ok: true }, waitlist: { ok: true } },
+    } } as Tenant;
+    render(<DevTwinCard tenant={tenant} onChanged={() => {}} />);
+    const steps = screen.getByRole("list", { name: "Kom igång steps" });
+    expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
+      ["✓All guest features", "✓Catering", "✓Gift cards", "✓Waitlist", "✓Test event", "✓Seller details"]);
+  });
+
+  it("refreshes every dev twin and lists what started and what was left alone", async () => {
+    mocks.devTwinRefreshAll.mockResolvedValue({ queued: ["anar", "it-hjalparna-nordic-ab"],
+      skipped: [{ slug: "roma", reason: "Already running" }] });
+    const changed = vi.fn();
+    render(<DevTwinCard tenant={{ ...base, devTwin: { status: "ready", steps: {} } } as Tenant} onChanged={changed} />);
+    await userEvent.click(screen.getByRole("button", { name: /Refresh all dev twins/ }));
+    expect(mocks.devTwinRefreshAll).toHaveBeenCalledWith("t1");
+    expect(changed).toHaveBeenCalled();
+    const list = screen.getByRole("list", { name: "Refresh all" });
+    expect([...list.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
+      ["✓anar", "✓it-hjalparna-nordic-ab", "-romaAlready running"]);
+    expect(mocks.devTwin).not.toHaveBeenCalled();
   });
 
   it("is busy while the seed runs", () => {

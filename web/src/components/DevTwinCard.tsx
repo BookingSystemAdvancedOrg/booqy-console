@@ -1,5 +1,6 @@
 import { api } from "../api";
-import type { DevTwin, Tenant } from "../types";
+import type { DevTwin, DevTwinRefreshAll, Tenant } from "../types";
+import { useState } from "react";
 import { Card, ErrorNotice, Notice, fmtDate, useAction } from "./ui";
 import { SaveButton } from "./save";
 import { CopyButton } from "./CopyButton";
@@ -7,9 +8,10 @@ import "./devTwin.css";
 
 /** The steps of a dev twin's seed, in the order they run (API devtwin.STEPS). */
 export const DEV_TWIN_STEPS: [string, string][] = [
-  ["owner", "Owner login"], ["stripe", "Stripe (test)"], ["location", "Location"],
-  ["details", "Hours, rules, payments"], ["menu", "Menu"], ["layout", "Table layout"], ["printers", "Printer"],
-  ["staff", "Staff"], ["dpa", "DPA"], ["google", "Google profile"], ["phone", "Phone assistant"],
+  ["features", "All guest features"], ["owner", "Owner login"], ["stripe", "Stripe (test)"], ["location", "Location"],
+  ["details", "Hours, rules, payments"], ["menu", "Menu"], ["layout", "Table layout"], ["catering", "Catering"],
+  ["giftCards", "Gift cards"], ["waitlist", "Waitlist"], ["events", "Test event"], ["legal", "Seller details"],
+  ["printers", "Printer"], ["staff", "Staff"], ["dpa", "DPA"], ["google", "Google profile"], ["phone", "Phone assistant"],
 ];
 
 /** The steps of copying the real restaurant's public content (API devtwin_content.STEPS). */
@@ -62,13 +64,17 @@ function Steps({ steps, labels, name }: { steps: DevTwin["steps"]; labels: [stri
 export function DevTwinCard({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
   const a = useAction();
   const c = useAction();
+  const all = useAction();
+  const [allResult, setAllResult] = useState<DevTwinRefreshAll | null>(null);
   const twin = tenant.devTwin;
   const content = tenant.devTwinContent;
   return (
     <Card title="Dev twin"
-          info={<>This prod customer's copy in dev, owned by Booqy: test data in every Kom igång step, and the real
-            restaurant's public content once its setup is finished. The site repo's dev branch talks to it. Refresh adds
-            what is missing and keeps changes. Rules: site-template docs/DATA-RULES.md.</>}
+          info={<>This prod customer's copy in dev, owned by Booqy: every guest feature on whatever the plan, fake data
+            in every Kom igång step (catering, gift cards, waitlist and a test event too), and the real restaurant's
+            public content once its setup is finished. The site repo's dev branch talks to it. Refresh adds what is
+            missing and keeps changes; Refresh all dev twins does it for every twin. Rules: site-template
+            docs/DATA-RULES.md.</>}
           actions={
             <SaveButton kind="plain" small type="button" label={twin ? "Refresh dev twin" : "Create dev twin"}
                         busy={a.busy || busyOf(twin)} busyLabel={busyOf(twin) ? "Setting up…" : "Starting…"} done={a.done}
@@ -96,6 +102,31 @@ export function DevTwinCard({ tenant, onChanged }: { tenant: Tenant; onChanged: 
           <Steps steps={twin.steps} labels={DEV_TWIN_STEPS} name="Kom igång steps" />
         </>
       )}
+      <section className="dev-twin__content" aria-label="Every dev twin">
+        <div className="dev-twin__content-head">
+          <h3>Every dev twin</h3>
+          <SaveButton kind="plain" small type="button" label="Refresh all dev twins" busy={all.busy}
+                      busyLabel="Starting…" done={all.done} doneLabel="Started"
+                      onClick={async () => {
+                        const out = await all.run(() => api.devTwinRefreshAll(tenant.tenantId));
+                        if (out) { setAllResult(out); onChanged(); }
+                      }} />
+        </div>
+        <ErrorNotice error={all.error} />
+        {allResult && (
+          <ul className="dev-twin__steps" aria-label="Refresh all">
+            {allResult.queued.map((slug) => (
+              <li key={slug} className="is-ok"><span className="dev-twin__mark" aria-hidden="true">✓</span>
+                <span>{slug}</span></li>
+            ))}
+            {allResult.skipped.map((s) => (
+              <li key={s.slug} className="is-skipped"><span className="dev-twin__mark" aria-hidden="true">-</span>
+                <span>{s.slug}</span><span className="dev-twin__note">{s.reason}</span></li>
+            ))}
+            {allResult.queued.length + allResult.skipped.length === 0 && <li>No dev twins</li>}
+          </ul>
+        )}
+      </section>
       <section className="dev-twin__content" aria-label="Public content from prod">
         <div className="dev-twin__content-head">
           <h3>Public content from prod</h3>

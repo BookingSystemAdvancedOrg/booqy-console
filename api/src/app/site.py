@@ -313,6 +313,8 @@ def _tenant_by_slug(slug: str) -> str | None:
 
 
 def _dev_plan(plan_id: str | None) -> str:
+    """Prod's plan when dev has it, else the highest; the twin's features
+    do not depend on it (devtwin.twin_overrides)."""
     if plan_id and get_plan(plan_id):
         return plan_id
     plans = query_all(TableName=tenant_table(), IndexName="GSI1", KeyConditionExpression="GSI1PK = :p",
@@ -341,7 +343,7 @@ def site_task(event: dict, function_arn: str | None = None) -> dict:
 
 
 def _site_task(event: dict) -> dict:
-    if env("ENVIRONMENT") == "prod":
+    if not devtwin.is_dev():          # exactly dev; a missing ENVIRONMENT is prod
         return {"error": "refused", "message": "Site tasks only run in dev"}
     task = event.get("siteTask") if isinstance(event.get("siteTask"), dict) else {}
     slug = task.get("slug")
@@ -388,7 +390,7 @@ def _site_task(event: dict) -> dict:
             return _with_dev_side({"tenantId": tenant_id, "status": "adopted"}, task)
         body = {k: task[k] for k in _MIRROR_FIELDS if task.get(k) not in (None, "")}
         body.update(planId=_dev_plan(task.get("planId")), ownerEmail=devtwin.owner_email(slug),
-                    ownerName="Booqy utvecklare")
+                    ownerName="Booqy utvecklare", overrides=devtwin.twin_overrides())
         out = _create_mirror(body, slug)
         devtwin.mark_twin(out["tenantId"], prod_id)
         return _with_dev_side(out, task)
@@ -424,6 +426,8 @@ def _with_dev_side(out: dict, task: dict) -> dict:
 
 def _create_mirror(body: dict, slug: str) -> dict:
     """create_tenant for the dev twin: name, slug and plan from prod, the
-    owner login a Booqy team address (devtwin.owner_email)."""
+    owner login a Booqy team address (devtwin.owner_email) and every
+    guest-facing feature on (devtwin.twin_overrides; site tasks never run
+    in prod)."""
     _, out = create_tenant(SimpleNamespace(body=body, actor=LINK_ACTOR))
     return {"tenantId": out["tenantId"], "status": "created"}
