@@ -715,6 +715,9 @@ def apply_plan(tenant_id: str, profile: dict, plan: dict, actor: str, *, overrid
     until one runs (billing.freeSwitchAgreementPending)."""
     plan_id = plan["planId"]
     is_free = plan_id == FREE_PLAN_ID
+    from .devtwin import applies_to, twin_overrides     # devtwin imports this module
+    if applies_to(profile):
+        overrides = twin_overrides(overrides)          # dev: a twin keeps every guest-facing feature
     ent = _entitlements(plan, overrides)
     old_billing = profile.get("billing") if isinstance(profile.get("billing"), dict) else {}
     keep_price = is_free and price_sek is None

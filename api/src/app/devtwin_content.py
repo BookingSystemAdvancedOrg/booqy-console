@@ -106,12 +106,12 @@ class ContentCopy(Seeder):
         return note + (f" (first of {len(locations)})" if len(locations) > 1 else "")
 
     def _twin_location(self) -> dict:
-        from .core import location_table, query_all
-        items = query_all(TableName=location_table(), KeyConditionExpression="PK = :pk",
-                          ExpressionAttributeValues={":pk": {"S": f"TENANT#{self.tenant_id}"}})
+        """The seed's location: the oldest one guests can reach."""
+        from .devtwin import resolves, twin_locations
+        items = twin_locations(self.tenant_id)
         if not items:
             raise StepFailed("The twin has no location. Refresh the dev twin first.")
-        return sorted(items, key=lambda i: i.get("createdAt") or "")[0]
+        return next((i for i in items if resolves(self.tenant_id, i)), items[0])
 
     def prod_path(self, rest: str) -> str:
         return f"/locations/{self.prod_location['locationId']}{rest}"

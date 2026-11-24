@@ -965,3 +965,8 @@ export interface DevTwin {
   error?: string;
   steps: Record<string, { ok: boolean; note?: string }>;
 }
+/** "Refresh all dev twins": the twins queued, and those left alone and why. */
+export interface DevTwinRefreshAll {
+  queued: string[];
+  skipped: { slug: string; reason: string }[];
+}

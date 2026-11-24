@@ -5,6 +5,7 @@ import type { WebsiteOverview } from "./website";
 import type { HelpAnswer } from "./features/help/kb";
 import type {
   DevTwin,
+  DevTwinRefreshAll,
   BillingView, CreditNotesResponse, DnsRecord, FreeInput, DnsScan, DomainOffer, FinanceOverview, FinanceTenantDetail, InvoicingRun, Money, PaymentsView, RegistrantContact, SimulateEvent, SiteStatus, SupportCase, SupportReport, TransferCheck, TransferInCheck, Zone,
   AddedPrinter, Location, LocationInput, LocationPrinters, MailRecipient, Printer, PrinterKind, PrinterStatus, PrinterSummary, MailTemplate, MailTemplateInput, NewTenantInput, Newsletter, NewsletterRecipient, OperatorAccount, OperatorList, OperatorNotice, OutboxMessage, OutboxSummary, Plan, StaffAccess, Tenant, TenantDetail, TenantSummary, TenantUser,
 } from "./types";
@@ -152,6 +153,8 @@ export const api = {
   retryOnboarding: (id: string) => request<{ status: string }>("POST", `${t(id)}/onboarding/retry`, {}),
   // Dev only: create or refresh the customer's dev twin (test data in every Kom igång step)
   devTwin: (id: string) => request<{ devTwin: DevTwin }>("POST", `${t(id)}/dev-twin`, {}),
+  // Dev only: the seed again for every dev twin (new steps after a deploy)
+  devTwinRefreshAll: (id: string) => request<DevTwinRefreshAll>("POST", `${t(id)}/dev-twin`, { all: true }),
   // Dev only: copy the real restaurant's public content from prod's public API now
   devTwinContent: (id: string) => request<{ devTwinContent: DevTwin }>("POST", `${t(id)}/dev-twin/content`, {}),
   // Website tab: the restaurant's own site repo (site-repo function)
