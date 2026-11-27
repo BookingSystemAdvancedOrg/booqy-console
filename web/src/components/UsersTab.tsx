@@ -106,10 +106,10 @@ export function UsersTab({ tenant, locations, refreshed = 0 }: { tenant: Tenant;
         <ErrorNotice error={list.error} onRetry={() => void retry()} />
         <ErrorNotice error={row.error} />
         {done && <Notice kind="ok">{done}</Notice>}
-        {(list.loading || retrying) && !list.data ? <SkelPage label="Loading users"><SkelRows n={3} cols={4} /></SkelPage> : users && (
+        {(list.loading || retrying) && !list.data ? <SkelPage label="Loading users"><SkelRows n={3} cols={5} /></SkelPage> : users && (
         <div className="table-wrap">
         <table className="table users-table">
-          <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Since</th><th className="right"><span className="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th>User</th><th>Phone</th><th>Role</th><th>Status</th><th>Since</th><th className="right"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {users.map((u) => {
               const owner = u.role === "owner_user";
@@ -123,6 +123,9 @@ export function UsersTab({ tenant, locations, refreshed = 0 }: { tenant: Tenant;
                   {u.name || u.email}
                   {u.system ? <div className="muted small">No sign-in <InfoTip label="About the phone assistant's account">{SYSTEM_INFO}</InfoTip></div>
                     : u.name && <div className="muted small users-table__email">{u.email}</div>}
+                </td>
+                <td className="cell-fact users-table__phone" data-label="Phone">
+                  {u.phone ? <a href={`tel:${u.phone.replace(/\s/g, "")}`}>{u.phone}</a> : <span className="muted">-</span>}
                 </td>
                 <td className="cell-fact" data-label="Role">
                   {owner ? "Owner" : "Staff"}
@@ -163,7 +166,7 @@ export function UsersTab({ tenant, locations, refreshed = 0 }: { tenant: Tenant;
               </tr>
               );
             })}
-            {users.length === 0 && <tr><td colSpan={5} className="empty">No users yet.</td></tr>}
+            {users.length === 0 && <tr><td colSpan={6} className="empty">No users yet.</td></tr>}
           </tbody>
         </table>
         </div>

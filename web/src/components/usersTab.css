@@ -1,6 +1,7 @@
 /* Customer page, Users tab: long emails break, the day stays on one line. */
 .users-table__email { overflow-wrap: anywhere; }
 .users-table__since { white-space: nowrap; }
+.users-table__phone { white-space: nowrap; }
 
 /* Staff permissions: the admin's areas as ticks, two columns where they fit. */
 .areas { border: 0; margin: 0; padding: 0; min-width: 0; }
