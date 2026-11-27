@@ -12,6 +12,8 @@ data in every Kom igång step, marked `twinOf: {env: "prod", tenantId}`. A
 customer created in the dev console is a dev test customer (`siteKind
 "test"`) and never becomes a twin.
 
+Guest SMS (confirmation, reminder, cancellation) is off by default for every restaurant, so the seed's `notifications` step switches it on in a twin (a value already set, on or off, stays). Press Refresh dev twin on an older twin to get it.
+
 ## Every guest feature on (owner 2026-11-24)
 
 A twin has every guest-facing feature in dev, whatever prod's plan is, so a

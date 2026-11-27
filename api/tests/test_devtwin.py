@@ -293,6 +293,21 @@ def _seed(tenant):
     return devtwin.twin_task({"twinTask": {"tenantId": tenant, "requestedBy": "op-1"}}, Ctx())
 
 
+def _notifications(aws, tenant):
+    key = {"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}}
+    return core.from_ddb(aws["ddb"].get_item(TableName="dev-tenant", Key=key)["Item"]).get("notifications")
+
+
+def test_seed_switches_guest_sms_on_and_keeps_a_choice(twin, tenant, aws):
+    assert _seed(tenant)["status"] == "ready"
+    assert _notifications(aws, tenant)["sms"] is True
+    key = {"PK": {"S": f"TENANT#{tenant}"}, "SK": {"S": "PROFILE"}}
+    aws["ddb"].update_item(TableName="dev-tenant", Key=key, UpdateExpression="SET notifications = :n",
+                           ExpressionAttributeValues={":n": {"M": {"sms": {"BOOL": False}}}})
+    assert _seed(tenant)["status"] == "ready"
+    assert _notifications(aws, tenant)["sms"] is False
+
+
 def test_seed_sets_up_every_kom_igang_step(twin, tenant, aws):
     assert _seed(tenant) == {"status": "ready", "failed": []}
     state = _profile(tenant)["devTwin"]

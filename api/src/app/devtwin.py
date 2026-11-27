@@ -34,7 +34,7 @@ ordering, the menu (lunch, starters, mains, desserts, drinks), a published
 and active table layout, catering (settings, dishes with allergens, a
 package, a discount tier, test terms), gift cards, the waitlist (public
 join), one published test event, fake seller details, a simulated printer,
-a staff login, the Google profile skipped and the phone assistant on the
+a staff login, guest SMS switched on (a setting the developer sets stays), the Google profile skipped and the phone assistant on the
 simulated number. The console's own routes do what only the console does
 (owner login, location, printer, staff) and Stripe: the twin takes payments
 with one fully onboarded TEST-mode connected account
@@ -69,7 +69,7 @@ DEFAULT_OWNER_EMAIL = "aws+{slug}@ithjalparna.se"
 ACTIVE_WAIT_SECONDS = 150                   # per run; then it hands itself the rest
 MAX_RUNS = 4
 LOCKED = ("offboarding", "offboarded", "purged")
-STEPS = ("features", "owner", "stripe", "location", "details", "menu", "layout", "catering", "giftCards", "waitlist",
+STEPS = ("features", "owner", "notifications", "stripe", "location", "details", "menu", "layout", "catering", "giftCards", "waitlist",
          "events", "legal", "printers", "staff", "dpa", "google", "phone")
 REFRESH_ALL_MAX = 50                        # twins one "Refresh all dev twins" queues
 STALE_MINUTES = 10                          # a queued or running seed older than this died (Lambda max 300 s)
@@ -683,6 +683,20 @@ class Seeder:
             _set_primary(self.tenant_id, OPERATOR, email, "Booqy utvecklare")
             notes.append("Contact owner is the team login")
         return "; ".join(notes) or None
+
+    def step_notifications(self) -> str | None:
+        """Guest SMS on (the setting is off by default), so booking, reminder and
+        cancellation texts can be tried in dev. A value the developer set stays."""
+        current = self.profile.get("notifications")
+        current = current if isinstance(current, dict) else {}
+        if isinstance(current.get("sms"), bool):
+            return None
+        merged = {**current, "sms": True}
+        client("dynamodb").update_item(TableName=tenant_table(), Key=tkey(self.tenant_id),
+                                       UpdateExpression="SET notifications = :n",
+                                       ExpressionAttributeValues={":n": to_ddb_value(merged)})
+        self.profile["notifications"] = merged
+        return "Guest SMS on"
 
     def step_stripe(self) -> str | None:
         """The shared TEST-mode connected account (fully onboarded), so card
