@@ -85,6 +85,8 @@ function body(method: string, path: string): unknown {
   if (path === '/platform/mail/newsletters') return { newsletters: [{ newsletterId: 'n1', subject: 'Nyheter i november', body: 'Hej!', status: 'sent', createdAt: '2026-11-01T10:00:00Z', createdBy: 'anna', recipientCount: 2, sentCount: 2, failedCount: 0, finishedAt: '2026-11-01T10:01:00Z' }] }
   if (path === '/platform/outbox') return { enabled: true, messages: [{ id: 'm1', at: '2026-11-13T10:00:00Z', channel: 'email', to: 'roma@example.test', subject: 'Välkommen till Booqy' }, { id: 'm2', at: '2026-11-13T11:00:00Z', channel: 'sms', to: '+46700000000', subject: 'Din kod är 123456' }], next: null }
   if (path === '/platform/help-assistant') return { enabled: true, mode: 'kb' }
+  if (path === '/platform/phone-agent/settings') return { killSwitch: false, maxMinutesCap: 600 }
+  if (path === '/platform/meta-ads/settings') return { killSwitch: false, maxMonthlyCapSek: 5000 }
   return {}
 }
 
