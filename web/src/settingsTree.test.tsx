@@ -105,6 +105,8 @@ describe("settings field", () => {
     expect(tone).toEqual({ Light: "neutral", "Sound off": "neutral", "Meta ads running": "ok", "Phone agent paused": "warn" });
     expect(buildApples({ theme: "dark", sound: true, meta: { killSwitch: true }, phone: { killSwitch: false, maxMinutesCap: 60 } }).platform)
       .toEqual([{ text: "Meta ads paused by kill switch", branch: "meta-ads", tone: "warn" }, { text: "Phone cap 60 min", branch: "phone-agent", tone: "ok" }]);
+    expect(buildApples({ theme: "dark", sound: true, meta: null, phone: { killSwitch: false } }).platform)
+      .toEqual([]);
     field(apples);
     expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("class", "stree-apple");
     expect(screen.getByRole("button", { name: "Meta ads running" })).toHaveAttribute("class", "stree-apple ok");

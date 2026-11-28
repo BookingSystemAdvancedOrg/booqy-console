@@ -88,10 +88,15 @@
   html.has-tabbar.kb-open .submit-bar { bottom: 0; }
   html.has-tabbar.kb-open .help-launcher { bottom: calc(var(--space-4, 16px) + env(safe-area-inset-bottom, 0px)); }
 
-  /* Mail | Reports on top of both pages (InboxSwitch.tsx) */
-  .inbox-switch { display: flex; margin: -6px 0 18px; }
-  :root .inbox-switch.chips[data-glide="track"] { display: flex; flex-wrap: nowrap !important; width: fit-content; }
+  /* Mail | Reports | Notifications on top of the three pages (InboxSwitch.tsx) */
+  .inbox-switch { display: flex; margin: -6px 0 18px; max-width: 100%; }
+  :root .inbox-switch.chips[data-glide="track"] { display: flex; flex-wrap: nowrap !important; width: fit-content; max-width: 100%; }
   :root .inbox-switch > a { flex: none; min-width: 104px; justify-content: center; text-decoration: none; }
+  /* Phones up to 480 px: three 104 px chips do not fit the card, so they share its width */
+  @media (max-width: 480px) {
+    :root .inbox-switch.chips[data-glide="track"] { width: 100%; }
+    :root .inbox-switch > a { flex: 1 1 auto; min-width: min-content; padding: 0 10px; }
+  }
 
   /* --- the Workspace sheet ------------------------------------------------ */
   .ws-layer { position: fixed; inset: 0; z-index: 260; }

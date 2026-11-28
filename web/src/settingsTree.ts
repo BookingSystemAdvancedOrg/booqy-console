@@ -113,7 +113,7 @@ export interface AppleInput {
   theme: string;
   sound: boolean;
   meta: { killSwitch: boolean } | null;
-  phone: { killSwitch: boolean; maxMinutesCap: number } | null;
+  phone: { killSwitch: boolean; maxMinutesCap?: number } | null;
 }
 
 export function buildApples({ theme, sound, meta, phone }: AppleInput): Partial<Record<TreeId, Apple[]>> {
@@ -126,9 +126,12 @@ export function buildApples({ theme, sound, meta, phone }: AppleInput): Partial<
       ...(meta ? [meta.killSwitch
         ? { text: "Meta ads paused by kill switch", branch: "meta-ads" as const, tone: "warn" as const }
         : { text: "Meta ads running", branch: "meta-ads" as const, tone: "ok" as const }] : []),
-      ...(phone ? [phone.killSwitch
-        ? { text: "Phone agent paused", branch: "phone-agent" as const, tone: "warn" as const }
-        : { text: `Phone cap ${phone.maxMinutesCap} min`, branch: "phone-agent" as const, tone: "ok" as const }] : []),
+      // a partial answer (no cap number) draws no cap chip rather than "Phone cap undefined min"
+      ...(phone ? (phone.killSwitch
+        ? [{ text: "Phone agent paused", branch: "phone-agent" as const, tone: "warn" as const }]
+        : typeof phone.maxMinutesCap === "number"
+          ? [{ text: `Phone cap ${phone.maxMinutesCap} min`, branch: "phone-agent" as const, tone: "ok" as const }]
+          : []) : []),
     ],
   };
 }
